@@ -1333,6 +1333,12 @@ pub fn build(ctx: BuildCtx) -> Build:
     bootstrap_c_emit_sources = bootstrap_c_emit_sources.write_scope("out/command/bootstrap-c-emit-sources")
     bootstrap_c_emit_sources = bootstrap_c_emit_sources.input("out/gen/versioned_main.w")
     bootstrap_c_emit_sources = bootstrap_c_emit_sources.dep("compiler-version-sources")
+    // The compiler source imports the generated EmbeddedStdlibData and
+    // EmbeddedClangResourceData modules (same as stage1/2/3); without these
+    // deps a standalone `:bootstrap-c-emit-sources` on a clean tree fails
+    // with "import module not found".
+    bootstrap_c_emit_sources = bootstrap_c_emit_sources.dep("compat-runtime-source")
+    bootstrap_c_emit_sources = bootstrap_c_emit_sources.dep("embedded-clang-resource-source")
     out = out.add_target(bootstrap_c_emit_sources)
 
     var package_bootstrap_c = target_new(.Action, "package-bootstrap-c", "").output("out/release/with-bootstrap-c-" ++ release_version ++ ".tar.gz")
@@ -1345,8 +1351,6 @@ pub fn build(ctx: BuildCtx) -> Build:
     package_bootstrap_c = package_bootstrap_c.input("out/release/bin/with")
     package_bootstrap_c = package_bootstrap_c.input("out/bootstrap-c/src/with_compiler.c")
     package_bootstrap_c = package_bootstrap_c.input("out/gen/wl_decls.h")
-    package_bootstrap_c = package_bootstrap_c.input("src/compiler/LlvmBridge.w")
-    package_bootstrap_c = package_bootstrap_c.input("src/compiler/ClangBridge.w")
     package_bootstrap_c = package_bootstrap_c.input("rt/rt_core.w")
     package_bootstrap_c = package_bootstrap_c.input("rt/panic_runtime.w")
     package_bootstrap_c = package_bootstrap_c.input("rt/regex_runtime.w")
