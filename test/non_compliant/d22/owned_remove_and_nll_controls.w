@@ -1,4 +1,10 @@
-//! D22-NON-COMPLIANT: future compile-and-run
+//! D22-NON-COMPLIANT
+//! owner-stage: 6
+//! required-verdict: compile-and-run
+//! exact-type: `view` is `&Vec[i64]`; `owned` is `Vec[i64]`
+//! expected-diagnostic: none; mutation follows the view's final use
+//! origin-set: `view` has `{map}` until its final use; `owned` has `{}`
+//! drop-behavior: clear drops the first Vec; remove transfers the replacement; each buffer drops exactly once
 
 fn main:
     var map: HashMap[i32, Vec[i64]] = HashMap.new()

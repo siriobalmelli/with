@@ -31,7 +31,7 @@ fn main:
     entries.push(bind("out", view_contiguous(out_mem, shape1(n), .Int32)))
     entries.push(bind("a", view_contiguous(a_mem, shape1(n), .Int32)))
     let stream = stream_create(default_device())
-    let bindings = bindings_from(entries)
+    let bindings = bindings_from(move entries)
     let event = dispatch(stream, prog, bindings).unwrap()
     assert(event_is_done(event))
     assert(read_i32(out_mem, 0) == 0)

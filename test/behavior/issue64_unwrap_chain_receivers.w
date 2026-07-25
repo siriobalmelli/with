@@ -1,5 +1,14 @@
 //! expect-stdout: ok
 
+// #64: unwrap-chain receivers must lower without crashing. Owned carriers
+// (Option/Result by value) yield owned payloads whose methods run on a
+// materialized place. Borrowed sources (iter().next() via a bound iterator,
+// map get) yield &T views under D22 — reading through them is covered here.
+// A direct `.iter().next()` chain is a §15.3 error (next() mutates a
+// temporary): test/compile_errors/err_iter_next_rvalue_receiver.w. Mutation
+// through a map view is a pending Stage 8 rejection:
+// test/non_compliant/d22/err_d22_map_view_mutation.w.
+
 type Inner {
     tags: Vec[i32],
     label: str,
@@ -30,32 +39,25 @@ fn result_binding:
     assert(item.tags.len() == 1)
     assert(item.tags.get(0) == 22)
 
-fn iter_direct_no_crash:
-    let items: Vec[Inner] = Vec.new()
-    items.push(make_inner("iter-direct"))
-    items.iter().next().unwrap().tags.push(3)
-
-fn iter_binding:
-    let items: Vec[Inner] = Vec.new()
+fn iter_view_binding:
+    var items: Vec[Inner] = Vec.new()
     items.push(make_inner("iter-binding"))
-    let iter = items.iter()
+    var iter = items.iter()
     let item = iter.next().unwrap()
-    item.tags.push(33)
-    assert(item.tags.len() == 1)
-    assert(item.tags.get(0) == 33)
+    assert(item.label == "iter-binding")
+    assert(item.tags.len() == 0)
 
-fn hashmap_direct_no_crash:
+fn hashmap_view_read_no_crash:
     let lookup: HashMap[str, Inner] = HashMap.new()
     lookup.insert("alpha", make_inner("hashmap-direct"))
-    lookup.get("alpha").unwrap().tags.push(4)
+    assert(lookup.get("alpha").unwrap().label == "hashmap-direct")
 
-fn hashmap_binding:
+fn hashmap_view_binding:
     let lookup: HashMap[str, Inner] = HashMap.new()
     lookup.insert("beta", make_inner("hashmap-binding"))
     let item = lookup.get("beta").unwrap()
-    item.tags.push(44)
-    assert(item.tags.len() == 1)
-    assert(item.tags.get(0) == 44)
+    assert(item.label == "hashmap-binding")
+    assert(item.tags.len() == 0)
 
 fn main:
     option_direct_no_crash()
@@ -64,10 +66,9 @@ fn main:
     result_direct_no_crash()
     result_binding()
 
-    iter_direct_no_crash()
-    iter_binding()
+    iter_view_binding()
 
-    hashmap_direct_no_crash()
-    hashmap_binding()
+    hashmap_view_read_no_crash()
+    hashmap_view_binding()
 
     print("ok")

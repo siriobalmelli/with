@@ -15,11 +15,11 @@ pub fn sample_state() -> State:
     third_values.push(6)
 
     let entries: Vec[Entry] = Vec.new()
-    entries.push(entry("alpha,one", first_values))
-    entries.push(entry("beta", second_values))
-    entries.push(entry("gamma", third_values))
+    entries.push(entry("alpha,one", move first_values))
+    entries.push(entry("beta", move second_values))
+    entries.push(entry("gamma", move third_values))
 
-    state(entries, Some("ally"), Ok(3))
+    state(move entries, Some("ally"), Ok(3))
 
 pub fn sample_lookup() -> HashMap[str, i32]:
     let lookup = HashMap[str, i32].new()

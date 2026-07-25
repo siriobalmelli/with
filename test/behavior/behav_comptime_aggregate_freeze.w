@@ -15,10 +15,11 @@ comptime fn build_package() -> Package:
     table.insert("left", 11)
     table.insert("right", 22)
 
+    let total = values.len()
     Package {
         values: values,
         table: table,
-        total: values.len(),
+        total: total,
     }
 
 const PACKAGE: Package = comptime build_package()

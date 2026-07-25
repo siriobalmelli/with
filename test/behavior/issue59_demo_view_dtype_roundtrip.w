@@ -16,8 +16,8 @@ fn main:
 
     let entry = bind("a", echoed)
     let entries: Vec[BindEntry] = Vec.new()
-    entries.push(entry)
-    let bindings = bindings_from(entries)
+    entries.push(move entry)
+    let bindings = bindings_from(move entries)
     assert(bindings.entries.len() == 1)
     assert(bindings.entries[0].view.dtype == .Int32)
 

@@ -8,8 +8,8 @@ fn main:
     let ty = TypeInfo.new("main", "Runner", true, true, "struct", loc)
     var project = ProjectInfo.new()
     project = project.add_module(ModuleInfo.new("main", "src/main.w"))
-    project = project.add_function(fun)
-    project = project.add_type(ty)
+    project = project.add_function(move fun)
+    project = project.add_type(move ty)
 
     let modules = project.modules()
     assert(modules.len() == 1)

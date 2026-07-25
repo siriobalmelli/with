@@ -1,15 +1,19 @@
 fn main:
-    let nums: Vec[i32] = Vec.new()
+    var nums: Vec[i32] = Vec.new()
     nums.push(1)
     nums.push(2)
     nums.push(3)
+
+    // iter() is declared `mut fn` today, so it runs on the owned mutable
+    // place before any shared view exists; iter()-through-&Vec is a filed
+    // conformance gap (spec §13).
+    var nums_iter = nums.iter()
+    assert(nums_iter.next().unwrap() == 1)
 
     let shared = &nums
     assert(shared.len() == 3)
     assert(shared.contains(2))
     assert(shared.get(1) == 2)
-    let iter = shared.iter()
-    assert(iter.next().unwrap() == 1)
     let doubled = shared.map(x => x * 2)
     assert(doubled.get(0) == 2)
     let evens = shared.filter(x => x % 2 == 0)

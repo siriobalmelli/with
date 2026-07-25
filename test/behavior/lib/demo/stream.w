@@ -15,7 +15,7 @@ fn alloc_event(done: bool) -> Result[Event, DemoError]:
     let raw = unsafe { malloc(size_of[EventRec]()) }
     if raw == None:
         return Err(.OutOfMemory)
-    let rec = raw.unwrap() as *mut EventRec
+    let rec = raw as *mut EventRec
     unsafe:
         (*rec).done = done
     Ok(rec as Event)

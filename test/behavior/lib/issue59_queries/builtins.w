@@ -8,7 +8,7 @@ pub fn builtin_score(state: State, lookup: HashMap[str, i32]) -> i32:
 
     var i = 0
     while i < state.entries.len():
-        let entry = state.entries[i]
+        let entry = &state.entries[i]
         if entry.name.len() > 0 and entry.name.contains("a"):
             total = total + entry.values.len() as i32
         let parts = entry.name.split(",")

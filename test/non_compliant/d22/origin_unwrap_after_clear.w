@@ -1,4 +1,10 @@
-//! D22-NON-COMPLIANT: future check-fail at map.clear()
+//! D22-NON-COMPLIANT
+//! owner-stage: 4
+//! required-verdict: check-fail at `map.clear()`
+//! exact-type: unannotated `unwrap` result is `&i32`
+//! expected-diagnostic: cannot mutate `map` while `view` is a live view into it
+//! origin-set: `unwrap` preserves `{map}`
+//! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
 fn main:
     var map: HashMap[i32, i32] = HashMap.new()

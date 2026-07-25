@@ -16,7 +16,7 @@ fn main:
     if hit == None:
         print("bad-none")
         return
-    let p = hit.unwrap() as *const u8
+    let p = hit as *const u8
     if unsafe { *p } == 105:
         print("ok")
     else:

@@ -7,7 +7,7 @@ pub fn alloc(device: Device, size: Size) -> Result[Memory, DemoError]:
     let raw = unsafe { malloc(size) }
     if raw == None:
         return Err(.OutOfMemory)
-    Ok(raw.unwrap() as Memory)
+    Ok(raw as Memory)
 
 pub fn free(mem: Memory) -> Unit:
     if mem == 0:

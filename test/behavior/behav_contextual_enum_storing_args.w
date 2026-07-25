@@ -37,10 +37,10 @@ fn main:
     // SlotMap.insert and SlotMapSlot.set
     var sm: SlotMap[Option[i32]] = SlotMap.new()
     let h = sm.insert(Some(13))
-    assert(sm.get(h).unwrap().unwrap() == 13)
+    assert(sm.get(h).unwrap() == Some(13))
     with sm.slot(h) as mut s2:
         s2.set(Some(14))
-    assert(sm.get(h).unwrap().unwrap() == 14)
+    assert(sm.get(h).unwrap() == Some(14))
 
     // HashMapEntry.set
     var m: HashMap[str, Option[i32]] = HashMap.new()
@@ -48,6 +48,6 @@ fn main:
     m.insert("k", e4)
     with m.entry("k") as mut en:
         en.set(Some(15))
-    assert(m.get("k").unwrap().unwrap() == 15)
+    assert(m.get("k").unwrap() == Some(15))
 
     print("ok")

@@ -1,4 +1,10 @@
-//! D22-NON-COMPLIANT: future check-fail at primary.clear()
+//! D22-NON-COMPLIANT
+//! owner-stage: 4
+//! required-verdict: check-fail at `primary.clear()`
+//! exact-type: `view` is `&i32`; an all-reference `??` stays a reference
+//! expected-diagnostic: cannot mutate `primary` while `view` is a live view into it
+//! origin-set: the join gives `view` `{primary, fallback}`
+//! drop-behavior: rejection precedes codegen; both maps retain ownership
 
 fn main:
     var primary: HashMap[i32, i32] = HashMap.new()

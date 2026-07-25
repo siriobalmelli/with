@@ -1,4 +1,10 @@
-//! D22-NON-COMPLIANT: future check-fail with the normative §22.3 diagnostic
+//! D22-NON-COMPLIANT
+//! owner-stage: 8
+//! required-verdict: check-fail at the `??` join
+//! exact-type: success is `&Vec[i64]`; default is owned `Vec[i64]`
+//! expected-diagnostic: `??` would need to copy a non-Copy Vec; offer only applicable `.cloned()`, borrowed-default, or `remove` remedies
+//! origin-set: no result is formed; success would have `{jobs}`
+//! drop-behavior: rejection precedes codegen; both map and default retain ownership
 
 fn main:
     var jobs: HashMap[i32, Vec[i64]] = HashMap.new()

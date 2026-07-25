@@ -1,4 +1,10 @@
-//! D22-NON-COMPLIANT: future compile-and-run
+//! D22-NON-COMPLIANT
+//! owner-stage: 3
+//! required-verdict: compile-and-run
+//! exact-type: `anchored`, `owned_first`, and explicitly pinned result are all owned `i32`
+//! expected-diagnostic: none; materialized-arm notes are suppressed on success
+//! origin-set: all three owned join results have `{}`
+//! drop-behavior: each selected reference arm is copied once; map storage remains singly owned
 
 fn main:
     var map: HashMap[i32, i32] = HashMap.new()

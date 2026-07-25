@@ -1,0 +1,21 @@
+//! D22-NON-COMPLIANT
+//! owner-stage: 6
+//! required-verdict: compile-and-run under `--debug-alloc`
+//! exact-type: inferred `view` remains `&i32`; `Vec.set_i32` establishes an owned `i32` demand for its value argument
+//! expected-diagnostic: none
+//! origin-set: `view` has `{map}`; the value stored in `slots` has `{}`
+//! drop-behavior: the pointee is copied once into `slots`; both containers drop once; leak count=0
+//! expect-debug-alloc: leak count=0
+
+fn main:
+    var map: HashMap[i32, i32] = HashMap.new()
+    map.insert(1, 41)
+
+    var slots: Vec[i32] = Vec.new()
+    slots.push(0)
+
+    let view = map.get(1).unwrap()
+    slots.set_i32(0, view)
+    map.clear()
+
+    assert(slots.get(0) == 41)

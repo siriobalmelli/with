@@ -14,4 +14,4 @@ pub fn empty_program() -> IRProgram:
     IRProgram { insts: Vec.new() }
 
 pub fn push_inst(prog: &IRProgram, inst: IRInst) -> Unit:
-    prog.insts.push(inst)
+    prog.insts.push(move inst)

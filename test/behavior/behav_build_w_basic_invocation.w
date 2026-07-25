@@ -11,7 +11,7 @@ fn main:
     build_text = build_text ++ "    target = target.define(\"P7_BASIC=1\")\n"
     build_text = build_text ++ "    target = target.link_system_lib(\"m\")\n"
     build_text = build_text ++ "    var out = ctx.new_build()\n"
-    build_text = build_text ++ "    out = out.add_target(target)\n"
+    build_text = build_text ++ "    out = out.add_target(move target)\n"
     build_text = build_text ++ "    out.default(\"demo\")\n"
     p7_write(case_dir, "build.w", build_text)
     let result = p7_run(case_dir, "basic-invocation", p7_build_graph_args())

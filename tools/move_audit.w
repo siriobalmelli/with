@@ -217,14 +217,14 @@ fn build_cells() -> Vec[Cell]:
     cells.push(Cell { name: "before_loopkw_continue/drop", source: sc_before_loopkw_continue("drop"), expect: "OK" }) // #696 (loop)
     cells.push(Cell { name: "divergent_branch/drop", source: sc_divergent_branch("drop"), expect: "OK" })             // #695
 
-    // vec shape: copy-on-move TODAY (#607). Only the LOOP-CARRIED checks gate on
-    // type_needs_drop, so those cells EXPECT OK now and flip to MOVE-ERR when
-    // #691 makes vec single-owner. An explicit `move x` invalidates the BINDING
-    // regardless of shape/needs_drop, so a plain use-after-move
-    // (before_used_inside) is MOVE-ERR today already — NOT flip-sensitive.
+    // vec shape: #691 made every Vec single-owner, so the LOOP-CARRIED checks
+    // (the cells the old copy-on-move #607 world reported OK) now demand
+    // MOVE-ERR — this is the pre-planned [FLIP:->ERR] pin flip. An explicit
+    // `move x` invalidates the BINDING regardless of shape/needs_drop, so a
+    // plain use-after-move (before_used_inside) was MOVE-ERR either way.
     cells.push(Cell { name: "before_loop_continue/vec", source: sc_before_loop_continue("vec"), expect: "OK" })
-    cells.push(Cell { name: "inside_continue/vec[FLIP:->ERR]", source: sc_inside_continue("vec"), expect: "OK" })
-    cells.push(Cell { name: "inside_fallthrough/vec[FLIP:->ERR]", source: sc_inside_fallthrough("vec"), expect: "OK" })
+    cells.push(Cell { name: "inside_continue/vec[FLIPPED:#691]", source: sc_inside_continue("vec"), expect: "MOVE-ERR" })
+    cells.push(Cell { name: "inside_fallthrough/vec[FLIPPED:#691]", source: sc_inside_fallthrough("vec"), expect: "MOVE-ERR" })
     cells.push(Cell { name: "before_used_inside/vec", source: sc_before_used_inside("vec"), expect: "MOVE-ERR" })
     cells.push(Cell { name: "divergent_branch/vec", source: sc_divergent_branch("vec"), expect: "OK" })
     cells

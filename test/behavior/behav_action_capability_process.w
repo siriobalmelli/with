@@ -25,7 +25,7 @@ fn main:
     build_text = build_text ++ "    var target = target_new(.Action, \"generate\", \"\").output(\"out/action/process.txt\")\n"
     build_text = build_text ++ "    target = target.write_scope(\"out\")\n"
     build_text = build_text ++ "    target.action = generate\n"
-    build_text = build_text ++ "    out = out.add_target(target)\n"
+    build_text = build_text ++ "    out = out.add_target(move target)\n"
     build_text = build_text ++ "    out.default(\"generate\")\n"
     p7_write(case_dir, "build.w", build_text)
     let result = p7_run(case_dir, "action-process", p7_build_args())

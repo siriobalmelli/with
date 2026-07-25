@@ -11,7 +11,7 @@ pub fn mirrored_score(state: State, lookup: HashMap[str, i32]) -> i32:
         total = total + edge_score(state.entries[i].name)
         i = i + 1
     total = total + cell_sum(sample_cells())
-    total + builtin_score(state, lookup)
+    total + builtin_score(move state, move lookup)
 
 pub fn orchestrated_score() -> i32:
     mirrored_score(sample_state(), sample_lookup())

@@ -13,7 +13,7 @@ fn main:
     build_text = build_text ++ "    var out = ctx.new_build()\n"
     build_text = build_text ++ "    var target = target_new(.Action, \"panic-action\", \"\").output(\"out/action/value.txt\")\n"
     build_text = build_text ++ "    target.action = crash\n"
-    build_text = build_text ++ "    out = out.add_target(target)\n"
+    build_text = build_text ++ "    out = out.add_target(move target)\n"
     build_text = build_text ++ "    out.default(\"panic-action\")\n"
     p7_write(case_dir, "build.w", build_text)
     let result = p7_run(case_dir, "action-crash", p7_build_args())

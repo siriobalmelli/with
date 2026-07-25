@@ -1,4 +1,10 @@
-//! D22-NON-COMPLIANT: future compile-and-run
+//! D22-NON-COMPLIANT
+//! owner-stage: 5
+//! required-verdict: compile-and-run
+//! exact-type: inferred lookup payload is `&i32`; annotated `snapshot` is owned `i32`
+//! expected-diagnostic: none
+//! origin-set: the contextual Copy gives `snapshot` `{}`
+//! drop-behavior: the map remains sole storage owner and drops once
 
 fn main:
     var map: HashMap[i32, i32] = HashMap.new()

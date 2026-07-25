@@ -9,6 +9,6 @@ fn main:
     let owner = Rc.new(1)
     let task = work(move owner)
     let tasks: Vec[Task[i32]] = Vec.new()
-    tasks.push(task)
+    tasks.push(move task)
     assert(tasks.len() == 1)
     print("ok")
