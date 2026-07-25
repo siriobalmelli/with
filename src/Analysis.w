@@ -48,11 +48,11 @@ fn analysis_sig_path(sema: &Sema, sym: i32, fallback: str) -> str:
     let found = sema.fn_decl_source_paths.get(sym)
     if found.is_some(): found.unwrap() else: fallback
 
-fn analysis_decl_path(sema: &Sema, decl_index: i32, fallback: str):
+fn analysis_decl_path(sema: &Sema, decl_index: i32, fallback: str) -> str:
     let path = sema.decl_source_path_for_index(decl_index)
     if path.len() > 0: path else: fallback
 
-fn analysis_decl_source(sema: &Sema, decl_index: i32, fallback: str):
+fn analysis_decl_source(sema: &Sema, decl_index: i32, fallback: str) -> str:
     let source = sema.source_text_for_file_id(sema.decl_source_file_id_for_index(decl_index))
     if source.len() > 0: source else: fallback
 
@@ -1324,6 +1324,109 @@ fn analysis_move_sites(sema: &Sema, source_path: str) -> str:
         out = out ++ f"{file_name}:{line}:{col}\t{root}\t{shape}\t{spellable}\t{live_text}\t{loop_text}\t{callee}\t{callee_pi}\n"
     out ++ f"move-sites: {total} owned-param sites — {keyword} last-use (keyword), {design} design (live-after/in-loop), {unknown} unknown\n"
 
+// seam-sites (docs/deep-debugging-tools.md): inventory the ownership-seam
+// classes behind the #691-flip double-free/leak family from live MIR facts,
+// before they detonate at runtime. Report-mode like move-sites: the output is
+// a burn-down worklist for migrator clients and the future #715/§15.6 gates;
+// it never fails the run. Classes:
+//   move-through-ref    OK_MOVE of a subplace behind a &T root — blanks a
+//                       place the borrow's owner still drops (the Zcu class).
+//   move-raw-deref      OK_MOVE through a raw-pointer root — blanks the
+//                       pointee behind the compiler's back (*sema_ptr class).
+//   copy-elem-drop      OK_COPY of a Drop, non-Copy value through an index
+//                       projection — an aliasing element copy; stored copies
+//                       double-free, locals leak (#715, BuildGraphTarget class).
+//   copy-view-drop      OK_COPY of a Drop, non-Copy value through a &T root —
+//                       an aliasing materialization (capability-record class).
+//   copy-raw-deref-drop OK_COPY of a Drop, non-Copy value through a raw
+//                       pointer root (Sema handoff class).
+//   escape-view-consume EFF_ESCAPE_VIEW recorded on a consuming (plain-T)
+//                       parameter — a returned view of a dying place (#718).
+fn analysis_seam_place_class(sema: &Sema, body: &MirBody, place_id: i32, is_move: i32) -> str:
+    if place_id < 0 or place_id >= body.place_locals.len() as i32:
+        return ""
+    let local = body.place_locals.get(place_id as i64)
+    if local < 0 or local >= body.local_type_ids.len() as i32:
+        return ""
+    let proj_start = body.place_proj_starts.get(place_id as i64)
+    let proj_count = body.place_proj_counts.get(place_id as i64)
+    let root_ty = body.local_type_ids.get(local as i64)
+    let root_kind = if root_ty > 0: sema.get_type_kind(sema.resolve_alias(root_ty as TypeId)) else: TypeKind.TY_ERR
+    let deref_root = proj_count > 0 and body.proj_kinds.get(proj_start as i64) == ProjKind.PK_DEREF
+    var has_index = 0
+    for pi in 0..proj_count:
+        if body.proj_kinds.get((proj_start + pi) as i64) == ProjKind.PK_INDEX:
+            has_index = 1
+    if is_move != 0:
+        // A whole `_k.*` move is the reborrow-materialize shape; only a
+        // SUBPLACE move behind the ref blanks another owner's storage.
+        if deref_root and proj_count > 1 and root_kind == TypeKind.TY_REF:
+            return "move-through-ref"
+        if deref_root and root_kind == TypeKind.TY_PTR:
+            return "move-raw-deref"
+        return ""
+    let place_ty = body.place_sema_types.get(place_id as i64)
+    if place_ty <= 0:
+        return ""
+    if sema.type_needs_drop_frozen(place_ty) == 0 or sema.is_copy_frozen(place_ty as TypeId) != 0:
+        return ""
+    if has_index != 0:
+        return "copy-elem-drop"
+    if deref_root and root_kind == TypeKind.TY_REF:
+        return "copy-view-drop"
+    if deref_root and root_kind == TypeKind.TY_PTR:
+        return "copy-raw-deref-drop"
+    ""
+
+fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule) -> str:
+    var out = "fn\tclass\tplace\ttype\n"
+    var moves_ref = 0
+    var moves_raw = 0
+    var copies_elem = 0
+    var copies_view = 0
+    var copies_raw = 0
+    var escapes = 0
+    let seen: HashMap[str, i32] = HashMap.new()
+    for bi in 0..mir_mod.bodies.len() as i32:
+        let body = &mir_mod.bodies[bi as i64]
+        if body.lowering_failed != 0:
+            continue
+        let fn_name = sema.pool_resolve(body.fn_sym)
+        for oi in 0..body.operand_kinds.len() as i32:
+            let okind = body.operand_kinds.get(oi as i64)
+            if okind != OperandKind.OK_COPY and okind != OperandKind.OK_MOVE:
+                continue
+            let place_id = body.operand_d0.get(oi as i64)
+            let class = analysis_seam_place_class(sema, body, place_id, if okind == OperandKind.OK_MOVE: 1 else: 0)
+            if class.len() == 0:
+                continue
+            let place_text = mir_place_text(body, place_id)
+            let key = fn_name ++ "\t" ++ class ++ "\t" ++ place_text
+            if seen.contains(key):
+                continue
+            seen.insert(key, 1)
+            if class == "move-through-ref": moves_ref = moves_ref + 1
+            else if class == "move-raw-deref": moves_raw = moves_raw + 1
+            else if class == "copy-elem-drop": copies_elem = copies_elem + 1
+            else if class == "copy-view-drop": copies_view = copies_view + 1
+            else: copies_raw = copies_raw + 1
+            let place_ty = body.place_sema_types.get(place_id as i64)
+            out = out ++ key ++ "\t" ++ sema.type_name(place_ty) ++ "\n"
+    for si in 0..sema.sig_names.len() as i32:
+        for pi in 0..sema.sig_get_param_count(si):
+            if (sema.sig_param_effect(si, pi) & EFF_ESCAPE_VIEW) == 0:
+                continue
+            let param_ty = sema.sig_param_type(si, pi)
+            let param_kind = if param_ty > 0: sema.get_type_kind(sema.resolve_alias(param_ty as TypeId)) else: TypeKind.TY_ERR
+            if param_kind == TypeKind.TY_REF or param_kind == TypeKind.TY_PTR:
+                continue
+            // Receiver slots use compiler-modeled place passing, not a dying copy.
+            if pi == 0 and sema.sig_receiver_mode(si) != ReceiverMode.None:
+                continue
+            escapes = escapes + 1
+            out = out ++ sema.pool_resolve(sema.sig_names.get(si as i64)) ++ "\tescape-view-consume\tparam " ++ f"{pi}" ++ "\t" ++ sema.type_name(param_ty) ++ "\n"
+    out ++ f"seam-sites: {moves_ref + moves_raw + copies_elem + copies_view + copies_raw + escapes} findings — move-through-ref={moves_ref} move-raw-deref={moves_raw} copy-elem-drop={copies_elem} copy-view-drop={copies_view} copy-raw-deref-drop={copies_raw} escape-view-consume={escapes}\n"
+
 // explain:effect (docs/deep-debugging-tools.md): walk the first-setter
 // provenance chain for each ownership-forcing bit of a parameter, from the
 // queried signature down to the direct seed. Packing lives in Sema
@@ -1541,6 +1644,7 @@ fn analysis_help() -> str:
         "  explain:call|value|effect|specialization|diagnostic|type|field|expression|method:<text>\n" ++
         "  explain:node:<id>                       bounded AST + Sema type/resolution tree\n" ++
         "  audit:calls|effects|storage|methods|mir|returns|receivers|receiver-surface|phase|codegen|trait-tables|all\n" ++
+        "  move-sites | seam-sites                 ownership worklists (owned-param call sites; aliasing/blanking seams)\n" ++
         "  path:call:<from>:<to>                   shortest live MIR call path\n" ++
         "  closure:call:<root>                     live MIR call closure\n" ++
         "  lldb:<query>                            breakpoints derived from matching facts\n" ++
@@ -1591,6 +1695,8 @@ fn compiler_analysis_run(sema: &Sema, mir_mod: &MirModule, pool: &InternPool, so
 
     if request == "move-sites":
         return CompilerAnalysisResult { text: analysis_move_sites(sema, source_path), status: 0, needs_codegen: false, codegen_query: "", report }
+    if request == "seam-sites":
+        return CompilerAnalysisResult { text: analysis_seam_sites(sema, mir_mod), status: 0, needs_codegen: false, codegen_query: "", report }
     if request.starts_with("explain:effect:"):
         let ee_target = analysis_slice(request, 15, request.len() as i32)
         return CompilerAnalysisResult { text: analysis_explain_effect(sema, ee_target, source_path), status: 0, needs_codegen: false, codegen_query: "", report }

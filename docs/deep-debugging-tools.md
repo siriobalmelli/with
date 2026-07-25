@@ -92,6 +92,42 @@ The verdicts come from the checker's own use tracking, not source scanning.
 `last-use` is proof the keyword is safe; `live-after` is a reading
 assignment, not a verdict that the design is wrong.
 
+## Ownership Seam Inventory
+
+`analyze <file> seam-sites` inventories the latent aliasing/blanking seams
+behind the #691-flip double-free/leak family, from live MIR operand and place
+facts — before a test or the allocator trips over them at runtime. Like
+`move-sites` it is report-mode: it always exits 0 and its output is a
+burn-down worklist for facts-driven migrators and the future #715/§15.6/#718
+gates (the gate and the query share the predicate; the gate is this report
+flipped to a diagnostic once the inventory is clean).
+
+```sh
+./out/stage/bin/with-stage2 analyze src/main.w seam-sites
+```
+
+One TSV row per deduped `(fn, class, place)`; classes:
+
+- `move-through-ref` — a move of a subplace behind a `&T` root: blanks
+  storage the borrow's owner still drops (the `let zcu = self.zcu` class).
+- `move-raw-deref` — a move through a raw-pointer root: blanks the pointee
+  behind the compiler's back (`*sema_ptr` handoffs).
+- `copy-elem-drop` — a copy of a Drop, non-Copy value through an index
+  projection: an aliasing element copy; stored copies double-free, plain
+  locals leak (#715, the `BuildGraphTarget` filter class).
+- `copy-view-drop` — a copy of a Drop, non-Copy value through a `&T` root
+  (the capability-record derivation class).
+- `copy-raw-deref-drop` — same through a raw-pointer root.
+- `escape-view-consume` — `EFF_ESCAPE_VIEW` on a consuming plain-`T`
+  parameter: a returned view of a place that dies with the call (#718).
+
+Findings are seams, not automatic bugs — a `copy-view-drop` may be a
+deliberate leak-class read — but every double-free root-caused in the D22
+batch (handoff.md §3 roots 15, 18, 19) matches exactly one of these rows.
+Burn the list down with clones/views (see the `bg_clone_str_vec` /
+`&vec[i]` idioms), or classify a row as intended where the disposition is a
+known pinned leak.
+
 ## Effect Provenance
 
 `analyze <file> 'explain:effect:<fn>[:<param>]'` prints WHY a parameter
