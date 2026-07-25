@@ -1,4 +1,827 @@
-# Handoff — #691 "the wide flip" + build-perf + doctrine (2026-07-22)
+# Active Handoff — D22 implementation, Stage 6 (2026-07-24)
+
+This section is the current continuation record. The older #691/D20 material
+below is preserved as historical archaeology only. It must not be used as the
+current task, stage, doctrine, or worktree status.
+
+## 0. Read this first: authority and non-negotiable scope
+
+The single canonical D22 source is
+[`docs/d22-Eric-Ruling.md`](docs/d22-Eric-Ruling.md). Do not edit it. Do not
+infer D22 from this handoff, current compiler behavior, old discussion, or an
+isolated TODO. This handoff reports implementation state; it cannot amend the
+ruling.
+
+Read, in order:
+
+1. `docs/d22-Eric-Ruling.md` in full;
+2. `docs/d22-implementation-plan.md` in full;
+3. `docs/mission.md`;
+4. `AGENTS.md`, especially the D22, root-cause, self-hosting, allocator, O1,
+   and build-verification rules;
+5. `docs/deep-debugging-tools.md` and `docs/debug-allocator.md` before
+   continuing the current backend/ownership investigation;
+6. `test/non_compliant/d22/README.md`, which is the fixture inventory and
+   owner-stage index.
+
+The specification and active derivative doctrine are already aligned to the
+ruling. The principal normative projections are specification §§3.4, 3.8,
+9.7, 10, 13.3, and 21.1, plus `docs/decisions.md` D22. If any derivative text
+or implementation behavior conflicts with the ruling, the derivative is
+non-conforming; never average the two.
+
+The semantic core that every implementation stage must preserve is:
+
+- every owning keyed-map `get` has the stable type `Option[&V]` for every `V`;
+- `remove` is the ownership boundary and returns `Option[V]`;
+- a lookup view originates in the receiver only, never the transient key;
+- `&T` remains `&T` through inference, forwarding, pattern projection,
+  capture, and exact-payload elimination, even when `T: Copy`;
+- contextual Copy occurs only after an owned `T` demand is independently
+  established, and never affects overload selection, dispatch, or ABI;
+- patterns project exact types and never eagerly copy;
+- joins are order-independent; reference-only joins preserve references and
+  union origins, while owned anchors may demand Copy materialization;
+- Option, Result, tuples, ephemeral carriers, patterns, `?`, `??`, joins, and
+  eliminators transparently preserve view origins;
+- only a real ownership boundary such as contextual Copy, `copied`, `clone`,
+  `cloned`, construction of an independent owner, or `remove` ends an origin;
+- raw pointers do not participate in contextual Copy;
+- D22 does not change map key-parameter mode, public `Vec.get`, string/slice
+  lookup signatures, general parameter ABI, or bootstrap/string-runtime ABI.
+
+The repository hook requested to protect the canonical ruling is **not
+implemented**: `core.hooksPath` is `.githooks`, but `.githooks/pre-commit`
+currently protects only `bootstrap/`, and the ruling file has no immutable
+filesystem flag. The ruling is clean at commit `ac220b63`, but do not claim a
+working modification guard exists.
+
+## 1. Repository and recovery state
+
+- Branch: `main`.
+- HEAD and `origin/main`: `df20c2586161dcf340d15174db8b5c7aa3bda70f`
+  (`D22: establish contextual Copy adjustments`).
+- Canonical-ruling recovery commit: `ac220b63`.
+- Corrected-plan recovery commit: `0b772a57`.
+- Doctrine-alignment commit: `ec736eb9`.
+- Staged-plan commit: `7a338aba`.
+- Exact pre-extraction mixed-tree rescue:
+  `d533ca638c11646ff1a5eb925535271e79a7992f` on local branch
+  `wip/d22-mixed-rescue-20260723`.
+- The hunk-level extraction record is
+  `docs/d22-stage0-salvage-manifest.md` (currently untracked and must be
+  preserved).
+
+The current worktree contains substantial uncommitted D22 progress after
+`df20c258`. Do **not** run `git checkout .`, `git reset --hard`, a broad restore,
+or a stash-based comparison. Do not commit the entire tree without a hunk-level
+audit. The original mixed state is recoverable from the rescue branch, but the
+post-`df20c258` Stage 3–6 work exists only in this dirty tree.
+
+Current tracked source files modified are:
+
+```text
+lib/std/collections.w        lib/std/io.w
+rt/rt_core.w
+src/Analysis.w               src/Ast.w
+src/Codegen.w                src/CodegenDispatch.w
+src/CodegenTraits.w          src/ComptimeEval.w
+src/ComptimeTransform.w      src/Lsp.w
+src/MirLower.w               src/Parser.w
+src/ReceiverMigration.w      src/Sema.w
+src/SemaCheck.w              src/SemaDecl.w
+src/SemaDiag.w               src/TypeLayout.w
+src/compiler/Frontend.w
+```
+
+The D22 acceptance README and eight original matrix fixtures are modified, and
+there are many untracked D22 fixtures under `test/non_compliant/d22/`, plus
+four active behavior/compile-error controls, two phase fixtures, and
+`tools/migrate_d22_copy_views.w`. Run `git status --short` for the exact list;
+do not reconstruct it from memory. `git diff --check` was clean at this
+handoff.
+
+Some broad-looking changes in parser/AST/LSP/diagnostic files are supporting
+source-location and diagnostic plumbing for the shared D22 facts. Their mere
+proximity to D22 is not proof that every hunk belongs. Before committing,
+classify each hunk against the ruling and the Stage 0 manifest. In particular,
+continue to quarantine broad `str`/parameter/bootstrap ABI work and the
+rescue-only `Vec[T: Clone].clone` rewrite.
+
+No compiler process is intentionally running. An interrupted temporary full
+compiler build was explicitly stopped with exit 130. `/tmp/with-stage2-current`
+does not exist. `/tmp/d22-stage2-current.o` exists, but it is only the 1.2 MiB
+entry object with undefined imported-module symbols and contains no
+`Codegen.mir_indirect_value_local_ptr`; it is not evidence about the current
+blocker and may be ignored.
+
+## 2. Stage status
+
+The approved stages and gates are normative only as written in
+`docs/d22-implementation-plan.md`. This is the current execution status:
+
+### Stage 0 — preserved/extracted
+
+Complete as a source-control operation. The rescue commit and branch exist,
+the doctrine baseline is clean, and the salvage manifest records reapplied,
+quarantined, suspect, and evidence-only hunks. No unrelated string/runtime,
+bootstrap, public `Vec.get`, or `Vec.clone` rewrite was intentionally brought
+into the D22 baseline.
+
+### Stage 1 — matrix established, not yet finally promoted
+
+`test/non_compliant/d22/README.md` indexes D22 §14 coverage and assigns owner
+stages. The lane remains explicitly NON-COMPLIANT and outside the ordinary
+green runner. Numerous additional fixtures were added as implementation found
+real boundary cases. Preserve them; update the README inventory before the
+eventual stage commit. Do not weaken a fixture to pass.
+
+### Stage 2 — committed and pushed
+
+Commit `df20c258` establishes exact-type preservation and one Sema-owned
+contextual-Copy adjustment. The important records are in `src/Sema.w` and
+their producers/queries in `src/SemaCheck.w`; MIR consumes the adjustment in
+`src/MirLower.w`. Stage 2 includes typed/ABI phase pins and negative raw-pointer
+and non-Copy controls.
+
+### Stage 3 — substantially implemented in the dirty tree
+
+`src/SemaCheck.w:455-718` contains the shared contextual-join compatibility,
+non-Copy classification, diagnostics, arm completion, and
+`resolve_contextual_join` path. The decision/arm/origin sidecars are declared
+in `src/Sema.w:378-399` and initialized near `src/Sema.w:2023`.
+
+If/match/sequence/defaulting paths have been routed toward this shared fact,
+and five-arm, reordered, all-reference, diverging, nested, `??`, `unwrap_or`,
+and `unwrap_or_else` fixtures exist. Treat the stage as implemented enough for
+downstream work, but not finally promoted until the complete Stage 3 gate is
+rerun and the matrix inventory is reconciled.
+
+### Stage 4 — substantially implemented in the dirty tree
+
+General origin computation and transfer live primarily at:
+
+- `src/SemaCheck.w:9094-9187`: compute and record transparent origins;
+- `src/SemaCheck.w:9245-9444`: yielded/returned-view checks and function
+  effect propagation;
+- `src/SemaCheck.w:9447-9511`: call-result origin transfer;
+- pattern, match, closure, tuple, Result, Option, `?`, optional-chain, user-Try,
+  and join call sites throughout `SemaCheck.w`;
+- `src/Sema.w:4616-4668`, `4972`, and `5165-5235`: binding/function origin
+  storage and queries.
+
+The negative and positive origin matrix is extensive under
+`test/non_compliant/d22/`. There are still explicit TODOs around builtin `?`,
+some pattern projection paths, and backend transfer. Do not describe Stage 4
+as fully complete until every required carrier in ruling §10 and matrix §14.5
+has its expected verdict and NLL controls pass.
+
+### Stage 5 — substantially implemented; focused ownership controls passed
+
+MIR contextual-Copy and join consumers are centered at:
+
+- `src/MirLower.w:8491`: `lower_contextual_copy_adjustment`;
+- `src/MirLower.w:8515-8558`: contextual join arm lookup/lowering;
+- `src/MirLower.w:9888-9917`, `10869-10985`: defaulting eliminators;
+- `src/MirLower.w:9965`: owned receiver materialization;
+- `src/MirLower.w:11631`: the general contextual adjustment entry.
+
+The original owned-Option extraction double free was proven and repaired:
+`removed.unwrap()` had emitted `copy _10`, leaving both the
+`Option[Vec[i64]]` and extracted `Vec[i64]` initialized. Builtin Option/Result
+ownership-transforming methods now have one Sema receiver-mode descriptor at
+`src/SemaCheck.w:18645-18680`; consuming paths lower owned receiver places and
+reset their source rather than duplicating the payload. A standalone
+`Option[Vec].unwrap()` debug-allocator control reported `leak count=0` after
+the change.
+
+Do not special-case HashMap in Option elimination. D22 requires the exact same
+ownership rule for producer-independent Option/Result carriers.
+
+### Stage 6 — ACTIVE; native semantics largely work, audit gate is blocked
+
+This is the current stage. Implemented native pieces include:
+
+- `lib/std/collections.w:71-128`: BTreeMap checked view lookup and owned
+  insert/remove reconstruction without changing public `Vec.get`;
+- `rt/rt_core.w:2827-2859`: `with_hashmap_get_ptr`, where null is None and a
+  value address is Some(`&V`); legacy copying helper remains internal only;
+- `src/CodegenDispatch.w` MAP_GET lowering uses the nullable pointer;
+- `src/Sema.w:4836-4889`: `type_needs_drop` now treats compiler-modeled Vec,
+  HashMap, HashSet, and SlotMap storage as owning/drop-requiring;
+- `src/CodegenDispatch.w:4377-4607`: typed HashMap/HashSet and SlotMap element
+  drop walkers plus exact free dispatch;
+- `rt/rt_core.w:2593-2623`: SlotMap storage helpers/free;
+- `src/CodegenDispatch.w:8195-8204`: HashMap clear drops live owned entries
+  before erasing occupancy;
+- replacement/remove paths preserve one owner and drop replaced values once.
+
+The Stage 6 `type_needs_drop` change exposed an old unsound compiler-internal
+cache trick from D7: `{ptr}` copies of HashMap/HashSet fields created a second
+owner. The exact sites were `needs_drop_visit`, `copy_visit_stack`,
+`drop_method_cache`, `blanket_guard`, and `selection_cache`. Already-mutating
+queries now update their fields directly; read-only queries use an explicit
+unsafe raw-place reborrow (for example `src/Sema.w:6668` and
+`src/SemaCheck.w:15764-15790`) rather than copying an owning handle. A focused
+raw-place language probe validated and ran with `leak count=0`.
+
+The following Stage 6 evidence was green before the current blocker:
+
+```text
+./out/bootstrap/bin/with-stage1 analyze src/main.w audit:storage
+    845858 facts, violations=0
+./out/bootstrap/bin/with-stage1 check src/main.w
+    ok
+with build :dev
+    passed at O1
+with build :stage2
+    passed at O1
+```
+
+Focused native allocator programs all reported `leak count=0`:
+
+```text
+test/debug_alloc/da_hashmap_get_borrow_remove_owned.w
+test/debug_alloc/da_hashmap_live_vec_drop.w
+test/debug_alloc/da_hashset_live_vec_drop.w
+test/debug_alloc/da_hashmap_vec_remove_owned.w
+test/non_compliant/d22/da_d22_hashmap_replace_owned.w
+test/non_compliant/d22/da_slotmap_owned_storage_drop.w
+test/non_compliant/d22/da_d22_slotmap_set_replacement_owned.w
+test/non_compliant/d22/da_d22_btreemap_get_borrow_remove_owned.w
+test/non_compliant/d22/da_d22_hashmap_owner_struct_return.w
+```
+
+`da_d22_hashmap_owner_struct_return.w` is especially important. Before the
+classifier fix, struct construction copied a map handle into the aggregate
+because `MirLower` consumes/resets aggregate fields only when
+`type_needs_drop_frozen` is true. After the fix, MIR shows `move _1`,
+`StorageDead(_1)`, and a reset source; the allocator is clean.
+
+Stage 6 is **not green**. `with build :move-audit` reaches the bridge-object
+dependencies and both stage-2 bridge compilers exit 139 before the audit
+matrix. `:drop-audit` has therefore not earned a final verdict either. Do not
+advance to Stage 7 until this is fixed and both audits pass.
+
+### Stages 7–10 — not active
+
+Some comptime and C-emission code already reflects uniform map-view types:
+`src/ComptimeEval.w:2763-2838` distinguishes borrowed get from owned remove,
+and `src/CCodegen.w:1981-1994`, `6096-6126`, and `9067` use `Option[&V]` plus
+`with_hashmap_get_ptr`. These are useful candidates, not proof that Stage 7 is
+complete. Stage 7 must still run paired native/comptime/C type, value, origin,
+and allocator parity. Diagnostics (Stage 8), compiler/std source migration and
+pin retirement (Stage 9), and the full O1/fixpoint/audit/test/reseed battery
+(Stage 10) remain future work.
+
+## 3. RESOLVED 2026-07-24: the stage-2 blocker and four follow-on roots
+
+The §3-historical blocker below is fixed, plus four more bugs found stacked
+behind it once stage 2 could execute. All fixes are in the dirty tree,
+uncommitted, each verified by minimal repro plus the focused gates.
+
+1. **`is_none` inversion (the exit-139 blocker).** Not intrinsic emission:
+   `Option.is_none()` lowers through the enum-accessor path
+   (`src/MirLower.w:9192-9195` → `lower_enum_accessor_call:9650`), and
+   `Sema.enum_variant_discriminant_for_type` fell back to the global
+   bare-symbol `disc_values` map (`src/SemaCheck.w:12352`). Any repr enum
+   declaring `None = <k>` (LiteralSuffix, ReceiverMode, …) poisoned
+   `Option.None`'s discriminant to 0 (= Some) program-wide, so every
+   accessor-lowered `is_none()` in stage 2 compared `disc == 0`. Small tests
+   pass because they carry no colliding enum; a 3-line DiscEnum poison repro
+   proves it (`enum Junk: i32: None = 3` flips `is_none` in any program).
+   Fix: only repr enums (`disc_repr_types`) consult `disc_values`, mirroring
+   the already-correct reflection reader (`type_reflection_variant_discriminant`).
+   Sibling raw readers (MirLower.w:7469 pattern arms, ComptimeEval
+   3529/4633/5963, MirLower.w:3218) still bypass the shared query; poisoned
+   controls pass, but they remain the same drift class for Stage 8 scrutiny.
+2. **Double contextual-Copy deref** (startup SEGV in
+   `suspend_body_index_for_sym`): `check_body_explicit_value_results` recorded
+   the return-position adjustment on the body BLOCK node and again on the tail
+   call node; MIR materialized+deref'd twice (`_10 = copy _9.*; _0 = copy
+   _10.*` with a mistyped intermediate). Fix: the walker records only at leaf
+   value expressions (structured kinds recurse first).
+3. **Teardown double-free (every stage-2 run exited 1):**
+   `MirModule.snapshot_sema_types` (`src/Mir.w:527`) deep-copies the five
+   type-table Vecs but handle-copied `sema.bitpacked_types`; Compilation's
+   drop glue freed the map via both `last_mir_module` and `last_sema`. Fix:
+   deep-copy the map like the Vecs.
+4. **Mid-compile double-free on BTreeMap-shaped inputs:**
+   `save_label_registry` was a read-only `fn` copying 13 Vec handles out of
+   self; `reset_label_registry` then dropped the originals, and nested
+   generic-method body checks double-freed. Fix: `mut fn` moving the fields
+   out (reset re-initializes the blanked fields).
+5. **regex-runtime rejection (blocked `:move-audit` at `regex-runtime-ir`):**
+   two D22-tree inference regressions vs the seed. `(~1)` lost integer-literal
+   adaptability (check_unary's value-context operand finalized the literal to
+   i32, tripping the June signedness rule on `u32 & (~1)`), and goto-only if
+   arms typed `Unit` instead of diverging in the new contextual-join
+   classifier. Fixes: `sema_node_is_bitwise_adaptable_literal` (grouping/`~`
+   transparent) + `~` forwards an integer expectation to its operand; the
+   join treats non-fall-through arms as diverging and `body_can_fall_through`
+   knows `NK_GOTO`.
+6. **Folded negative literals fail bit-pattern adaptation** (blocked
+   `rt-core-object`: `(size + 15) & (-16)` at `rt/rt_core.w:492`):
+   `Ast.int_literal_exact_expr` bailed (`ok: 0`) on parser-folded negative
+   `NK_INT_LIT` nodes, so the June bitwise bit-pattern rule rejected every
+   adapted negative mask. The seed had the same defect for unparenthesized
+   `x & -16`; parens only dodged the old adaptation gate. Fix: report
+   magnitude + sign (i64.min keeps its own bit pattern as the unsigned
+   magnitude word).
+7. **Fixpoint divergence: emit-obj scope** (stage2-fixpoint 1.2MB entry-only
+   vs stage3-fixpoint 22MB whole-program): `run_mir_lower`
+   (`Compilation.w:1432-1437`), its typed-emission twin (`:1159`), and the
+   four Backend `cg.decl_source_paths` seams hand the Zcu's six
+   source-identity tables over with bare assignments. Under the pre-flip seed
+   (stage1's binary) those are handle copies; under post-flip semantics
+   (stage2 onward) they are moves that blank the Zcu fields, so
+   `current_decl_is_imported_module_symbol` sees empty decl paths and
+   module-object pruning emits every imported module's body. Fix: clone at
+   the seams with `sema_clone_str_vec`/`sema_clone_i32_vec` — the exact idiom
+   Frontend.w:1584/1643 already uses. Same-class follow-up left open:
+   `Lsp.w:488` (`cached_decl_paths = comp.zcu.decl_source_paths`) still
+   moves. Also noted: stage1's own `-p`/`-n` one-liner driver now trips
+   "#607: consuming iteration of a Vec whose elements need drop" — the
+   embedded driver snippet needs `for w in &vec` under post-flip semantics.
+
+8. **link-compiler invalid free** (stage-2 full compiler build, per-unit
+   codegen path): `Codegen.deinit` (`move fn`, #685) manually freed ~148
+   table backings via `dispose_tables`, and then the consumed receiver's
+   (new, D22/#691-widened) drop glue freed the same fields again —
+   `__drop_struct_432` on `mir_local_types` after the manual raw free.
+   dispose_tables' own comment says it existed because "these POD/Copy-element
+   containers never free on their own" — obsolete by its own rationale. Fix:
+   deleted dispose_tables; deinit disposes only the LLVM resources and the
+   consuming receiver's drop frees the tables exactly once. Note the
+   single-module backends (emit_native_backend/emit_ir/analyze) never call
+   deinit — their Codegen drops via glue but leaks the LLVM context/module;
+   pre-existing, unchanged. Also pre-existing: the per-round
+   `cg.decl_source_paths = self.decl_source_paths` move blanks the Zcu field
+   after round 0, so units ≥1 lose decl paths (debug info only).
+
+Verified green after the fixes: stage-1 and stage-2 on
+`da_d22_option_ref_presence_predicates.w` (`--validate-all` ok, debug-alloc
+`leak count=0`), the full Stage 6 allocator matrix under BOTH stages (ten
+fixtures, `leak count=0`), the direct LlvmBridge `--emit-obj` command (exit
+0), `rt/regex_runtime.w` IR under stage 1, and the poisoned/clean/unwrap-shape
+repro matrix. **The Stage 6 gate is GREEN end to end (2026-07-24):**
+
+```text
+with build :move-audit     15 cells, 0 vs-expected FAIL
+                           (pre-planned [FLIP:->ERR] pins executed: the two
+                           loop-carried vec cells now expect MOVE-ERR; 2
+                           candidate-vs-baseline DIFFs are against the
+                           pre-flip installed seed and clear at reseed)
+with build :drop-audit     115 cells, 0 non-PASS
+                           (3 baseline diffs = EXPECT-CLEAN POD pins the
+                           pre-flip seed still leaks; clear at reseed)
+analyze src/main.w audit:all   2248435 facts, violations=0
+stage2 full compiler build     out/gen/main.w -O1 → binary runs (42)
+allocator matrix (stage2)      12/12 fixtures leak count=0, including the two
+                               new controls
+LlvmBridge --emit-obj (stage2) exit 0
+```
+
+9. **Eric-ruled follow-ups landed (2026-07-25).** Per the three rulings:
+   (a) `for x in vec` now borrow-iterates per spec §13 — dispatch splits at
+   `MirLower.lower_for` (Drop-element Vecs route through `lower_for_iter_ref`
+   as `&T` views, including ref-typed bindings from nested loops; Copy-class
+   elements keep owned bindings, `lower_for_vec` reads place receivers
+   without moving them), `infer_for_element_type` yields `&T` for Drop
+   elements, the #607 gate is deleted, and the `-p`/`-n` one-liner drivers
+   work again. D22 ruling compatibility: §2.2 (iterator APIs keep existing
+   signatures), §5.1 (refutable `for` patterns preserve exact types),
+   §6.1/6.2 (operator positions materialize copies). Fixtures:
+   `behav_for_borrow_iteration.w`, `behav_for_view_iteration_nested.w`.
+   (b) `--prelude=core` segfault: `generate_default_trait_method_for_impl`
+   move-saves ~18 container fields and installs fresh ones — except
+   `local_sema_types`, which its `_ext` twin does install; the body read the
+   blanked map (null handle, fault at 0x20 in hm_len). One line added.
+   (c) `issue64_unwrap_chain_receivers` rewritten to current semantics:
+   owned Option/Result unwrap chains keep behavioral coverage; a direct
+   `.iter().next()` chain is pinned as the §15.3 error it is
+   (`err_iter_next_rvalue_receiver.w`); mutation through a map get view is
+   NOT yet rejected — a real Stage 8 enforcement gap pinned NON-COMPLIANT in
+   `test/non_compliant/d22/err_d22_map_view_mutation.w`. Also
+   `test/behavior/lib/issue66/core.w` got its §3.8 `move` spelling.
+
+12. **Match subjects inherited the ambient expectation**
+    (`issue45_tail_match_generic_option`): `check_match_expr` checked its
+    subject with `check_expr` while the enclosing context's expected type was
+    live, so `match (if ok: Some(7) else: None):` in an i32-returning tail
+    asked the subject if-join to produce i32 (D22 join diagnostic "if
+    expression of type Option[i32] cannot produce i32"). Fixed: the subject
+    is checked in value context — its type is self-determined; the ambient
+    expectation belongs to the arms.
+
+11. **generic_inst_cache D7 handle-copy** (silent 139 checking any
+    comptime-vec test with flip-built binaries): `Sema.w:3252`'s
+    "interior-mut cache" trick (`var gic = self.generic_inst_cache;
+    gic.insert(...)`) — a missed sibling of the Stage 6 cache-trick cleanup —
+    moves the map out of self under #691, and the next
+    `find_generic_inst_type` derefs the blanked handle (hm_len fault 0x20 via
+    ComptimeEvaluator.eval_vec_method_call → ensure_option_type_for). Fixed
+    with the same explicit raw-place reborrow drop_method_cache uses
+    (Sema.w:6686). The behavior lane's comptime family was red on this one
+    crash.
+
+10. **The behavior lane's cached greens drained (2026-07-25).** The
+    behavior-tests runner caches by test-dir inputs without the compiler as a
+    declared edge (#680 class), so three more flip-era reds only surfaced
+    once test files changed: `issue61_query_state_stress`(+`_dump_mir`) and
+    `issue64_borrowed_vec_methods`. None were regressions from this batch.
+    Dispositions: issue61's `let entry = state.entries[i]` double free is the
+    ungated index-copy of a Drop element — the D23 surface — filed as #715
+    with the residual 9-leak note; the lib now uses `&state.entries[i]` and
+    §3.8 `move` spellings (spec-legal; the checker's mandatory-move demand
+    itself is non-conforming to §3.8's "a plain call is always legal" —
+    filed as #714 for its own batch). issue64_borrowed's `.iter()` failures
+    are the `mut fn IntoIter.iter()` declaration vs spec §13 — filed as
+    #716 after a direct receiver-mode change broke dispatch ("wrong argument
+    count") and was reverted; the test now iterates the owned var before
+    creating views, which also exercises the (correct) §15 view-conflict
+    rule.
+
+13. **View-typed arithmetic fallback double-deref** (the last `:test` red,
+    `behav_tuple_return_compose`): stage1 miscompiled stage2's own
+    `AstPool.get_call_named_arg` — the emitted code computed `start + arg_idx`
+    correctly, spilled the 4-byte sum, then reloaded it as an 8-byte POINTER
+    and dereferenced it (`ldr x8, [sp,#8]; ldr w1, [x8]`), reading instruction
+    bytes (0xd100c3ff = `sub sp, sp, #0x30`) as the index → OOB panic in
+    `get_extra` when a program has BOTH a defaulted call and a named-args call
+    (12-line repro; each alone passes). LLDB proved the hashmap store, slot,
+    and value (3988) healthy at crash time. Root: Sema doesn't record
+    arithmetic NK_BINARY types in `typed_expr_types`, so MirLower's
+    `fallback_expr_type` re-derived the sum's type — and its pre-D22 rule
+    "TY_REF operand ⇒ pointer arithmetic ⇒ result is lhs_ty"
+    (MirLower.w:2139) typed `&i32 + i32` as `&i32`. D22 makes
+    `.get().unwrap()` a view, so the destination local carried TY_REF and
+    call-arg lowering applied the view materialization deref to the
+    already-owned sum. Fix: `deref_view_operand_type` peels TY_REF (view
+    auto-deref, matching Sema's `contextualize_builtin_binary_operands`) in
+    the binary and unary NEGATE/BIT_NOT fallback typing; raw `*T` address
+    arithmetic untouched. 23-line source repro (map get → unwrap → sum →
+    call arg in return) crashed any current-source-built compiler; fixture:
+    `test/behavior/behav_view_arith_result_owned.w`.
+
+14. **Comptime-transform clone drops parse-time pool metadata**
+    (`behav_no_std_alloc_prelude`): `astpool_clone_deep` copies ~20 marker
+    families but not `global_allocator_decl_nodes`/`_set`, and Sema runs on
+    the clone (proven in the #13 investigation: the clone's `call_named_args`
+    store is what check reads). The `@[global_allocator]` mark vanished →
+    "alloc in no_std requires @[global_allocator]" on a file that has it.
+    Fix: clone the marks. Audited the whole AstPoolState against the clone:
+    `copy_arg_needs_clone` is Sema-written post-clone (correctly omitted);
+    `fn_target_arch` is parser-written/parser-read only and the `files` SoA
+    column is not copied (clone stamps file 0) — no live post-clone readers
+    found for either, left as noted drift risks.
+15. **`let zcu = self.zcu` post-flip blanking in the compiler-hook path**
+    (`behav_compiler_hook_project_info` stage2 SEGV at null+0x8 in
+    `InternPool.resolve_symbol`): four read-only sites
+    (`Compilation.w:475/537/602/672`) moved the whole Zcu out of self with no
+    put-back — seed codegen copied handles, stage1 codegen blanks; the hook
+    path runs three of them in sequence, so `project_info_source` resolved
+    symbols through a nulled InternPool. Fix: `let zcu = &self.zcu` (views).
+    The 12 `var zcu = self.zcu … self.zcu = zcu` move-out/put-back sites are
+    the correct post-flip idiom and were left alone; whether the two without
+    an obvious put-back (~:833, :1147 emit_typed) are end-of-lifecycle safe
+    is an open follow-up.
+16. **Flip-era reds the #680 runner cache had been masking (drained
+    2026-07-26).** Six behavior tests failed only once the cache re-keyed;
+    all six also fail under the pre-fix release binary (not regressions from
+    this batch). Dispositions: `behav_std_build_api`, `behav_std_cfg_stackify`,
+    `behav_task_non_send_same_thread_storage`,
+    `behav_std_compiler_project_info` carried #714-class mandatory-move sites
+    (test files + `lib/std/compiler.w` ProjectInfo builders) — migrated with
+    spec-legal `move` spellings per this batch's issue59/61 precedent;
+    `lib/std/compiler.w`'s ProjectInfo accessors also returned field Vecs by
+    handle copy through `&Self` (double free at exit, allocator-verdicted) —
+    now return `&Vec` views per D22, and the compiler-hook iteration over the
+    view works via #712's borrow-iteration path.
+    `behav_iter_pipeline_local` remains RED: it iterates through `&Vec`
+    parameters, blocked by `mut fn iter()` receivers — that is #716,
+    Eric-facing (the direct receiver-mode change broke trait dispatch and was
+    reverted earlier in the batch).
+
+17. **Full-uncached `:test` drain (905 ran, 0 cached, 2026-07-25 PM).** 16
+    reds; all 16 verified failing identically under the pre-batch release
+    binary — zero regressions from this batch. Dispositions:
+    - #714-class move demands: six std.build action-test fixtures
+      (`add_target(move …)` in embedded build.w strings), `lib/std/task.w`
+      `await_first` (`push(move task)` — the generic-IntoIter element
+      double-ownership hazard beneath it is #716/D23 surface).
+    - Nullable-pointer Option spellings: three c_import tests migrated
+      (drop `.unwrap()`, issue44/59 pattern) — green.
+    - Flip-move ordering: `behav_comptime_aggregate_freeze` literal computed
+      `values.len()` after moving `values` — reordered; then exposed #719
+      (below) and stays red pending it.
+    - D22-legal diagnostics: `behav_contextual_enum_storing_args` migrated
+      (`.unwrap() == Some(n)` instead of double-unwrap through a view) —
+      green. `behav_comptime_hashmap_ops` was a REAL checker bug: the
+      block-tail `check_returned_view_origins` call (SemaCheck.w:8597) lacked
+      the materialization gate its NK_RETURN twin (9618) has, so an
+      explicitly-typed `-> i32` return of `m.get(k).unwrap()` was rejected as
+      an escaping view. Gate added.
+    - `Ok(5)` as comparison operand: value-context checking left Result's Err
+      side unbound → "comparison operands must have compatible types". Fixed:
+      payload variant-constructor calls get the peer-operand expectation the
+      NK_VARIANT_SHORTHAND arm already had
+      (`comparison_operand_is_variant_call`, both operand orders).
+    - `behav_coerced_borrow_param_ok` (rc=139): the test's `src: str` premise
+      is pre-D5 — post-D5 a plain param CONSUMES, so it returned a view of a
+      dying param; migrated to `&str`. The checker's failure to reject the
+      dangling original is filed as **#718** (`view_origin_is_stack_local`
+      exempts ALL params — pre-D5 logic).
+    - **#719 filed:** `__with_init_const_*` lowering
+      (CodegenTraits.emit_module_runtime_init_fn) misplaces a reset-on-move
+      blank — a const struct with `{Vec, HashMap}` fields zeroes the Vec
+      local one statement-group before its move into the aggregate (IR-level
+      proof in the issue; 18-line repro; ordinary runtime lowering of the
+      same body is correct). Drop/blank-scheduling — isolation rule ⇒ own
+      batch. `behav_comptime_aggregate_freeze` stays red on it.
+    - **Eric ruling recorded:** `fn iter()` (#716) lands as §13.2 compliance
+      in its own isolated batch B after batch A's battery is recorded;
+      `behav_iter_pipeline_local` stays red until then.
+
+18. **Build-graph two-owner aliasing (six action/build tests, rc=134).**
+    Every `with build` on a build.w project double-freed at exit
+    (allocator-verdicted, 128-byte Vec[str] buffers): (a)
+    `build_graph_filter_target`/`_single_target`/`_selected_targets_add`
+    stored `graph.targets.get(i)` element copies — `BuildGraphTarget` carries
+    nine `Vec[str]` fields, so filtered graphs aliased the original's buffers
+    and both dropped (#715 class, stored-copy variant; the read-only `get`
+    sites are leak-not-drop and stay benign). Fixed with
+    `build_graph_target_deep_copy` (+`bg_clone_str_vec`) at all four storage
+    sites, element access via `&graph.targets[i]` views. (b) The action
+    worker seam (`run_build_action_from_build_w` → LLDB-proven in
+    `comptime_eval_tool_action_result`) passed `move target.inputs` /bare
+    `target.extra_outputs` etc. THROUGH a `&BuildGraphTarget` view into
+    consuming params — the evaluator's `write_scope` frees them, the graph
+    frees them again. Fixed by cloning the five Vec[str] args at the seam.
+    Both `move`-through-view and the bare aliasing copies compiled without
+    diagnostics — the same §15/#715 enforcement gaps already pinned.
+    Also: `behav_await_first_empty_panics` "FAIL rc=134" in my direct sweep
+    was a false alarm — the test declares `expect-exit: 134`; only the
+    runner's verdict counts for directive tests.
+
+19. **Derived-capability record aliasing (the actual worker double free).**
+    After #18's fixes the action worker still double-freed — LLDB placed both
+    frees under the same struct glue inside `comptime_eval_tool_action_result`.
+    Exact site: the ActionCtx child-capability derivation
+    (ComptimeEval.w:5557-5569, `ctx.fs()`/`ctx.process_runner()`) assigned the
+    parent record's `inputs`/`outputs`/`args`/`write_scope` vec HANDLES into
+    the child; parent and child both live in `capability_records`, whose
+    teardown drop frees each element's vecs — shared buffers freed twice. The
+    BuildCtx derivations (4541/4562) were already safe (fresh empty vecs).
+    Fixed with `ce_clone_str_vec` clones; also hardened the worker seam
+    (`run_build_action_from_build_w` now passes clones of the five target
+    vecs instead of `move target.inputs` through a `&BuildGraphTarget`).
+    All six action/build tests green; the p8 repro runs allocator-clean.
+
+**Final batch-A state (2026-07-25 evening):**
+
+```text
+with build :test        2 of 905 failed (0 cached, 905 ran):
+                        behav_iter_pipeline_local  — #716, Eric-ruled to batch B
+                        behav_comptime_aggregate_freeze — #719, own batch
+                        (isolation rule). Everything else green on a fully
+                        uncached lane.
+with build :fixpoint    rerun in flight on the final tree (previous tree PASS)
+with build :move-audit  rerun in flight (previous: 15 cells, 0 FAIL)
+with build :drop-audit  rerun in flight (previous: 115 cells 0 non-PASS;
+                        3 candidate-better-than-baseline diffs clear at reseed)
+```
+
+Historical (2026-07-25 morning): the batch battery first ran with `:test` RED
+on 11 tests (#712 consuming-iteration debt), resolved by Eric's #712 ruling
+and the borrow-iteration implementation earlier in this file.
+
+Per the plan Stage 6 permits Stage 7 work, and D22 is not "implemented"
+until Stages 7-10 and the §14 matrix complete. The
+session's controls are promoted as untracked fixtures:
+`test/non_compliant/d22/discenum_bare_none_collision.w`,
+`test/non_compliant/d22/unwrap_owned_return_positions.w`, and
+`test/behavior/behav_bitwise_literal_mask_adaptation.w` (reconcile the README
+inventory with the rest of the Stage 1 matrix).
+
+Open follow-ups from this session:
+
+- The sibling raw `disc_values` readers still bypass the fixed shared query:
+  `src/MirLower.w:7469` (pattern arm case values), `src/MirLower.w:3218-3223`
+  (payloadless DiscEnum idents, gated), `src/ComptimeEval.w:3529/4633/5963`.
+  Poisoned controls pass today, but they are the same drift class — unify on
+  `enum_variant_discriminant_for_type` during Stage 7/8.
+- `src/compiler/Backend.w:49/133/193/233` copy `decl_source_paths` (Vec[str])
+  handles into each Codegen — the same two-owner class as Mir.w:527, on the
+  codegen path. The audits should flush it out if live.
+- #717 (filed then corrected 2026-07-25): what looked like a stage1
+  freshness no-op was actually the action FAILING with a legitimate §15.6
+  diagnostic that a `| tail -2` invocation swallowed (pipeline rc = tail's
+  0). The build cache behaved correctly. Residue kept in #717: the
+  `[build] :target wall Ns` line prints even on failure — suggest a FAILED
+  marker. Process rule reinforced: never pipe `with build` through
+  tail/head when the exit code matters; the wall line alone is not evidence
+  of success. Also confirmed live: the current checker misses §15.6 for a
+  view held across a mut-method call (seed catches it) — the pinned Stage 8
+  view-mutation enforcement gap.
+- Build-system stale-generation hole (bit twice during `:move-audit`):
+  `link_stage_resolve_runtime_root` prefers `out/lib` whenever
+  `cimport_stubs.o` + the platform object exist there, and the seed's link of
+  stage1 resolved `embedded_objects.o` from a stale Jul-22 `out/lib` — baking
+  a pre-D22 runtime payload into stage1, whose stage2 link then extracted the
+  old `rt_core.o` (undefined `with_hashmap_get_ptr` ×980) into the shared
+  version-blind `out/tmp/with_runtime` cache. Cleared by wiping `out/lib` +
+  the cache and relinking stage1. Durable fixes needed: declare
+  `out/lib/embedded_objects.o` as a stage1 link input (or stop resolving the
+  embed payload through the runtime root), and key/validate the
+  `with_runtime` materialize cache per compiler generation.
+- Fixes 5 and 6 are language-visible outside D22, but the specification
+  already rules both sides: bitwise Rule 1 ("an untyped integer literal adopts
+  the other operand's integer type... valid if its bit pattern fits that
+  type's width" and "Unary `~` preserves the operand type",
+  docs/with-specification.md:1283-1330) covers `(~1)`, `(-16)`, and `x & -16`
+  — the seed's rejection of the unparenthesized spelling was itself
+  non-conforming; and §20b.5 lists `goto` with return/break/continue as
+  terminating control flow, so a goto-terminated join arm is diverging. Both
+  fixes are compliance with blessed text, not new semantics. Eric can veto
+  this reading; no spec wording change is proposed.
+
+## 3-historical. Original blocker record: stage-2 nullable Option predicate polarity
+
+### Reproduction
+
+The focused regression is:
+
+```text
+test/non_compliant/d22/da_d22_option_ref_presence_predicates.w
+```
+
+It covers bound and directly chained `Option[&i32]`/`Option[&i64]` values for
+all four truth cases (`Some/None` × `is_some/is_none`). With stage 1:
+
+```text
+./out/bootstrap/bin/with-stage1 check ... --validate-all
+    validate-all: ok
+./out/bootstrap/bin/with-stage1 run --debug-alloc ...
+    debug-alloc: leak count=0
+```
+
+Invoking stage 2 on the same file exits 139 before it can compile the program:
+
+```text
+./out/stage/bin/with-stage2 check ... --validate-all
+    exit 139
+```
+
+The bridge-object command fails the same way:
+
+```text
+WITH_OUT_DIR=/Users/eric/with/out \
+./out/stage/bin/with-stage2 build src/compiler/LlvmBridge.w \
+  --emit-obj --no-prelude -O1 -o /tmp/with-da-hashmap-drop
+```
+
+Use the actual output path from the build graph when rerunning; the important
+fact is the compiler and source combination, not the temporary filename.
+
+### Debugger proof
+
+Breaking on `with_panic` under LLDB stops at:
+
+```text
+src/CodegenDispatch.w:5495: called unwrap on None
+Codegen.mir_indirect_value_local_ptr
+Codegen.mir_intrinsic_recv_ptr
+Codegen.mir_emit_atomic_fiber_intrinsic_call
+```
+
+The source function is `src/CodegenDispatch.w:5487-5500`:
+
+```with
+fn mir_indirect_value_local_ptr(local_id: i32, storage_ptr: i64) -> i64:
+    if storage_ptr == 0:
+        return 0
+    if self.mir_indirect_value_local_types.get(local_id).is_none():
+        return 0
+    let ptr_ty_opt = self.mir_local_types.get(local_id)
+    if ptr_ty_opt.is_none():
+        return 0
+    let ptr_ty = ptr_ty_opt.unwrap()
+```
+
+In `out/stage/bin/with-stage2`, the first lookup calls
+`with_hashmap_get_ptr` and then executes `cbnz x0, return0`. For
+`is_none()`, that polarity is reversed: it must return when the nullable
+pointer is zero. The bad first guard allows execution to reach the second
+lookup and unwrap a missing value. This is the exact function, source
+condition, and emitted instruction causing the stage-2 crash.
+
+The source-level intrinsic definitions currently look correct:
+
+- `src/MirLower.w:9089-9094` maps `is_some` to `OPT_IS_SOME` and `is_none` to
+  `OPT_IS_NONE`;
+- `src/MirLower.w:9246-9262` gives direct Option-producing chains the same
+  distinction;
+- `src/CodegenDispatch.w:8886-8897` emits non-null for pointer-niche
+  `OPT_IS_SOME`;
+- `src/CodegenDispatch.w:10135-10145` emits null for pointer-niche
+  `OPT_IS_NONE`;
+- `src/CodegenDispatch.w:10019-10030` routes scalar intrinsics first and then
+  the extension dispatcher; `OPT_IS_NONE` should fall through to the correct
+  extension handler.
+
+The stage-1 binary's own `Codegen.mir_indirect_value_local_ptr` uses the old
+`with_hashmap_get(..., out)` representation and has the correct `cbz` guard.
+Stage 1 also compiles and runs the focused D22 nullable-pointer predicate test
+correctly, including direct chains and `HashMap[i32, i64]`. Therefore the
+runtime primitive and ordinary user-program intrinsic path are not sufficient
+explanations. The remaining problem is a compiler-source/module lowering or
+bootstrap-artifact disagreement that must be proven before editing.
+
+### Investigations already attempted; do not repeat blindly
+
+- `src/main.w --dump-mir` does not expose the imported CodegenDispatch body in
+  a way the attempted name filter found.
+- Checking `src/CodegenDispatch.w --no-prelude --dump-mir` is invalid: it emits
+  thousands of missing builtin/trait errors and supplies no trustworthy MIR.
+- An uncached `--emit-obj` build of `out/gen/main.w` succeeded, but the result
+  `/tmp/d22-stage2-current.o` is only the entry object and contains undefined
+  imported module functions. It cannot answer how CodegenDispatch was emitted.
+- A full temporary binary build was started only to force/link the imported
+  modules, then Eric interrupted the turn. The process was stopped with
+  Ctrl-C/exit 130 and produced no `/tmp/with-stage2-current` artifact.
+
+### Next exact actions
+
+1. Identify the stage-1 command/cache object that compiles the
+   `CodegenDispatch` imported module, or force one complete temporary O1 binary
+   build without deleting broad caches. Inspect that binary's
+   `Codegen.mir_indirect_value_local_ptr` before using it for any test.
+2. If the fresh binary has the correct null guard, root-cause the stage-build
+   cache invalidation/reuse and rebuild stage 2 from the corrected dependency.
+3. If the fresh binary repeats `cbnz`, stop in stage 1 while it lowers the
+   exact `is_none` call in `mir_indirect_value_local_ptr`. Verify the MIR
+   intrinsic tag (`OPT_IS_NONE` versus `OPT_IS_SOME`) and then break in the
+   intrinsic emitter to observe which handler and comparison predicate are
+   selected. Name that exact branch before editing.
+4. Only after that proof, fix the shared intrinsic classification/emission
+   rule. Do not rewrite this one guard to `contains`, negate it manually, or
+   special-case the compiler source; those would hide the general Option bug.
+5. Rebuild the cheapest required stage, run
+   `da_d22_option_ref_presence_predicates.w` under `--validate-all` and the
+   debug allocator with both stage 1 and stage 2, then rerun the direct bridge
+   command.
+6. Rerun `with build :move-audit`, followed by `with build :drop-audit`.
+   Re-run the Stage 6 allocator matrix. Only a fully green Stage 6 gate permits
+   work on Stage 7.
+
+The tempting code cleanup—handling `OPT_IS_SOME` and `OPT_IS_NONE` in one
+shared native helper—is reasonable only after the wrong tag/handler is
+observed. Applying it now would be a hypothesis-driven patch, not the required
+root-cause repair.
+
+## 4. Other exact roots already found during Stage 6
+
+These are resolved evidence and should not be rediscovered from scratch:
+
+1. **HashMap get double free:** runtime/native lookup copied a non-Copy `V`
+   into `Option[V]`, leaving map and caller as two owners. D22 fixes the
+   contract at the source: get returns a pointer-backed `Option[&V]`; remove
+   alone copies/transfers ownership out.
+2. **Owned Option unwrap double free:** MIR passed `copy _10` to unwrap and
+   left the `Some(Vec)` wrapper initialized. Consuming builtin receiver mode
+   and move/reset extraction fixed the duplicate owner.
+3. **Four HashMap allocation leaks:** generic drop fallback saw only an opaque
+   handle and emitted no map free. Exact typed hash-collection drop glue now
+   walks live entries and calls `with_hashmap_free`.
+4. **Map moved into aggregate remained live:** `type_needs_drop` knew Vec but
+   not compiler-modeled maps, so aggregate lowering copied the handle instead
+   of consuming/resetting it. The shared Sema classifier now names all
+   compiler-owned storage families.
+5. **Compiler cache fields became moved values:** old `{ptr}` alias copies of
+   HashMap/HashSet fields relied on the handles never being treated as owners.
+   Direct mutation and explicit unsafe raw-place reborrow replaced those
+   duplicate owners.
+
+## 5. Verification discipline and completion boundary
+
+Before every O1 build, state its single unanswered question and what pass/fail
+means. Never use O0. For memory failures, begin with `--debug-alloc`, then use
+`--trace-ownership`, `--dump-drop-plan`, `--dump-place-map`,
+`--explain-mir-origin`, `--validate-all`, and LLDB on the compiler branch that
+emitted the bad operation. Three edit/compile/trace cycles without an exact
+line trigger the debugger trip-wire.
+
+Do not call D22 implemented when Stage 6 becomes green. Stages 7–10 and every
+completion criterion in `docs/d22-implementation-plan.md:528` still remain.
+Final completion requires cross-engine parity, exact diagnostics and compiled
+remedies, migration/idempotence and pin promotion, full O1 stage chain,
+stage2==stage3 fixpoint, move/drop/audit batteries, full tests, allocator
+matrix, and only then test-green/last-green/reseed/install steps.
+
+---
+
+# Historical Handoff — #691 "the wide flip" + build-perf + doctrine (2026-07-22)
 
 > **CURRENT OVERRIDE — D22 (2026-07-23): A new decision has been made, but
 > implementation is still in progress.** `docs/d22-Eric-Ruling.md` is the
