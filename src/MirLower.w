@@ -132,6 +132,14 @@ type MirBuilder = ephemeral {
     next_temp: i32,
     cur_node: i32,
     expected_type: i32,
+    // D22 Stage 5: lower_expr consumes Sema's contextual-Copy adjustment at
+    // the adjusted expression. While materializing that adjustment, lower the
+    // same node once at its exact reference type without re-entering it.
+    contextual_copy_raw_node: i32,
+    // D22 sidecars belong to a concrete checked signature, not merely to the
+    // shared generic AST node. lower_fn_with_sig installs this identity before
+    // any expression is lowered.
+    contextual_fact_sig_idx: i32,
     // D21 evaluates a pipeline receiver once, then lowers the ordinary method
     // call against this exact place. The override is scoped by lower_pipeline.
     pipeline_receiver_override_node: i32,
@@ -212,6 +220,8 @@ fn MirBuilder.init(sema: &Sema, ast: AstPool, pool: InternPool, fn_sym: i32) -> 
         next_temp: 0,
         cur_node: 0,
         expected_type: 0,
+        contextual_copy_raw_node: 0,
+        contextual_fact_sig_idx: -1,
         pipeline_receiver_override_node: 0,
         pipeline_receiver_override_place: -1,
         in_generator: 0,
@@ -233,6 +243,18 @@ fn MirBuilder.init(sema: &Sema, ast: AstPool, pool: InternPool, fn_sym: i32) -> 
     }
 
 impl MirBuilder:
+
+    fn has_contextual_copy_adjustment(node: i32) -> i32:
+        self.sema.has_contextual_copy_adjustment_for_sig(self.contextual_fact_sig_idx, node)
+
+    fn contextual_copy_adjustment(node: i32) -> ContextualCopyAdjustment:
+        self.sema.contextual_copy_adjustment_for_sig(self.contextual_fact_sig_idx, node)
+
+    fn has_contextual_join_decision(node: i32) -> i32:
+        self.sema.has_contextual_join_decision_for_sig(self.contextual_fact_sig_idx, node)
+
+    fn contextual_join_decision(node: i32) -> ContextualJoinDecision:
+        self.sema.contextual_join_decision_for_sig(self.contextual_fact_sig_idx, node)
     mut fn new_block() -> BlockId:
         self.body.new_block()
 
@@ -1356,7 +1378,7 @@ impl MirBuilder:
         if node == 0:
             return self.sema.ty_void as i32
         if self.sema.typed_expr_types.contains(node):
-            let typed = self.sema.typed_expr_types.get(node).unwrap()
+            let typed: i32 = self.sema.typed_expr_types.get(node).unwrap()
             if typed != 0:
                 let node_kind = self.ast.kind(node)
                 if typed == self.sema.ty_void as i32 and (node_kind == NodeKind.NK_IDENT or node_kind == NodeKind.NK_FIELD_ACCESS or node_kind == NodeKind.NK_BINARY or node_kind == NodeKind.NK_UNARY):
@@ -1380,7 +1402,7 @@ impl MirBuilder:
 
     mut fn binding_type(node: i32) -> i32:
         if self.sema.typed_binding_types.contains(node):
-            let typed = self.sema.typed_binding_types.get(node).unwrap()
+            let typed: i32 = self.sema.typed_binding_types.get(node).unwrap()
             if typed != 0:
                 return self.concrete_type(typed as i32)
         let flags = self.ast.get_data2(node)
@@ -1746,8 +1768,14 @@ impl MirBuilder:
                         return self.sema.get_generic_inst_arg(resolved, 0)
                 if method_name == "filter":
                     return recv_type
-                if method_name == "map" or method_name == "and_then" or method_name == "or_else" or method_name == "inspect" or method_name == "cloned":
+                if method_name == "map" or method_name == "and_then" or method_name == "or_else" or method_name == "inspect":
                     return recv_type
+                if method_name == "copied" or method_name == "cloned":
+                    if tk == TypeKind.TY_GENERIC_INST:
+                        let view_ty = self.sema.get_generic_inst_arg(resolved, 0)
+                        let view_resolved = self.sema.resolve_alias(view_ty as TypeId)
+                        if self.sema.get_type_kind(view_resolved) == TypeKind.TY_REF and self.sema.get_type_d1(view_resolved) == 0:
+                            return self.sema.find_option_type_for(self.sema.get_type_d0(view_resolved))
                 if method_name == "unwrap_or":
                     if tk == TypeKind.TY_GENERIC_INST:
                         return self.sema.get_generic_inst_arg(resolved, 0)
@@ -1954,6 +1982,16 @@ impl MirBuilder:
                 pos = pos + 2 + payload_count
         0
 
+    // D22: value arithmetic sees through a &T view operand to T; sema
+    // materializes the operand, so the result type must be the element type.
+    fn deref_view_operand_type(ty: i32) -> i32:
+        if ty == 0 or ty == self.sema.ty_void as i32:
+            return ty
+        let resolved = self.sema.resolve_alias(ty) as i32
+        if self.sema.get_type_kind(resolved) == TypeKind.TY_REF:
+            return self.sema.get_type_d0(resolved)
+        ty
+
     mut fn fallback_expr_type(node: i32) -> i32:
         if node == 0:
             return self.sema.ty_void as i32
@@ -2095,25 +2133,27 @@ impl MirBuilder:
                 return elem_ty
         if kind == NodeKind.NK_BINARY:
             let op = self.ast.get_data0(node)
-            let lhs_ty = self.expr_type(self.ast.get_data1(node))
-            let rhs_ty = self.expr_type(self.ast.get_data2(node))
+            // D22: a &T operand is a view; value arithmetic auto-derefs it to T
+            // (sema materializes the operand). Only raw *T stays address math.
+            let lhs_ty = self.deref_view_operand_type(self.expr_type(self.ast.get_data1(node)))
+            let rhs_ty = self.deref_view_operand_type(self.expr_type(self.ast.get_data2(node)))
             if op == BinaryOp.OP_EQ or op == BinaryOp.OP_NEQ or op == BinaryOp.OP_LT or op == BinaryOp.OP_GT or op == BinaryOp.OP_LTE or op == BinaryOp.OP_GTE or op == BinaryOp.OP_AND or op == BinaryOp.OP_OR:
                 return self.sema.ty_bool as i32
             if lhs_ty != 0 and lhs_ty != self.sema.ty_void as i32:
                 let lhs_resolved = self.sema.resolve_alias(lhs_ty) as i32
                 let lhs_tk = self.sema.get_type_kind(lhs_resolved)
-                if op == BinaryOp.OP_SUB and (lhs_tk == TypeKind.TY_PTR or lhs_tk == TypeKind.TY_REF):
+                if op == BinaryOp.OP_SUB and lhs_tk == TypeKind.TY_PTR:
                     if rhs_ty != 0 and rhs_ty != self.sema.ty_void as i32:
                         let rhs_resolved = self.sema.resolve_alias(rhs_ty) as i32
                         let rhs_tk = self.sema.get_type_kind(rhs_resolved)
-                        if rhs_tk == TypeKind.TY_PTR or rhs_tk == TypeKind.TY_REF:
+                        if rhs_tk == TypeKind.TY_PTR:
                             return self.sema.ty_isize as i32
-                if (op == BinaryOp.OP_ADD or op == BinaryOp.OP_SUB) and (lhs_tk == TypeKind.TY_PTR or lhs_tk == TypeKind.TY_REF):
+                if (op == BinaryOp.OP_ADD or op == BinaryOp.OP_SUB) and lhs_tk == TypeKind.TY_PTR:
                     return lhs_ty
             if rhs_ty != 0 and rhs_ty != self.sema.ty_void as i32:
                 let rhs_resolved = self.sema.resolve_alias(rhs_ty) as i32
                 let rhs_tk = self.sema.get_type_kind(rhs_resolved)
-                if op == BinaryOp.OP_ADD and (rhs_tk == TypeKind.TY_PTR or rhs_tk == TypeKind.TY_REF):
+                if op == BinaryOp.OP_ADD and rhs_tk == TypeKind.TY_PTR:
                     return rhs_ty
             if lhs_ty != 0 and lhs_ty == rhs_ty:
                 return lhs_ty
@@ -2122,7 +2162,7 @@ impl MirBuilder:
             if uop == UnaryOp.UOP_NOT:
                 return self.sema.ty_bool as i32
             if uop == UnaryOp.UOP_NEGATE or uop == UnaryOp.UOP_BIT_NOT:
-                return self.expr_type(self.ast.get_data1(node))
+                return self.deref_view_operand_type(self.expr_type(self.ast.get_data1(node)))
             if uop == UnaryOp.UOP_TRY:
                 let inner_node = self.ast.get_data1(node)
                 let inner_ty = self.expr_type(inner_node)
@@ -3170,7 +3210,7 @@ impl MirBuilder:
         // Check for enum variant without payload (None, etc.)
         if self.sema.variant_lookup.contains(sym):
             let vl_sym = if node_id != 0 and self.sema.comp_resolved.contains(node_id): self.sema.comp_resolved.get(node_id).unwrap() else: sym
-            let vl_decl_ty = if self.sema.variant_type_ids.contains(vl_sym): self.sema.variant_type_ids.get(vl_sym).unwrap() else: self.sema.variant_type_ids.get(sym).unwrap()
+            let vl_decl_ty: i32 = if self.sema.variant_type_ids.contains(vl_sym): self.sema.variant_type_ids.get(vl_sym).unwrap() else: self.sema.variant_type_ids.get(sym).unwrap()
             // #671: same guard as the constructor-call path — an ambient
             // expectation that does not carry this variant must not retype it.
             var vl_result_ty = if self.expected_type != 0 and self.sema.enum_variant_discriminant_for_type(self.expected_type, vl_sym) >= 0: self.expected_type else: type_id
@@ -3878,7 +3918,7 @@ impl MirBuilder:
         if op == BinaryOp.OP_IN or op == BinaryOp.OP_NOT_IN:
             return self.lower_membership(op, lhs_expr, rhs_expr, node)
         if self.sema.operator_method_calls.contains(node):
-            let method_sym = self.sema.operator_method_calls.get(node).unwrap()
+            let method_sym: i32 = self.sema.operator_method_calls.get(node).unwrap()
             let reversed = if self.sema.operator_method_reversed.contains(node): self.sema.operator_method_reversed.get(node).unwrap() else: 0
             if reversed != 0:
                 return self.lower_method_bin_op(rhs_expr, lhs_expr, method_sym, node)
@@ -4211,15 +4251,15 @@ impl MirBuilder:
     // TODO(D22): lower the Sema-proven transparent origin transfer for the
     // Continue payload. Compiler-generated Try temporaries do not end origins.
     mut fn lower_user_try_question_mark(expr: i32, node: i32) -> i32:
-        let branch_fn = self.sema.try_branch_fns.get(node).unwrap()
-        let from_break_fn = self.sema.try_from_break_fns.get(node).unwrap()
-        let continue_ty = self.sema.try_continue_tys.get(node).unwrap()
-        let break_ty = self.sema.try_break_tys.get(node).unwrap()
-        let branch_ty = self.sema.try_branch_result_tys.get(node).unwrap()
-        let branch_sig = self.sema.try_branch_sigs.get(node).unwrap()
-        let branch_mono_sym = self.sema.try_branch_mono_syms.get(node).unwrap()
-        let from_break_sig = self.sema.try_from_break_sigs.get(node).unwrap()
-        let from_break_mono_sym = self.sema.try_from_break_mono_syms.get(node).unwrap()
+        let branch_fn: i32 = self.sema.try_branch_fns.get(node).unwrap()
+        let from_break_fn: i32 = self.sema.try_from_break_fns.get(node).unwrap()
+        let continue_ty: i32 = self.sema.try_continue_tys.get(node).unwrap()
+        let break_ty: i32 = self.sema.try_break_tys.get(node).unwrap()
+        let branch_ty: i32 = self.sema.try_branch_result_tys.get(node).unwrap()
+        let branch_sig: i32 = self.sema.try_branch_sigs.get(node).unwrap()
+        let branch_mono_sym: i32 = self.sema.try_branch_mono_syms.get(node).unwrap()
+        let from_break_sig: i32 = self.sema.try_from_break_sigs.get(node).unwrap()
+        let from_break_mono_sym: i32 = self.sema.try_from_break_mono_syms.get(node).unwrap()
 
         let branch_args: Vec[i32] = Vec.new()
         branch_args.push(self.lower_expr(expr))
@@ -4420,7 +4460,17 @@ impl MirBuilder:
 
     mut fn lower_cast(expr: i32, target_type_id: i32, node: i32) -> i32:
         let op = self.lower_expr(expr)
-        let src_sema_ty = self.expr_type(expr)
+        // D22 contextual materialization records the cast target on its source
+        // expression. The central adjustment consumer has already copied the
+        // pointee and performed this ordinary value cast, so do not cast the
+        // exact reference a second time.
+        if self.has_contextual_copy_adjustment(expr) != 0:
+            let adjustment = self.contextual_copy_adjustment(expr)
+            if adjustment.target_type == target_type_id:
+                return op
+        var src_sema_ty = self.operand_type(op)
+        if src_sema_ty == 0 or src_sema_ty == self.sema.ty_void as i32:
+            src_sema_ty = self.expr_type(expr)
         // A cast consumes its operand only for the transparent std Box value
         // reinterpret (`self as *mut T` in into_inner/drop): the box VALUE is
         // the payload pointer, the move is real, and without reset-on-move
@@ -4486,8 +4536,8 @@ impl MirBuilder:
             // access reached codegen as `_x.*.*.f` on the Box and collapsed
             // to `i32 undef`. Mirror the unrecorded walk's payload
             // projection below: land on the payload, not the Box.
-            let rec_start = self.sema.autoderef_step_starts.get(base_expr).unwrap()
-            let rec_count = self.sema.autoderef_step_counts.get(base_expr).unwrap()
+            let rec_start: i32 = self.sema.autoderef_step_starts.get(base_expr).unwrap()
+            let rec_count: i32 = self.sema.autoderef_step_counts.get(base_expr).unwrap()
             var rec_ty = self.expr_type(base_expr)
             if rec_count > 0:
                 rec_ty = self.sema.autoderef_step_tys.get((rec_start + rec_count - 1) as i64)
@@ -4567,7 +4617,7 @@ impl MirBuilder:
         var current_ty = self.expr_type(expr)
         if not self.sema.autoderef_step_counts.contains(expr):
             return place
-        let start = self.sema.autoderef_step_starts.get(expr).unwrap()
+        let start: i32 = self.sema.autoderef_step_starts.get(expr).unwrap()
         let count = self.sema.autoderef_step_counts.get(expr).unwrap()
         for i in 0..count:
             let step_fn = self.sema.autoderef_step_fns.get((start + i) as i64)
@@ -4769,8 +4819,8 @@ impl MirBuilder:
         let args: Vec[i32] = Vec.new()
         args.push(self.body.new_operand(OperandKind.OK_COPY, set_place))
         args.push(elem_op)
-        let sig_idx = self.sema.btree_insert_sigs.get(node).unwrap()
-        let mono_sym = self.sema.btree_insert_mono_syms.get(node).unwrap()
+        let sig_idx: i32 = self.sema.btree_insert_sigs.get(node).unwrap()
+        let mono_sym: i32 = self.sema.btree_insert_mono_syms.get(node).unwrap()
         let _ = self.lower_resolved_call_with_operand_args_contract(fn_sym, args, self.sema.ty_void as i32, node, sig_idx, mono_sym)
 
     mut fn emit_btree_map_insert(map_place: i32, key_op: i32, val_op: i32, node: i32):
@@ -4783,8 +4833,8 @@ impl MirBuilder:
         args.push(self.body.new_operand(OperandKind.OK_COPY, map_place))
         args.push(key_op)
         args.push(val_op)
-        let sig_idx = self.sema.btree_insert_sigs.get(node).unwrap()
-        let mono_sym = self.sema.btree_insert_mono_syms.get(node).unwrap()
+        let sig_idx: i32 = self.sema.btree_insert_sigs.get(node).unwrap()
+        let mono_sym: i32 = self.sema.btree_insert_mono_syms.get(node).unwrap()
         let _ = self.lower_resolved_call_with_operand_args_contract(fn_sym, args, self.sema.ty_void as i32, node, sig_idx, mono_sym)
 
     mut fn lower_btree_seq_literal(node: i32, elem_ty: i32) -> i32:
@@ -5414,7 +5464,7 @@ impl MirBuilder:
         let tail_expr = self.ast.get_data2(node)
         let block_meta = self.ast.find_block_meta(node)
         let block_label = if block_meta >= 0: self.ast.block_meta_label(block_meta) else: 0
-        let labeled_after_bb = if block_label != 0: self.new_block() else: 0
+        let labeled_after_bb: BlockId = if block_label != 0: self.new_block() else: 0 as BlockId
 
         if block_label != 0:
             self.push_control_target(block_label, ControlTargetKind.CT_BLOCK, -1, labeled_after_bb, -1)
@@ -5817,6 +5867,14 @@ impl MirBuilder:
             let range_resolved = self.sema.resolve_alias(iter_ty)
             if self.sema.get_type_kind(range_resolved) == TypeKind.TY_RANGE:
                 return self.lower_for_range_var(for_node, pat_or_sym, iter_expr, body_expr, range_resolved)
+            // A binding of type &Vec[T] (e.g. the &T view yielded by an outer
+            // Drop-element loop) borrow-iterates like the syntactic `&vec` form.
+            if self.sema.get_type_kind(range_resolved) == TypeKind.TY_REF:
+                let ref_pointee = self.sema.resolve_alias(self.sema.get_type_d0(range_resolved))
+                if self.sema.get_type_kind(ref_pointee) == TypeKind.TY_GENERIC_INST:
+                    let rp_sym = self.sema.get_type_name(ref_pointee)
+                    if rp_sym != 0 and self.pool.resolve(rp_sym) == "Vec":
+                        return self.lower_for_iter_ref(for_node, pat_or_sym, iter_expr, body_expr)
 
         // Check for slice/vec-based for
         if iter_ty != 0:
@@ -5830,6 +5888,13 @@ impl MirBuilder:
                 if type_name_sym != 0:
                     let type_name = self.pool.resolve(type_name_sym)
                     if type_name == "Vec":
+                        // §13 implicit iteration borrows the collection.
+                        // Drop-class elements iterate as &T views; Copy-class
+                        // elements keep owned bindings read through the
+                        // borrowed place (lower_for_vec no longer moves it).
+                        let bare_elem = self.sema.get_generic_inst_arg(resolved as i32, 0)
+                        if self.sema.type_needs_drop_frozen(bare_elem) != 0 and self.sema.is_copy_frozen(bare_elem) == 0:
+                            return self.lower_for_iter_ref(for_node, pat_or_sym, iter_expr, body_expr)
                         return self.lower_for_vec(for_node, pat_or_sym, iter_expr, body_expr)
                     if type_name == "HashMap":
                         return self.lower_for_hashmap(for_node, pat_or_sym, iter_expr, body_expr)
@@ -5854,6 +5919,11 @@ impl MirBuilder:
                             if recv_name_sym != 0:
                                 let recv_name = self.pool.resolve(recv_name_sym)
                                 if recv_name == "Vec":
+                                    // .iter() ≡ the implicit form (§13): same
+                                    // borrow split as the bare-Vec dispatch.
+                                    let it_elem = self.sema.get_generic_inst_arg(recv_resolved as i32, 0)
+                                    if self.sema.type_needs_drop_frozen(it_elem) != 0 and self.sema.is_copy_frozen(it_elem) == 0:
+                                        return self.lower_for_iter_ref(for_node, pat_or_sym, recv, body_expr)
                                     return self.lower_for_vec(for_node, pat_or_sym, recv, body_expr)
                 if mname == "iter_ref":
                     let ir_recv_ty = self.expr_type(recv)
@@ -6673,13 +6743,21 @@ impl MirBuilder:
         self.unit_operand()
 
     mut fn lower_for_vec(for_node: i32, pat_or_sym: i32, iter_expr: i32, body_expr: i32) -> i32:
-        // for x in vec → counter loop using VEC_LEN / VEC_GET intrinsics
-        let iter_op = self.lower_expr(iter_expr)
+        // for x in vec → counter loop using VEC_LEN / VEC_GET intrinsics.
+        // §13: the implicit form borrows — a place receiver is read through
+        // its own place (no header move; the collection stays valid after the
+        // loop). Only rvalue receivers materialize an owning temp, which the
+        // enclosing statement frame drops.
         let iter_ty = self.expr_type(iter_expr)
         let elem_ty = self.sema.infer_for_element_type_frozen(iter_ty)
 
-        // Materialize vec into a local
-        let vec_place = self.materialize_operand(iter_op, iter_ty, self.ast.get_start(iter_expr))
+        let ivk = self.ast.kind(iter_expr)
+        var vec_place = 0
+        if ivk == NodeKind.NK_IDENT or ivk == NodeKind.NK_FIELD_ACCESS or ivk == NodeKind.NK_INDEX:
+            vec_place = self.lower_expr_place(iter_expr)
+        else:
+            let iter_op = self.lower_expr(iter_expr)
+            vec_place = self.materialize_operand(iter_op, iter_ty, self.ast.get_start(iter_expr))
 
         // Get length via VEC_LEN intrinsic (returns i64)
         let len_local = self.new_temp(self.sema.ty_i64)
@@ -6977,7 +7055,11 @@ impl MirBuilder:
         else:
             let vec_op = self.lower_expr(vec_expr)
             vec_place = self.materialize_operand(vec_op, vec_ty, self.ast.get_start(vec_expr))
-        let resolved_vec = self.sema.resolve_alias(vec_ty)
+        var resolved_vec = self.sema.resolve_alias(vec_ty)
+        // A &Vec[T] receiver (ref-typed binding) reads through one deref.
+        if self.sema.get_type_kind(resolved_vec) == TypeKind.TY_REF:
+            vec_place = self.new_deref_place(vec_place)
+            resolved_vec = self.sema.resolve_alias(self.sema.get_type_d0(resolved_vec))
         var ref_elem_ty = 0
         if self.sema.get_type_kind(resolved_vec) == TypeKind.TY_GENERIC_INST:
             let inner_ty = self.sema.get_generic_inst_arg(resolved_vec as i32, 0)
@@ -7380,7 +7462,7 @@ impl MirBuilder:
             var next_test_bb = self.cur_bb
             for pi in 0..p_count:
                 let alt_pat = self.ast.get_extra(p_start + pi)
-                let alt_fail = if pi + 1 < p_count: self.new_block() else: fail_bb
+                let alt_fail: BlockId = if pi + 1 < p_count: self.new_block() else: fail_bb as BlockId
                 self.switch_to(next_test_bb)
                 self.lower_pattern_match(scrutinee_place, alt_pat, arm_bb, alt_fail)
                 next_test_bb = alt_fail
@@ -7413,7 +7495,7 @@ impl MirBuilder:
         if pk == NodeKind.NK_PAT_VARIANT or pk == NodeKind.NK_PAT_ENUM_SHORTHAND:
             let variant_subject_place = self.pattern_shape_place(scrutinee_place)
             if self.sema.pattern_value_syms.contains(pat_node):
-                let value_sym = self.sema.pattern_value_syms.get(pat_node).unwrap()
+                let value_sym: i32 = self.sema.pattern_value_syms.get(pat_node).unwrap()
                 let scrutinee_ty = self.place_local_type(variant_subject_place)
                 let saved_expected = self.expected_type
                 self.expected_type = scrutinee_ty
@@ -8434,32 +8516,92 @@ impl MirBuilder:
         self.body.push_stmt(self.cur_bb, StmtKind.Assign, temp_place, rv, self.ast.get_start(arg_node))
         self.body.new_operand(OperandKind.OK_COPY, temp_place)
 
-    // D22 Stage 2 retains the already-supported call-argument lowering while
-    // consuming the new Sema record. Other owned-demand positions are lowered
-    // only in Stage 5; no MIR path re-derives Copy-ness or demand.
+    // D22 call arguments consume the same Sema record as every other
+    // owned-demand position; no MIR path re-derives Copy-ness or demand.
     mut fn lower_auto_copy_ref_call_arg(arg_node: i32, expected_ty: i32) -> i32:
         if arg_node == 0 or expected_ty == 0:
             return -1
-        if self.sema.has_contextual_copy_adjustment(arg_node) == 0:
+        if self.has_contextual_copy_adjustment(arg_node) == 0:
             return -1
-        let adjustment = self.sema.contextual_copy_adjustment(arg_node)
+        let adjustment = self.contextual_copy_adjustment(arg_node)
         if adjustment.target_type != expected_ty:
             return -1
-        var source = arg_node
-        while self.ast.kind(source) == NodeKind.NK_GROUPED or self.ast.kind(source) == NodeKind.NK_NO_SUSPEND:
-            source = self.ast.get_data0(source)
-        if self.ast.kind(source) == NodeKind.NK_UNARY and self.ast.get_data0(source) == UnaryOp.UOP_REF:
-            return self.body.new_operand(OperandKind.OK_COPY, self.lower_expr_place(self.ast.get_data1(source)))
-        let place = self.lower_expr_place(arg_node)
-        self.body.new_operand(OperandKind.OK_COPY, self.new_deref_place(place))
+        self.lower_contextual_copy_adjustment(arg_node)
+
+    // D22 Stage 5: this is the single MIR consumer for Sema's contextual-Copy
+    // adjustment. Lower the source at its exact &T type, copy through one
+    // dereference, then apply the separately-recorded ordinary value coercion.
+    // No inference, overload, dispatch, or ABI decision is repeated here.
+    mut fn lower_contextual_copy_adjustment(node: i32) -> i32:
+        if node == 0 or self.has_contextual_copy_adjustment(node) == 0:
+            return -1
+        let adjustment = self.contextual_copy_adjustment(node)
+        let saved_raw_node = self.contextual_copy_raw_node
+        let saved_expected = self.expected_type
+        self.contextual_copy_raw_node = node
+        self.expected_type = adjustment.exact_source_type
+        let reference_op = self.lower_expr(node)
+        self.expected_type = saved_expected
+        self.contextual_copy_raw_node = saved_raw_node
+
+        let reference_place = self.materialize_operand(reference_op, adjustment.exact_source_type, self.ast.get_start(node))
+        let pointee_place = self.new_deref_place(reference_place)
+        let owned_op = self.body.new_operand(OperandKind.OK_COPY, pointee_place)
+        if adjustment.post_copy_type == 0:
+            return owned_op
+
+        let rv = self.body.new_rvalue(RvalueKind.RK_CAST, owned_op, adjustment.target_type, adjustment.owned_value_type)
+        let temp = self.new_temp(adjustment.target_type)
+        let place = self.place_for_local(temp)
+        self.body.push_stmt(self.cur_bb, StmtKind.Assign, place, rv, self.ast.get_start(node))
+        self.body.new_operand(OperandKind.OK_COPY, place)
+
+    fn contextual_join_arm_index_for_role(join_node: i32, role: i32) -> i32:
+        if self.has_contextual_join_decision(join_node) == 0:
+            return -1
+        let decision = self.contextual_join_decision(join_node)
+        for offset in 0..decision.arm_count:
+            let index = decision.arm_start + offset
+            if self.sema.contextual_join_arm_roles.get(index as i64) == role:
+                return index
+        -1
+
+    // Synthetic carrier/lazy arms have no ordinary AST expression on which
+    // lower_expr can consume an adjustment. Read their exact type and arm kind
+    // from Sema's join decision, then perform precisely that recorded action.
+    mut fn lower_contextual_join_place_arm(join_node: i32, role: i32, exact_place: i32, span: i32) -> i32:
+        let arm_index = self.contextual_join_arm_index_for_role(join_node, role)
+        if arm_index < 0:
+            self.mark_unsupported()
+            return self.unit_operand()
+        let decision = self.contextual_join_decision(join_node)
+        let exact_type = self.sema.contextual_join_arm_types.get(arm_index as i64)
+        let arm_kind = self.sema.contextual_join_arm_kinds.get(arm_index as i64)
+        var source_type = exact_type
+        var op = self.operand_for_place(exact_place, exact_type)
+        if arm_kind == D22_JOIN_ARM_MATERIALIZED_REF:
+            let resolved = self.sema.resolve_alias(exact_type as TypeId)
+            if self.sema.get_type_kind(resolved) != TypeKind.TY_REF:
+                self.mark_unsupported()
+                return self.unit_operand()
+            source_type = self.sema.get_type_d0(resolved)
+            op = self.body.new_operand(OperandKind.OK_COPY, self.new_deref_place(exact_place))
+
+        if self.sema.resolve_alias(source_type as TypeId) == self.sema.resolve_alias(decision.final_type as TypeId):
+            return op
+        let rv = self.body.new_rvalue(RvalueKind.RK_CAST, op, decision.final_type, source_type)
+        let temp = self.new_temp(decision.final_type)
+        let place = self.place_for_local(temp)
+        self.body.push_stmt(self.cur_bb, StmtKind.Assign, place, rv, span)
+        self.body.new_operand(OperandKind.OK_COPY, place)
 
     mut fn lower_auto_deref_call_arg(arg_node: i32, expected_ty: i32) -> i32:
         if arg_node == 0 or expected_ty == 0:
             return -1
         if self.sema.autoderef_step_counts.contains(arg_node):
             let place = self.lower_recorded_autoderef_place(arg_node)
-            let start = self.sema.autoderef_step_starts.get(arg_node).unwrap()
-            let count = self.sema.autoderef_step_counts.get(arg_node).unwrap()
+            let start: i32 = self.sema.autoderef_step_starts.get(arg_node).unwrap()
+            let count: i32 = self.sema.autoderef_step_counts.get(arg_node).unwrap()
             var final_ty = self.expr_type(arg_node)
             if count > 0:
                 final_ty = self.sema.autoderef_step_tys.get((start + count - 1) as i64)
@@ -8532,6 +8674,8 @@ impl MirBuilder:
         self.operand_for_place_arg(place, actual, expected, self.ast.get_start(recv_node))
 
     mut fn lower_receiver_with_method_autoderef_for_method(recv_node: i32, method_sym: i32) -> i32:
+        if self.has_contextual_copy_adjustment(recv_node) != 0:
+            return self.lower_contextual_copy_adjustment(recv_node)
         if method_sym == 0:
             return self.lower_receiver_with_method_autoderef(recv_node)
         let sema_method_sym = self.sema.pool_lookup_symbol(self.pool.resolve_symbol(method_sym))
@@ -9102,7 +9246,7 @@ impl MirBuilder:
             if enum_accessor_recv_type != 0 and self.sema.type_has_drop_impl(enum_accessor_recv_type) != 0:
                 return self.lower_drop_glue_and_consume(self_expr, "explicit.drop", node)
 
-        if self.is_option_type(enum_accessor_recv_type) != 0 and (method_name == "map" or method_name == "and_then" or method_name == "or_else" or method_name == "filter" or method_name == "inspect" or method_name == "cloned"):
+        if self.is_option_type(enum_accessor_recv_type) != 0 and (method_name == "map" or method_name == "and_then" or method_name == "or_else" or method_name == "filter" or method_name == "inspect" or method_name == "copied" or method_name == "cloned"):
             return self.lower_option_combinator_method(self_expr, method_name, arg_start, arg_count, node)
 
         if self.is_option_type(enum_accessor_recv_type) != 0 and method_name == "zip":
@@ -9200,15 +9344,17 @@ impl MirBuilder:
         // method instead of looking for an eager function body.
         // Route through MirIntrinsic.GENERIC_CALL so codegen's gen_call handles it
         // (disc enums, from_int, Option methods, concrete/generic struct methods, etc.).
-        let recorded_method_sig = self.sema.resolved_call_sigs.get(node)
+        let recorded_method_sig_opt = self.sema.resolved_call_sigs.get(node)
+        let has_recorded_method_sig = recorded_method_sig_opt.is_some()
+        let recorded_method_sig: i32 = if has_recorded_method_sig: recorded_method_sig_opt.unwrap() else: -1
         // Machinery-vs-user classification lives in
         // require_generic_call_contract (the single decision point); here we
         // only need "did sema record a signature" to pick the lowering arm.
-        let method_is_unresolved = callee_sym == method_sym and not recorded_method_sig.is_some()
+        let method_is_unresolved = callee_sym == method_sym and not has_recorded_method_sig
         if method_is_unresolved or self.sym_is_generic_fn(callee_sym):
                 let gc_fn_op = self.const_operand(ConstKind.CK_FN, callee_sym, 0)
                 let gc_args: Vec[i32] = Vec.new()
-                let gc_sig_idx = if recorded_method_sig.is_some(): recorded_method_sig.unwrap() else: self.call_sig_for_sym(callee_sym)
+                let gc_sig_idx = if has_recorded_method_sig: recorded_method_sig else: self.call_sig_for_sym(callee_sym)
                 // Lower self + method args so the handler can eval them.
                 // Skip receiver for static calls (type name, not value expression).
                 var gc_is_static = false
@@ -9226,7 +9372,9 @@ impl MirBuilder:
                             gc_is_static = true
                 if not gc_is_static:
                     let gc_recv_op =
-                        if self.callee_has_move_self(callee_sym):
+                        if self.has_contextual_copy_adjustment(self_expr) != 0:
+                            self.lower_contextual_copy_adjustment(self_expr)
+                        else if self.callee_has_move_self(callee_sym):
                             let gc_recv_place = self.lower_expr_place(self_expr)
                             self.body.new_operand(OperandKind.OK_MOVE, gc_recv_place)
                         else:
@@ -9245,7 +9393,7 @@ impl MirBuilder:
                         gc_args.push(self.const_operand(ConstKind.CK_INT, 0, self.sema.ty_i32))
                 let gc_args_id = self.body.new_call_args(gc_args)
                 self.body.set_call_intrinsic(gc_args_id, MirIntrinsic.GENERIC_CALL)
-                self.require_generic_call_contract(gc_args_id, callee_sym, method_sym, self_expr, recorded_method_sig.is_some(), "method-gc")
+                self.require_generic_call_contract(gc_args_id, callee_sym, method_sym, self_expr, has_recorded_method_sig, "method-gc")
                 self.body.set_call_ast_node(gc_args_id, node)
                 self.record_call_contract(gc_args_id, node, gc_sig_idx)
                 var gc_ret_ty = self.method_call_result_type(node)
@@ -9284,7 +9432,9 @@ impl MirBuilder:
         // self` and legacy unflagged `self: T`) keep the plain-arg move path.
         var recv_op = -1
         if not is_static_call:
-            if self.callee_has_mut_self(callee_sym):
+            if self.has_contextual_copy_adjustment(self_expr) != 0:
+                recv_op = self.lower_contextual_copy_adjustment(self_expr)
+            else if self.callee_has_mut_self(callee_sym):
                 recv_op = self.lower_receiver_with_method_autoderef_for_method(self_expr, method_sym)
             else if self.callee_has_move_self(callee_sym) and self.ast.kind(self_expr) == NodeKind.NK_IDENT and self.lookup_local(self.ast.get_data0(self_expr)) >= 0:
                 // §9.5/#D5: a `move self` receiver that is a caller-owned LOCAL is
@@ -9341,7 +9491,9 @@ impl MirBuilder:
                 let raw_pointer_option_receiver = recv_kind == TypeKind.TY_PTR and (intrinsic == MirIntrinsic.OPT_UNWRAP or intrinsic == MirIntrinsic.OPT_EXPECT or intrinsic == MirIntrinsic.OPT_IS_SOME or intrinsic == MirIntrinsic.OPT_IS_NONE or intrinsic == MirIntrinsic.OPT_FILTER)
                 var recv_op = 0
                 let recv_owner = self.sema.method_owner_symbol_for_type(recv_type_for_args)
-                if recv_owner != 0 and self.sema.builtin_method_requires_move_receiver(recv_owner, method_sym) != 0:
+                if self.has_contextual_copy_adjustment(self_expr) != 0:
+                    recv_op = self.lower_contextual_copy_adjustment(self_expr)
+                else if recv_owner != 0 and self.sema.builtin_method_requires_move_receiver(recv_owner, method_sym) != 0:
                     let recv_place = self.lower_expr_place(self_expr)
                     recv_op = self.body.new_operand(OperandKind.OK_MOVE, recv_place)
                 else if raw_pointer_option_receiver:
@@ -9777,6 +9929,11 @@ impl MirBuilder:
         let value_op = self.lower_expr(expr)
         let value_ty = self.expr_type(expr)
         let value_place = self.materialize_operand(value_op, value_ty, self.ast.get_start(expr))
+        let carrier_arm = self.contextual_join_arm_index_for_role(node, D22_JOIN_ROLE_CARRIER_PAYLOAD)
+        if carrier_arm < 0:
+            self.mark_unsupported()
+            return self.unit_operand()
+        let payload_ty = self.sema.contextual_join_arm_types.get(carrier_arm as i64)
 
         let some_bb = self.new_block()
         let none_bb = self.new_block()
@@ -9800,8 +9957,8 @@ impl MirBuilder:
 
         self.switch_to(some_bb)
         let downcast_place = self.body.new_downcast_place(value_place, self.success_variant_index(), value_ty)
-        let payload_place = self.body.new_field_place(downcast_place, 0, result_ty)
-        let some_op = self.body.new_operand(if self.sema.is_copy_frozen(result_ty) != 0: OperandKind.OK_COPY else: OperandKind.OK_MOVE, payload_place)
+        let payload_place = self.body.new_field_place(downcast_place, 0, payload_ty)
+        let some_op = self.lower_contextual_join_place_arm(node, D22_JOIN_ROLE_CARRIER_PAYLOAD, payload_place, self.ast.get_start(expr))
         self.assign_operand_to_place(result_place, some_op, self.ast.get_start(expr))
         self.terminate(TermKind.TK_GOTO, join_bb, 0, 0, 0)
 
@@ -10107,18 +10264,19 @@ impl MirBuilder:
     mut fn clone_or_copy_place(payload_place: i32, payload_ty: i32, node: i32) -> i32:
         if self.sema.is_copy_frozen(payload_ty) != 0:
             return self.operand_for_place(payload_place, payload_ty)
-        let resolved = self.sema.resolve_alias(payload_ty)
-        let type_sym = self.sema.get_type_name(resolved)
-        let clone_sym = self.pool.intern("clone")
-        let clone_fn = if type_sym != 0: self.sema.lookup_method_fn(type_sym, clone_sym) else: 0
-        if clone_fn == 0:
+        let clone_fn_opt = self.sema.clone_contract_fns.get(node)
+        let clone_sig_opt = self.sema.clone_contract_sigs.get(node)
+        let clone_mono_opt = self.sema.clone_contract_mono_syms.get(node)
+        if clone_fn_opt.is_none() or clone_sig_opt.is_none() or clone_mono_opt.is_none():
             self.mark_unsupported()
             return self.operand_for_place(payload_place, payload_ty)
-        let sig_idx = self.sema.lookup_method_sig(type_sym, clone_sym)
-        let expected = if sig_idx >= 0 and self.sema.sig_get_param_count(sig_idx) > 0: self.sema.sig_param_type(sig_idx, 0) else: 0
+        let clone_fn: i32 = clone_fn_opt.unwrap()
+        let sig_idx: i32 = clone_sig_opt.unwrap()
+        let mono_sym: i32 = clone_mono_opt.unwrap()
+        let expected = if self.sema.sig_get_param_count(sig_idx) > 0: self.sema.sig_param_type(sig_idx, 0) else: 0
         let args: Vec[i32] = Vec.new()
         args.push(self.operand_for_place_arg(payload_place, payload_ty, expected, self.ast.get_start(node)))
-        self.lower_resolved_call_with_operand_args(clone_fn, args, payload_ty, node)
+        self.lower_resolved_call_with_operand_args_contract(clone_fn, args, payload_ty, node, sig_idx, mono_sym)
 
     mut fn lower_option_flatten_method(self_expr: i32, arg_count: i32, node: i32) -> i32:
         if arg_count != 0:
@@ -10496,12 +10654,9 @@ impl MirBuilder:
         self.forget_string_flow_facts()
         self.operand_for_place(result_place, result_ty)
 
-    // TODO(D22): cloned/copied are explicit ownership boundaries specifically
-    // for Option[&T]. Lower the pointee operation selected by Sema and end the
-    // origin only on the successful owned result. The current cloned branch is
-    // the pre-D22 Option[T] behavior.
     mut fn lower_option_combinator_method(self_expr: i32, method_name: str, arg_start: i32, arg_count: i32, node: i32) -> i32:
-        if method_name == "cloned":
+        let explicit_owner = method_name == "copied" or method_name == "cloned"
+        if explicit_owner:
             if arg_count != 0:
                 self.mark_unsupported()
                 return self.unit_operand()
@@ -10519,9 +10674,9 @@ impl MirBuilder:
             self.mark_unsupported()
             return self.unit_operand()
 
-        let value_place = if method_name == "cloned": self.lower_expr_place(self_expr) else: self.lower_owned_receiver_place(self_expr, value_ty)
+        let value_place = if explicit_owner: self.lower_expr_place(self_expr) else: self.lower_owned_receiver_place(self_expr, value_ty)
         var mapper_op = 0
-        if method_name != "cloned":
+        if not explicit_owner:
             mapper_op = self.lower_expr(self.ast.get_extra(arg_start))
 
         let some_bb = self.new_block()
@@ -10598,8 +10753,13 @@ impl MirBuilder:
                 inspect_args.push(self.operand_for_place_arg(payload_place, payload_ty, ref_ty, span))
                 let _ = self.lower_call_with_operand_args(mapper_op, inspect_args, self.sema.ty_void as i32, node)
                 payload_op = self.operand_for_place(payload_place, payload_ty)
-            else if method_name == "cloned":
-                payload_op = self.clone_or_copy_place(payload_place, payload_ty, node)
+            else if explicit_owner:
+                let owned_payload_ty = self.generic_inst_arg_type(result_ty, self.sema.syms.option, 0)
+                let pointee_place = self.new_deref_place(payload_place)
+                if method_name == "copied":
+                    payload_op = self.body.new_operand(OperandKind.OK_COPY, pointee_place)
+                else:
+                    payload_op = self.clone_or_copy_place(pointee_place, owned_payload_ty, node)
             else:
                 payload_op = self.operand_for_place(payload_place, payload_ty)
             let some_fields: Vec[i32] = Vec.new()
@@ -10751,6 +10911,11 @@ impl MirBuilder:
     mut fn lower_unwrap_or_method(self_expr: i32, arg_start: i32, arg_count: i32, node: i32) -> i32:
         let value_ty = self.expr_type(self_expr)
         let value_place = self.lower_owned_receiver_place(self_expr, value_ty)
+        let carrier_arm = self.contextual_join_arm_index_for_role(node, D22_JOIN_ROLE_CARRIER_PAYLOAD)
+        if carrier_arm < 0:
+            self.mark_unsupported()
+            return self.unit_operand()
+        let payload_ty = self.sema.contextual_join_arm_types.get(carrier_arm as i64)
 
         let some_bb = self.new_block()
         let none_bb = self.new_block()
@@ -10787,8 +10952,8 @@ impl MirBuilder:
 
         self.switch_to(some_bb)
         let downcast_place = self.body.new_downcast_place(value_place, self.success_variant_index(), value_ty)
-        let payload_place = self.body.new_field_place(downcast_place, 0, result_ty)
-        let some_op = self.body.new_operand(if self.sema.is_copy_frozen(result_ty) != 0: OperandKind.OK_COPY else: OperandKind.OK_MOVE, payload_place)
+        let payload_place = self.body.new_field_place(downcast_place, 0, payload_ty)
+        let some_op = self.lower_contextual_join_place_arm(node, D22_JOIN_ROLE_CARRIER_PAYLOAD, payload_place, self.ast.get_start(self_expr))
         self.assign_operand_to_place(result_place, some_op, self.ast.get_start(self_expr))
         self.terminate(TermKind.TK_GOTO, join_bb, 0, 0, 0)
 
@@ -10819,6 +10984,13 @@ impl MirBuilder:
         let span = self.ast.get_start(node)
         let value_place = self.lower_owned_receiver_place(self_expr, value_ty)
         let fallback_op = self.lower_expr(self.ast.get_extra(arg_start))
+        let carrier_arm = self.contextual_join_arm_index_for_role(node, D22_JOIN_ROLE_CARRIER_PAYLOAD)
+        let lazy_arm = self.contextual_join_arm_index_for_role(node, D22_JOIN_ROLE_LAZY_RESULT)
+        if carrier_arm < 0 or lazy_arm < 0:
+            self.mark_unsupported()
+            return self.unit_operand()
+        let payload_ty = self.sema.contextual_join_arm_types.get(carrier_arm as i64)
+        let lazy_ty = self.sema.contextual_join_arm_types.get(lazy_arm as i64)
 
         let success_bb = self.new_block()
         let failure_bb = self.new_block()
@@ -10836,8 +11008,8 @@ impl MirBuilder:
 
         self.switch_to(success_bb)
         let success_downcast = self.body.new_downcast_place(value_place, self.success_variant_index(), value_ty)
-        let success_payload_place = self.body.new_field_place(success_downcast, 0, result_ty)
-        let success_payload_op = self.operand_for_place(success_payload_place, result_ty)
+        let success_payload_place = self.body.new_field_place(success_downcast, 0, payload_ty)
+        let success_payload_op = self.lower_contextual_join_place_arm(node, D22_JOIN_ROLE_CARRIER_PAYLOAD, success_payload_place, span)
         self.assign_operand_to_place(result_place, success_payload_op, span)
         self.terminate(TermKind.TK_GOTO, join_bb, 0, 0, 0)
 
@@ -10852,7 +11024,9 @@ impl MirBuilder:
             let err_downcast = self.body.new_downcast_place(value_place, err_idx, value_ty)
             let err_payload_place = self.body.new_field_place(err_downcast, 0, err_ty)
             call_args.push(self.operand_for_place(err_payload_place, err_ty))
-        let default_op = self.lower_call_with_operand_args(fallback_op, call_args, result_ty, node)
+        let lazy_exact_op = self.lower_call_with_operand_args(fallback_op, call_args, lazy_ty, node)
+        let lazy_exact_place = self.materialize_operand(lazy_exact_op, lazy_ty, span)
+        let default_op = self.lower_contextual_join_place_arm(node, D22_JOIN_ROLE_LAZY_RESULT, lazy_exact_place, span)
         self.assign_operand_to_place(result_place, default_op, span)
         self.terminate(TermKind.TK_GOTO, join_bb, 0, 0, 0)
 
@@ -10874,13 +11048,13 @@ impl MirBuilder:
         let name = decode_with_binding_sym(encoded)
         let is_mut = decode_with_binding_is_mut(encoded)
         let source_ty = self.expr_type(source)
-        let payload_ty = self.sema.with_payload_types.get(node).unwrap()
-        let enter_fn = self.sema.with_enter_methods.get(node).unwrap()
-        let exit_fn = self.sema.with_exit_methods.get(node).unwrap()
-        let enter_sig = self.sema.with_enter_sigs.get(node).unwrap()
-        let enter_mono_sym = self.sema.with_enter_mono_syms.get(node).unwrap()
-        let exit_sig = self.sema.with_exit_sigs.get(node).unwrap()
-        let exit_mono_sym = self.sema.with_exit_mono_syms.get(node).unwrap()
+        let payload_ty: i32 = self.sema.with_payload_types.get(node).unwrap()
+        let enter_fn: i32 = self.sema.with_enter_methods.get(node).unwrap()
+        let exit_fn: i32 = self.sema.with_exit_methods.get(node).unwrap()
+        let enter_sig: i32 = self.sema.with_enter_sigs.get(node).unwrap()
+        let enter_mono_sym: i32 = self.sema.with_enter_mono_syms.get(node).unwrap()
+        let exit_sig: i32 = self.sema.with_exit_sigs.get(node).unwrap()
+        let exit_mono_sym: i32 = self.sema.with_exit_mono_syms.get(node).unwrap()
         let span = self.ast.get_start(node)
 
         self.push_scope()
@@ -11273,11 +11447,13 @@ impl MirBuilder:
     mut fn lower_resolved_call_with_operand_args_contract(fn_sym: i32, args: Vec[i32], ret_type: i32, node: i32, explicit_sig: i32, explicit_mono_sym: i32, require_contract: bool = true) -> i32:
         let fn_op = self.lower_var(fn_sym, 0, node)
         var sig_idx = self.call_sig_for_sym(fn_sym)
-        let recorded_sig = self.sema.resolved_call_sigs.get(node)
+        let recorded_sig_opt = self.sema.resolved_call_sigs.get(node)
+        let has_recorded_sig = recorded_sig_opt.is_some()
+        let recorded_sig: i32 = if has_recorded_sig: recorded_sig_opt.unwrap() else: -1
         if explicit_sig >= 0:
             sig_idx = explicit_sig
-        else if recorded_sig.is_some():
-            sig_idx = recorded_sig.unwrap()
+        else if has_recorded_sig:
+            sig_idx = recorded_sig
         for ai in 0..args.len() as i32:
             if sig_idx < 0 or self.sema.sig_param_uses_value_ref_abi(sig_idx, ai) == 0:
                 self.consume_moved_operand(args.get(ai as i64))
@@ -11295,7 +11471,7 @@ impl MirBuilder:
             // contract can exist for it (behav_rc_arc_basic's auto-deref
             // stratum). Ordinary generic calls keep the requirement.
             if require_contract:
-                self.require_generic_call_contract(args_id, fn_sym, 0, 0, explicit_sig >= 0 or recorded_sig.is_some(), "operand-args")
+                self.require_generic_call_contract(args_id, fn_sym, 0, 0, explicit_sig >= 0 or has_recorded_sig, "operand-args")
         let result_local = self.new_temp(ret_type)
         let result_place = self.place_for_local(result_local)
         let next_bb = self.new_block()
@@ -11370,7 +11546,7 @@ impl MirBuilder:
 
     mut fn lower_pipeline(lhs_expr: i32, fn_expr: i32, args_start: i32, args_count: i32, node: i32) -> i32:
         if self.sema.pipeline_method_calls.contains(node):
-            let method_sym = self.sema.pipeline_method_calls.get(node).unwrap()
+            let method_sym: i32 = self.sema.pipeline_method_calls.get(node).unwrap()
             if self.sema.pipeline_carrier_kinds.contains(node) and self.sema.pipeline_carrier_kinds.get(node).unwrap() != 0:
                 let recv_place = self.lower_expr_place(lhs_expr)
                 let call_count_before = self.body.call_arg_starts.len() as i32
@@ -11495,6 +11671,9 @@ impl MirBuilder:
     mut fn lower_expr(node: i32) -> i32:
         if node == 0:
             return self.unit_operand()
+
+        if node != self.contextual_copy_raw_node and self.has_contextual_copy_adjustment(node) != 0:
+            return self.lower_contextual_copy_adjustment(node)
 
         if node == self.pipeline_receiver_override_node and self.pipeline_receiver_override_place >= 0:
             return self.body.new_operand(OperandKind.OK_COPY, self.pipeline_receiver_override_place)
@@ -11642,7 +11821,7 @@ impl MirBuilder:
             if self.ast.kind(fa_base) == NodeKind.NK_IDENT:
                 let fa_base_sym = self.ast.get_data0(fa_base)
                 if self.sema.named_types.contains(fa_base_sym):
-                    let fa_base_ty = self.sema.named_types.get(fa_base_sym).unwrap()
+                    let fa_base_ty: i32 = self.sema.named_types.get(fa_base_sym).unwrap()
                     let fa_resolved = self.sema.resolve_alias(fa_base_ty)
                     let fa_tk = self.sema.get_type_kind(fa_resolved)
                     if fa_tk == TypeKind.TY_ENUM:
@@ -11950,7 +12129,7 @@ impl MirBuilder:
             if self.ast.kind(callee) == NodeKind.NK_IDENT:
                 let dt_sym = self.ast.get_data0(callee)
                 if self.sema.distinct_type_names.contains(dt_sym):
-                    let dt_tid = self.sema.distinct_type_names.get(dt_sym).unwrap()
+                    let dt_tid: i32 = self.sema.distinct_type_names.get(dt_sym).unwrap()
                     let dt_args_start = self.ast.get_data1(node)
                     let dt_args_count = self.ast.get_data2(node)
                     if dt_args_count == 1:
@@ -12072,7 +12251,7 @@ impl MirBuilder:
             let body = self.ast.get_data1(node)
             let name = decode_with_binding_sym(self.ast.get_data2(node))
             if self.sema.with_form_kinds.contains(node):
-                let form = self.sema.with_form_kinds.get(node).unwrap()
+                let form: i32 = self.sema.with_form_kinds.get(node).unwrap()
                 if form == WithFormKind.Guarded or form == WithFormKind.GuardedMut:
                     return self.lower_with_guarded(node)
             if name != 0:
@@ -12122,7 +12301,7 @@ impl MirBuilder:
                 if self.sema.type_needs_drop_frozen(f_ty) != 0:
                     self.consume_moved_operand(f_op)
             if self.sema.type_decl_nodes.contains(sl_name_sym):
-                let sl_td_node = self.sema.type_decl_nodes.get(sl_name_sym).unwrap()
+                let sl_td_node: i32 = self.sema.type_decl_nodes.get(sl_name_sym).unwrap()
                 let sl_td_extra = self.ast.get_data1(sl_td_node)
                 let sl_td_packed = self.ast.get_data2(sl_td_node)
                 if type_decl_sub_kind(sl_td_packed) == TypeDeclKind.Struct:
@@ -12403,7 +12582,7 @@ impl MirBuilder:
             let inner = self.ast.get_data0(node)
             let selected_opt = self.sema.comptime_selected_branches.get(node)
             if selected_opt.is_some():
-                let selected = selected_opt.unwrap()
+                let selected: i32 = selected_opt.unwrap()
                 if selected != 0:
                     return self.lower_expr(selected)
                 return self.unit_operand()
@@ -12709,6 +12888,7 @@ fn mir_symbol_for_pool(sema: &Sema, pool: InternPool, sym: i32) -> i32:
     sym
 
 fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody:
+    builder.contextual_fact_sig_idx = sig_idx
     let fn_flags = builder.ast.get_data2(fn_node)
     if sig_idx >= 0:
         var body_ret_ty = builder.sema.sig_return_type(sig_idx)

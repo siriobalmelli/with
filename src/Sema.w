@@ -367,11 +367,34 @@ fn sema_effect_bits_text(bits: i32) -> str:
 // after any ordinary value coercion. A differing `post_copy_type` records that
 // final coercion explicitly for later MIR/backend consumption.
 type ContextualCopyAdjustment {
+    context_sig: i32,
     source_node: i32,
     exact_source_type: i32,
     owned_value_type: i32,
     target_type: i32,
     post_copy_type: i32,
+}
+
+// D22 Stage 3: one order-independent semantic decision for a multi-expression
+// join. Arm details live in the parallel contextual_join_arm_* vectors so MIR
+// and diagnostics consume the same classification instead of re-running type
+// inference. `origin_mask`/origin deps record the origins visible at this
+// stage; Stage 4 makes transparent-carrier propagation complete.
+type ContextualJoinDecision {
+    context_sig: i32,
+    join_node: i32,
+    expected_type: i32,
+    final_type: i32,
+    arm_start: i32,
+    arm_count: i32,
+    expected_is_anchor: i32,
+    owned_anchor_count: i32,
+    materialized_count: i32,
+    view_count: i32,
+    diverging_count: i32,
+    origin_mask: i32,
+    origin_start: i32,
+    origin_count: i32,
 }
 
 type Sema {
@@ -844,6 +867,13 @@ type Sema {
     // use resolved_call_*: the anchor expression may itself be a generic call.
     btree_insert_sigs: HashMap[i32, i32],
     btree_insert_mono_syms: HashMap[i32, i32],
+    // Compiler-synthesized Clone calls (currently Option[&T].cloned()).
+    // The source node names the builtin eliminator, not the payload's clone
+    // method, so resolved_call_* cannot carry both contracts. Sema resolves
+    // and specializes the payload method once; MIR consumes this sidecar.
+    clone_contract_fns: HashMap[i32, i32],
+    clone_contract_sigs: HashMap[i32, i32],
+    clone_contract_mono_syms: HashMap[i32, i32],
     // Auto-deref adjustment sidecar: expression node -> contiguous step range.
     // Step fn 0 means builtin &/* deref; non-zero is a user Deref.deref fn.
     autoderef_step_starts: HashMap[i32, i32],
@@ -855,8 +885,18 @@ type Sema {
     // D22 Stage 2 contextual-Copy decisions. The node map indexes the single
     // structured record consumed by later stages; expression type inference
     // never reads this sidecar and therefore remains exact.
-    contextual_copy_adjustment_indices: HashMap[i32, i32],
+    contextual_copy_adjustment_indices: HashMap[i64, i32],
     contextual_copy_adjustments: Vec[ContextualCopyAdjustment],
+    // D22 Stage 3 contextual-join decisions. Roles distinguish ordinary AST
+    // expressions from synthetic carrier payloads and lazy fallback results.
+    contextual_join_decision_indices: HashMap[i64, i32],
+    contextual_join_decisions: Vec[ContextualJoinDecision],
+    contextual_join_arm_nodes: Vec[i32],
+    contextual_join_arm_origin_nodes: Vec[i32],
+    contextual_join_arm_types: Vec[i32],
+    contextual_join_arm_kinds: Vec[i32],
+    contextual_join_arm_roles: Vec[i32],
+    contextual_join_origin_deps: Vec[i32],
     // #604 stage 1: >0 while resolving a function-signature parameter type —
     // the only position where `[]mut T` is legal in this release.
     in_param_type_position: i32,
@@ -1972,11 +2012,22 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         try_from_break_mono_syms: sema_new_map_i32_i32(),
         btree_insert_sigs: sema_new_map_i32_i32(),
         btree_insert_mono_syms: sema_new_map_i32_i32(),
+        clone_contract_fns: sema_new_map_i32_i32(),
+        clone_contract_sigs: sema_new_map_i32_i32(),
+        clone_contract_mono_syms: sema_new_map_i32_i32(),
         autoderef_step_starts: sema_new_map_i32_i32(),
         autoderef_step_counts: sema_new_map_i32_i32(),
         slice_coerce_args: sema_new_map_i32_i32(),
-        contextual_copy_adjustment_indices: sema_new_map_i32_i32(),
+        contextual_copy_adjustment_indices: sema_new_map_i64_i32(),
         contextual_copy_adjustments: Vec.new(),
+        contextual_join_decision_indices: sema_new_map_i64_i32(),
+        contextual_join_decisions: Vec.new(),
+        contextual_join_arm_nodes: Vec.new(),
+        contextual_join_arm_origin_nodes: Vec.new(),
+        contextual_join_arm_types: Vec.new(),
+        contextual_join_arm_kinds: Vec.new(),
+        contextual_join_arm_roles: Vec.new(),
+        contextual_join_origin_deps: Vec.new(),
         in_param_type_position: 0,
         autoderef_step_fns: Vec.new(),
         autoderef_step_tys: Vec.new(),
@@ -2432,8 +2483,8 @@ impl Sema:
         let cache_key = sema_visibility_cache_key(self.current_module_path, target_path)
         if self.module_visibility_cache.contains(cache_key):
             return self.module_visibility_cache.get(cache_key).unwrap()
-        let start_idx = self.module_index_by_path.get(self.current_module_path).unwrap()
-        let target_idx = self.module_index_by_path.get(target_path).unwrap()
+        let start_idx: i32 = self.module_index_by_path.get(self.current_module_path).unwrap()
+        let target_idx: i32 = self.module_index_by_path.get(target_path).unwrap()
         if start_idx == target_idx:
             self.module_visibility_cache.insert(sema_owned_text(cache_key), 1)
             return 1
@@ -3196,10 +3247,12 @@ impl Sema:
                 continue
             let te_start = self.type_d1.get(ti as i64)
             if self.type_extra_matches(te_start, args, arg_count) != 0:
-                // interior-mut cache: HashMap is a stable heap handle, so inserting
-                // through a copy of the handle keeps `self` a read borrow (D7).
-                var gic = self.generic_inst_cache
-                gic.insert(key, ti)
+                // Interior-mut cache memoization. HashMap is an owning D22
+                // handle, so copying the field would move it out of self (the
+                // old D7 handle-copy trick blanks the field under #691).
+                // Reborrow as an explicit raw place like drop_method_cache.
+                let gic = &raw const self.generic_inst_cache as *const HashMap[i64, i32] as *mut HashMap[i64, i32]
+                unsafe { (*gic).insert(key, ti) }
                 return ti as TypeId
         0 as TypeId
 
@@ -3632,6 +3685,24 @@ fn sema_node_is_numeric_literal(ast: AstPool, node: i32) -> bool:
     let kind = ast.kind(node)
     kind == NodeKind.NK_INT_LIT or kind == NodeKind.NK_FLOAT_LIT
 
+// A bitwise operand written as an int literal under grouping and `~` wrappers
+// (`(~1)`, `~0x3c`) adapts to the other operand's integer type exactly like a
+// bare literal; the mixed-signedness rule is for concretely typed operands.
+fn sema_node_is_bitwise_adaptable_literal(ast: AstPool, node: i32) -> bool:
+    var cur = node
+    while cur != 0:
+        let kind = ast.kind(cur)
+        if kind == NodeKind.NK_INT_LIT:
+            return true
+        if kind == NodeKind.NK_GROUPED:
+            cur = ast.get_data0(cur)
+            continue
+        if kind == NodeKind.NK_UNARY and ast.get_data0(cur) == UnaryOp.UOP_BIT_NOT:
+            cur = ast.get_data1(cur)
+            continue
+        return false
+    false
+
 impl Sema:
     fn is_option_pointer_type(tid: i32) -> i32:
         if tid <= 0:
@@ -3937,7 +4008,7 @@ impl Sema:
         if not existing.is_some():
             self.scope_insert_at(sym, tid, is_mut)
             return 1
-        let idx = existing.unwrap()
+        let idx: i32 = existing.unwrap()
         let current_start = if self.scope_starts.len() > 0: self.scope_starts.get((self.scope_starts.len() - 1) as i64) else: 0
         if idx < current_start or self.bind_states.get(idx as i64) != VarState.MOVED:
             let name = self.pool_resolve(sym)
@@ -3981,7 +4052,7 @@ impl Sema:
             self.global_value_decl_kinds.insert(sym, decl_kind)
             return
 
-        let existing_idx = existing_opt.unwrap()
+        let existing_idx: i32 = existing_opt.unwrap()
         let existing_kind = self.global_value_decl_kind(sym)
         if existing_kind == 0:
             let name = self.pool_resolve(sym)
@@ -4020,7 +4091,8 @@ impl Sema:
     fn scope_update_type(sym: i32, tid: i32):
         let opt = self.scope_name_map.get(sym)
         if opt.is_some():
-            self.bind_types.set_i32(opt.unwrap() as i64, tid)
+            let idx: i32 = opt.unwrap()
+            self.bind_types.set_i32(idx as i64, tid)
         for ii in 0..self.implicit_binding_syms.len() as i32:
             if self.implicit_binding_syms.get(ii as i64) == sym:
                 self.implicit_binding_types.set_i32(ii as i64, tid)
@@ -4146,7 +4218,8 @@ impl Sema:
     fn scope_mark_task_used(sym: i32):
         let opt = self.scope_name_map.get(sym)
         if opt.is_some():
-            self.bind_task_used.set_i32(opt.unwrap() as i64, 1)
+            let idx: i32 = opt.unwrap()
+            self.bind_task_used.set_i32(idx as i64, 1)
 
     fn scope_lookup_task_used(sym: i32) -> i32:
         let opt = self.scope_name_map.get(sym)
@@ -4157,7 +4230,8 @@ impl Sema:
     fn scope_set_is_task(sym: i32, is_task: i32):
         let opt = self.scope_name_map.get(sym)
         if opt.is_some():
-            self.bind_is_task.set_i32(opt.unwrap() as i64, is_task)
+            let idx: i32 = opt.unwrap()
+            self.bind_is_task.set_i32(idx as i64, is_task)
 
     fn scope_lookup_is_scoped_task(sym: i32) -> i32:
         let opt = self.scope_name_map.get(sym)
@@ -4168,7 +4242,8 @@ impl Sema:
     fn scope_set_is_scoped_task(sym: i32, is_scoped_task: i32):
         let opt = self.scope_name_map.get(sym)
         if opt.is_some():
-            self.bind_is_scoped_task.set_i32(opt.unwrap() as i64, is_scoped_task)
+            let idx: i32 = opt.unwrap()
+            self.bind_is_scoped_task.set_i32(idx as i64, is_scoped_task)
 
     fn scope_lookup_is_ephemeral_task(sym: i32) -> i32:
         let opt = self.scope_name_map.get(sym)
@@ -4243,7 +4318,8 @@ impl Sema:
     fn scope_set_is_view_bound(sym: i32):
         let opt = self.scope_name_map.get(sym)
         if opt.is_some():
-            self.bind_is_view_bound.set_i32(opt.unwrap() as i64, 1)
+            let idx: i32 = opt.unwrap()
+            self.bind_is_view_bound.set_i32(idx as i64, 1)
 
     mut fn scope_set_state(sym: i32, state: i32):
         let opt = self.scope_name_map.get(sym)
@@ -4786,20 +4862,21 @@ impl Sema:
         let tk = self.get_type_kind(resolved)
         if tk == TypeKind.TY_GENERIC_INST:
             let base_sym = self.get_generic_inst_base(resolved as i32)
-            // #691/D18 (supersedes A5/#606): every Vec owns and frees its heap
-            // buffer at scope end — ownership is a property of the handle, not
-            // its contents (§2.5.1). Element drops still run only when the
-            // element type needs them; a POD-element Vec's drop is just the
-            // buffer free.
-            if base_sym == self.syms.vec:
+            // #691/D18 and D22 Stage 6: compiler-modeled collection handles own
+            // runtime allocations independently of whether their elements need
+            // drop. Codegen has exact drop glue for these opaque handles, so the
+            // ownership classifier must agree; otherwise an aggregate move copies
+            // the handle without resetting its source and both places free it.
+            // BTreeMap/BTreeSet are ordinary Vec-backed structs and are discovered
+            // transitively below rather than duplicated in this special case.
+            if base_sym == self.syms.vec or base_sym == self.syms.hashmap or base_sym == self.syms.hashset or base_sym == self.syms.slotmap:
                 return 1
             let base_name = self.pool_resolve(base_sym)
             if base_name == "Sender" or base_name == "Receiver":
                 return 1
         if self.needs_drop_visit.contains(resolved as i32):
             return 0
-        var __ndv_in = self.needs_drop_visit
-        __ndv_in.insert(resolved as i32)
+        self.needs_drop_visit.insert(resolved as i32)
         var result = 0
         if tk == TypeKind.TY_TUPLE:
             let te_start = self.get_type_d0(resolved)
@@ -4828,8 +4905,7 @@ impl Sema:
                             result = 1
                             break
                     vidx = vidx + 1
-        var __ndv_out = self.needs_drop_visit
-        let _ = __ndv_out.remove(resolved as i32)
+        let _ = self.needs_drop_visit.remove(resolved as i32)
         result
 
     mut fn emit_implicit_drop_view_use_error(view_sym: i32, origin_sym: i32, origin_node: i32):
@@ -5216,7 +5292,7 @@ impl Sema:
         let fty_opt = self.typed_expr_types.get(arg_node)
         if not fty_opt.is_some():
             return eff
-        let fty = fty_opt.unwrap()
+        let fty: i32 = fty_opt.unwrap()
         if fty == 0 or self.is_copy(fty as TypeId) != 0:
             return eff
         (eff - owning) | EFF_WRITE
@@ -5725,7 +5801,8 @@ impl Sema:
         if not self.generic_fn_nodes.contains(sym):
             self.generic_fn_nodes.insert(sym, node)
         let prior = self.generic_fn_candidate_counts.get(sym)
-        self.generic_fn_candidate_counts.insert(sym, if prior.is_some(): prior.unwrap() + 1 else: 1)
+        let next: i32 = if prior.is_some(): prior.unwrap() + 1 else: 1
+        self.generic_fn_candidate_counts.insert(sym, next)
         self.generic_fn_candidate_syms.push(sym)
         self.generic_fn_candidate_nodes.push(node)
 
@@ -6554,8 +6631,7 @@ impl Sema:
             // Break copy-check recursion on cyclic type graphs.
             if self.copy_visit_stack.contains(resolved as i32):
                 return 0
-            var __cvs_in = self.copy_visit_stack
-            __cvs_in.insert(resolved as i32)
+            self.copy_visit_stack.insert(resolved as i32)
 
             var out = 1
             if tk == TypeKind.TY_ARRAY:
@@ -6570,8 +6646,7 @@ impl Sema:
             else: // TypeKind.TY_RANGE
                 out = self.is_copy(self.get_type_d0(resolved))
 
-            var __cvs_out = self.copy_visit_stack
-            let _ = __cvs_out.remove(resolved as i32)
+            let _ = self.copy_visit_stack.remove(resolved as i32)
             return out
         if tk == TypeKind.TY_ENUM:
             // Enums are non-Copy by default; opt-in via `impl Copy for T`.
@@ -6606,8 +6681,12 @@ impl Sema:
             return self.drop_method_cache.get(type_name).unwrap()
 
         let has = self.select_trait_impl(type_name, self.syms.drop)
-        var __dc = self.drop_method_cache
-        __dc.insert(type_name, has)
+        // This read query memoizes into Sema's phase-local cache. HashMap is an
+        // owning D22 handle, so copying the field would create a second owner.
+        // Reborrow the field as an explicit raw place instead; Sema queries are
+        // single-threaded and no safe cache borrow crosses this mutation.
+        let cache = &raw const self.drop_method_cache as *const HashMap[i32, i32] as *mut HashMap[i32, i32]
+        unsafe { (*cache).insert(type_name, has) }
         has
 
     fn record_drop_consumed_field(owner_sym: i32, field_sym: i32):

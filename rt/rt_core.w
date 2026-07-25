@@ -2590,6 +2590,37 @@ pub fn with_slotmap_len(map: *mut u8) -> i64:
         return 0
     sm_len(map as i64)
 
+pub fn with_slotmap_capacity(map: *mut u8) -> i64:
+    if map as i64 == 0:
+        return 0
+    sm_cap(map as i64)
+
+pub fn with_slotmap_slot_occupied(map: *mut u8, index: i64) -> i32:
+    if map as i64 == 0 or index < 0 or index >= sm_cap(map as i64):
+        return 0
+    sm_occ_at(map as i64, index)
+
+pub fn with_slotmap_value_ptr_at(map: *mut u8, index: i64) -> *mut u8:
+    if map as i64 == 0 or index < 0 or index >= sm_cap(map as i64):
+        return 0 as *mut u8
+    sm_value_ptr_at(map as i64, index)
+
+pub fn with_slotmap_free(map: *mut u8) -> Unit:
+    if map as i64 == 0:
+        return
+    let m = map as i64
+    let cap = sm_cap(m)
+    let values = sm_values(m)
+    let occupied = sm_occ(m)
+    let generations = sm_gens(m)
+    if values as i64 != 0:
+        rt_free_sized(values, cap * sm_elem_size(m))
+    if occupied as i64 != 0:
+        rt_free_sized(occupied, cap)
+    if generations as i64 != 0:
+        rt_free_sized(generations, cap * 4)
+    rt_free_sized(map, SM_SIZE)
+
 pub fn with_slotmap_remove(map: *mut u8, index: u32, generation: u32, out: *mut u8) -> i32:
     let m = map as i64
     if sm_valid(m, index, generation) == 0:

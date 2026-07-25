@@ -511,7 +511,12 @@ impl LspDocument:
             var methods: Vec[str] = Vec.new()
             let existing = self.cached_trait_methods.get(type_name)
             if existing.is_some():
-                methods = existing.unwrap()
+                let prior = existing.unwrap()
+                for method_i in 0..prior.len() as i32:
+                    // HashMap.get returns a view. The cache being rebuilt needs
+                    // independent strings, and concatenation is the existing
+                    // ownership-producing string operation available here.
+                    methods.push("" ++ prior.get(method_i as i64))
             var ti = 0
             while ti < count:
                 let trait_sym = sema.impl_extra.get((start + ti) as i64)
@@ -540,7 +545,7 @@ impl LspDocument:
             return ""
         let opt = self.cached_type_at.get(offset)
         if opt.is_some():
-            return opt.unwrap()
+            return "" ++ opt.unwrap()
         ""
 
     // Get trait methods for a type via cached sema data.
@@ -549,7 +554,11 @@ impl LspDocument:
             return Vec.new()
         let opt = self.cached_trait_methods.get(type_name)
         if opt.is_some():
-            return opt.unwrap()
+            let prior = opt.unwrap()
+            let methods: Vec[str] = Vec.new()
+            for method_i in 0..prior.len() as i32:
+                methods.push("" ++ prior.get(method_i as i64))
+            return methods
         Vec.new()
 
     mut fn invalidate():

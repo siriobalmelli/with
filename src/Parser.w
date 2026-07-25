@@ -6663,13 +6663,9 @@ impl Parser:
             if self.peek() == TokenKind.TK_L_PAREN:
                 self.advance()
                 self.skip_newlines()
-                let extra_start = self.pool.extra_len()
-                var binding_count = 0
+                let payload_patterns: Vec[i32] = Vec.new()
                 while self.peek() != TokenKind.TK_R_PAREN and self.peek() != TokenKind.TK_EOF:
-                    let b = self.expect_ident()
-                    let pat_node = self.pool.add_node(NodeKind.NK_PAT_IDENT, self.prev_start(), self.prev_end(), b, 0, 0)
-                    self.pool.add_extra(pat_node)
-                    binding_count = binding_count + 1
+                    payload_patterns.push(self.parse_pattern() as i32)
                     self.skip_newlines()
                     if self.peek() == TokenKind.TK_COMMA:
                         self.advance()
@@ -6684,6 +6680,10 @@ impl Parser:
                 if self.peek() == TokenKind.TK_COLON: self.advance()
                 self.skip_newlines()
                 let else_body = self.parse_block_or_expr()
+                let extra_start = self.pool.extra_len()
+                let binding_count = payload_patterns.len() as i32
+                for pi in 0..binding_count:
+                    self.pool.add_extra(payload_patterns.get(pi as i64))
                 let pat = self.pool.add_node(NodeKind.NK_PAT_ENUM_SHORTHAND, dot_start, self.prev_end(), dot_sym, extra_start, binding_count)
                 return self.pool.add_node(NodeKind.NK_LET_ELSE, start, self.prev_end(), pat, value, else_body)
             if self.peek() == TokenKind.TK_EQ:
@@ -6708,13 +6708,9 @@ impl Parser:
         if is_upper and self.peek() == TokenKind.TK_L_PAREN:
             self.advance()
             self.skip_newlines()
-            let extra_start = self.pool.extra_len()
-            var binding_count = 0
+            let payload_patterns: Vec[i32] = Vec.new()
             while self.peek() != TokenKind.TK_R_PAREN and self.peek() != TokenKind.TK_EOF:
-                let b = self.expect_ident()
-                let pat_node = self.pool.add_node(NodeKind.NK_PAT_IDENT, self.prev_start(), self.prev_end(), b, 0, 0)
-                self.pool.add_extra(pat_node)
-                binding_count = binding_count + 1
+                payload_patterns.push(self.parse_pattern() as i32)
                 self.skip_newlines()
                 if self.peek() == TokenKind.TK_COMMA:
                     self.advance()
@@ -6729,6 +6725,10 @@ impl Parser:
             if self.peek() == TokenKind.TK_COLON: self.advance()
             self.skip_newlines()
             let else_body = self.parse_block_or_expr()
+            let extra_start = self.pool.extra_len()
+            let binding_count = payload_patterns.len() as i32
+            for pi in 0..binding_count:
+                self.pool.add_extra(payload_patterns.get(pi as i64))
             let pat = self.pool.add_node(NodeKind.NK_PAT_VARIANT, start, self.prev_end(), name_sym, extra_start, binding_count)
             return self.pool.add_node(NodeKind.NK_LET_ELSE, start, self.prev_end(), pat, value, else_body)
 

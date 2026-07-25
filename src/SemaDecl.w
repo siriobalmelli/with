@@ -1263,7 +1263,7 @@ impl Sema:
         let decl_is_pub = if (fn_flags / FnFlags.PUB) % 2 == 1: 1 else: 0
         self.record_decl_visibility(fn_name, node, decl_is_pub)
         if self.fn_decl_nodes.contains(fn_name):
-            let existing_node = self.fn_decl_nodes.get(fn_name).unwrap()
+            let existing_node: i32 = self.fn_decl_nodes.get(fn_name).unwrap()
             if existing_node != node:
                 let existing_di = self.find_decl_index(existing_node)
                 let current_di = self.find_decl_index(node)
@@ -1331,7 +1331,7 @@ impl Sema:
         // (spurious "unknown field") and its layout is wrong (by-ref receivers
         // reading concrete fields returned ABI garbage).
         if self_type_id != 0 and self.method_impl_nodes.contains(fn_name):
-            let sb_impl = self.method_impl_nodes.get(fn_name).unwrap()
+            let sb_impl: i32 = self.method_impl_nodes.get(fn_name).unwrap()
             if self.ast.find_impl_type_params(sb_impl) < 0 and self.impl_target_has_bare_type_params(sb_impl) == 0:
                 let sb_target = self.ast.find_impl_target_type_node(sb_impl as NodeId)
                 if sb_target != 0:
@@ -1345,7 +1345,7 @@ impl Sema:
         // Set up associated type bindings if inside a trait impl
         self.assoc_type_bindings.clear()
         if self.method_impl_nodes.contains(fn_name):
-            let impl_nd = self.method_impl_nodes.get(fn_name).unwrap()
+            let impl_nd: i32 = self.method_impl_nodes.get(fn_name).unwrap()
             let impl_ex = self.ast.get_data1(impl_nd)
             let impl_ac = self.ast.get_extra(impl_ex)
             for iai in 0..impl_ac:
@@ -1357,7 +1357,7 @@ impl Sema:
 
         // Methods in blanket impls: treat as generic (type params come from impl)
         if tp_count == 0 and self.method_impl_nodes.contains(fn_name):
-            let bi_impl = self.method_impl_nodes.get(fn_name).unwrap()
+            let bi_impl: i32 = self.method_impl_nodes.get(fn_name).unwrap()
             let bi_tp_meta = self.ast.find_impl_type_params(bi_impl)
             if bi_tp_meta >= 0:
                 let bi_tp_count = self.ast.state.impl_type_params.get((bi_tp_meta + 2) as i64)
@@ -1398,7 +1398,7 @@ impl Sema:
                     let cf_owner = fn_name_str.slice(0, cfi as i64)
                     let cf_owner_sym = self.pool_intern(cf_owner)
                     if concrete_inst_impl_method == 0 and self.type_decl_nodes.contains(cf_owner_sym):
-                        let cf_td = self.type_decl_nodes.get(cf_owner_sym).unwrap()
+                        let cf_td: i32 = self.type_decl_nodes.get(cf_owner_sym).unwrap()
                         if self.type_decl_tp_count(cf_td) > 0:
                             self.register_generic_fn_node(fn_name, node)
                             self.fn_decl_source_paths.insert(fn_name, self.current_module_path)
@@ -1470,7 +1470,7 @@ impl Sema:
                 let p_ty = self.sig_params.get((sig_param_start + pi) as i64)
                 if self.type_is_ephemeral_value(p_ty) != 0:
                     self.mark_generator_state_ephemeral(state_tid)
-            let state_sym = self.generator_fn_state_syms.get(fn_name).unwrap()
+            let state_sym: i32 = self.generator_fn_state_syms.get(fn_name).unwrap()
             self.register_generator_next_method(fn_name, state_sym, state_tid, ret_type as i32)
             sig_ret_type = state_tid as TypeId
 
@@ -1517,7 +1517,7 @@ impl Sema:
         // modules are intentional C interop (e.g. a library wrapping C's abs()).
         // Extern-to-extern re-declarations are harmless (same C symbol) and allowed.
         if self.fn_decl_nodes.contains(name):
-            let existing_node = self.fn_decl_nodes.get(name).unwrap()
+            let existing_node: i32 = self.fn_decl_nodes.get(name).unwrap()
             if existing_node != node:
                 // Find the decl index of the existing function to check its origin
                 for edi in 0..self.ast.decl_count():
@@ -1810,7 +1810,7 @@ impl Sema:
     mut fn install_trait_default_type_args(trait_sym: i32, impl_node: i32):
         if trait_sym == 0 or impl_node == 0 or not self.trait_lookup.contains(trait_sym):
             return
-        let trait_idx = self.trait_lookup.get(trait_sym).unwrap()
+        let trait_idx: i32 = self.trait_lookup.get(trait_sym).unwrap()
         let tp_count = self.trait_tp_counts.get(trait_idx as i64)
         if tp_count <= 0:
             return
@@ -1856,7 +1856,7 @@ impl Sema:
         let impl_type_sym = self.ast.get_data0(impl_node)
         if impl_type_sym == 0:
             return
-        let trait_idx = self.trait_lookup.get(trait_sym).unwrap()
+        let trait_idx: i32 = self.trait_lookup.get(trait_sym).unwrap()
         let mt_start = self.trait_method_starts.get(trait_idx as i64)
         let mt_count = self.trait_method_counts.get(trait_idx as i64)
         let impl_type_tid = self.lookup_named_type_visible(impl_type_sym)
@@ -2152,7 +2152,7 @@ impl Sema:
             // Drop methods aren't collected yet at this point in Pass 2)
             let drop_sym = self.syms.drop
             if self.impl_lookup.contains(type_name):
-                let drop_idx = self.impl_lookup.get(type_name).unwrap()
+                let drop_idx: i32 = self.impl_lookup.get(type_name).unwrap()
                 let drop_start = self.impl_starts.get(drop_idx as i64)
                 let drop_count = self.impl_counts.get(drop_idx as i64)
                 for di in 0..drop_count:
@@ -2181,7 +2181,7 @@ impl Sema:
 
         // Validate associated types: impl must provide all required (no-default) associated types
         if not is_lang_trait and self.trait_lookup.contains(trait_sym):
-            let trait_idx = self.trait_lookup.get(trait_sym).unwrap()
+            let trait_idx: i32 = self.trait_lookup.get(trait_sym).unwrap()
             let at_start = self.trait_assoc_starts.get(trait_idx as i64)
             let at_count = self.trait_assoc_counts.get(trait_idx as i64)
             if at_count > 0:
@@ -2284,7 +2284,7 @@ impl Sema:
         // When appending to an existing type, relocate all entries to keep them
         // contiguous (the flat impl_extra vec is shared across all types).
         if self.impl_lookup.contains(type_name):
-            let idx = self.impl_lookup.get(type_name).unwrap()
+            let idx: i32 = self.impl_lookup.get(type_name).unwrap()
             let old_start = self.impl_starts.get(idx as i64)
             let old_count = self.impl_counts.get(idx as i64)
             for i in 0..old_count:
@@ -2309,8 +2309,8 @@ impl Sema:
         // Track sealed trait implementors
         if self.sealed_traits.contains(trait_sym):
             if self.sealed_impl_starts.contains(trait_sym):
-                let si_start = self.sealed_impl_starts.get(trait_sym).unwrap()
-                let si_count = self.sealed_impl_counts.get(trait_sym).unwrap()
+                let si_start: i32 = self.sealed_impl_starts.get(trait_sym).unwrap()
+                let si_count: i32 = self.sealed_impl_counts.get(trait_sym).unwrap()
                 // Check for duplicate
                 var already = false
                 for si in 0..si_count:

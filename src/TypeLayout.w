@@ -44,7 +44,7 @@ impl Sema:
         let base_sym = self.get_type_d0(resolved)
         if not self.type_decl_nodes.contains(base_sym):
             return 0
-        let decl = self.type_decl_nodes.get(base_sym).unwrap()
+        let decl: i32 = self.type_decl_nodes.get(base_sym).unwrap()
         let extra_start = self.ast.get_data1(decl)
         let field_count = self.ast.get_extra(extra_start)
         if field_index < 0 or field_index >= field_count:
@@ -157,7 +157,7 @@ impl Sema:
         if tk == TypeKind.TY_GENERIC_INST:
             let base_sym = self.get_type_d0(resolved)
             if base_sym != 0 and self.type_decl_nodes.contains(base_sym):
-                let decl = self.type_decl_nodes.get(base_sym).unwrap()
+                let decl: i32 = self.type_decl_nodes.get(base_sym).unwrap()
                 if type_decl_sub_kind(self.ast.get_data2(decl)) == TypeDeclKind.Union:
                     var max_size: i64 = 0
                     var max_align: i64 = 1
@@ -237,7 +237,7 @@ impl Sema:
             let base_sym = self.get_generic_inst_base(resolved as i32)
             if not self.named_types.contains(base_sym):
                 return 0
-            let base_tid = self.named_types.get(base_sym).unwrap()
+            let base_tid: i32 = self.named_types.get(base_sym).unwrap()
             if self.get_type_kind(base_tid) != TypeKind.TY_ENUM:
                 return 0
             let te_start = self.get_type_d1(base_tid)
@@ -331,7 +331,7 @@ impl Sema:
         if tk == TypeKind.TY_GENERIC_INST:
             let base_sym = self.get_generic_inst_base(resolved as i32)
             if self.named_types.contains(base_sym):
-                let base_tid = self.named_types.get(base_sym).unwrap()
+                let base_tid: i32 = self.named_types.get(base_sym).unwrap()
                 let base_kind = self.get_type_kind(self.resolve_alias(base_tid))
                 if base_kind == TypeKind.TY_STRUCT:
                     return self.type_layout_struct_align_of(resolved as i32)
@@ -388,7 +388,7 @@ impl Sema:
         if tk == TypeKind.TY_GENERIC_INST:
             let base_sym = self.get_generic_inst_base(resolved as i32)
             if self.named_types.contains(base_sym):
-                let base_tid = self.named_types.get(base_sym).unwrap()
+                let base_tid: i32 = self.named_types.get(base_sym).unwrap()
                 let base_kind = self.get_type_kind(self.resolve_alias(base_tid))
                 if base_kind == TypeKind.TY_STRUCT:
                     return self.type_layout_struct_size_of(resolved as i32)

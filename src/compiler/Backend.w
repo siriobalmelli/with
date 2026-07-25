@@ -1,4 +1,5 @@
 use Ast
+use Sema
 use Codegen
 use CodegenDispatch
 use CodegenTraits
@@ -46,7 +47,7 @@ impl Zcu:
         var cg = Codegen.init_with_opt_and_intern("with_module", opt_level, move backend_intern, move self.last_sema)
         cg.source_file = self.current_source_path
         cg.source_text = self.current_source_text
-        cg.decl_source_paths = self.decl_source_paths
+        cg.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
         cg.current_decl_source_file = self.current_source_path
         cg.module_object_mode = if module_object_mode: 1 else: 0
         if not debug_info:
@@ -130,7 +131,7 @@ impl Zcu:
             var cg = Codegen.init_with_opt_and_intern(f"with_module_u{k}", opt_level, move backend_intern, move self.last_sema)
             cg.source_file = self.current_source_path
             cg.source_text = self.current_source_text
-            cg.decl_source_paths = self.decl_source_paths
+            cg.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
             cg.current_decl_source_file = self.current_source_path
             cg.module_object_mode = 0
             if not debug_info:
@@ -190,7 +191,7 @@ impl Zcu:
         var cg = Codegen.init_with_opt_and_intern("with_module", opt_level, move backend_intern, move self.last_sema)
         cg.source_file = self.current_source_path
         cg.source_text = self.current_source_text
-        cg.decl_source_paths = self.decl_source_paths
+        cg.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
         cg.current_decl_source_file = self.current_source_path
         if self.pool.state.symbol_texts.len() as i32 <= 4 or sema_pool.state.symbol_texts.len() as i32 <= 4 or backend_debug_pool_flow_enabled() != 0:
             runtime_eprint(f"[backend] zcu.pool symbols={self.pool.state.symbol_texts.len() as i32}")
@@ -230,7 +231,7 @@ impl Zcu:
         var cg = Codegen.init_with_opt_and_intern("with_analysis", opt_level, move backend_intern, move self.last_sema)
         cg.source_file = self.current_source_path
         cg.source_text = self.current_source_text
-        cg.decl_source_paths = self.decl_source_paths
+        cg.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
         cg.current_decl_source_file = self.current_source_path
         cg.enable_analysis(query)
         var backend_mir = self.last_mir_module

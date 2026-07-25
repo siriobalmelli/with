@@ -131,6 +131,8 @@ fn astpool_clone_deep(src: AstPool) -> AstPool:
         out.mark_extend_impl((src.state.extend_impl_nodes.get(ei as i64)) as NodeId)
     for ci in 0..src.state.comptime_decl_nodes.len() as i32:
         out.mark_comptime_decl((src.state.comptime_decl_nodes.get(ci as i64)) as NodeId)
+    for gi in 0..src.state.global_allocator_decl_nodes.len() as i32:
+        out.mark_global_allocator_decl((src.state.global_allocator_decl_nodes.get(gi as i64)) as NodeId)
     for hi in 0..src.compiler_hook_count():
         out.mark_compiler_hook_fn(src.compiler_hook_node(hi), src.compiler_hook_phase_at(hi))
     for mi in 0..src.state.move_closure_nodes.len() as i32:
@@ -1754,7 +1756,7 @@ impl Sema:
         let resolved = self.resolve_alias(tid as TypeId)
         let type_sym = self.get_type_name(resolved)
         if type_sym != 0 and self.type_decl_nodes.contains(type_sym):
-            let decl = self.type_decl_nodes.get(type_sym).unwrap()
+            let decl: i32 = self.type_decl_nodes.get(type_sym).unwrap()
             if self.type_decl_has_derive(decl, trait_sym) != 0:
                 return 1
             if self.type_decl_has_derive(decl, all_sym) != 0 and self.ct_type_decl_can_derive_trait(out, intern, decl, trait_sym, all_sym) != 0:

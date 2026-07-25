@@ -524,7 +524,12 @@ impl MirModule:
             self.sema_type_d2.push(sema.type_d2.get(i as i64))
         for i in 0..sema.type_extra.len() as i32:
             self.sema_type_extra.push(sema.type_extra.get(i as i64))
-        self.sema_bitpacked_types = sema.bitpacked_types
+        // Deep-copy like the type-table Vecs above: assigning the handle would
+        // leave sema and this module as two owners of one map, and both drop.
+        let bitpacked_tids = sema.bitpacked_types.keys()
+        for i in 0..bitpacked_tids.len() as i32:
+            let tid = bitpacked_tids.get(i as i64)
+            self.sema_bitpacked_types.insert(tid, sema.bitpacked_types.get(tid).unwrap())
 
     fn mir_is_bitpacked(tid: i32) -> bool:
         self.sema_bitpacked_types.contains(tid)

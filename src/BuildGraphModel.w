@@ -338,6 +338,40 @@ pub fn parse_build_graph(text: str) -> BuildGraph:
     graph.ok = true
     graph
 
+pub fn bg_clone_str_vec(values: &Vec[str]) -> Vec[str]:
+    let out: Vec[str] = Vec.new()
+    for i in 0..values.len() as i32:
+        out.push(values.get(i as i64))
+    out
+
+// A stored element copy must own its buffers: BuildGraphTarget carries nine
+// Vec[str] fields, and a bitwise element copy aliases them (#715 class), so
+// two graphs dropping both free the same buffers.
+fn build_graph_target_deep_copy(t: &BuildGraphTarget) -> BuildGraphTarget:
+    BuildGraphTarget {
+        kind: t.kind,
+        name: t.name,
+        entry: t.entry,
+        output: t.output,
+        target_kind: t.target_kind,
+        optimize_mode: t.optimize_mode,
+        system_libs: bg_clone_str_vec(&t.system_libs),
+        include_paths: bg_clone_str_vec(&t.include_paths),
+        defines: bg_clone_str_vec(&t.defines),
+        inputs: bg_clone_str_vec(&t.inputs),
+        extra_outputs: bg_clone_str_vec(&t.extra_outputs),
+        write_scopes: bg_clone_str_vec(&t.write_scopes),
+        deps: bg_clone_str_vec(&t.deps),
+        args: bg_clone_str_vec(&t.args),
+        action_fn: t.action_fn,
+        timeout_ms: t.timeout_ms,
+        cwd: t.cwd,
+        env: bg_clone_str_vec(&t.env),
+        network: t.network,
+        parallel: t.parallel,
+        action_source_paths: bg_clone_str_vec(&t.action_source_paths),
+    }
+
 pub fn build_graph_filter_target(graph: &BuildGraph, target_name: str) -> BuildGraph:
     var out = empty_build_graph()
     out.ok = graph.ok
@@ -350,7 +384,7 @@ pub fn build_graph_filter_target(graph: &BuildGraph, target_name: str) -> BuildG
         out.generated_sources.push(graph.generated_sources.get(gi as i64))
     if target_name.len() == 0:
         for ti_all in 0..graph.targets.len() as i32:
-            out.targets.push(graph.targets.get(ti_all as i64))
+            out.targets.push(build_graph_target_deep_copy(&graph.targets[ti_all as i64]))
         out.raw_text = build_graph_emit(out)
         return out
     let selected = build_graph_select_target_closure(graph, target_name)
@@ -359,7 +393,7 @@ pub fn build_graph_filter_target(graph: &BuildGraph, target_name: str) -> BuildG
         out.error_msg = selected.error_msg
     else:
         for ti in 0..selected.targets.len() as i32:
-            out.targets.push(selected.targets.get(ti as i64))
+            out.targets.push(build_graph_target_deep_copy(&selected.targets[ti as i64]))
         out.raw_text = build_graph_emit(out)
     out
 
@@ -382,7 +416,7 @@ pub fn build_graph_filter_single_target(graph: &BuildGraph, target_name: str) ->
         out.ok = false
         out.error_msg = "build.w did not declare target '" ++ target_name ++ "'"
         return out
-    out.targets.push(graph.targets.get(index as i64))
+    out.targets.push(build_graph_target_deep_copy(&graph.targets[index as i64]))
     out.raw_text = build_graph_emit(out)
     out
 
@@ -431,7 +465,7 @@ fn build_graph_selected_targets_add(selected: BuildGraphSelectedTargets, graph: 
         out.ok = false
         out.error_msg = "build.w did not declare target '" ++ name ++ "'"
         return out
-    let target = graph.targets.get(index as i64)
+    let target = &graph.targets[index as i64]
     out.visiting_names.push(name)
     for di in 0..target.deps.len() as i32:
         out = build_graph_selected_targets_add(move out, graph, target.deps.get(di as i64))
@@ -449,7 +483,7 @@ fn build_graph_selected_targets_add(selected: BuildGraphSelectedTargets, graph: 
             if not out.ok:
                 return out
     out.selected_names.push(name)
-    out.targets.push(move target)
+    out.targets.push(build_graph_target_deep_copy(target))
     out
 
 fn build_graph_select_target_closure(graph: &BuildGraph, target_name: str) -> BuildGraphSelectedTargets:

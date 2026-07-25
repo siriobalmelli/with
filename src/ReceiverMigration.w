@@ -118,7 +118,7 @@ type RelocationFacts {
     matched: Vec[i32],
 }
 
-fn local_source_path(path: str):
+fn local_source_path(path: str) -> str:
     let embedded = "<embedded-std>/"
     if path.starts_with(embedded): "lib/" ++ slice(path, embedded.len() as i32, path.len() as i32) else: path
 

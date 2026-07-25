@@ -10,9 +10,39 @@ use render
 extern fn with_eprint(s: str) -> Unit
 extern fn with_getenv_str(name: str) -> str
 
+fn d22_join_arm_kind_name(kind: i32) -> str:
+    if kind == 1: return "owned-anchor"
+    if kind == 2: return "materialized-ref"
+    if kind == 3: return "view"
+    if kind == 4: return "diverging"
+    "unknown"
+
+fn d22_join_arm_role_name(role: i32) -> str:
+    if role == 1: return "carrier-payload"
+    if role == 2: return "lazy-result"
+    "expression"
+
 // ── Diagnostics ──────────────────────────────────────────────────
 
 impl Sema:
+    fn contextual_join_dump_text(index: i32) -> str:
+        let decision = self.contextual_join_decisions.get(index as i64)
+        var out = f"join[{index}] node={decision.join_node} final={self.type_name(decision.final_type)}"
+        if decision.expected_type != 0:
+            out = out ++ " expected=" ++ self.type_name(decision.expected_type)
+        else:
+            out = out ++ " expected=<inferred>"
+        out = out ++ f" expected-anchor={decision.expected_is_anchor} arms={decision.arm_count} owned-anchors={decision.owned_anchor_count} materialized={decision.materialized_count} views={decision.view_count} diverging={decision.diverging_count} origin-mask={decision.origin_mask} origin-deps={decision.origin_count}\n"
+        for ai in 0..decision.arm_count:
+            let arm_i = decision.arm_start + ai
+            let arm_node = self.contextual_join_arm_nodes.get(arm_i as i64)
+            let origin_node = self.contextual_join_arm_origin_nodes.get(arm_i as i64)
+            let arm_ty = self.contextual_join_arm_types.get(arm_i as i64)
+            let arm_kind = self.contextual_join_arm_kinds.get(arm_i as i64)
+            let arm_role = self.contextual_join_arm_roles.get(arm_i as i64)
+            out = out ++ f"  join[{index}].arm[{ai}] role={d22_join_arm_role_name(arm_role)} kind={d22_join_arm_kind_name(arm_kind)} node={arm_node} origin-node={origin_node} exact={self.type_name(arm_ty)}\n"
+        out
+
     fn call_param_name(fn_sym: i32, param_i: i32) -> str:
         if fn_sym <= 0 or param_i < 0:
             return ""
@@ -337,6 +367,9 @@ impl Sema:
             else:
                 out.push_str(" post=identity")
             out.push_str("\n")
+        out.push_str(f"typed contextual-joins={self.contextual_join_decisions.len()}\n")
+        for ji in 0..self.contextual_join_decisions.len() as i32:
+            out.push_str(self.contextual_join_dump_text(ji))
 
         for di in 0..dump_decl_count:
             let decl = self.ast.get_decl(di)
@@ -511,6 +544,9 @@ impl Sema:
             else:
                 with_write(" post=identity")
             with_write("\n")
+        with_write(f"typed contextual-joins={self.contextual_join_decisions.len()}\n")
+        for ji in 0..self.contextual_join_decisions.len() as i32:
+            with_write(self.contextual_join_dump_text(ji))
 
         for di in 0..dump_decl_count:
             let decl = self.ast.get_decl(di)
@@ -679,14 +715,19 @@ impl Sema:
         if has_typed_expr:
             let tid = self.typed_expr_types.get(node).unwrap()
             out = out ++ f"{typed_indent(indent)}expr {typed_expr_kind_name(kind)} span={start}..{end} : {self.type_name(tid)}\n"
-            if self.has_contextual_copy_adjustment(node) != 0:
-                let adjustment = self.contextual_copy_adjustment(node)
+            let adjustment_index = self.latest_contextual_copy_adjustment_index(node)
+            if adjustment_index >= 0:
+                let adjustment = self.contextual_copy_adjustments.get(adjustment_index as i64)
                 out = out ++ typed_indent(indent + 1) ++ "adjust contextual-copy exact=" ++ self.type_name(adjustment.exact_source_type) ++ " owned=" ++ self.type_name(adjustment.owned_value_type) ++ " target=" ++ self.type_name(adjustment.target_type)
                 if adjustment.post_copy_type != 0:
                     out = out ++ " post=" ++ self.type_name(adjustment.post_copy_type)
                 else:
                     out = out ++ " post=identity"
                 out = out ++ "\n"
+            let join_index = self.latest_contextual_join_decision_index(node)
+            if join_index >= 0:
+                let join = self.contextual_join_decisions.get(join_index as i64)
+                out = out ++ typed_indent(indent + 1) ++ f"join contextual final={self.type_name(join.final_type)} owned-anchors={join.owned_anchor_count} materialized={join.materialized_count} views={join.view_count} diverging={join.diverging_count}\n"
 
         if kind == NodeKind.NK_LET_BINDING:
             if self.typed_binding_types.contains(node):
@@ -983,8 +1024,9 @@ impl Sema:
             with_write(f" span={start}..{end} : ")
             with_write(self.type_name(tid))
             with_write("\n")
-            if self.has_contextual_copy_adjustment(node) != 0:
-                let adjustment = self.contextual_copy_adjustment(node)
+            let adjustment_index = self.latest_contextual_copy_adjustment_index(node)
+            if adjustment_index >= 0:
+                let adjustment = self.contextual_copy_adjustments.get(adjustment_index as i64)
                 emit_typed_indent(indent + 1)
                 with_write("adjust contextual-copy exact=" ++ self.type_name(adjustment.exact_source_type) ++ " owned=" ++ self.type_name(adjustment.owned_value_type) ++ " target=" ++ self.type_name(adjustment.target_type))
                 if adjustment.post_copy_type != 0:
@@ -992,6 +1034,11 @@ impl Sema:
                 else:
                     with_write(" post=identity")
                 with_write("\n")
+            let join_index = self.latest_contextual_join_decision_index(node)
+            if join_index >= 0:
+                let join = self.contextual_join_decisions.get(join_index as i64)
+                emit_typed_indent(indent + 1)
+                with_write(f"join contextual final={self.type_name(join.final_type)} owned-anchors={join.owned_anchor_count} materialized={join.materialized_count} views={join.view_count} diverging={join.diverging_count}\n")
 
         if kind == NodeKind.NK_LET_BINDING:
             if self.typed_binding_types.contains(node):

@@ -1163,6 +1163,12 @@ fn comptime_safe_label(text: str) -> str:
 fn comptime_action_scratch_dir(target_name: str) -> str:
     "out/tmp/action-scratch/" ++ comptime_safe_label(target_name)
 
+fn ce_clone_str_vec(values: &Vec[str]) -> Vec[str]:
+    let out: Vec[str] = Vec.new()
+    for i in 0..values.len() as i32:
+        out.push(values.get(i as i64))
+    out
+
 fn comptime_action_outputs(output: str, extra_outputs: &Vec[str]) -> Vec[str]:
     let outputs: Vec[str] = Vec.new()
     if output.len() > 0:
@@ -5554,17 +5560,20 @@ impl ComptimeEvaluator:
         let child_type = self.capability_type_id(child_kind, node)
         if child_type == 0:
             return comptime_control_error()
+        // The child record is stored alongside its parent in capability_records;
+        // handle-copied vec fields would be freed by both elements' drop glue
+        // at evaluator teardown, so the child owns clones (#715 class).
         var child = comptime_capability_record(child_kind, record.package_name, record.package_version, record.project_root)
         child.target_name = record.target_name
-        child.inputs = record.inputs
-        child.outputs = record.outputs
-        child.args = record.args
+        child.inputs = ce_clone_str_vec(&record.inputs)
+        child.outputs = ce_clone_str_vec(&record.outputs)
+        child.args = ce_clone_str_vec(&record.args)
         if child_kind == CapabilityKind.CK_BUILD_TOOL_FS:
-            child.write_scope = record.write_scope
+            child.write_scope = ce_clone_str_vec(&record.write_scope)
             child.write_scoped = 1
             child.scratch_path = record.scratch_path
         else if child_kind == CapabilityKind.CK_BUILD_PROCESS_RUNNER:
-            child.write_scope = record.write_scope
+            child.write_scope = ce_clone_str_vec(&record.write_scope)
             child.write_scoped = record.write_scoped
             child.network = record.network
         comptime_control_value(self.mint_capability(child_type, move child))
@@ -5956,7 +5965,7 @@ impl ComptimeEvaluator:
     mut fn eval_disc_variant_sym(sym: i32, node: i32) -> ComptimeControl:
         if not self.sema.variant_lookup.contains(sym):
             return self.unsupported(node)
-        let enum_tid = self.sema.variant_type_ids.get(sym).unwrap()
+        let enum_tid: i32 = self.sema.variant_type_ids.get(sym).unwrap()
         let enum_resolved = self.sema.resolve_alias(enum_tid as TypeId)
         if not self.sema.disc_repr_types.contains(enum_resolved as i32) or self.sema.disc_has_payload.contains(enum_resolved as i32):
             return self.unsupported(node)
@@ -6005,7 +6014,7 @@ impl ComptimeEvaluator:
         if self.ast.kind(base) == NodeKind.NK_IDENT:
             let base_sym = self.ast.get_data0(base)
             if self.sema.named_types.contains(base_sym):
-                let base_tid = self.sema.named_types.get(base_sym).unwrap()
+                let base_tid: i32 = self.sema.named_types.get(base_sym).unwrap()
                 let base_resolved = self.sema.resolve_alias(base_tid as TypeId)
                 if self.sema.get_type_kind(base_resolved) == TypeKind.TY_ENUM and self.sema.enum_has_variant(base_resolved as i32, field) != 0:
                     let qual_name = self.pool.resolve(base_sym) ++ "." ++ self.pool.resolve(field)

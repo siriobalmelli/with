@@ -1448,7 +1448,9 @@ unsafe fn run_build_action_from_build_w(root: str, cfg: ProjectConfig, target: &
     if target.action_fn == 0:
         with_eprint("error: action target '" ++ target.name ++ "' is missing an evaluator action function")
         return build_action_run_result(1)
-    let result = comptime_eval_tool_action_result(sema_ptr, (*sema_ptr).ast, (*sema_ptr).pool, target.action_fn, cfg.package_name, cfg.package_version, root, target.name, move target.inputs, target.output, target.extra_outputs, move target.args, target.write_scopes, target.timeout_ms, target.cwd, move target.env, target.network, if options.strict_effects: 1 else: 0)
+    // The evaluator consumes its Vec params (write_scope frees them); the
+    // target still owns these buffers, so pass independent clones (#715 class).
+    let result = comptime_eval_tool_action_result(sema_ptr, (*sema_ptr).ast, (*sema_ptr).pool, target.action_fn, cfg.package_name, cfg.package_version, root, target.name, bg_clone_str_vec(&target.inputs), target.output, bg_clone_str_vec(&target.extra_outputs), bg_clone_str_vec(&target.args), bg_clone_str_vec(&target.write_scopes), target.timeout_ms, target.cwd, bg_clone_str_vec(&target.env), target.network, if options.strict_effects: 1 else: 0)
     if result.runtime_exit_code != 0:
         if result.runtime_stderr.len() > 0:
             with_ewrite(result.runtime_stderr)

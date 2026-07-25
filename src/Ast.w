@@ -8,6 +8,7 @@
 
 use Span
 use Token
+use InternPool
 
 extern fn with_eprint(s: str) -> Unit
 extern fn with_alloc(size: i64) -> *mut u8
@@ -1062,7 +1063,12 @@ impl AstPool:
             return ExactIntExpr { ok: parsed.ok, overflow: parsed.overflow, negative: 0, lo: parsed.lo, hi: parsed.hi }
         let raw = self.int_lit_value(node)
         if raw < 0:
-            return ExactIntExpr { ok: 0, overflow: 1, negative: 0, lo: 0, hi: 0 }
+            // Parser-folded negative literal: report magnitude + sign. For
+            // i64.min the magnitude 2^63 is raw's own bit pattern read as an
+            // unsigned word, which is what the exact-int helpers compare.
+            if raw == (-9223372036854775807 - 1):
+                return ExactIntExpr { ok: 1, overflow: 0, negative: 1, lo: raw, hi: 0 }
+            return ExactIntExpr { ok: 1, overflow: 0, negative: 1, lo: 0 - raw, hi: 0 }
         ExactIntExpr { ok: 1, overflow: 0, negative: 0, lo: raw, hi: 0 }
 
     fn int_literal_expr_bits(node: i32, bits: i32, signed: i32) -> ExactIntValue:
@@ -1252,7 +1258,7 @@ impl AstPool:
             self.state.fn_effect_pin_counts.insert(n, 0)
         self.state.fn_effect_pin_params.push(param_sym)
         self.state.fn_effect_pin_bits.push(bits)
-        let count = self.state.fn_effect_pin_counts.get(n).unwrap()
+        let count: i32 = self.state.fn_effect_pin_counts.get(n).unwrap()
         self.state.fn_effect_pin_counts.insert(n, count + 1)
 
     fn fn_effect_pin_count(node: NodeId) -> i32:
@@ -1310,6 +1316,100 @@ impl AstPool:
 
     fn fn_meta_tp_count(meta: i32) -> i32:
         self.state.fn_meta.get((meta + 6) as i64)
+
+    // D7: trait declarations must retain an explicit receiver to distinguish
+    // instance methods from associated methods, but app-facing impl blocks keep
+    // the ordinary implicit-receiver spelling. That distinction is known only
+    // after the full imported AST is assembled, so inherit the trait receiver
+    // here, before freeze, rather than guessing while an individual file parses.
+    // Associated trait methods have no receiver and remain unchanged.
+    mut fn inherit_trait_impl_receivers(intern: InternPool):
+        if self.state.frozen != 0:
+            ast_pool_phase_bug("BUG: trait impl receiver inheritance ran after AstPool.freeze")
+        for impl_di in 0..self.decl_count():
+            let impl_node = self.get_decl(impl_di)
+            if self.kind(impl_node) != NodeKind.NK_IMPL_DECL:
+                continue
+            let trait_sym = self.get_data2(impl_node)
+            if trait_sym == 0:
+                continue
+
+            var trait_node: NodeId = 0 as NodeId
+            for trait_di in 0..self.decl_count():
+                let candidate = self.get_decl(trait_di)
+                if self.kind(candidate) == NodeKind.NK_TRAIT_DECL and self.get_data0(candidate) == trait_sym:
+                    trait_node = candidate
+                    break
+            if trait_node == 0:
+                continue
+
+            let impl_extra = self.get_data1(impl_node)
+            let assoc_count = self.get_extra(impl_extra)
+            let method_count = self.get_extra(impl_extra + 1 + assoc_count * 2)
+            let first_method_di = impl_di - method_count
+            if first_method_di < 0:
+                ast_pool_phase_bug("BUG: trait impl method range precedes the AST declaration table")
+
+            for method_offset in 0..method_count:
+                let method_node = self.get_decl(first_method_di + method_offset)
+                if self.kind(method_node) != NodeKind.NK_FN_DECL:
+                    ast_pool_phase_bug("BUG: trait impl method range contains a non-function declaration")
+                let method_name = intern.resolve(self.get_data0(method_node))
+
+                var trait_method = -1
+                for trait_mi in 0..self.trait_method_count(trait_node):
+                    let bare_sym = self.trait_method_field(trait_node, trait_mi, TRAIT_METHOD_NAME)
+                    let expected = intern.resolve(self.get_data0(impl_node)) ++ "." ++ intern.resolve(bare_sym)
+                    if method_name == expected:
+                        trait_method = trait_mi
+                        break
+                if trait_method < 0:
+                    continue
+
+                let trait_param_count = self.trait_method_field(trait_node, trait_method, TRAIT_METHOD_PARAM_COUNT)
+                if trait_param_count <= 0:
+                    continue
+                let trait_param_start = self.trait_method_field(trait_node, trait_method, TRAIT_METHOD_PARAM_START)
+                if intern.resolve(self.fn_param_name(trait_param_start, 0)) != "self":
+                    continue
+                let receiver_flags = self.fn_param_flags(trait_param_start, 0)
+                if fn_param_is_ref_self(receiver_flags) == 0 and fn_param_is_mut_self(receiver_flags) == 0 and fn_param_is_move_self(receiver_flags) == 0:
+                    continue
+
+                let meta = self.find_fn_meta(method_node)
+                if meta < 0:
+                    ast_pool_phase_bug("BUG: trait impl method has no function metadata")
+                let old_param_start = self.fn_meta_param_start(meta)
+                let old_param_count = self.fn_meta_param_count(meta)
+                if old_param_count > 0 and intern.resolve(self.fn_param_name(old_param_start, 0)) == "self":
+                    continue
+
+                let new_param_start = self.extra_len()
+                self.add_extra(self.fn_param_name(trait_param_start, 0))
+                self.add_extra(self.fn_param_type(trait_param_start, 0))
+                self.add_extra(receiver_flags | FN_PARAM_FLAG_SYNTH_RECEIVER)
+                for pi in 0..old_param_count:
+                    self.add_extra(self.fn_param_name(old_param_start, pi))
+                    self.add_extra(self.fn_param_type(old_param_start, pi))
+                    self.add_extra(self.fn_param_flags(old_param_start, pi))
+                    let default_node = self.get_fn_param_default(old_param_start, pi)
+                    if default_node != 0:
+                        self.set_fn_param_default(new_param_start, pi + 1, default_node)
+
+                self.state.fn_meta.set_i32((meta + 1) as i64, self.fn_meta_flags(meta) + FN_META_REQUIRED_UNIT)
+                self.state.fn_meta.set_i32((meta + 3) as i64, new_param_start)
+                self.state.fn_meta.set_i32((meta + 4) as i64, old_param_count + 1)
+
+                let pattern_meta = self.find_fn_param_pattern_meta(method_node)
+                if pattern_meta >= 0:
+                    let old_pattern_start = self.fn_param_pattern_meta_start(pattern_meta)
+                    let old_pattern_count = self.fn_param_pattern_meta_count(pattern_meta)
+                    let new_pattern_start = self.fn_param_patterns_len()
+                    self.add_fn_param_pattern_value(0 as NodeId)
+                    for pi in 0..old_pattern_count:
+                        self.add_fn_param_pattern_value(self.fn_param_pattern_value(old_pattern_start + pi))
+                    self.state.fn_param_pattern_meta.set_i32((pattern_meta + 1) as i64, new_pattern_start)
+                    self.state.fn_param_pattern_meta.set_i32((pattern_meta + 2) as i64, old_pattern_count + 1)
 
     fn fn_param_name(param_start: i32, param_idx: i32) -> i32:
         self.get_extra(param_start + param_idx * FN_PARAM_STRIDE)

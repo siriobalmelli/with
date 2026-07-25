@@ -1014,173 +1014,17 @@ fn Codegen.init_with_opt(module_name: str, opt_level: i32) -> Codegen:
     }
 
 impl Codegen:
-    // #685 inc-2: release this round's table backings — 148 program-scaled
-    // Vec/HashMap fields, dead once deinit runs (the per-unit gen loop
-    // constructs a fresh Codegen per round; under the A5 narrow drop gate
-    // these POD/Copy-element containers never free on their own, retaining
-    // ~180 MB x K rounds). Shared structures (sema/intern/ast — plain
-    // struct/handle fields) are deliberately absent. The two
-    // HashMap[i32, Vec[i64]] fields free outer-only (inner vecs are ~KBs).
-    // Generated from the type's own field list; keep in sync on field adds.
-    move fn dispose_tables():
-        with_vec_free(&raw mut self.sema_symbol_texts as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.async_trampolines as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.local_allocas as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.local_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.local_muts as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.local_fn_sigs as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.local_pointee_structs as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.local_sema_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.fn_values as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.fn_fn_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.generated_mir_body_syms as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.extern_fn_has_sret as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.extern_fn_byval_params as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.extern_fn_byval_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.extern_fn_sret_type as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.extern_fn_direct_params as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.extern_fn_direct_param_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.extern_fn_direct_ret_type as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.struct_type_map as *const *mut u8) })
-        with_vec_free(&raw mut self.struct_llvm_types as *mut u8)
-        with_vec_free(&raw mut self.struct_index_syms as *mut u8)
-        with_vec_free(&raw mut self.struct_field_starts as *mut u8)
-        with_vec_free(&raw mut self.struct_field_counts as *mut u8)
-        with_vec_free(&raw mut self.struct_field_names as *mut u8)
-        with_vec_free(&raw mut self.struct_field_types as *mut u8)
-        with_vec_free(&raw mut self.struct_field_type_nodes as *mut u8)
-        with_vec_free(&raw mut self.struct_field_defaults as *mut u8)
-        with_vec_free(&raw mut self.struct_llvm_field_indices as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.bitpacked_structs as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.bitpacked_total_bits as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.bitpacked_backing_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.bitpacked_by_llvm_type as *const *mut u8) })
-        with_vec_free(&raw mut self.bitpacked_field_bit_offsets as *mut u8)
-        with_vec_free(&raw mut self.bitpacked_field_bit_widths as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.bitpacked_place_proj as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.enum_type_map as *const *mut u8) })
-        with_vec_free(&raw mut self.enum_llvm_types as *mut u8)
-        with_vec_free(&raw mut self.enum_variant_starts as *mut u8)
-        with_vec_free(&raw mut self.enum_variant_counts as *mut u8)
-        with_vec_free(&raw mut self.enum_variant_names as *mut u8)
-        with_vec_free(&raw mut self.enum_variant_payloads as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.enum_by_llvm as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.generic_enum_inst_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.generic_enum_inst_syms as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.disc_enum_type_map as *const *mut u8) })
-        with_vec_free(&raw mut self.disc_enum_name_syms as *mut u8)
-        with_vec_free(&raw mut self.disc_enum_repr_types as *mut u8)
-        with_vec_free(&raw mut self.disc_enum_variant_starts as *mut u8)
-        with_vec_free(&raw mut self.disc_enum_variant_counts as *mut u8)
-        with_vec_free(&raw mut self.disc_enum_variant_names as *mut u8)
-        with_vec_free(&raw mut self.disc_enum_variant_values as *mut u8)
-        with_vec_free(&raw mut self.disc_enum_has_payload as *mut u8)
-        with_vec_free(&raw mut self.disc_enum_variant_payloads as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.generic_fns as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.generic_structs as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.generic_struct_methods as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mono_struct_base as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mono_struct_tp_starts as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mono_struct_tp_counts as *const *mut u8) })
-        with_vec_free(&raw mut self.mono_struct_tp_flat_syms as *mut u8)
-        with_vec_free(&raw mut self.mono_struct_tp_flat_types as *mut u8)
-        with_vec_free(&raw mut self.mono_struct_tp_flat_sema_types as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.mono_values as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mono_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.type_aliases as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.module_constants as *const *mut u8) })
-        with_vec_free(&raw mut self.module_runtime_init_syms as *mut u8)
-        with_vec_free(&raw mut self.module_runtime_init_nodes as *mut u8)
-        with_vec_free(&raw mut self.module_runtime_init_type_ids as *mut u8)
-        with_vec_free(&raw mut self.module_runtime_init_globals as *mut u8)
-        with_vec_free(&raw mut self.module_runtime_init_fns as *mut u8)
-        with_vec_free(&raw mut self.module_runtime_init_types as *mut u8)
-        with_vec_free(&raw mut self.const_int_syms as *mut u8)
-        with_vec_free(&raw mut self.const_int_vals as *mut u8)
-        // decl_source_paths is a HEADER COPY of Zcu.decl_source_paths (Backend
-        // assigns it per round) — freeing it frees the caller. NEVER free here.
-        with_vec_free(&raw mut self.loop_break_bbs as *mut u8)
-        with_vec_free(&raw mut self.loop_continue_bbs as *mut u8)
-        with_vec_free(&raw mut self.loop_result_allocas as *mut u8)
-        with_vec_free(&raw mut self.loop_labels as *mut u8)
-        with_vec_free(&raw mut self.tailrec_param_allocas as *mut u8)
-        with_vec_free(&raw mut self.defer_stack as *mut u8)
-        with_vec_free(&raw mut self.errdefer_stack as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.ref_pointee_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.option_cache_map as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.result_cache_map as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.slice_elem_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.enum_local_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.drop_fn_values as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.drop_fn_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.trait_map as *const *mut u8) })
-        with_vec_free(&raw mut self.trait_idx_syms as *mut u8)
-        with_vec_free(&raw mut self.trait_vtable_types as *mut u8)
-        with_vec_free(&raw mut self.trait_method_starts as *mut u8)
-        with_vec_free(&raw mut self.trait_method_counts as *mut u8)
-        with_vec_free(&raw mut self.trait_method_names as *mut u8)
-        with_vec_free(&raw mut self.trait_method_flags as *mut u8)
-        with_vec_free(&raw mut self.trait_method_ret_types as *mut u8)
-        with_vec_free(&raw mut self.trait_method_param_counts as *mut u8)
-        with_vec_free(&raw mut self.trait_method_param_starts as *mut u8)
-        with_vec_free(&raw mut self.trait_method_ret_nodes as *mut u8)
-        with_vec_free(&raw mut self.trait_method_default_bodies as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.trait_decl_nodes as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.trait_tp_starts as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.trait_tp_counts as *const *mut u8) })
-        with_vec_free(&raw mut self.trait_tp_flat_syms as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.vtable_globals as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.trait_locals as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.trait_local_concrete_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.fn_dyn_param_starts as *const *mut u8) })
-        with_vec_free(&raw mut self.fn_dyn_param_data as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.fn_ref_param_starts as *const *mut u8) })
-        with_vec_free(&raw mut self.fn_ref_param_data as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.fn_result_err_symbols as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.fn_returns_result as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.fn_result_unit_returns as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.async_fn_symbols as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.async_fn_ret_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.async_task_result_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.async_fn_args_struct_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.task_locals as *const *mut u8) })
-        with_vec_free(&raw mut self.async_block_captures as *mut u8)
-        with_vec_free(&raw mut self.scope_local_syms as *mut u8)
-        with_vec_free(&raw mut self.scope_local_allocas as *mut u8)
-        with_vec_free(&raw mut self.scope_local_types as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.gen_field_indices as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.vec_cache_map as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.vec_is_vec as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.hm_cache_map as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.hm_is_hm as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.hs_cache_map as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.slotmap_cache_map as *const *mut u8) })
-        with_vec_free(&raw mut self.type_binding_syms as *mut u8)
-        with_vec_free(&raw mut self.type_binding_types as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.fn_default_starts as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.fn_default_counts as *const *mut u8) })
-        with_vec_free(&raw mut self.tracked_input_paths as *mut u8)
-        with_hashmap_free(unsafe { *(&raw const self.di_fn_subprograms as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.di_type_cache as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.unit_assign as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.unit_rename_index as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mir_local_ptrs as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mir_local_values as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mir_memory_locals as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mir_local_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mir_indirect_value_local_types as *const *mut u8) })
-        with_hashmap_free(unsafe { *(&raw const self.mir_ref_capture_local_types as *const *mut u8) })
-        with_vec_free(&raw mut self.mir_bb_values as *mut u8)
-        with_vec_free(&raw mut self.mir_default_unreachable_bbs as *mut u8)
-
-    // #685 inc-2: deinit CONSUMES the Codegen — LLVM resources first (they
-    // read self), then the table backings via the consuming tail call.
+    // #685 inc-2 (retired by D22/#691 drop widening): the manual
+    // dispose_tables free list is gone. Codegen's own drop glue frees every
+    // Vec/HashMap table exactly once when the consumed receiver drops at
+    // deinit's end; a manual free list on top of it double-frees.
+    // #685 inc-2: deinit CONSUMES the Codegen — dispose the LLVM resources
+    // (they read self), then the consumed receiver's drop frees the tables.
     move fn deinit():
         wl_builder_dispose(self.builder)
         wl_module_dispose(self.llmod)
         wl_context_dispose(self.context)
         wl_dispose_target_machine(self.target_machine)
-        self.dispose_tables()
 
     // ── Public API (called by Driver) ─────────────────────────────────
 
@@ -2218,7 +2062,7 @@ impl Codegen:
         var byval_types: Vec[i64] = Vec.new()
         let byval_types_opt = self.extern_fn_byval_types.get(fn_sym)
         if byval_types_opt.is_some():
-            byval_types = byval_types_opt.unwrap()
+            byval_types = vec_copy_i64(byval_types_opt.unwrap())
         let param_offset = if has_sret != 0: 1 else: 0
         for ai in 0..arg_count:
             var arg_val = args.get(ai as i64)
@@ -2276,7 +2120,7 @@ impl Codegen:
             byval_mask = byval_opt.unwrap() as i64
         let byval_types_opt = self.extern_fn_byval_types.get(fn_sym)
         if byval_types_opt.is_some():
-            byval_types = byval_types_opt.unwrap()
+            byval_types = vec_copy_i64(byval_types_opt.unwrap())
         self.apply_c_abi_call_attrs(call_val, has_sret, sret_ty, byval_mask, byval_types, arg_count, 0)
         if has_sret != 0 and sret_buf != 0 and sret_ty != 0:
             return wl_build_load(self.builder, sret_ty, sret_buf)
@@ -3067,7 +2911,7 @@ impl Codegen:
         let base_sym = self.sema.get_generic_inst_base(resolved)
         if base_sym == 0 or not self.sema.named_types.contains(base_sym):
             return 0
-        let base_tid = self.sema.named_types.get(base_sym).unwrap()
+        let base_tid: i32 = self.sema.named_types.get(base_sym).unwrap()
         if self.sema.get_type_kind(base_tid) != TypeKind.TY_ENUM:
             return 0
         let cg_base_sym = self.sema_sym_to_codegen_sym(base_sym)
@@ -3277,7 +3121,7 @@ impl Codegen:
                 vip_fields.push(wl_i64_type(self.context))
                 return wl_struct_type(self.context, vec_data_i64(&vip_fields), 3, 0)
             if base_sym != 0 and self.sema.named_types.contains(base_sym):
-                let base_tid = self.sema.named_types.get(base_sym).unwrap()
+                let base_tid: i32 = self.sema.named_types.get(base_sym).unwrap()
                 if self.sema.get_type_kind(base_tid) == TypeKind.TY_ENUM:
                     return self.get_or_create_generic_enum_type(resolved_tid)
             // User-defined generic structs: monomorphize via type bindings
@@ -3287,7 +3131,7 @@ impl Codegen:
                 let saved_types = self.type_binding_types
                 let tp_syms: Vec[i32] = Vec.new()
                 let tp_types: Vec[i64] = Vec.new()
-                let gs_node = self.generic_structs.get(cg_base_sym).unwrap()
+                let gs_node: i32 = self.generic_structs.get(cg_base_sym).unwrap()
                 let tp_count = self.type_decl_tp_count(gs_node)
                 var tp_pos = self.type_decl_tp_start(gs_node)
                 for ti in 0..tp_count:
@@ -3617,7 +3461,7 @@ impl Codegen:
         let cg_state_sym = self.codegen_sym_for_sema_sym(state_sym)
         if not self.struct_type_map.get(cg_state_sym).is_some():
             self.predeclare_struct_type(cg_state_sym)
-        let idx = self.struct_type_map.get(cg_state_sym).unwrap()
+        let idx: i32 = self.struct_type_map.get(cg_state_sym).unwrap()
         let existing_count = self.struct_field_counts.get(idx as i64)
         if existing_count > 0:
             return
@@ -3739,7 +3583,7 @@ impl Codegen:
         let name_str = self.intern.resolve(name_sym)
         if not self.struct_type_map.get(name_sym).is_some():
             self.predeclare_struct_type(name_sym)
-        let idx = self.struct_type_map.get(name_sym).unwrap()
+        let idx: i32 = self.struct_type_map.get(name_sym).unwrap()
         let st_type = self.struct_llvm_types.get(idx as i64)
         self.struct_field_starts.set_i32(idx as i64, self.struct_field_names.len() as i32)
         self.struct_field_counts.set_i32(idx as i64, field_count)
@@ -3890,7 +3734,7 @@ impl Codegen:
 
         if not self.struct_type_map.get(name_sym).is_some():
             self.predeclare_struct_type(name_sym)
-        let idx = self.struct_type_map.get(name_sym).unwrap()
+        let idx: i32 = self.struct_type_map.get(name_sym).unwrap()
         let st_type = self.struct_llvm_types.get(idx as i64)
         self.struct_field_starts.set_i32(idx as i64, self.struct_field_names.len() as i32)
         self.struct_field_counts.set_i32(idx as i64, field_count)
@@ -3995,7 +3839,7 @@ impl Codegen:
         // Build enum struct: { i32, [N x i8] }
         if not self.enum_type_map.get(name_sym).is_some():
             self.predeclare_enum_type(name_sym)
-        let idx = self.enum_type_map.get(name_sym).unwrap()
+        let idx: i32 = self.enum_type_map.get(name_sym).unwrap()
         let enum_type = self.enum_llvm_types.get(idx as i64)
         let body: Vec[i64] = Vec.new()
         body.push(wl_i32_type(self.context))
@@ -4056,7 +3900,7 @@ impl Codegen:
         if any_has_payload != 0:
             if not self.enum_type_map.get(name_sym).is_some():
                 self.predeclare_enum_type(name_sym)
-            let enum_idx = self.enum_type_map.get(name_sym).unwrap()
+            let enum_idx: i32 = self.enum_type_map.get(name_sym).unwrap()
             let enum_type = self.enum_llvm_types.get(enum_idx as i64)
             // Build struct: { repr_type, [max_payload_size x i8] }
             let body: Vec[i64] = Vec.new()
@@ -4791,7 +4635,7 @@ impl Codegen:
             self.fn_ref_param_starts.insert(fn_sym, start)
             for j in 0..count:
                 self.fn_ref_param_data.push(0)
-        let base = self.fn_ref_param_starts.get(fn_sym).unwrap()
+        let base: i32 = self.fn_ref_param_starts.get(fn_sym).unwrap()
         self.fn_ref_param_data.set_i32((base + idx) as i64, 1)
 
     fn record_ref_param_aliases(fn_sym: i32, alias_sym: i32, method_key_sym: i32, idx: i32, count: i32):
@@ -4845,7 +4689,7 @@ impl Codegen:
             self.fn_dyn_param_starts.insert(fn_sym, start)
             for j in 0..count:
                 self.fn_dyn_param_data.push(0)
-        let base = self.fn_dyn_param_starts.get(fn_sym).unwrap()
+        let base: i32 = self.fn_dyn_param_starts.get(fn_sym).unwrap()
         self.fn_dyn_param_data.set_i32((base + idx) as i64, trait_sym)
 
     fn fn_callconv_name(meta: i32) -> str:
@@ -5360,8 +5204,10 @@ impl Codegen:
             let fv = self.fn_values.get(fn_sym)
             let ft = self.fn_fn_types.get(fn_sym)
             if fv.is_some() and ft.is_some():
-                self.drop_fn_values.insert(type_sym, fv.unwrap() as i64)
-                self.drop_fn_types.insert(type_sym, ft.unwrap() as i64)
+                let drop_fv: i64 = fv.unwrap()
+                let drop_ft: i64 = ft.unwrap()
+                self.drop_fn_values.insert(type_sym, drop_fv)
+                self.drop_fn_types.insert(type_sym, drop_ft)
 
     // ── Result return type helpers ────────────────────────────────────
 
@@ -5624,7 +5470,7 @@ impl Codegen:
             self.mono_struct_tp_flat_sema_types.push(arg_sema_types.get(ti as i64))
         self.mono_struct_tp_starts.insert(mono_sym, tp_flat_start)
         self.mono_struct_tp_counts.insert(mono_sym, tp_count)
-        let mono_idx = self.struct_type_map.get(mono_sym).unwrap()
+        let mono_idx: i32 = self.struct_type_map.get(mono_sym).unwrap()
         let mono_ty = self.struct_llvm_types.get(mono_idx as i64)
 
         let saved_bind_syms = self.type_binding_syms

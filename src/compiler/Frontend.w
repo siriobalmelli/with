@@ -1568,6 +1568,11 @@ impl Zcu:
             self.set_typed_snapshot("", AstPool.new())
             return AstPool.new()
 
+        // D7's trait body carve-out keeps receiver-vs-associated information in
+        // the trait signature. Once every import is present, desugar that known
+        // receiver into each impl method before either Sema pass observes it.
+        pool.inherit_trait_impl_receivers(self.pool)
+
         // Comptime transform: fold forced comptime expressions and prune dead
         // comptime branches before final sema.
         let t_comptime = runtime_clock_nanos()
@@ -1613,6 +1618,10 @@ impl Zcu:
                 self.render_all_diagnostics_frontend()
                 self.set_typed_snapshot("", AstPool.new())
                 return AstPool.new()
+
+            // The transform deep-clones function metadata. This is normally a
+            // no-op, and also covers any generated trait impls before freeze.
+            pool.inherit_trait_impl_receivers(self.pool)
 
         if do_profile:
             let comptime_ns = runtime_clock_nanos() - t_comptime

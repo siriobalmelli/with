@@ -640,6 +640,10 @@ impl Codegen:
         self.trait_locals = fresh_trait_locals
         self.trait_local_concrete_types = fresh_trait_concrete
         self.enum_local_types = fresh_enum_local_types
+        // The save above moves the map out (blank handle); the body reads it
+        // via sema_type_of_node, so a fresh map must be installed like every
+        // other saved container (the _ext twin already does).
+        self.local_sema_types = HashMap.new()
         self.scope_local_syms = fresh_scope_syms
         self.scope_local_allocas = fresh_scope_allocas
         self.scope_local_types = fresh_scope_types
@@ -774,10 +778,12 @@ impl Codegen:
             let dtm_m_local_id = dtm_mi + 1
             let dtm_m_alloca_opt = self.local_allocas.get(dtm_m_name)
             if dtm_m_alloca_opt.is_some():
-                self.mir_local_ptrs.insert(dtm_m_local_id, dtm_m_alloca_opt.unwrap())
+                let dtm_m_alloca: i64 = dtm_m_alloca_opt.unwrap()
+                self.mir_local_ptrs.insert(dtm_m_local_id, dtm_m_alloca)
                 let dtm_m_ty_opt = self.local_types.get(dtm_m_name)
                 if dtm_m_ty_opt.is_some():
-                    self.mir_local_types.insert(dtm_m_local_id, dtm_m_ty_opt.unwrap())
+                    let dtm_m_ty: i64 = dtm_m_ty_opt.unwrap()
+                    self.mir_local_types.insert(dtm_m_local_id, dtm_m_ty)
 
         self.mir_scan_memory_locals(dtm_body)
 
@@ -787,7 +793,8 @@ impl Codegen:
             if dtm_gl_name != 0:
                 let dtm_gl_mc = self.module_constants.get(dtm_gl_name)
                 if dtm_gl_mc.is_some():
-                    self.mir_local_ptrs.insert(dtm_gli, dtm_gl_mc.unwrap() as i64)
+                    let dtm_global_value: i64 = dtm_gl_mc.unwrap()
+                    self.mir_local_ptrs.insert(dtm_gli, dtm_global_value)
 
         // Create LLVM basic blocks
         for dtm_bb in 0..dtm_body.block_count():
@@ -1525,7 +1532,8 @@ impl Codegen:
                 continue
             let gl_opt = self.module_constants.get(gl_name)
             if gl_opt.is_some():
-                self.mir_local_ptrs.insert(gli, gl_opt.unwrap() as i64)
+                let global_value: i64 = gl_opt.unwrap()
+                self.mir_local_ptrs.insert(gli, global_value)
 
         for bb in 0..init_body.block_count():
             let llbb = wl_append_bb(self.context, function, f"mir.bb{bb}")

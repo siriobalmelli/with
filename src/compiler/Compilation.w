@@ -472,7 +472,7 @@ impl Compilation:
         self.dump_project_info(pool)
 
     fn dump_project_info(pool: AstPool) -> str:
-        let zcu = self.zcu
+        let zcu = &self.zcu
         var function_count = 0
         var type_count = 0
         for di in 0..pool.decl_count():
@@ -534,7 +534,7 @@ impl Compilation:
         out
 
     fn project_info_source(pool: AstPool) -> str:
-        let zcu = self.zcu
+        let zcu = &self.zcu
         var out = "fn __with_compiler_hook_project_info() -> ProjectInfo:\n"
         out = out ++ "    var project = ProjectInfo.new()\n"
         for mi in 0..zcu.last_resolved.modules.len() as i32:
@@ -599,7 +599,7 @@ fn compilation_compiler_hook_call_args(pool: AstPool, intern: InternPool, hook_n
 
 impl Compilation:
     fn compiler_hook_runner_source(pool: AstPool, source_path: str, diag_path: str, emitted_source_path: str, token: str) -> str:
-        let zcu = self.zcu
+        let zcu = &self.zcu
         let root = if zcu.project_config.root_dir.len() > 0: zcu.project_config.root_dir else: frontend_dirname(source_path)
         let hook_count = pool.compiler_hook_count()
         var out = "use std.compiler\n"
@@ -669,8 +669,7 @@ impl Compilation:
             return true
         if not self.config.compiler_hooks_enabled:
             return true
-        let zcu = self.zcu
-        let root = if zcu.project_config.root_dir.len() > 0: zcu.project_config.root_dir else: frontend_dirname(source_path)
+        let root = if self.zcu.project_config.root_dir.len() > 0: self.zcu.project_config.root_dir else: frontend_dirname(source_path)
         let tmp_dir = root ++ "/out/tmp"
         if runtime_mkdir_p(tmp_dir) != 0:
             runtime_eprint("error: could not create compiler hook temp directory: " ++ tmp_dir)
@@ -1156,12 +1155,14 @@ impl Compilation:
 
         var sema = zcu.configure_tracked_input_sema(Sema.init(zcu.pool, move zcu.diagnostics, typed_pool))
         sema.source_text = zcu.current_source_text
-        sema.decl_source_paths = zcu.decl_source_paths
-        sema.decl_source_file_ids = zcu.decl_source_file_ids
-        sema.decl_is_c_import = zcu.decl_is_c_import
-        sema.source_text_file_ids = zcu.source_text_file_ids
-        sema.source_text_names = zcu.source_text_names
-        sema.source_texts = zcu.source_texts
+        // Clone: see run_mir_lower — bare assignments would move these tables
+        // out of the Zcu and blank them for later consumers.
+        sema.decl_source_paths = sema_clone_str_vec(&zcu.decl_source_paths)
+        sema.decl_source_file_ids = sema_clone_i32_vec(&zcu.decl_source_file_ids)
+        sema.decl_is_c_import = sema_clone_i32_vec(&zcu.decl_is_c_import)
+        sema.source_text_file_ids = sema_clone_i32_vec(&zcu.source_text_file_ids)
+        sema.source_text_names = sema_clone_str_vec(&zcu.source_text_names)
+        sema.source_texts = sema_clone_str_vec(&zcu.source_texts)
         sema.tool_mode_entry_path = zcu.tool_mode_entry_path
         sema.runtime_available = if zcu.project_config.runtime_available: 1 else: 0
         sema.runtime_fiber_stack_size = zcu.project_config.runtime_fiber_stack_size
@@ -1429,12 +1430,15 @@ impl Compilation:
         var sema = self.zcu.configure_tracked_input_sema(Sema.init(self.zcu.pool, move self.zcu.diagnostics, active_pool))
         compilation_debug_pool_flow("run_mir_lower:after_init", self.zcu.pool, active_pool, sema)
         sema.source_text = self.zcu.current_source_text
-        sema.decl_source_paths = self.zcu.decl_source_paths
-        sema.decl_source_file_ids = self.zcu.decl_source_file_ids
-        sema.decl_is_c_import = self.zcu.decl_is_c_import
-        sema.source_text_file_ids = self.zcu.source_text_file_ids
-        sema.source_text_names = self.zcu.source_text_names
-        sema.source_texts = self.zcu.source_texts
+        // Clone like Frontend's seam: a bare assignment moves the table out of
+        // the Zcu (single-owner Vec), and the backend's module-object pruning
+        // then sees empty decl paths and emits every imported module's bodies.
+        sema.decl_source_paths = sema_clone_str_vec(&self.zcu.decl_source_paths)
+        sema.decl_source_file_ids = sema_clone_i32_vec(&self.zcu.decl_source_file_ids)
+        sema.decl_is_c_import = sema_clone_i32_vec(&self.zcu.decl_is_c_import)
+        sema.source_text_file_ids = sema_clone_i32_vec(&self.zcu.source_text_file_ids)
+        sema.source_text_names = sema_clone_str_vec(&self.zcu.source_text_names)
+        sema.source_texts = sema_clone_str_vec(&self.zcu.source_texts)
         sema.tool_mode_entry_path = self.zcu.tool_mode_entry_path
         sema.runtime_available = if self.zcu.project_config.runtime_available: 1 else: 0
         sema.runtime_fiber_stack_size = self.zcu.project_config.runtime_fiber_stack_size
