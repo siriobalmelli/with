@@ -21,8 +21,14 @@ impl[T:
     Clone] Clone for Vec[T]:
     fn clone() -> Self:
         var out: Vec[T] = Vec.new()
-        for item in *self:
-            out.push(item.clone())
+        var index: i64 = 0
+        while index < self.len():
+            let item = self.get(index)
+            comptime if T.is_copy():
+                out.push(item)
+            else:
+                out.push(item.clone())
+            index = index + 1
         out
 
 /// An unordered key-value map. Create with `HashMap.new()`,
@@ -62,11 +68,17 @@ impl[K, V] BTreeMap[K, V]:
         self.entries.clear()
 
 impl[K: Ord, V] BTreeMap[K, V]:
+    fn key_at(index: i64) -> &K:
+        unsafe { &(*(self.entries.ptr + (index as usize))).0 }
+
+    fn value_at(index: i64) -> &V:
+        unsafe { &(*(self.entries.ptr + (index as usize))).1 }
+
     fn last_index_of(key: K) -> i64:
         var found = -1
         var i = 0
         while i < self.entries.len():
-            let (existing, _) = self.entries.get(i)
+            let existing = self.key_at(i)
             if not (existing < key) and not (existing > key):
                 found = i
             i = i + 1
@@ -75,60 +87,45 @@ impl[K: Ord, V] BTreeMap[K, V]:
     pub fn contains(key: K) -> bool:
         var i = 0
         while i < self.entries.len():
-            let (existing, _) = self.entries.get(i)
+            let existing = self.key_at(i)
             if not (existing < key) and not (existing > key):
                 return true
             i = i + 1
         false
 
-    // TODO(D22 — implementation in progress): the normative signature is
-    // Option[&V] for every V. Do not preserve this owned return or copy map
-    // storage while changing it; implement it only through the approved D22
-    // view-origin and contextual-materialization design.
-    pub fn get(key: K) -> Option[V]:
+    pub fn get(key: K) -> Option[&V]:
         let idx = self.last_index_of(key)
         if idx < 0:
             return None
-        let (_, value) = self.entries.get(idx)
-        Some(value)
+        Some(self.value_at(idx))
 
     pub mut fn insert(key: K, value: V) -> Unit:
         var i = 0
         while i < self.entries.len():
-            let (existing, _) = self.entries.get(i)
+            let existing = self.key_at(i)
             if not (existing < key) and not (existing > key):
                 with self.entries.slot(i) as mut slot:
                     slot.set((key, value))
                 return
             if existing > key:
-                self.entries.push((key, value))
-                var j = self.entries.len() - 1
-                while j > i:
-                    let left = self.entries.get(j - 1)
-                    let right = self.entries.get(j)
-                    with self.entries.slot(j - 1) as mut left_slot:
-                        left_slot.set(right)
-                    with self.entries.slot(j) as mut right_slot:
-                        right_slot.set(left)
-                    j = j - 1
+                let reordered: Vec[(K, V)] = Vec.new()
+                var old_index = 0
+                while old_index < i:
+                    reordered.push(self.entries.remove(0))
+                    old_index = old_index + 1
+                reordered.push((key, value))
+                while self.entries.len() > 0:
+                    reordered.push(self.entries.remove(0))
+                self.entries = reordered
                 return
             i = i + 1
         self.entries.push((key, value))
 
-    // D22 keeps remove as the owned Option[V] transfer. TODO(D22): when get is
-    // made borrowing, preserve this consuming path and its exactly-once drop.
     pub mut fn remove(key: K) -> Option[V]:
         let idx = self.last_index_of(key)
         if idx < 0:
             return None
-        let (_, removed_value) = self.entries.get(idx)
-        var i = 0
-        while i < self.entries.len():
-            let (existing, _) = self.entries.get(i)
-            if not (existing < key) and not (existing > key):
-                let _ = self.entries.remove(i)
-            else:
-                i = i + 1
+        let (_, removed_value) = self.entries.remove(idx)
         Some(removed_value)
 
     pub fn keys() -> Vec[K]:

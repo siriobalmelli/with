@@ -58,9 +58,10 @@ fn io_strip_trailing_cr(s: str) -> str:
 /// Read stdin as newline-stripped lines.
 pub fn Stdin.lines(self: &Self) -> Vec[str]:
     let _ = self
-    let raw_lines = lines(read_all())
+    var raw_lines = lines(read_all())
     let out: Vec[str] = Vec.new()
-    for line in raw_lines:
+    while raw_lines.len() > 0:
+        let line = raw_lines.remove(0)
         out.push(io_strip_trailing_cr(line))
     out
 

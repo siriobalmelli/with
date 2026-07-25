@@ -100,7 +100,7 @@ pub fn await_all[T, E](tasks: impl IntoIter[Task[Result[T, E]]]) -> Result[Vec[T
 pub fn await_all[T](tasks: impl IntoIter[Task[T]]) -> Vec[T]:
     let pending: Vec[Task[T]] = Vec.new()
     for task in tasks:
-        pending.push(task)
+        pending.push(move task)
 
     let values: Vec[T] = Vec.new()
     let total = pending.len() as i32
@@ -121,7 +121,7 @@ pub fn await_all[T](tasks: impl IntoIter[Task[T]]) -> Vec[T]:
 pub fn await_first[T](tasks: impl IntoIter[Task[T]]) -> T:
     let pending: Vec[Task[T]] = Vec.new()
     for task in tasks:
-        pending.push(task)
+        pending.push(move task)
 
     if pending.is_empty():
         todo("await_first: empty input")
