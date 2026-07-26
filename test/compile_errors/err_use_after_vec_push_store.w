@@ -1,4 +1,4 @@
-//! expect-check-fail: this parameter takes ownership of a non-Copy value
+//! expect-check-fail: use of moved value
 
 type Payload {
     values: Vec[i32],
