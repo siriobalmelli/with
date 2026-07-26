@@ -578,19 +578,168 @@ LlvmBridge --emit-obj (stage2) exit 0
     vecs instead of `move target.inputs` through a `&BuildGraphTarget`).
     All six action/build tests green; the p8 repro runs allocator-clean.
 
-**Final batch-A state (2026-07-25 evening):**
+## 3b. `seam-sites`: find the class with the compiler, fix the whole class
+
+The 2026-07-25 method change. Every double free root-caused by hand in this
+batch (roots 15, 18, 19) is one MIR-visible shape, so the compiler can
+enumerate them instead of waiting for a crash: `analyze <file> seam-sites`
+(src/Analysis.w, documented in docs/deep-debugging-tools.md).
+
+**The detector was wrong twice before it was right — both caught by fixtures,
+not by reasoning.** `test/.../pin_store.w` (allocator-confirmed double free,
+must REPORT) and `pin_read.w` (allocator-clean, must stay SILENT) are the
+contract:
+
+1. v1 keyed on place PROJECTIONS and reported 4429 rows — while MISSING the
+   real bug entirely: the aliasing copy is laundered through an accessor's
+   return value and carries no projection.
+2. v2 added the `retained-unowned-copy` class (Drop non-Copy value read from a
+   container the fn does not own, then retained) — 92 rows, but flagged every
+   correct `sema_clone_i32_vec(&self.field)` / `project_config_clone_str_vec`.
+3. v3 requires a BUILTIN accessor (only those return an interior bitwise copy;
+   a user callee returning a Drop value constructed it) — 4 rows, all real.
+
+Classes closed with this loop (each verified against source first):
+
+- `retained-unowned-copy` **4 → 0**: three `ComptimeCapabilityRecord` copies in
+  `eval_buildctx_capability_method` handed to owned params — root 19's class in
+  the BuildCtx siblings the crash never pointed at (one, `eval_new_build_value`,
+  frees the table's buffers merely by DROPPING its owned param); and
+  `LspState.set_doc`, which rebuilt the document vector element-wise and then
+  freed the originals via `self.documents = new_docs` (now an in-place §19.5
+  slot set).
+- `move-through-ref` **16 → 1**: two signature fixes closed 13 rows at once —
+  `compilation_join_strings(values: Vec[str])` → `&Vec[str]` (11 sites in
+  `dump_project_info` were moving Vec[str] out of a borrowed ProjectConfig) and
+  `std.process` `argv_blob`/`run` → `&Vec[str]` (so `Command.run`/`status` no
+  longer consume `self.args`, which made a Command accidentally single-use).
+  Then `link_stage_apply_env` → `&Vec[LinkStageEnvVar]`, and
+  `mir_push_unique_i32(v: Vec[i32], …)` — which took the vector OWNED and
+  pushed into it, so the mutation went to a dropped copy while the source was
+  blanked; replaced by mutating the place directly.
+
+Dispositions recorded rather than guessed:
+
+- `move-raw-deref` (21): INTENDED — the `CiTypePool/CiExprPool/CiStmtPool.deinit`
+  family frees its manually-allocated state (`ci_ir_free_vec_*` then
+  `with_free(st)`).
+- `Parser.parse_interpolated_expr_attempt` (the last move-through-ref row):
+  `let parse_diags = if use_shared_diags != 0: self.diags else: local_diags`
+  moves the parser's DiagnosticList (a value type owning a Vec, not a handle)
+  out of a READ receiver, and `parse_interpolated_expr` restores `self.intern`
+  and `self.pool` afterward but never `self.diags`. Two repros (parse errors on
+  both sides of an f-string, vs a control) showed NO diagnostic loss, so the
+  consequence is unproven — needs a design decision on shared diagnostics, not
+  a guessed fix.
+- `copy-view-drop` (1124), `copy-elem-drop` (9), `copy-raw-deref-drop` (12):
+  UNVALIDATED. No fixture pair yet proves these separate real from benign, and
+  the v1 experience says most place-projection reads are forwarded harmlessly by
+  MIR. Do not act on them until they have their own pin_* pair.
+
+Also filed: **#720** — `with check` rejects every implicit-main file that
+`with run` executes fine (2-line repro; reproduced on the seed, on stage1, and
+on an untouched committed tool), so none of the repo's own tooling can be
+type-checked.
+
+**Batch-A state as of 2026-07-25 evening:**
+
+20. **#719 FIXED at the root — statement frames flushed the enclosing
+    expression's pending resets.** `flush_stmt_temp_frame` called
+    `flush_pending_resets()` (start=0), so a statement frame inside an inner
+    value-position block drained resets queued by the ENCLOSING expression: a
+    struct literal that had already consumed field 0 got that binding blanked
+    by the next inner statement boundary, and the aggregate then read zeroed
+    storage. Fix: `push_stmt_temp_frame` records pending-reset watermarks
+    (`stmt_reset_starts`/`_field_starts`/`_temp_starts`) and the flush uses
+    `flush_pending_resets_since(those)`. Verified: repro + both controls +
+    `behav_comptime_aggregate_freeze` pass; the use-after-kill validator is
+    silent. FOUR disproved hypotheses are recorded on the issue (frame at the
+    init-lowering level; materialize the block result; `move` the block tail —
+    which REGRESSED a control and was reverted; cancel-at-block-exit — which
+    proved the reset was re-queued by the enclosing consumer and pointed at
+    the real site). New permanent tooling from the hunt: `WITH_DUMP_INIT_MIR`
+    (codegen-synthesized bodies were invisible to --dump-mir),
+    `WITH_TRACE_SCOPES`, and `validate_use_after_kill` — a MIR validator for
+    the read-after-blank class that proves linear dominance before reporting
+    (212 naive hits → 46 with dominance → correct on all three fixtures) and
+    runs in audit:mir plus the const-init path. Leftover to strip if the four
+    cases hold without it: attempt 4's `cancel_pending_reset_for_local` at
+    lower_block_mode (~:5619).
+21. **The compile-error lane ran for the first time all session (behavior
+    lane finally green) — 13 reds, all dispositioned.** 10 were diagnostic
+    WORDING drift from approved changes (D22 joins, #716 receiver wording,
+    no_std fiber message) — directives updated. 3 were ruled flips migrated to
+    must-compile behavior tests: `behav_for_vec_drop_borrow_iteration.w`
+    (#607 gate retired by the #712 ruling) and
+    `behav_ref_copy_owned_demand_coercion.w` (the two D22 ref-copy fixtures,
+    whose own headers ordered the flip). The 13th,
+    `err_implicit_main_import_stmt`, was the real find:
+22. **seam-sites' prediction came true — the shared-diags move double-freed
+    on the error path.** The one `move-through-ref` row left undispositioned
+    ("no visible harm in two repros") was `Parser.parse_interpolated_expr_attempt`
+    moving `self.diags` (a value type owning a Vec) into the sub-parser with
+    no put-back. On a module-parse-error path the CURRENT-codegen release
+    binary double-freed the list and died with `invalid free` BEFORE printing
+    any diagnostic — which the runner reported as "missing expected build
+    error" while every seed-built binary printed it fine (generation
+    divergence again; allocator + LLDB verdicted the exact frame). Fix: the
+    receiver is `mut fn`, the diagnostics travel out in
+    `InterpolatedExprParseAttempt.diags`, and shared mode puts them back like
+    intern/pool always were. Remaining, filed as **#721**: the module parse
+    error is span-misattributed to `<embedded-std>/std/string.w:1:1`
+    (pre-existing on the seed; #661 file-identity class). Also filed **#720**:
+    `with check` rejects every implicit-main file `with run` accepts, so repo
+    tools are un-typecheckable.
+
+23. **`Option.filter` payload passed as `&T` against Sema's owned contract**
+    (codegen lane, first executed this session: `codegen_option_methods`).
+    MirLower's filter arm did `find_exact_type(TY_REF, payload)` and passed by
+    reference — DORMANT pre-D22 because no `&i32` existed in the type table
+    (find fell back to by-value); D22 programs mint `&T` constantly, so the
+    mismatch activated ("wrong argument type actual=ptr expected=i32"). Fixed:
+    pass by value, matching Sema's typing of the predicate and the seed's
+    actual behavior. `inspect`'s ref-pass is fine (its closures type `&T`).
+24. **`??` join treated an ambient expectation as a cage** (spec lane, first
+    executed this session; broke `spec_ss11_8_derive_builder` and the 8-line
+    repro `v ?? return Err("x")` in a Result-returning tail — seed passes).
+    `resolve_contextual_join` set `final_type = expected` unconditionally, so
+    a Result-returning tail demanded the ?? produce the full Result while the
+    happy path produces the PAYLOAD (implicit Ok-wrap happens at return
+    checking). Fixed: when the reaching arms agree on an owned candidate the
+    expectation cannot absorb (`contextual_join_value_accepts == 0`, no ref
+    candidate), the candidate stands and the enclosing position performs its
+    own coercion/wrapping check — a genuine mismatch still errors there
+    (err_default_op_type_mismatch still fires).
+25. **native-spec-tests inventory (lane first executed this session; 210
+    files).** 12 reds → after roots 23/24: 4 fail on the SEED too
+    (pre-existing spec debt: ss04_8 unit elision, ss07_1 guard inference,
+    ss07_2 builder block return, ss13_2 iterator borrowing). 4 are the #714
+    mandatory-move demand REJECTING THE SPEC'S OWN §14 EXAMPLES
+    (ss14_11 ×2 via std/task.w:54, ss14_15, ss14_22) — escalated on #714;
+    per "the spec leads," these fixtures stay RED as evidence and must NOT
+    be move-migrated. 3 remain Class-B D22 regressions to root-cause:
+    ss10_5 (`Option.cloned() requires Option[&T]`), ss13_3 (runtime assert —
+    a collection op computes a wrong value), ss13_6a ("aggregate rvalue
+    missing destination struct type" in a Result comprehension).
+
+Latest battery (run after the seam class fixes, uncommitted tree):
 
 ```text
-with build :test        2 of 905 failed (0 cached, 905 ran):
-                        behav_iter_pipeline_local  — #716, Eric-ruled to batch B
-                        behav_comptime_aggregate_freeze — #719, own batch
-                        (isolation rule). Everything else green on a fully
-                        uncached lane.
-with build :fixpoint    rerun in flight on the final tree (previous tree PASS)
-with build :move-audit  rerun in flight (previous: 15 cells, 0 FAIL)
-with build :drop-audit  rerun in flight (previous: 115 cells 0 non-PASS;
-                        3 candidate-better-than-baseline diffs clear at reseed)
+with build              PASS (full chain, link-compiler)
+with build :fixpoint    PASS (stage2 == stage3)
+with build :move-audit  PASS (0 vs-expected FAIL)
+with build :drop-audit  115 cells, 0 non-PASS; rc=1 is the 3 long-standing
+                        baseline diffs (branch_move_state_identity/field and
+                        the two pod_vec EXPECT-CLEAN cells) where the CANDIDATE
+                        passes and the pre-flip seed fails — they clear at reseed
+with build :test        1 of 905 failed (0 cached, 905 ran):
+                        behav_comptime_aggregate_freeze — #719
+                        (SINCE FIXED — see root 20; the closing battery on the
+                        settled tree is the authoritative record)
 ```
+
+`behav_iter_pipeline_local` went green with batch B's four stdlib lines
+(#716). Nothing after batch A's six commits is committed yet.
 
 Historical (2026-07-25 morning): the batch battery first ran with `:test` RED
 on 11 tests (#712 consuming-iteration debt), resolved by Eric's #712 ruling
