@@ -63,11 +63,14 @@ fn main:
     let nested_none_outer: Option[Option[i32]] = None
     assert(nested_none_outer.flatten().is_none())
 
-    let copy_source: Option[i32] = Some(21)
-    let copied = copy_source.cloned()
+    // §10.5: copied/cloned are the Option[&T] -> Option[T] ownership boundary.
+    let copy_value = 21
+    let copy_source: Option[&i32] = Some(&copy_value)
+    let copied = copy_source.copied()
     assert(copied.unwrap() == 21)
-    let original_widget: Option[Widget] = Some(Widget { id: 33 })
-    let cloned_widget = original_widget.cloned()
+    let original_widget = Widget { id: 33 }
+    let borrowed_widget: Option[&Widget] = Some(&original_widget)
+    let cloned_widget = borrowed_widget.cloned()
     assert(cloned_widget.unwrap().id == 33)
 
     var seen_values: Vec[i32] = Vec.new()

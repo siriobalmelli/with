@@ -11468,8 +11468,19 @@ impl Sema:
         // belongs to the arms. Leaking it demands the match's result type
         // from a subject join (`match if ok: Some(7) else: None:` in an i32
         // context asked the subject if to produce i32).
-        let subject_type = self.check_expr_value_context(subject)
-        let comprehension_carrier = if self.match_is_for_comprehension_lowering(extra_start, arm_count) != 0: self.option_result_carrier_family(subject_type as i32) else: 0
+        // One scoped exception (#722): a for-comprehension clause whose
+        // iterable is a bare variant construction (`for a in Ok(2)` under a
+        // `Result[i32, str]` binding). Self-determination leaves the
+        // carrier's other type argument (Result's Err side) unbound, and the
+        // temps lower at the uninstantiated generic base. The same peer rule
+        // as `e == Ok(5)` applies: the construction is typed against the
+        // carrier expectation that is present.
+        let is_comprehension_lowering = self.match_is_for_comprehension_lowering(extra_start, arm_count)
+        let subject_type = if is_comprehension_lowering != 0 and self.has_expected_type != 0 and self.expected_expr_type != 0 and (self.ast.kind(subject) == NodeKind.NK_VARIANT_SHORTHAND or self.comparison_operand_is_variant_call(subject) != 0):
+            self.check_expr_with_expected(subject, self.expected_expr_type)
+        else:
+            self.check_expr_value_context(subject)
+        let comprehension_carrier = if is_comprehension_lowering != 0: self.option_result_carrier_family(subject_type as i32) else: 0
         if comprehension_carrier != 0 and self.current_for_comprehension_carrier != 0 and comprehension_carrier != self.current_for_comprehension_carrier:
             self.emit_error("for-comprehension clauses must use the same carrier family", node)
         var result_type: TypeId = 0 as TypeId

@@ -216,8 +216,11 @@ fn test_eager_consumers:
     assert(FOREACH_TOTAL == 10)
 
 fn test_unzip:
-    let pairs = vec_123().iter()
-        |> zip(vec_1_to_4().iter())
+    // §5.2: iterators are ephemeral views; their source vectors must
+    // outlive them, so they are bound rather than statement temporaries.
+    let left_src = vec_123()
+    let right_src = vec_1_to_4()
+    let pairs = left_src.iter() |> zip(right_src.iter())
     let (lefts, rights) = pairs.unzip()
     assert_vec_i32(lefts, 1, 2, 3)
     assert_vec_i32(rights, 1, 2, 3)
