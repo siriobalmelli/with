@@ -1518,6 +1518,16 @@ impl Codegen:
         init_builder.pop_scope_inline()
         init_builder.terminate(TermKind.TK_RETURN, 0, 0, 0, 0)
         let init_body = init_builder.body
+        // Codegen-synthesized bodies never reach `--dump-mir` (that dumps the
+        // Sema-lowered module). WITH_DUMP_INIT_MIR exposes them; #719 was
+        // invisible without it.
+        if with_getenv_str("WITH_DUMP_INIT_MIR").len() > 0:
+            with_eprint(dump_mir_body(&init_body, &self.intern, &self.sema))
+        // #719 class: a synthesized body that reads a killed local computes from
+        // zeroed storage. Report it here rather than emitting silently broken code.
+        let uak = validate_use_after_kill(&init_body, &self.intern)
+        if uak.len() > 0:
+            with_eprint("error: const initializer MIR is invalid: " ++ uak)
         self.mir_scan_memory_locals(init_body)
 
         // Void results keep the dead i32 slot — alloca of void traps in LLVM.

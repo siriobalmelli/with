@@ -289,6 +289,8 @@ impl MirBuilder:
         self.mark_no_suspend_terminator()
 
     fn push_scope() -> Unit:
+        if with_getenv_str("WITH_TRACE_SCOPES").len() > 0:
+            with_eprint(f"[scope] push depth={self.drop_scope_starts.len() as i32} bb={self.cur_bb as i32}")
         self.drop_scope_starts.push(self.drop_local_ids.len() as i32)
         self.bind_scope_starts.push(self.bind_syms.len() as i32)
         self.alias_scope_starts.push(self.alias_syms.len() as i32)
@@ -983,6 +985,8 @@ impl MirBuilder:
     mut fn pop_scope_inline():
         if self.drop_scope_starts.len() as i32 == 0:
             return
+        if with_getenv_str("WITH_TRACE_SCOPES").len() > 0:
+            with_eprint(f"[scope] pop depth={self.drop_scope_starts.len() as i32 - 1} bb={self.cur_bb as i32}")
 
         let scope_idx = self.drop_scope_starts.len() as i32 - 1
         let drop_start = self.drop_scope_starts.get(scope_idx as i64)
@@ -5483,6 +5487,8 @@ impl MirBuilder:
         self.unit_operand()
 
     mut fn lower_block_mode(node: i32, want_result: i32) -> i32:
+        if with_getenv_str("WITH_TRACE_SCOPES").len() > 0:
+            with_eprint(f"[scope] block node={node} stmts={self.ast.get_data1(node)} tail={self.ast.get_data2(node)} want={want_result} bb={self.cur_bb as i32}")
         let stmt_start = self.ast.get_data0(node)
         let stmt_count = self.ast.get_data1(node)
         let tail_expr = self.ast.get_data2(node)

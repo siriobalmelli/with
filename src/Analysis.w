@@ -1115,10 +1115,20 @@ fn analysis_audit_frozen_calls(report: &AnalysisReport, sema: &Sema, mir_mod: &M
             report.add(move fact)
             report.fail("frozen phase " ++ sema.pool_resolve(body.fn_sym) ++ " -> " ++ callee ++ ": mutable Sema re-entry")
 
-fn analysis_audit_mir(report: &AnalysisReport, mir_mod: &MirModule):
+fn analysis_audit_mir(report: &AnalysisReport, mir_mod: &MirModule, pool: &InternPool):
     let err = validate_all_mir_module(mir_mod)
     if err.len() > 0:
         report.fail(err)
+    // #719 class: reading a local after StorageDead / after its reset-on-move
+    // blank. Guards ordinary bodies here; the synthesized const initializers are
+    // checked where they are built (they never enter this module).
+    for bi in 0..mir_mod.bodies.len() as i32:
+        let body = &mir_mod.bodies[bi as i64]
+        if body.lowering_failed != 0:
+            continue
+        let uak = validate_use_after_kill(body, pool)
+        if uak.len() > 0:
+            report.fail("use-after-kill: " ++ uak)
 
 // Return-consistency: two detectors for the silent-undef class (#653).
 // (1) A call terminator whose destination place carries a concrete non-void
@@ -1378,13 +1388,161 @@ fn analysis_seam_place_class(sema: &Sema, body: &MirBody, place_id: i32, is_move
         return "copy-raw-deref-drop"
     ""
 
-fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule) -> str:
-    var out = "fn\tclass\tplace\ttype\n"
-    var moves_ref = 0
-    var moves_raw = 0
-    var copies_elem = 0
-    var copies_view = 0
-    var copies_raw = 0
+// Emit one row per SITE (statement or terminator), so every finding carries a
+// source location and the context that consumes the operand. A migrator client
+// needs both: the location to edit, and the context to choose the fix
+// (`store` = the copy is retained -> clone/view; `read` = transient -> view).
+// Pure classification of one operand use; the caller owns accumulation so
+// nothing mutates through a borrow (the very class this tool reports).
+type SeamRow { ok: i32, class_idx: i32, key: str, row: str }
+
+fn analysis_seam_row(sema: &Sema, body: &MirBody, fn_name: str, path: str, span: i32, operand: i32, context: str) -> SeamRow:
+    let none = SeamRow { ok: 0, class_idx: 0, key: "", row: "" }
+    if operand < 0 or operand >= body.operand_kinds.len() as i32:
+        return none
+    let okind = body.operand_kinds.get(operand as i64)
+    if okind != OperandKind.OK_COPY and okind != OperandKind.OK_MOVE:
+        return none
+    let place_id = body.operand_d0.get(operand as i64)
+    let class = analysis_seam_place_class(sema, body, place_id, if okind == OperandKind.OK_MOVE: 1 else: 0)
+    if class.len() == 0:
+        return none
+    let place_text = mir_place_text(body, place_id)
+    let class_idx = if class == "move-through-ref": 0
+        else if class == "move-raw-deref": 1
+        else if class == "copy-elem-drop": 2
+        else if class == "copy-view-drop": 3
+        else: 4
+    let place_ty = body.place_sema_types.get(place_id as i64)
+    SeamRow {
+        ok: 1,
+        class_idx,
+        key: fn_name ++ "\t" ++ class ++ "\t" ++ place_text ++ "\t" ++ f"{span}",
+        row: path ++ f"\t{span}\t{fn_name}\t{class}\t{context}\t{place_text}\t" ++ sema.type_name(place_ty) ++ "\n",
+    }
+
+// The retention class (#715 / BuildGraphTarget / capability-record shape):
+// a Drop, non-Copy value is READ out of a container the function does not own
+// (receiver rooted in a borrow, a raw pointer, or a `self` field), and the
+// result is then RETAINED — pushed into another container or stored into an
+// aggregate. Both owners later free the same buffers.
+//
+// The copy is laundered through the accessor's RETURN VALUE, so it carries no
+// place projection; keying on projections (as the place classifier does) misses
+// it entirely. This walk keys on the call destination instead, then proves
+// retention with a second pass over the same body.
+fn analysis_seam_place_is_unowned_root(sema: &Sema, body: &MirBody, place_id: i32) -> i32:
+    if place_id < 0 or place_id >= body.place_locals.len() as i32:
+        return 0
+    let local = body.place_locals.get(place_id as i64)
+    if local < 0 or local >= body.local_type_ids.len() as i32:
+        return 0
+    let proj_count = body.place_proj_counts.get(place_id as i64)
+    let root_ty = body.local_type_ids.get(local as i64)
+    let root_kind = if root_ty > 0: sema.get_type_kind(sema.resolve_alias(root_ty as TypeId)) else: TypeKind.TY_ERR
+    // A borrowed/raw root, or any projection off local 0 (`self`/first param).
+    if root_kind == TypeKind.TY_REF or root_kind == TypeKind.TY_PTR:
+        return 1
+    if local == 1 and proj_count > 0:
+        return 1
+    0
+
+fn analysis_seam_retention_rows(sema: &Sema, body: &MirBody, fn_name: str, path: str) -> Vec[str]:
+    let rows: Vec[str] = Vec.new()
+    let candidate_locals: Vec[i32] = Vec.new()
+    let candidate_spans: Vec[i32] = Vec.new()
+    let candidate_types: Vec[i32] = Vec.new()
+    // Pass 1: calls whose result is a Drop non-Copy value read from an unowned container.
+    for bb in 0..body.block_count():
+        if body.term_kind(bb) != TermKind.TK_CALL:
+            continue
+        let dest = body.term_data2(bb)
+        if dest < 0 or dest >= body.place_locals.len() as i32:
+            continue
+        let dest_ty = body.place_sema_types.get(dest as i64)
+        if dest_ty <= 0 or sema.type_needs_drop_frozen(dest_ty) == 0 or sema.is_copy_frozen(dest_ty as TypeId) != 0:
+            continue
+        let args_id = body.term_data1(bb)
+        if args_id < 0 or args_id >= body.call_arg_starts.len() as i32:
+            continue
+        // Only a BUILTIN container accessor returns a bitwise element copy that
+        // aliases the receiver's interior. A user callee returning a Drop value
+        // built it (clone/constructor) — flagging those reports every correct
+        // `clone_str_vec(&self.field)` as a bug. (A user fn that hands back a
+        // view is caught by the escape-view class instead.)
+        if body.call_sig_index(args_id) >= 0:
+            continue
+        let start = body.call_arg_starts.get(args_id as i64)
+        let count = body.call_arg_counts.get(args_id as i64)
+        if count <= 0 or start < 0 or start >= body.call_arg_operands.len() as i32:
+            continue
+        let recv_op = body.call_arg_operands.get(start as i64)
+        if recv_op < 0 or recv_op >= body.operand_kinds.len() as i32:
+            continue
+        if body.operand_kinds.get(recv_op as i64) == OperandKind.OK_MOVE:
+            continue
+        if analysis_seam_place_is_unowned_root(sema, body, body.operand_d0.get(recv_op as i64)) == 0:
+            continue
+        candidate_locals.push(body.place_locals.get(dest as i64))
+        candidate_spans.push(body.bb_term_spans.get(bb as i64))
+        candidate_types.push(dest_ty)
+    if candidate_locals.len() == 0:
+        return rows
+    // Pass 2: is a candidate retained (aggregate field, or an owned call arg)?
+    for ci in 0..candidate_locals.len() as i32:
+        let want = candidate_locals.get(ci as i64)
+        var retained_by = ""
+        for si in 0..body.stmt_kinds.len() as i32:
+            if retained_by.len() > 0: break
+            if body.stmt_kinds.get(si as i64) != StmtKind.Assign: continue
+            let rv = body.stmt_d1.get(si as i64)
+            if rv < 0 or rv >= body.rval_kinds.len() as i32: continue
+            if body.rval_kinds.get(rv as i64) != RvalueKind.RK_AGGREGATE: continue
+            let fid = body.rval_d1.get(rv as i64)
+            if fid < 0 or fid >= body.agg_field_starts.len() as i32: continue
+            let fstart = body.agg_field_starts.get(fid as i64)
+            let fcount = body.agg_field_counts.get(fid as i64)
+            for fi in 0..fcount:
+                let opi = fstart + fi
+                if opi < 0 or opi >= body.agg_field_operands.len() as i32: continue
+                let op = body.agg_field_operands.get(opi as i64)
+                if op < 0 or op >= body.operand_kinds.len() as i32: continue
+                let opl = body.operand_d0.get(op as i64)
+                if opl >= 0 and opl < body.place_locals.len() as i32 and body.place_locals.get(opl as i64) == want:
+                    retained_by = "store-aggregate"
+        for bb2 in 0..body.block_count():
+            if retained_by.len() > 0: break
+            if body.term_kind(bb2) != TermKind.TK_CALL: continue
+            let aid = body.term_data1(bb2)
+            if aid < 0 or aid >= body.call_arg_starts.len() as i32: continue
+            let s2 = body.call_arg_starts.get(aid as i64)
+            let c2 = body.call_arg_counts.get(aid as i64)
+            let sig2 = body.call_sig_index(aid)
+            for ai in 1..c2:
+                let opi = s2 + ai
+                if opi < 0 or opi >= body.call_arg_operands.len() as i32: continue
+                let op = body.call_arg_operands.get(opi as i64)
+                if op < 0 or op >= body.operand_kinds.len() as i32: continue
+                let opl = body.operand_d0.get(op as i64)
+                if opl < 0 or opl >= body.place_locals.len() as i32: continue
+                if body.place_locals.get(opl as i64) != want: continue
+                if sig2 >= 0 and ai < sema.sig_get_param_count(sig2):
+                    let pty = sema.sig_param_type(sig2, ai)
+                    let pk = if pty > 0: sema.get_type_kind(sema.resolve_alias(pty as TypeId)) else: TypeKind.TY_ERR
+                    if pk == TypeKind.TY_REF or pk == TypeKind.TY_PTR: continue
+                retained_by = "retained-call-arg"
+        if retained_by.len() > 0:
+            let span = candidate_spans.get(ci as i64)
+            rows.push(path ++ f"\t{span}\t{fn_name}\tretained-unowned-copy\t{retained_by}\t_{want}\t" ++ sema.type_name(candidate_types.get(ci as i64)) ++ "\n")
+    rows
+
+fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule, source_path: str, source_text: str) -> str:
+    let _ = source_path
+    var out = "path\toffset\tfn\tclass\tcontext\tplace\ttype\n"
+    let report_lines: Vec[str] = Vec.new()
+    let counts: Vec[i32] = Vec.new()
+    for _ci in 0..6:
+        counts.push(0)
     var escapes = 0
     let seen: HashMap[str, i32] = HashMap.new()
     for bi in 0..mir_mod.bodies.len() as i32:
@@ -1392,26 +1550,90 @@ fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule) -> str:
         if body.lowering_failed != 0:
             continue
         let fn_name = sema.pool_resolve(body.fn_sym)
-        for oi in 0..body.operand_kinds.len() as i32:
-            let okind = body.operand_kinds.get(oi as i64)
-            if okind != OperandKind.OK_COPY and okind != OperandKind.OK_MOVE:
+        let fn_path = analysis_sig_path(sema, body.fn_sym, source_path)
+        let ret_rows = analysis_seam_retention_rows(sema, body, fn_name, fn_path)
+        for ri in 0..ret_rows.len() as i32:
+            report_lines.push(ret_rows.get(ri as i64))
+            counts.set_i32(5, counts.get(5) + 1)
+        // Statements: an operand inside an aggregate or a plain assign is
+        // RETAINED by the destination; anything else is a transient read.
+        for si in 0..body.stmt_kinds.len() as i32:
+            if body.stmt_kinds.get(si as i64) != StmtKind.Assign:
                 continue
-            let place_id = body.operand_d0.get(oi as i64)
-            let class = analysis_seam_place_class(sema, body, place_id, if okind == OperandKind.OK_MOVE: 1 else: 0)
-            if class.len() == 0:
+            let span = body.stmt_spans.get(si as i64)
+            let rv = body.stmt_d1.get(si as i64)
+            if rv < 0 or rv >= body.rval_kinds.len() as i32:
                 continue
-            let place_text = mir_place_text(body, place_id)
-            let key = fn_name ++ "\t" ++ class ++ "\t" ++ place_text
-            if seen.contains(key):
+            let rk = body.rval_kinds.get(rv as i64)
+            let pending: Vec[i32] = Vec.new()
+            let contexts: Vec[str] = Vec.new()
+            if rk == RvalueKind.RK_AGGREGATE:
+                let fid = body.rval_d1.get(rv as i64)
+                if fid >= 0 and fid < body.agg_field_starts.len() as i32:
+                    let fstart = body.agg_field_starts.get(fid as i64)
+                    let fcount = body.agg_field_counts.get(fid as i64)
+                    for fi in 0..fcount:
+                        let opi = fstart + fi
+                        if opi >= 0 and opi < body.agg_field_operands.len() as i32:
+                            pending.push(body.agg_field_operands.get(opi as i64))
+                            contexts.push("store-aggregate")
+            else if rk == RvalueKind.RK_USE:
+                pending.push(body.rval_d0.get(rv as i64))
+                contexts.push("store-assign")
+            else:
+                pending.push(body.rval_d0.get(rv as i64))
+                contexts.push("read")
+            for pi in 0..pending.len() as i32:
+                let r = analysis_seam_row(sema, body, fn_name, fn_path, span, pending.get(pi as i64), contexts.get(pi as i64))
+                if r.ok != 0 and not seen.contains(r.key):
+                    seen.insert(r.key, 1)
+                    counts.set_i32(r.class_idx as i64, counts.get(r.class_idx as i64) + 1)
+                    report_lines.push(r.row)
+        // Call arguments: retained when the callee consumes them.
+        for bb in 0..body.block_count():
+            if body.term_kind(bb) != TermKind.TK_CALL:
                 continue
-            seen.insert(key, 1)
-            if class == "move-through-ref": moves_ref = moves_ref + 1
-            else if class == "move-raw-deref": moves_raw = moves_raw + 1
-            else if class == "copy-elem-drop": copies_elem = copies_elem + 1
-            else if class == "copy-view-drop": copies_view = copies_view + 1
-            else: copies_raw = copies_raw + 1
-            let place_ty = body.place_sema_types.get(place_id as i64)
-            out = out ++ key ++ "\t" ++ sema.type_name(place_ty) ++ "\n"
+            let args_id = body.term_data1(bb)
+            if args_id < 0 or args_id >= body.call_arg_starts.len() as i32:
+                continue
+            let start = body.call_arg_starts.get(args_id as i64)
+            let count = body.call_arg_counts.get(args_id as i64)
+            let sig = body.call_sig_index(args_id)
+            let term_span = body.bb_term_spans.get(bb as i64)
+            for ai in 0..count:
+                let opi = start + ai
+                if opi < 0 or opi >= body.call_arg_operands.len() as i32:
+                    continue
+                var context = "call-arg"
+                // Builtin callee (no signature): its receiver is still a place,
+                // not a copy — but its real arguments (Vec.push's element) do
+                // retain, so only the receiver slot is exempt.
+                if sig < 0 and ai == 0:
+                    continue
+                if sig >= 0 and ai < sema.sig_get_param_count(sig):
+                    // Receiver slot: compiler-modeled place passing, not a copy.
+                    if ai == 0 and sema.sig_receiver_mode(sig) != ReceiverMode.None:
+                        continue
+                    let pty = sema.sig_param_type(sig, ai)
+                    let pkind = if pty > 0: sema.get_type_kind(sema.resolve_alias(pty as TypeId)) else: TypeKind.TY_ERR
+                    // A view passed to a BORROWED parameter is not a seam: the
+                    // callee never retains it. Only owned params retain.
+                    if pkind == TypeKind.TY_REF or pkind == TypeKind.TY_PTR:
+                        continue
+                    context = "call-arg-owned"
+                let cr = analysis_seam_row(sema, body, fn_name, fn_path, term_span, body.call_arg_operands.get(opi as i64), context)
+                if cr.ok != 0 and not seen.contains(cr.key):
+                    seen.insert(cr.key, 1)
+                    counts.set_i32(cr.class_idx as i64, counts.get(cr.class_idx as i64) + 1)
+                    report_lines.push(cr.row)
+    for li in 0..report_lines.len() as i32:
+        out = out ++ report_lines.get(li as i64)
+    let moves_ref = counts.get(0)
+    let moves_raw = counts.get(1)
+    let copies_elem = counts.get(2)
+    let copies_view = counts.get(3)
+    let copies_raw = counts.get(4)
+    let retained = counts.get(5)
     for si in 0..sema.sig_names.len() as i32:
         for pi in 0..sema.sig_get_param_count(si):
             if (sema.sig_param_effect(si, pi) & EFF_ESCAPE_VIEW) == 0:
@@ -1425,7 +1647,7 @@ fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule) -> str:
                 continue
             escapes = escapes + 1
             out = out ++ sema.pool_resolve(sema.sig_names.get(si as i64)) ++ "\tescape-view-consume\tparam " ++ f"{pi}" ++ "\t" ++ sema.type_name(param_ty) ++ "\n"
-    out ++ f"seam-sites: {moves_ref + moves_raw + copies_elem + copies_view + copies_raw + escapes} findings — move-through-ref={moves_ref} move-raw-deref={moves_raw} copy-elem-drop={copies_elem} copy-view-drop={copies_view} copy-raw-deref-drop={copies_raw} escape-view-consume={escapes}\n"
+    out ++ f"seam-sites: {moves_ref + moves_raw + copies_elem + copies_view + copies_raw + escapes} findings — move-through-ref={moves_ref} move-raw-deref={moves_raw} copy-elem-drop={copies_elem} copy-view-drop={copies_view} copy-raw-deref-drop={copies_raw} retained-unowned-copy={retained} escape-view-consume={escapes}\n"
 
 // explain:effect (docs/deep-debugging-tools.md): walk the first-setter
 // provenance chain for each ownership-forcing bit of a parameter, from the
@@ -1696,7 +1918,7 @@ fn compiler_analysis_run(sema: &Sema, mir_mod: &MirModule, pool: &InternPool, so
     if request == "move-sites":
         return CompilerAnalysisResult { text: analysis_move_sites(sema, source_path), status: 0, needs_codegen: false, codegen_query: "", report }
     if request == "seam-sites":
-        return CompilerAnalysisResult { text: analysis_seam_sites(sema, mir_mod), status: 0, needs_codegen: false, codegen_query: "", report }
+        return CompilerAnalysisResult { text: analysis_seam_sites(sema, mir_mod, source_path, source_text), status: 0, needs_codegen: false, codegen_query: "", report }
     if request.starts_with("explain:effect:"):
         let ee_target = analysis_slice(request, 15, request.len() as i32)
         return CompilerAnalysisResult { text: analysis_explain_effect(sema, ee_target, source_path), status: 0, needs_codegen: false, codegen_query: "", report }
@@ -1721,7 +1943,7 @@ fn compiler_analysis_run(sema: &Sema, mir_mod: &MirModule, pool: &InternPool, so
     else if request == "audit:phase":
         analysis_audit_phase(&report, sema, mir_mod)
     else if request == "audit:mir":
-        analysis_audit_mir(&report, mir_mod)
+        analysis_audit_mir(&report, mir_mod, pool)
     else if request == "audit:returns":
         analysis_audit_return_consistency(&report, sema, mir_mod)
     else if request == "audit:receivers":
@@ -1740,7 +1962,7 @@ fn compiler_analysis_run(sema: &Sema, mir_mod: &MirModule, pool: &InternPool, so
         analysis_audit_storage(&report, sema)
         analysis_audit_pool(&report, sema)
         analysis_audit_method_registrations(&report, sema)
-        analysis_audit_mir(&report, mir_mod)
+        analysis_audit_mir(&report, mir_mod, pool)
         analysis_audit_return_consistency(&report, sema, mir_mod)
         analysis_audit_receivers(&report, sema)
         analysis_audit_phase(&report, sema, mir_mod)

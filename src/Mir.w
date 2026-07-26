@@ -1034,7 +1034,7 @@ fn mir_clip_text(s: str, max_len: i32) -> str:
         return s.slice(0, max_len as i64)
     s.slice(0, (max_len - 3) as i64) ++ "..."
 
-fn dump_mir_body(body: &MirBody, pool: &InternPool, sema: &Sema) -> str:
+pub fn dump_mir_body(body: &MirBody, pool: &InternPool, sema: &Sema) -> str:
     var out = ""
     let fn_name = if body.fn_sym != 0:
         f"sym{body.fn_sym}({pool.resolve(body.fn_sym)})"
@@ -2388,6 +2388,130 @@ fn explain_mir_origin_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema
     if hits == 0:
         out = out ++ "  <no matching MIR origin>\n"
     out
+
+// Use-after-kill (#719 class): a local that has been killed — StorageDead, or
+// blanked by a reset-on-move `_x = <zero>` — must not be read again before it is
+// re-initialized. A body that does read it computes from zeroed storage; #719 is
+// exactly this (a binding killed by an inner scope pop, then consumed by a later
+// aggregate). Scanning blocks in index order only reports a kill that DOMINATES
+// the use in the emitted order, which is the shape lowering bugs produce; a use
+// reached only by a back edge is never flagged.
+fn mir_local_of_operand(body: &MirBody, operand: i32) -> i32:
+    if operand < 0 or operand >= body.operand_kinds.len() as i32:
+        return -1
+    let k = body.operand_kinds.get(operand as i64)
+    if k != OperandKind.OK_COPY and k != OperandKind.OK_MOVE:
+        return -1
+    let place = body.operand_d0.get(operand as i64)
+    if place < 0 or place >= body.place_locals.len() as i32:
+        return -1
+    body.place_locals.get(place as i64)
+
+fn mir_rvalue_is_zero_fill(body: &MirBody, rv: i32) -> i32:
+    if rv < 0 or rv >= body.rval_kinds.len() as i32:
+        return 0
+    if body.rval_kinds.get(rv as i64) != RvalueKind.RK_USE:
+        return 0
+    let op = body.rval_d0.get(rv as i64)
+    if op < 0 or op >= body.operand_kinds.len() as i32:
+        return 0
+    if body.operand_kinds.get(op as i64) != OperandKind.OK_CONSTANT:
+        return 0
+    let cid = body.operand_d0.get(op as i64)
+    if cid < 0 or cid >= body.const_kinds.len() as i32:
+        return 0
+    if body.const_kinds.get(cid as i64) == ConstKind.CK_ZERO_SIZED: 1 else: 0
+
+// The only successor of `bb`, or -1 when it branches / ends. A chain of
+// single-successor blocks is the one case where "the blank happens before the
+// read" is provable without a dominator tree — and it is exactly the shape a
+// synthesized straight-line body has. Anything with a branch or a loop is left
+// alone rather than guessed at (a blank in one arm is not a blank on the path
+// that reaches the join).
+fn mir_block_single_successor(body: &MirBody, bb: i32) -> i32:
+    let tk = body.term_kind(bb)
+    if tk == TermKind.TK_GOTO:
+        return body.term_data0(bb)
+    if tk == TermKind.TK_CALL:
+        return body.term_data3(bb)
+    -1
+
+fn mir_block_reaches_linearly(body: &MirBody, from_bb: i32, to_bb: i32) -> i32:
+    if from_bb == to_bb:
+        return 1
+    var cur = from_bb
+    var hops = 0
+    while hops < 4096:
+        let nxt = mir_block_single_successor(body, cur)
+        if nxt < 0 or nxt >= body.block_count():
+            return 0
+        if nxt == to_bb:
+            return 1
+        if nxt <= cur:
+            return 0
+        cur = nxt
+        hops = hops + 1
+    0
+
+fn validate_use_after_kill_body(body: &MirBody, pool: &InternPool) -> str:
+    let local_count = body.local_type_ids.len() as i32
+    if local_count <= 0 or local_count > 20000:
+        return ""
+    let killed: Vec[i32] = Vec.new()
+    let killed_bb: Vec[i32] = Vec.new()
+    for _i in 0..local_count:
+        killed.push(0)
+        killed_bb.push(-1)
+    let fn_name = if body.fn_sym != 0: pool.resolve(body.fn_sym) else: "<anon>"
+    for bb in 0..body.block_count():
+        let stmt_start = body.bb_stmt_starts.get(bb as i64)
+        let stmt_count = body.bb_stmt_counts.get(bb as i64)
+        for si in 0..stmt_count:
+            let sid = stmt_start + si
+            if sid < 0 or sid >= body.stmt_kinds.len() as i32:
+                continue
+            let sk = body.stmt_kinds.get(sid as i64)
+            let d0 = body.stmt_d0.get(sid as i64)
+            let d1 = body.stmt_d1.get(sid as i64)
+            if sk == StmtKind.StorageLive:
+                if d0 >= 0 and d0 < local_count:
+                    killed.set_i32(d0 as i64, 0)
+                continue
+            if sk == StmtKind.StorageDead:
+                // A marker, not a write: the storage still holds the value and a
+                // later read is valid (proven by the single-container control,
+                // which has StorageDead before its aggregate read and runs fine).
+                // Only an actual zero-fill blank destroys the value.
+                continue
+            if sk != StmtKind.Assign:
+                continue
+            // Reads first: an operand of the rvalue must not be a killed local.
+            let used = mir_local_of_operand(body, body.rval_d0.get(d1 as i64))
+            if used >= 0 and used < local_count and killed.get(used as i64) != 0 and mir_block_reaches_linearly(body, killed_bb.get(used as i64), bb) != 0:
+                return f"{fn_name}: local _{used} is read at bb{bb} after its reset-on-move blank zeroed it"
+            if d1 >= 0 and d1 < body.rval_kinds.len() as i32 and body.rval_kinds.get(d1 as i64) == RvalueKind.RK_AGGREGATE:
+                let fid = body.rval_d1.get(d1 as i64)
+                if fid >= 0 and fid < body.agg_field_starts.len() as i32:
+                    let fstart = body.agg_field_starts.get(fid as i64)
+                    let fcount = body.agg_field_counts.get(fid as i64)
+                    for fi in 0..fcount:
+                        let opi = fstart + fi
+                        if opi < 0 or opi >= body.agg_field_operands.len() as i32:
+                            continue
+                        let agg_used = mir_local_of_operand(body, body.agg_field_operands.get(opi as i64))
+                        if agg_used >= 0 and agg_used < local_count and killed.get(agg_used as i64) != 0 and mir_block_reaches_linearly(body, killed_bb.get(agg_used as i64), bb) != 0:
+                            return f"{fn_name}: local _{agg_used} is read by an aggregate at bb{bb} after its reset-on-move blank zeroed it"
+            // Then the write: a zero fill kills, any other write revives.
+            if d0 >= 0 and d0 < body.place_locals.len() as i32 and body.place_proj_counts.get(d0 as i64) == 0:
+                let dst = body.place_locals.get(d0 as i64)
+                if dst >= 0 and dst < local_count:
+                    let is_blank = mir_rvalue_is_zero_fill(body, d1)
+                    killed.set_i32(dst as i64, is_blank)
+                    killed_bb.set_i32(dst as i64, if is_blank != 0: bb else: -1)
+    ""
+
+pub fn validate_use_after_kill(body: &MirBody, pool: &InternPool) -> str:
+    validate_use_after_kill_body(body, pool)
 
 fn validate_all_mir_module(mir_mod: &MirModule) -> str:
     let shape = validate_mir_module(mir_mod)
