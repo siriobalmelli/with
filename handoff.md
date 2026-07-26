@@ -1,5 +1,37 @@
 # Active Handoff — D22 implementation, Stage 6 (2026-07-24)
 
+## 2026-07-26 session tail: reseed blocked on #726/#727 (deep-debug lane)
+
+State as of commit 9a22acf0 + fixture commits (all landed, tree clean):
+#714 demand deleted; the three spec regressions fixed (#722 closed; #725
+filed for the ephemeral-escape hole ss13_3 exposed); the 279-site
+self-check burn-down landed; three D5-era behavior pins and two demand
+compile-error pins retired; foundation-module copy-view-drop double frees
+fixed (seam-sites found the class); phase/internals lanes green; the two
+#608 leak pins re-pinned to leak count=0 (#691 flip guards); D23
+`//! known-issue: #NNN` directive landed (decisions.md D23) and the six
+ruled spec reds are dispositioned — spec lane reports 210/210.
+
+The `:test` aggregate now fails ONLY at deep-debug-tool-tests:
+
+- #726 — analyze audit:codegen / audit:trait-tables rc=139. Full lldb
+  evidence chain is in the issue: crash is CodegenTraits.w:360 in
+  `create_dyn_wrapper` #37 (`__dynwrap_Resource_drop`); the FunctionType
+  handle is VALID at fn entry (kind==9, expr'd GetReturnType succeeds) and
+  its ContainedTys pointer at [type+0x10] is overwritten by the time line
+  360 executes. Guard Malloc traps no invalid free → live-writer overlap,
+  pre-flip two-owner family. Seed passes → batch regression. NEXT STEP:
+  hardware watchpoint on [dyn_ft+0x10] armed at wrapper #36 to capture the
+  writer PC.
+- #727 — audit:receiver-surface 63 explicit selfs; fails on seed too;
+  needs an Eric ruling (trait-decl exemption vs parser static-method rule).
+
+After both: rerun `with build`, `:fixpoint`, `:test`, audits, `:test-green`,
+`:last-green`, then `:update-seed` + `:install-user` (reseed also clears the
+3 candidate-better drop-audit pins). WITH_DEBUG_ALLOC ledger overflows on
+compiler-scale runs ("tracking truncated") — needs a capacity tier before it
+can arbitrate #726-class bugs.
+
 This section is the current continuation record. The older #691/D20 material
 below is preserved as historical archaeology only. It must not be used as the
 current task, stage, doctrine, or worktree status.
