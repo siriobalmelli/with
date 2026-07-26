@@ -1169,6 +1169,30 @@ fn ce_clone_str_vec(values: &Vec[str]) -> Vec[str]:
         out.push(values.get(i as i64))
     out
 
+// A record read out of capability_records is a bitwise copy: its five Vec[str]
+// fields alias the stored element's buffers. Anything that RETAINS a record
+// (mint_capability, workspace minting) must own an independent copy.
+fn ce_clone_capability_record(r: &ComptimeCapabilityRecord) -> ComptimeCapabilityRecord:
+    ComptimeCapabilityRecord {
+        kind: r.kind,
+        generation: r.generation,
+        package_name: r.package_name,
+        package_version: r.package_version,
+        project_root: r.project_root,
+        workspace_id: r.workspace_id,
+        target_name: r.target_name,
+        inputs: ce_clone_str_vec(&r.inputs),
+        outputs: ce_clone_str_vec(&r.outputs),
+        args: ce_clone_str_vec(&r.args),
+        write_scope: ce_clone_str_vec(&r.write_scope),
+        write_scoped: r.write_scoped,
+        scratch_path: r.scratch_path,
+        timeout_ms: r.timeout_ms,
+        cwd: r.cwd,
+        env: ce_clone_str_vec(&r.env),
+        network: r.network,
+    }
+
 fn comptime_action_outputs(output: str, extra_outputs: &Vec[str]) -> Vec[str]:
     let outputs: Vec[str] = Vec.new()
     if output.len() > 0:
@@ -4516,21 +4540,21 @@ impl ComptimeEvaluator:
             if args_signal.kind != ComptimeControlKind.CTL_VALUE:
                 return args_signal
             let name = self.capability_arg_str(args_signal.value, 0, method, node)
-            return self.create_workspace_for_capability(self.capability_records.get(handle as i64), name, node)
+            return self.create_workspace_for_capability(ce_clone_capability_record(&self.capability_records[handle as i64]), name, node)
         if method == "current_workspace":
             if not self.capability_expect_arg_count(arg_count, 0, method, node):
                 return comptime_control_error()
             let handle = self.validate_capability(recv_value, CapabilityKind.CK_BUILD_CTX, method, node)
             if handle < 0:
                 return comptime_control_error()
-            return self.current_workspace_for_capability(self.capability_records.get(handle as i64), "BuildCtx", node)
+            return self.current_workspace_for_capability(ce_clone_capability_record(&self.capability_records[handle as i64]), "BuildCtx", node)
         if method == "new_build":
             if not self.capability_expect_arg_count(arg_count, 0, method, node):
                 return comptime_control_error()
             let handle = self.validate_capability(recv_value, CapabilityKind.CK_BUILD_CTX, method, node)
             if handle < 0:
                 return comptime_control_error()
-            let build_value = self.eval_new_build_value(self.capability_records.get(handle as i64), node)
+            let build_value = self.eval_new_build_value(ce_clone_capability_record(&self.capability_records[handle as i64]), node)
             if build_value.kind == ComptimeValueKind.CV_INVALID:
                 return comptime_control_error()
             return comptime_control_value(build_value)

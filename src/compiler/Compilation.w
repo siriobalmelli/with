@@ -154,7 +154,7 @@ fn compilation_mir_error_span(zcu: &Zcu, pool: AstPool, fn_sym: i32, raw_span: i
 fn compilation_bool_digit(value: bool) -> str:
     if value: "1" else: "0"
 
-fn compilation_join_strings(values: Vec[str], separator: str) -> str:
+fn compilation_join_strings(values: &Vec[str], separator: str) -> str:
     var out = ""
     for i in 0..values.len() as i32:
         if i > 0:
@@ -484,19 +484,19 @@ impl Compilation:
                 type_count = type_count + 1
 
         var out = f"project_info modules={zcu.last_resolved.modules.len() as i32} functions={function_count} types={type_count}\n"
-        let cfg = zcu.project_config
+        let cfg = &zcu.project_config
         out = out ++ "config root=" ++ cfg.root_dir ++ "\n"
         out = out ++ "config package=" ++ cfg.package_name ++ " version=" ++ cfg.package_version ++ "\n"
-        out = out ++ "config c_import_include_paths=" ++ compilation_join_strings(cfg.c_import_include_paths, ",") ++ "\n"
-        out = out ++ "config c_import_defines=" ++ compilation_join_strings(cfg.c_import_defines, ",") ++ "\n"
-        out = out ++ "config link_libs=" ++ compilation_join_strings(cfg.link_libs, ",") ++ "\n"
-        out = out ++ "config link_search_paths=" ++ compilation_join_strings(cfg.link_search_paths, ",") ++ "\n"
-        out = out ++ "config dep_link_libs=" ++ compilation_join_strings(cfg.dep_link_libs, ",") ++ "\n"
-        out = out ++ "config dep_names=" ++ compilation_join_strings(cfg.dep_names, ",") ++ "\n"
-        out = out ++ "config dep_constraints=" ++ compilation_join_strings(cfg.dep_constraints, ",") ++ "\n"
-        out = out ++ "config feature_default=" ++ compilation_join_strings(cfg.feature_default, ",") ++ "\n"
-        out = out ++ "config feature_names=" ++ compilation_join_strings(cfg.feature_names, ",") ++ "\n"
-        out = out ++ "config feature_values=" ++ compilation_join_strings(cfg.feature_values, ",") ++ "\n"
+        out = out ++ "config c_import_include_paths=" ++ compilation_join_strings(&cfg.c_import_include_paths, ",") ++ "\n"
+        out = out ++ "config c_import_defines=" ++ compilation_join_strings(&cfg.c_import_defines, ",") ++ "\n"
+        out = out ++ "config link_libs=" ++ compilation_join_strings(&cfg.link_libs, ",") ++ "\n"
+        out = out ++ "config link_search_paths=" ++ compilation_join_strings(&cfg.link_search_paths, ",") ++ "\n"
+        out = out ++ "config dep_link_libs=" ++ compilation_join_strings(&cfg.dep_link_libs, ",") ++ "\n"
+        out = out ++ "config dep_names=" ++ compilation_join_strings(&cfg.dep_names, ",") ++ "\n"
+        out = out ++ "config dep_constraints=" ++ compilation_join_strings(&cfg.dep_constraints, ",") ++ "\n"
+        out = out ++ "config feature_default=" ++ compilation_join_strings(&cfg.feature_default, ",") ++ "\n"
+        out = out ++ "config feature_names=" ++ compilation_join_strings(&cfg.feature_names, ",") ++ "\n"
+        out = out ++ "config feature_values=" ++ compilation_join_strings(&cfg.feature_values, ",") ++ "\n"
         out = out ++ "config target_default=" ++ cfg.target_default ++ "\n"
         out = out ++ f"config runtime_fiber_stack_size={cfg.runtime_fiber_stack_size}\n"
         out = out ++ f"config runtime_fiber_pool_size={cfg.runtime_fiber_pool_size}\n"

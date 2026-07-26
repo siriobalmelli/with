@@ -14205,7 +14205,7 @@ impl MirModule:
             for bb in 0..body.block_count():
                 if body.term_kind(bb) != TermKind.TK_CALL:
                     continue
-                let callee_sym = mir_body_extract_callee_sym(&body, body.term_data0(bb))
+                let callee_sym = mir_body_extract_callee_sym(body, body.term_data0(bb))
                 if callee_sym == 0:
                     continue
                 let callee_idx = self.find_body(callee_sym)
@@ -14228,19 +14228,26 @@ impl MirModule:
     fn mark_tailrec_scc_edges(scc: &Vec[i32]):
         for si in 0..scc.len() as i32:
             let src_idx = scc.get(si as i64)
-            let body = self.bodies.get(src_idx as i64)
+            // View: a bare element read copies the MirBody's Drop-bearing
+            // tables and aliases the module's own (#715 class).
+            let body = &self.bodies[src_idx as i64]
             let bb_count = body.block_count()
             for bb in 0..bb_count:
                 if body.term_kind(bb) != TermKind.TK_CALL:
                     continue
-                let callee_sym = mir_body_extract_callee_sym(&body, body.term_data0(bb))
+                let callee_sym = mir_body_extract_callee_sym(body, body.term_data0(bb))
                 if callee_sym == 0:
                     continue
                 for ti in 0..scc.len() as i32:
                     let dst_idx = scc.get(ti as i64)
                     let dst_body = self.bodies.get(dst_idx as i64)
-                    if dst_body.fn_sym == callee_sym and mir_is_tail_call_to(&body, bb, callee_sym):
-                        mir_push_unique_i32(body.mutual_tail_bbs, bb)
+                    if dst_body.fn_sym == callee_sym and mir_is_tail_call_to(body, bb, callee_sym):
+                        // Mutate the place directly: passing the vector by
+                        // value handed the helper a COPY of the handle, so its
+                        // push was written to a temporary that was then dropped
+                        // (and the source blanked by the move).
+                        if not mir_vec_contains_i32(&body.mutual_tail_bbs, bb):
+                            body.mutual_tail_bbs.push(bb)
                         break
 
     fn tailrec_scc_syms(scc: &Vec[i32]) -> Vec[i32]:

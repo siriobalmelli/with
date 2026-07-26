@@ -44,14 +44,14 @@ pub fn env(name: str) -> str:
 pub fn set_env(name: str, value: str) -> i32:
     with_setenv_str(name, value)
 
-fn argv_blob(items: Vec[str]) -> str:
+fn argv_blob(items: &Vec[str]) -> str:
     var out = ""
     for i in 0..items.len() as i32:
         out = out ++ items.get(i as i64) ++ "\0"
     out
 
 /// Execute an argument vector. The first item is the program name.
-pub fn run(argv: Vec[str]) -> i32:
+pub fn run(argv: &Vec[str]) -> i32:
     with_exec_argv(argv_blob(argv))
 
 /// An argv-based command wrapper.
@@ -75,7 +75,7 @@ impl Command:
         Command { args: argv }
 
     /// Run the command. Returns the exit status.
-    pub fn run() -> i32: run(self.args)
+    pub fn run() -> i32: run(&self.args)
 
     /// Run the command and return its exit status.
-    pub fn status() -> i32: run(self.args)
+    pub fn status() -> i32: run(&self.args)

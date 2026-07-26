@@ -579,7 +579,9 @@ fn c_header_guard_for(h_path: str) -> str:
 // Write `<artifact>.h` for the module's @[c_export] symbols, if any.
 fn emit_c_header_next_to(comp: &Compilation, artifact_path: str) -> Unit:
     let h_path = c_header_path_for(artifact_path)
-    let sema = comp.zcu.last_sema
+    // View: a bare read would MOVE the Sema out of the borrowed Compilation
+    // and blank comp.zcu.last_sema (the root-15 class).
+    let sema = &comp.zcu.last_sema
     let header = sema.cheader_generate(c_header_guard_for(h_path))
     if header.len() == 0:
         return
@@ -1625,7 +1627,7 @@ fn build_options_for_graph_target(root: str, base: &BuildCommandOptions, target:
     if target.optimize_mode == 1 and options.opt_level < 2:
         options.opt_level = 2
     options.target_kind = target.target_kind
-    options.include_paths = build_graph_resolve_paths(root, target.include_paths)
+    options.include_paths = build_graph_resolve_paths(root, &target.include_paths)
     options.defines = build_graph_clone_strings(&target.defines)
     options.link_libs = build_graph_clone_strings(&target.system_libs)
     if target.kind == 1 or target.kind == 4:
@@ -3072,7 +3074,7 @@ fn run_test_process(bin_path: str, test_name: str, quiet: bool) -> TestRunResult
             with_ewrite(stderr)
     TestRunResult { rc, stdout, stderr }
 
-fn test_validate_output(stream_name: str, actual: str, expected_values: Vec[str], target: str, test_name: str) -> bool:
+fn test_validate_output(stream_name: str, actual: str, expected_values: &Vec[str], target: str, test_name: str) -> bool:
     for ei in 0..expected_values.len() as i32:
         let expected = expected_values.get(ei as i64)
         if with_str_contains(actual, expected) == 0:

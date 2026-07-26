@@ -612,15 +612,11 @@ impl LspState:
         if idx < 0:
             self.documents.push(LspDocument.new(uri, uri_to_path(uri), text, version))
             return
-        // Update text and invalidate cache
-        let new_docs: Vec[LspDocument] = Vec.new()
-        for i in 0..self.documents.len() as i32:
-            if i == idx:
-                var doc = LspDocument.new(uri, uri_to_path(uri), text, version)
-                new_docs.push(move doc)
-            else:
-                new_docs.push(self.documents.get(i as i64))
-        self.documents = new_docs
+        // Replace in place (§19.5). Rebuilding the vector copied every other
+        // document element-wise, and `self.documents = new_docs` then freed the
+        // originals' buffers while the copies still pointed at them.
+        with self.documents.slot(idx) as mut slot:
+            slot.set(LspDocument.new(uri, uri_to_path(uri), text, version))
 
 fn uri_to_path(uri: str) -> str:
     if uri.starts_with("file://"):

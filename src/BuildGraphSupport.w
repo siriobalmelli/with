@@ -37,7 +37,7 @@ pub fn build_graph_resolve_project_path(root: str, path: str) -> str:
         return path
     resolve_join(root, path)
 
-pub fn build_graph_resolve_paths(root: str, paths: Vec[str]) -> Vec[str]:
+pub fn build_graph_resolve_paths(root: str, paths: &Vec[str]) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     for i in 0..paths.len() as i32:
         out.push(build_graph_resolve_project_path(root, paths.get(i as i64)))

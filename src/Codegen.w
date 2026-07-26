@@ -1587,12 +1587,16 @@ impl Codegen:
                 msg = msg ++ f" llvm_name={struct_name}"
         with_eprint(msg)
 
-    fn capture_loop_state() -> LoopState:
+    // Save/restore: the four Vec fields transfer OUT of self here and the
+    // caller installs fresh ones (reset_loop_state) before restoring. That is
+    // a mutation of self, so the receiver is `mut` and the transfers are
+    // spelled — the same correction save_label_registry needed (#691 flip).
+    mut fn capture_loop_state() -> LoopState:
         LoopState {
-            break_bbs: self.loop_break_bbs,
-            continue_bbs: self.loop_continue_bbs,
-            result_allocas: self.loop_result_allocas,
-            labels: self.loop_labels,
+            break_bbs: move self.loop_break_bbs,
+            continue_bbs: move self.loop_continue_bbs,
+            result_allocas: move self.loop_result_allocas,
+            labels: move self.loop_labels,
             depth: self.loop_depth,
         }
 

@@ -260,7 +260,7 @@ type LinkStageSavedEnv {
     values: Vec[str],
 }
 
-fn link_stage_apply_env(env: Vec[LinkStageEnvVar]) -> LinkStageSavedEnv:
+fn link_stage_apply_env(env: &Vec[LinkStageEnvVar]) -> LinkStageSavedEnv:
     let names: Vec[str] = Vec.new()
     let values: Vec[str] = Vec.new()
     for i in 0..env.len() as i32:
@@ -280,7 +280,7 @@ impl LinkStageCommand:
         argv = link_stage_argv_append(argv, self.linker)
         for i in 0..self.args.len() as i32:
             argv = link_stage_argv_append(argv, self.args.get(i as i64))
-        let saved = link_stage_apply_env(self.env)
+        let saved = link_stage_apply_env(&self.env)
         let rc = if self.cwd.len() > 0:
             runtime_exec_argv_cwd(argv, self.cwd)
         else:

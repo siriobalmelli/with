@@ -36,7 +36,7 @@ let child: Vec[str] = Vec.new()
 for i in separator + 1..argv.len() as i32:
     let arg = argv.get(i as i64)
     child.push(if arg == "{file}": materialized else: arg)
-let status = run(child)
+let status = run(&child)
 let remove_status = unsafe { with_fs_remove_file(materialized) }
 if remove_status != 0:
     print(f"error: could not remove materialized candidate {materialized}")
