@@ -1124,6 +1124,12 @@ fn rt_free_unlocked_with_drop_origin(ptr: *mut u8, drop_origin_ptr: i64, drop_or
             if dbg_size <= RT_LARGE_THRESHOLD:
                 dbg_scribble(ptr as i64, dbg_size)
     if rt_payload_start_can_be_owned(ptr as *const u8) == 0:
+        dbg_puts("invalid free addr=" as *const u8, 18)
+        dbg_put_i64(ptr as i64)
+        if drop_origin_ptr != 0 and drop_origin_len > 0:
+            dbg_puts(" origin=" as *const u8, 8)
+            dbg_puts(drop_origin_ptr as *const u8, drop_origin_len)
+        dbg_puts("\n" as *const u8, 1)
         with_panic_core(make_str("invalid free: pointer is not an allocated payload start" as *const u8, 55), make_str("" as *const u8, 0), 0)
     let block = alloc_header_ptr(ptr as *const u8) as i64
     let size = unsafe *(block as *const i64)
