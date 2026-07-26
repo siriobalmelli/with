@@ -11,6 +11,8 @@ type BlockId = distinct i32
 impl Copy for BlockId
 
 extern fn with_i64_to_str(n: i64) -> str
+extern fn with_getenv_str(name: str) -> str
+extern fn with_eprint(s: str) -> Unit
 extern fn str_from_byte(b: i32) -> str
 extern fn with_write(s: str) -> Unit
 extern fn with_alloc(size: i64) -> *mut u8
@@ -817,6 +819,8 @@ impl MirBody:
 
     mut fn new_operand(kind: i32, d0: i32) -> i32:
         let id = self.operand_kinds.len() as i32
+        if kind == 1 and with_getenv_str("WITH_TRACE_RESETS").len() > 0:
+            with_eprint(f"[new-move-op] id={id} place={d0}")
         self.operand_kinds.push(kind)
         self.operand_d0.push(d0)
         id
@@ -866,6 +870,10 @@ impl MirBody:
         id
 
     mut fn new_call_args(operands: &Vec[i32]) -> i32:
+        if with_getenv_str("WITH_TRACE_RESETS").len() > 0:
+            for __i in 0..operands.len() as i32:
+                let __op = operands.get(__i as i64)
+                with_eprint(f"[call-arg] op={__op} kind={self.operand_kinds.get(__op as i64)} place={self.operand_d0.get(__op as i64)}")
         let id = self.call_arg_starts.len() as i32
         let start = self.call_arg_operands.len() as i32
         let count = operands.len() as i32

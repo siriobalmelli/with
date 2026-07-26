@@ -702,6 +702,8 @@ impl MirBuilder:
     mut fn consume_moved_operand(operand_id: i32) -> Unit:
         if operand_id < 0 or operand_id >= self.body.operand_kinds.len() as i32:
             return
+        if with_getenv_str("WITH_TRACE_RESETS").len() > 0:
+            with_eprint(f"[consume] op={operand_id} kind={self.body.operand_kinds.get(operand_id as i64)} place={self.body.operand_d0.get(operand_id as i64)}")
         if self.body.operand_kinds.get(operand_id as i64) != OperandKind.OK_MOVE:
             return
         let place = self.body.operand_d0.get(operand_id as i64)
@@ -755,6 +757,8 @@ impl MirBuilder:
         let field_ty = self.place_local_type(place)
         if field_ty > 0 and self.sema.type_needs_drop_frozen(field_ty) != 0:
             let base_local = self.body.place_locals.get(place as i64)
+            if with_getenv_str("WITH_TRACE_RESETS").len() > 0:
+                with_eprint(f"[reset-q] field place={place} ty={field_ty} base={base_local} depth={self.pending_reset_field_places.len() as i32}")
             self.pending_reset_field_places.push(place)
             self.pending_reset_field_types.push(field_ty)
             // The base's drop — scope exit here, or drop-before-overwrite
@@ -828,6 +832,8 @@ impl MirBuilder:
         while fri < self.pending_reset_field_places.len() as i32:
             let fplace = self.pending_reset_field_places.get(fri as i64)
             let fty = self.pending_reset_field_types.get(fri as i64)
+            if with_getenv_str("WITH_TRACE_RESETS").len() > 0:
+                with_eprint(f"[reset-f] field place={fplace} ty={fty} from={field_start}")
             let fzop = self.body.gen_zero_operand(fty)
             let frval = self.body.new_rvalue(RvalueKind.RK_USE, fzop, 0, 0)
             self.body.push_stmt(self.cur_bb, StmtKind.Assign, fplace, frval, 0)

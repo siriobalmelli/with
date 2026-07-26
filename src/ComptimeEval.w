@@ -4412,10 +4412,13 @@ fn comptime_execute_workspace_compile_plan(plan: ComptimeWorkspaceCompilePlan) -
     var success = false
     if plan.has_strings != 0:
         if plan.output_kind == 5:
-            if comp.check_source_texts(plan.source_paths, plan.source_texts):
+            // The Compilation retains these vec handles (Zcu source storage)
+            // through share-place-classified params, while the plan keeps its
+            // own drop in the caller — pass independent clones (#729 class).
+            if comp.check_source_texts(ce_clone_str_vec(&plan.source_paths), ce_clone_str_vec(&plan.source_texts)):
                 success = true
         else:
-            artifact_path = comp.build_entry_binary_from_sources_to_path(plan.source_paths, plan.source_texts, plan.absolute_output)
+            artifact_path = comp.build_entry_binary_from_sources_to_path(ce_clone_str_vec(&plan.source_paths), ce_clone_str_vec(&plan.source_texts), plan.absolute_output)
             success = artifact_path.len() > 0
     else:
         if plan.output_kind == 0:
