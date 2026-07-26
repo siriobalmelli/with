@@ -1,5 +1,5 @@
 //! args: --no-std --alloc
-//! expect-check-fail: await requires std/fiber runtime
+//! expect-check-fail: async fn requires the fiber runtime
 
 @[global_allocator]
 global ALLOC: i32 = 0

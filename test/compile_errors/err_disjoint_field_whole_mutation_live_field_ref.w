@@ -1,4 +1,4 @@
-//! expect-check-fail: cannot mutate `p` while read-only view `a_view` is live
+//! expect-check-fail: cannot mutate `p` while `a_view` is a live view into it
 
 type Pair {
     a: i32,

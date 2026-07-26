@@ -1,4 +1,4 @@
-//! expect-check-fail: if branches do not unify: `str` vs `i32`
+//! expect-check-fail: if expressions do not establish one compatible owned result type
 
 // #549: a value-position if with incompatible branch types must diagnose
 // instead of silently poisoning to <error> (which let invalid code pass

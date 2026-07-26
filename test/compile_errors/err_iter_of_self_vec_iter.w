@@ -1,4 +1,4 @@
-//! expect-error: iterator over `xs` retains access; cannot also mutably capture `xs` (§15.8)
+//! expect-error: argument retains access to `xs` which is mutably captured by a closure in the same call (§15.7)
 
 // docs/mut.md Rev 8 §15.8 — closure capture conflict via iterator.
 // `xs.iter()` is marked `@[iter_of_self]` (Vec.iter is a builtin in this set),
