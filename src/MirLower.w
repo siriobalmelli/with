@@ -5668,9 +5668,18 @@ impl MirBuilder:
         self.field_move_in_branch = self.field_move_in_branch + 1
         if regex_capture_node != 0:
             self.lower_regex_capture_bindings_from_option(regex_capture_node, regex_captures_opt_place)
+        // A statement temp created INSIDE a branch belongs to that branch, not to
+        // the enclosing statement: registered outward, its drop lands at the
+        // enclosing boundary — the join block — which the not-taken path also
+        // reaches, dropping a temp that path never created (#729: an else path
+        // freeing an uninitialized call-result temp). Frame it like the
+        // condition above; a temp moved into the branch result is cancelled by
+        // assign_operand_to_place before the frame closes.
+        let then_temp_frame = self.push_stmt_temp_frame()
         let then_op = if want_result != 0: self.lower_expr(then_expr) else: self.lower_expr_discard(then_expr)
         if want_result != 0:
             self.assign_operand_to_place(result_place, then_op, self.ast.get_start(then_expr))
+        self.finish_stmt_temp_frame(then_temp_frame)
         // Reset-on-move (spec §2.5.1): flush this branch's pending source-resets
         // INSIDE the branch, before merging. A move in the branch's tail expression
         // has no per-statement flush; left pending it would be emitted after the if
@@ -5683,12 +5692,14 @@ impl MirBuilder:
 
         self.switch_to(else_bb)
         self.field_move_in_branch = self.field_move_in_branch + 1
+        let else_temp_frame = self.push_stmt_temp_frame()
         let else_op = if else_expr_opt != 0:
             if want_result != 0: self.lower_expr(else_expr_opt) else: self.lower_expr_discard(else_expr_opt)
         else:
             self.unit_operand()
         if want_result != 0:
             self.assign_operand_to_place(result_place, else_op, self.ast.get_start(node))
+        self.finish_stmt_temp_frame(else_temp_frame)
         self.flush_pending_resets_since(pending_reset_start, pending_reset_field_start, pending_move_temp_start)
         self.field_move_in_branch = self.field_move_in_branch - 1
         self.terminate(TermKind.TK_GOTO, join_bb, 0, 0, 0)
