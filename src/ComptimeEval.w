@@ -1244,6 +1244,48 @@ fn ce_clone_workspace_record(r: &ComptimeWorkspaceRecord) -> ComptimeWorkspaceRe
         pending_link_command: ce_clone_link_command(&r.pending_link_command),
     }
 
+// Independent deep clone: thread jobs and the consuming executor own
+// their plan; a bare element copy would share every Vec buffer with the
+// plans vec still held by the results loop (parallel-multi double free).
+fn ce_clone_compile_plan(p: &ComptimeWorkspaceCompilePlan) -> ComptimeWorkspaceCompilePlan:
+    ComptimeWorkspaceCompilePlan {
+        valid: p.valid,
+        name: p.name,
+        is_migrate: p.is_migrate,
+        final_output: p.final_output,
+        absolute_output: p.absolute_output,
+        output_kind: p.output_kind,
+        has_strings: p.has_strings,
+        source_paths: ce_clone_str_vec(&p.source_paths),
+        source_texts: ce_clone_str_vec(&p.source_texts),
+        absolute_source: p.absolute_source,
+        include_paths: ce_clone_str_vec(&p.include_paths),
+        defines: ce_clone_str_vec(&p.defines),
+        link_libs: ce_clone_str_vec(&p.link_libs),
+        opt_level: p.opt_level,
+        no_std: p.no_std,
+        alloc_mode: p.alloc_mode,
+        runtime_available: p.runtime_available,
+        debug_info: p.debug_info,
+        compiler_hooks_enabled: p.compiler_hooks_enabled,
+        prelude_mode: p.prelude_mode,
+        overflow_mode: p.overflow_mode,
+        migrate_is_dir: p.migrate_is_dir,
+        migrate_source: p.migrate_source,
+        migrate_include_paths: ce_clone_str_vec(&p.migrate_include_paths),
+        migrate_forced_includes: ce_clone_str_vec(&p.migrate_forced_includes),
+        migrate_defines: ce_clone_str_vec(&p.migrate_defines),
+        migrate_exclude_basenames: p.migrate_exclude_basenames,
+        migrate_no_c_export: p.migrate_no_c_export,
+        migrate_c_export_functions: p.migrate_c_export_functions,
+        migrate_convert_goto_to_structured: p.migrate_convert_goto_to_structured,
+        migrate_block_style: p.migrate_block_style,
+        migrate_width_slice: p.migrate_width_slice,
+        migrate_shared_defs: p.migrate_shared_defs,
+        migrate_one: p.migrate_one,
+        migrate_shared_fragment: p.migrate_shared_fragment,
+    }
+
 fn comptime_action_outputs(output: str, extra_outputs: &Vec[str]) -> Vec[str]:
     let outputs: Vec[str] = Vec.new()
     if output.len() > 0:
@@ -7252,12 +7294,12 @@ impl ComptimeEvaluator:
             intercepted.push(if record.intercept_active != 0: 1 else: 0)
         let native_results: Vec[ComptimeWorkspaceNativeCompileResult] = Vec.new()
         if plans.len() as i32 == 1:
-            native_results.push(comptime_execute_workspace_compile_plan(plans.get(0)))
+            native_results.push(comptime_execute_workspace_compile_plan(ce_clone_compile_plan(&plans[0])))
         else:
             let jobs: Vec[ComptimeWorkspaceThreadJob] = Vec.new()
             let handles: Vec[i64] = Vec.new()
             for i in 0..plans.len() as i32:
-                jobs.push(ComptimeWorkspaceThreadJob { plan: plans.get(i as i64), result: comptime_workspace_native_compile_invalid() })
+                jobs.push(ComptimeWorkspaceThreadJob { plan: ce_clone_compile_plan(&plans[i as i64]), result: comptime_workspace_native_compile_invalid() })
             for i in 0..jobs.len() as i32:
                 let job_ptr = (jobs.ptr as *mut ComptimeWorkspaceThreadJob) + i as u64
                 let handle = with_thread_spawn(comptime_workspace_thread_entry as *mut u8, job_ptr as *mut u8)
@@ -7277,7 +7319,7 @@ impl ComptimeEvaluator:
                 native_results.push(jobs.get(i as i64).result)
         let results: Vec[ComptimeValue] = Vec.new()
         for i in 0..native_results.len() as i32:
-            let plan = plans.get(i as i64)
+            let plan = &plans[i as i64]
             let native = native_results.get(i as i64)
             if native.rc != 0:
                 with_eprint(f"error: parallel workspace '{plan.name}' failed with exit code {native.rc}\n")
