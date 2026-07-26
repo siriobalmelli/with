@@ -1,5 +1,22 @@
 # Active Handoff — D22 implementation, Stage 6 (2026-07-24)
 
+## 2026-07-26 session tail v2: reseed blocked on #729 (selfhost build-w lane)
+
+#726 CLOSED: root cause was the D22 mixed view/literal join anchoring at the
+literal i32 and truncating the materialized pointee (88647fd7; pinned by
+behav_d22_view_join_literal_width). audit:codegen/trait-tables green on
+release. #727 (receiver-surface, pre-existing) still open but audit:all does
+not carry it. #728 filed: fstring interpolation of map-view unwraps formats
+reference bits. The known-issue directive (D23, 9a22acf0) holds: spec lane
+210/210.
+
+Current red: cli-selfhost-build-w-tests / build-w-workspace-parallel-multi —
+see #729 for the FULL evidence chain (drop-origin tag address in the freed
+Vec slot, stage1-clean vs release-crash, no-reuse survival, __drop_struct_357).
+Three real fixes landed en route (c1466693, 6309adfd, ddb3b166 — record/plan
+clones + borrow chain). NEXT: diff emitted __drop_struct_357 + caller between
+stage1 and release (same method that cracked 88647fd7).
+
 ## 2026-07-26 session tail: reseed blocked on #726/#727 (deep-debug lane)
 
 State as of commit 9a22acf0 + fixture commits (all landed, tree clean):
