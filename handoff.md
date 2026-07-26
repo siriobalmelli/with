@@ -1,5 +1,22 @@
 # Active Handoff — D22 implementation, Stage 6 (2026-07-24)
 
+## 2026-07-26 session tail v4: D24 landed; #729 residue is a codegen reset bug
+
+D24 (36fa4530) process-isolates parallel workspace compiles per Eric's
+ruling — thread fan-out deleted, children verified. Read the #729 thread
+for the full chain. Residue: the RELEASE binary still panics at a guarded
+drop of a compile-plan local in eval_parallel_workspaces_call
+(rt_value_is_zero passes on stale bytes = the reset-on-move blank never
+landed), while stage1 on identical source is clean — a current-codegen
+reset-scheduling bug, #719's family, not aliasing. Minimal push-in-loop
+shapes do NOT reproduce; next step is `with reduce` on the real function
+with the release binary as predicate, then compare emitted resets
+stage1-vs-release for that shape.
+
+Battery state: build/fixpoint green; :test red ONLY at
+cli-selfhost-build-w-tests/parallel-multi. Everything else green,
+including spec 210/210 under D23 dispositions. Reseed still gated.
+
 ## 2026-07-26 session tail v3: #729 narrowed to the parallel/thread job path
 
 Read the #729 issue thread top to bottom — it carries the complete
