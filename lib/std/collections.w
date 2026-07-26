@@ -156,7 +156,7 @@ impl[K: Ord, V] BTreeMap[K, V]:
         out
 
 impl[K: Ord, V] IntoIter[(K, V)] for BTreeMap[K, V]:
-    mut fn iter() -> VecIter[(K, V)]:
+    fn iter(self: &Self) -> VecIter[(K, V)]:
         self.entries.iter()
 
 pub fn BTreeSet.new[T]() -> BTreeSet[T]:
@@ -274,7 +274,7 @@ impl[T: Ord] BTreeSet[T]:
         out
 
 impl[T: Ord] IntoIter[T] for BTreeSet[T]:
-    mut fn iter() -> VecIter[T]:
+    fn iter(self: &Self) -> VecIter[T]:
         self.values.iter()
 
 /// Type-safe generational handle into a SlotMap[T].
@@ -355,13 +355,17 @@ type HashMapEntry[K, V] ephemeral { map_ptr: i64, key: K }
 type VecIter[T] ephemeral { data_ptr: i64, len: i64, idx: i64 }
 
 /// Conversion to iterator for allocation-backed collection types.
+/// §13.2: the borrow an iterator registers on its receiver is SHARED, so
+/// constructing one only reads the collection — a `&Vec` parameter iterates.
+/// (A trait method's receiver is explicit: plain `fn` in a trait declares a
+/// static method, per the parser's trait-impl receiver rule.)
 pub trait IntoIter[T]:
-    mut fn iter() -> VecIter[T]
+    fn iter(self: &Self) -> VecIter[T]
 
 // IntoIter for Vec — enables collection-level async combinators and
 // explicit trait dispatch over Vec-backed collections.
 impl[T] IntoIter[T] for Vec[T]:
-    mut fn iter() -> VecIter[T]: self.iter()
+    fn iter(self: &Self) -> VecIter[T]: self.iter()
 
 /// Lazy iterator adapter produced by `.map(f)`.
 type MapIter[I, T, U] ephemeral { iter: I, f: fn(T) -> U }
