@@ -3869,7 +3869,7 @@ impl ComptimeEvaluator:
         self.extra_values.push(notes)
         comptime_value_struct(decl_type, start, 14)
 
-    mut fn typechecked_message_value(comp: &Compilation, pool: AstPool, node: i32) -> ComptimeValue:
+    mut fn typechecked_message_value(comp: &Compilation, pool: &AstPool, node: i32) -> ComptimeValue:
         let vec_type = self.decl_summary_vec_type(node)
         if vec_type == 0:
             return comptime_value_invalid()
@@ -3895,7 +3895,7 @@ impl ComptimeEvaluator:
         payloads.push(decls)
         self.compiler_message_value("Typechecked", payloads, node)
 
-    mut fn workspace_typechecked_messages(comp: &Compilation, pool: AstPool, node: i32) -> Vec[ComptimeValue]:
+    mut fn workspace_typechecked_messages(comp: &Compilation, pool: &AstPool, node: i32) -> Vec[ComptimeValue]:
         let messages: Vec[ComptimeValue] = Vec.new()
         if pool.decl_count() == 0:
             return messages
@@ -3916,7 +3916,7 @@ impl ComptimeEvaluator:
         messages.push(phase)
         messages
 
-    mut fn workspace_success_messages(comp: Compilation, pool: AstPool, node: i32) -> Vec[ComptimeValue]:
+    mut fn workspace_success_messages(comp: &Compilation, pool: &AstPool, node: i32) -> Vec[ComptimeValue]:
         var messages: Vec[ComptimeValue] = Vec.new()
         messages = self.workspace_phase_message_append(move messages, 0, node)
         messages = self.workspace_phase_message_append(move messages, 1, node)
