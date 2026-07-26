@@ -1,13 +1,15 @@
 //! expect-stdout: 3
 
-// §D5 share-place: a function may return a view derived from EITHER of two
-// by-value params on different paths — both are pointers to the caller's live
-// places, so either returned view is valid. Previously rejected; share-place
-// makes it correct. (Prints 1 + 2 = 3.)
+// §3.8/§5: a function may return a view derived from EITHER of two borrowed
+// params on different paths — both reference the caller's live places, so
+// either returned view is valid, and the caller's values stay usable for a
+// second call. (Formerly spelled with plain by-value params under the
+// superseded D5 share-place design; a plain `Buf` param now consumes, so the
+// borrowing contract lives in the signature.) Prints 1 + 2 = 3.
 
 type Buf { data: i32 }
 
-fn choose_view(a: Buf, b: Buf, take_a: bool) -> &i32:
+fn choose_view(a: &Buf, b: &Buf, take_a: bool) -> &i32:
     if take_a:
         return &a.data
     return &b.data

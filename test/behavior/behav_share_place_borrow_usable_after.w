@@ -1,10 +1,12 @@
 //! expect-stdout: ok
 
-// §D5 share-place: `f(x)` for a callee that only reads/writes x is a BORROW —
-// x is NOT consumed, so it remains usable after the call, in loops, across
-// conditionals, and after break. This is the exact behavior the old
-// move-by-default rule (#564) forbade; share-place makes it correct. Replaces
-// the obsolete err_use_after_byvalue_*, err_*_carried_move,
+// §3.8: the signature states parameter ownership mode. A callee that only
+// reads declares `&T`, and the plain call `f(x)` auto-borrows — x is NOT
+// consumed, so it remains usable after the call, in loops, across
+// conditionals, and after break. (Formerly pinned via the superseded D5
+// share-place inference; the usable-after behavior now flows from the
+// declared borrowing signatures.) Replaces the obsolete
+// err_use_after_byvalue_*, err_*_carried_move,
 // err_*_conditional_reinit_hides_move, err_*_move_then_break_use negatives.
 // Systematic drop-count coverage lives in the /drop-audit skill.
 
@@ -12,13 +14,13 @@ type R { id: i32 }
 impl Drop for R:
     fn drop(move self: Self): ()
 
-fn take(r: R): ()                 // borrows (empty body)
-fn read(r: R) -> i32: r.id        // borrows (read-only)
+fn take(r: &R): ()                // borrows by signature
+fn read(r: &R) -> i32: r.id       // borrows by signature
 fn make(n: i32) -> R: R { id: n }
 
 fn after_byvalue_call() -> i32:
     let r = make(1)
-    let n = read(r)               // borrow
+    let n = read(r)               // auto-borrow
     n + r.id                       // r still usable → 1 + 1
 
 fn carried_across_loop() -> i32:
