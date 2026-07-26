@@ -292,6 +292,11 @@ pub type Workspace ephemeral {
     id: i32,
 }
 
+// A Workspace is a capability HANDLE: pushing it into a Vec or passing it
+// to parallel() must not consume the binding (`ws.end_intercept()` after
+// `parallel(workspaces)` is the intended API shape).
+impl Copy for Workspace
+
 pub type ProcessEnvVar {
     name: str,
     value: str,
