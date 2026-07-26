@@ -503,6 +503,19 @@ extend Codegen:
         self.sema = Sema.placeholder(InternPool.init(), DiagnosticList.init(), AstPool.new())
         s
 
+    // Take-and-return partners for the pools the analysis backend lends the
+    // codegen run (#726): the caller restores them after take_sema, so no
+    // still-viewed pool is ever dropped inside the backend seam.
+    mut fn take_pool() -> AstPool:
+        var p = self.pool
+        self.pool = AstPool.new()
+        p
+
+    mut fn take_intern() -> InternPool:
+        var i = self.intern
+        self.intern = InternPool.init()
+        i
+
 fn Codegen.init_with_opt_and_intern(module_name: str, opt_level: i32, intern: InternPool, sema: Sema) -> Codegen:
     var cg = Codegen.init_with_opt(module_name, opt_level)
     let overflow_mode = sema.overflow_mode

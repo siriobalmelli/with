@@ -219,15 +219,18 @@ impl Zcu:
             let report = AnalysisReport.init()
             report.fail("missing MIR input for codegen analysis")
             return AnalysisBackendResult { report, status: 1 }
-        var backend_pool = pool
-        var backend_intern = self.pool
-        // D17/#697: take-and-return (docs/memory-model.md seam rule).
-        let sema_ast = self.last_sema.ast
-        let sema_pool = self.last_sema.pool
-        if sema_ast.decl_count() > 0:
-            backend_pool = sema_ast
-        if sema_pool.state.symbol_texts.len() as i32 > 1:
-            backend_intern = sema_pool
+        // D17/#697 take-and-return, post-#691 spelling (#726): the pre-flip
+        // version bare-read these pools into locals (then handle-copy
+        // aliases); under reset-on-move those reads became MOVES, and the
+        // assign-then-overwrite pattern DROPPED a still-viewed InternPool.
+        // Freed pool pages were recycled into the LLVM context and the
+        // corruption surfaced as audit segfaults on valid-looking types.
+        // Now: the winner is chosen without dropping the loser, the loser
+        // stays owned by its home field, and everything lent to the codegen
+        // run is restored after take_sema.
+        let use_sema_ast = self.last_sema.ast.decl_count() > 0
+        let use_sema_pool = self.last_sema.pool.state.symbol_texts.len() as i32 > 1
+        let backend_intern = if use_sema_pool: move self.last_sema.pool else: move self.pool
         var cg = Codegen.init_with_opt_and_intern("with_analysis", opt_level, move backend_intern, move self.last_sema)
         cg.source_file = self.current_source_path
         cg.source_text = self.current_source_text
@@ -235,6 +238,7 @@ impl Zcu:
         cg.current_decl_source_file = self.current_source_path
         cg.enable_analysis(query)
         var backend_mir = self.last_mir_module
+        let backend_pool = if use_sema_ast: move cg.sema.ast else: move pool
         let rc = cg.gen_module_from_mir(&raw const backend_mir as i64, backend_pool)
         cg.audit_declared_share_place_contracts()
         cg.audit_return_shape_contracts()
@@ -243,7 +247,14 @@ impl Zcu:
         if rc != 0:
             cg.analysis_fail("code generation failed during integrated analysis")
         let status = if rc != 0: 1 else: cg.analysis_status()
+        self.last_mir_module = move backend_mir
         self.last_sema = cg.take_sema()
+        if use_sema_ast:
+            self.last_sema.ast = cg.take_pool()
+        if use_sema_pool:
+            self.last_sema.pool = cg.take_intern()
+        else:
+            self.pool = cg.take_intern()
         AnalysisBackendResult { report: cg.analysis_report, status }
 
 fn backend_dump_struct_extras(pool: AstPool, intern: InternPool):
