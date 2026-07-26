@@ -1,4 +1,4 @@
-//! expect-debug-alloc: leak count=2
+//! expect-debug-alloc: leak count=0
 // #481/#641 (§8.3.2.5): TempArena's destructor runs reset() at scope exit —
 // every recorded USER allocation is freed exactly once (no leak, no DOUBLE
 // FREE), including after an explicit mid-scope reset() + further allocs. The

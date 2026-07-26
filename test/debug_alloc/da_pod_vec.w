@@ -1,4 +1,4 @@
-//! expect-debug-alloc: leak count=1
+//! expect-debug-alloc: leak count=0
 fn main:
     let ns: Vec[i32] = Vec.new()
     ns.push(1)
