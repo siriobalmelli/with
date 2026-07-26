@@ -602,7 +602,19 @@ impl Sema:
         if reaching_count == 0:
             final_type = if expected != 0: expected else: self.ty_never as i32
         else if final_type == 0:
-            final_type = if owned_candidate != 0: owned_candidate else: reference_candidate
+            if owned_candidate != 0 and reference_candidate != 0:
+                // Mixed view/owned arms with no outer demand: the views'
+                // payload is an owned peer of the join, so a bare literal arm
+                // adapts to it (arithmetic promotion) instead of imposing its
+                // default width on the materialization. Without this, an
+                // `Option[&i64]` eliminator joined with a literal `0` anchored
+                // the join at i32 and the materialized pointee was silently
+                // truncated to 32 bits (the analyze-audit segfault class).
+                let ref_payload = self.get_type_d0(self.resolve_alias(reference_candidate as TypeId))
+                let mixed = self.merge_contextual_owned_join_types(owned_candidate, ref_payload)
+                final_type = if mixed != 0: mixed else: owned_candidate
+            else:
+                final_type = if owned_candidate != 0: owned_candidate else: reference_candidate
         else if owned_candidate != 0 and reference_candidate == 0 and self.contextual_join_value_accepts(final_type, owned_candidate) == 0:
             // The enclosing expectation cannot absorb the arms' agreed owned
             // type directly — e.g. a Result-returning tail, where the happy
