@@ -49,10 +49,12 @@ impl SourceMap:
         let raw = file_id_raw(file_id)
         raw >= 0 and raw < self.sources.len() as i32
 
-    pub fn get_source(file_id: FileId) -> Source:
+    // A view, not a copy: Source owns Drop buffers (text, line offsets), and
+    // an element copy would share them with the stored entry (double free).
+    pub fn get_source(file_id: FileId) -> &Source:
         if not self.contains(file_id):
-            return self.sources.get(0)
-        self.sources.get(file_id_raw(file_id) as i64)
+            return &self.sources[0]
+        &self.sources[file_id_raw(file_id) as i64]
 
     pub fn offset_to_location(file_id: FileId, offset: i32) -> SourceLocation:
         if not self.contains(file_id):

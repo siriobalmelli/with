@@ -5,7 +5,7 @@ use compiler.foundation.Span
 use compiler.foundation.SourceMap
 use compiler.foundation.Diagnostic
 
-pub fn render_diagnostic(diag: Diagnostic, sm: &SourceMap) -> str:
+pub fn render_diagnostic(diag: &Diagnostic, sm: &SourceMap) -> str:
     let sev = render_severity(diag.severity)
     var out = sev
     out = out ++ ": "
@@ -50,7 +50,7 @@ pub fn render_diagnostic(diag: Diagnostic, sm: &SourceMap) -> str:
 pub fn render_all_diagnostics(store: &DiagnosticStore, sm: &SourceMap) -> str:
     var out = ""
     for i in 0..store.items.len() as i32:
-        out = out ++ render_diagnostic(store.items.get(i as i64), sm)
+        out = out ++ render_diagnostic(&store.items[i as i64], sm)
         if i + 1 < store.items.len() as i32:
             out = out ++ "\n"
     out

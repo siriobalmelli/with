@@ -1,5 +1,5 @@
 //! args: --dump-typed
-//! expect-check-stdout: typed contextual-copy-adjustments=26
+//! expect-check-stdout: typed contextual-copy-adjustments=27
 //! expect-check-stdout: bind view: &i32
 //! expect-check-stdout: bind forwarded: Option[&i32]
 //! expect-check-stdout: bind forwarded_view: &i32
@@ -127,7 +127,7 @@ fn main:
     assert(collection.get(0) == 120)
     assert(direct_collection.get(0) == 120)
     assert(comprehended.get(0) == 120)
-    assert(comprehended_map.get(120) == 120)
+    assert(comprehended_map.get(120).unwrap() == 120)
     match wrapped:
         Value(inner) => assert(inner == 120)
     assert(owned_carrier.unwrap() == 120)

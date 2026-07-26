@@ -1,7 +1,11 @@
 //! args: --dump-drop-plan
 //! expect-check-stdout: drop-plan module
-//! expect-check-stdout: _2.0=Moved
-//! expect-check-stdout: _2.1=Moved
+// Post-#691 reset-on-move: a moved-out field is blanked (const zst) and
+// truthfully reads Init, while the aggregate itself gets NO drop row — a
+// blanked W must never run drop glue. Each moved-out W drops exactly once
+// via its destination local.
+//! expect-check-stdout: remaining=_2=Maybe, _2.0=Init, _2.1=Init
+//! expect-check-stdout-not: place=_2 
 
 type W { slot: *mut i32 }
 
