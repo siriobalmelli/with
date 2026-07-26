@@ -1,5 +1,21 @@
 # Active Handoff — D22 implementation, Stage 6 (2026-07-24)
 
+## 2026-07-26 session tail v3: #729 narrowed to the parallel/thread job path
+
+Read the #729 issue thread top to bottom — it carries the complete
+evidence chain and the eliminated-suspects list. Landed since v2:
+d2efb5a6 (Compilation intake clones; single-workspace case green),
+449a2483 (rt invalid-free panic prints addr+origin), WITH_TRACE_RESETS
+instrumentation (MirLower/Mir). Current fact: the parallel-multi case
+frees value 1611 via __drop_struct_357 — a non-pointer field value in a
+Vec slot; layout, literal order, glue dedup, allocator locking, and
+reuse are all eliminated. Next: suspect (1) the thread-job raw-pointer
+stride `(jobs.ptr as *mut ComptimeWorkspaceThreadJob) + i` vs the vec
+element stride, (2) ce_clone_compile_plan sret convention (D6 class).
+Only the two-workspace (threaded) path crashes; single-plan is clean.
+Also owed: the Eric brief on the live D5 share-place classifier
+(eff=[read] -> value_ref_abi=1; see #729 comments).
+
 ## 2026-07-26 session tail v2: reseed blocked on #729 (selfhost build-w lane)
 
 #726 CLOSED: root cause was the D22 mixed view/literal join anchoring at the
