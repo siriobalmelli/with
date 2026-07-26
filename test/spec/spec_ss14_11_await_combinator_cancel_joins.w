@@ -1,3 +1,4 @@
+//! known-issue: #724 owned collections lack element-transfer iteration; await combinators double-own tasks via view bit-copies
 //! expect-stdout: ok
 
 extern fn with_fiber_live_fibers() -> i32

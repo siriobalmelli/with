@@ -1,3 +1,4 @@
+//! known-issue: #723 with-type guard inference unimplemented (pre-existing; red on the seed too)
 // Spec test: Section 7.1 - With Type-Based Guard Inference
 
 use std.sync

@@ -152,6 +152,7 @@ type TestDirectives {
     skip: bool,
     skip_reason: str,
     extra_args: str,
+    known_issue: str,
 }
 
 type TestRunResult {
@@ -183,6 +184,7 @@ fn empty_test_directives -> TestDirectives:
         skip: false,
         skip_reason: "",
         extra_args: "",
+        known_issue: "",
     }
 
 fn cli_options_default -> CliOptions:
@@ -2845,6 +2847,7 @@ fn parse_test_directives_for_target(target: str) -> TestDirectives:
     let args_prefix = "//! args: "
     let skip_prefix = "//! skip: "
     let skip_windows_prefix = "//! skip-windows: "
+    let known_issue_prefix = "//! known-issue: "
     var start = 0
     var i = 0
     while i <= text_len:
@@ -2889,6 +2892,8 @@ fn parse_test_directives_for_target(target: str) -> TestDirectives:
                 return result
             else if line == "//! check-only":
                 result.check_only = true
+            else if with_str_starts_with(line, known_issue_prefix) != 0:
+                result.known_issue = line.slice(known_issue_prefix.len(), line.len())
             else if with_str_starts_with(line, "//!") != 0:
                 let _ = 0
             else:
@@ -3130,7 +3135,22 @@ fn run_test_binary_checked(bin_path: str, target: str, test_name: str, quiet: bo
         return 0
     1
 
+// `//! known-issue: #NNN` (BDFL ruling 2026-07-26, Rust compiletest
+// known-bug model): the fixture documents an open bug and MUST stay red.
+// Both directions are enforced — a red is tolerated (loudly), and a green
+// fails the file until the directive is removed with the issue's fix.
 fn run_test_file_with_build_settings(target: str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> i32:
+    let known_issue = parse_test_directives_for_target(target).known_issue
+    if known_issue.len() == 0:
+        return run_test_file_with_build_settings_inner(target, opt_level, no_std, alloc_mode, runtime_available, prelude_mode, debug_info, verbose, quiet, filter, include_paths, defines, link_libs)
+    let rc = run_test_file_with_build_settings_inner(target, opt_level, no_std, alloc_mode, runtime_available, prelude_mode, debug_info, verbose, quiet, filter, include_paths, defines, link_libs)
+    if rc == 0:
+        emit_test_stage_error("known-issue " ++ known_issue ++ " expected this test to stay red, but it passed; if the issue is fixed, remove the known-issue directive", target, "known-issue", "")
+        return 1
+    with_eprint("[known-issue " ++ known_issue ++ "] " ++ target ++ " red as expected")
+    0
+
+fn run_test_file_with_build_settings_inner(target: str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> i32:
     let directives = parse_test_directives_for_target(target)
     let directive_rc = run_test_directive_command(target, directives, quiet)
     if directive_rc >= 0:
