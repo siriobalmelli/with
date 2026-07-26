@@ -1393,7 +1393,12 @@ fn build_pool_spawn(target: &BuildGraphTarget, options: &BuildCommandOptions, st
 
 // Wait on the pool's oldest worker, replay its captured output, record its
 // wall time, and mark it completed on success. Returns the worker's rc.
-fn build_pool_retire_oldest(pool_names: Vec[str], pool_pids: Vec[i32], pool_t0s: Vec[i64], pool_outs: Vec[str], pool_errs: Vec[str], pool_timeouts: Vec[i32], oldest: i32, timed_names: Vec[str], timed_ns: Vec[i64], completed_targets: Vec[str]) -> i32:
+// The timing/completion records go back to the caller: an owned Vec
+// parameter would consume the pool state (pre-#691 handle-copy aliasing
+// is gone), so the reads borrow and the caller applies the record.
+type PoolRetireResult { rc: i32, name: str, spent: i64 }
+
+fn build_pool_retire_oldest(pool_names: &Vec[str], pool_pids: &Vec[i32], pool_t0s: &Vec[i64], pool_outs: &Vec[str], pool_errs: &Vec[str], pool_timeouts: &Vec[i32], oldest: i32) -> PoolRetireResult:
     let idx = oldest as i64
     let name = pool_names.get(idx)
     let rc = build_graph_rt_exec_wait(pool_pids.get(idx), pool_timeouts.get(idx))
@@ -1404,18 +1409,15 @@ fn build_pool_retire_oldest(pool_names: Vec[str], pool_pids: Vec[i32], pool_t0s:
     let err_text = with_fs_read_file(pool_errs.get(idx))
     if err_text.len() > 0:
         with_ewrite(err_text)
-    timed_names.push(name)
-    timed_ns.push(spent)
     with_eprint("[time] " ++ name ++ " " ++ build_graph_time_fmt(spent))
     if rc == 124:
         with_eprint("error: build.w target '" ++ name ++ "' timed out")
-        return 124
+        return PoolRetireResult { rc: 124, name, spent }
     if rc != 0:
         with_eprint("error: build.w target '" ++ name ++ f"' failed with exit code {rc}")
-        return rc
+        return PoolRetireResult { rc, name, spent }
     build_cache_forget_fingerprints()
-    completed_targets.push(name)
-    0
+    PoolRetireResult { rc: 0, name, spent }
 
 // #683: serial actions run IN-PROCESS — this driver already holds the
 // evaluated graph and sema; the former worker child recompiled build.w
@@ -1423,7 +1425,7 @@ fn build_pool_retire_oldest(pool_names: Vec[str], pool_pids: Vec[i32], pool_t0s:
 // targets still spawn (build_pool_spawn) because processes are what buy
 // their parallelism; this fn is also the pooled worker child's own
 // execution path (worker env set).
-unsafe fn run_build_action_from_build_w(root: str, cfg: ProjectConfig, target: &BuildGraphTarget, sema_ptr: *mut Sema, options: &BuildCommandOptions) -> BuildActionRunResult:
+unsafe fn run_build_action_from_build_w(root: str, cfg: &ProjectConfig, target: &BuildGraphTarget, sema_ptr: *mut Sema, options: &BuildCommandOptions) -> BuildActionRunResult:
     build_action_clear_worker_env_for_children()
     if target.output.len() == 0:
         with_eprint("error: action target '" ++ target.name ++ "' requires a declared output")
@@ -1730,7 +1732,12 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
             dep_rebuilt = true
         if target.kind != 9 and pool_dep_inflight:
             while pool_oldest < pool_names.len() as i32:
-                let retire_rc = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest, timed_names, timed_ns, completed_targets)
+                let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
+                timed_names.push(retire.name)
+                timed_ns.push(retire.spent)
+                if retire.rc == 0:
+                    completed_targets.push(retire.name)
+                let retire_rc = retire.rc
                 if retire_rc != 0:
                     if survey:
                         survey_failed.push(pool_names.get(pool_oldest as i64))
@@ -1753,7 +1760,12 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
         let will_pool = target.kind == 23 and target.parallel != 0 and times_top_level
         if not will_pool and pool_oldest < pool_names.len() as i32:
             while pool_oldest < pool_names.len() as i32:
-                let retire_rc = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest, timed_names, timed_ns, completed_targets)
+                let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
+                timed_names.push(retire.name)
+                timed_ns.push(retire.spent)
+                if retire.rc == 0:
+                    completed_targets.push(retire.name)
+                let retire_rc = retire.rc
                 if retire_rc != 0:
                     if survey:
                         survey_failed.push(pool_names.get(pool_oldest as i64))
@@ -1764,7 +1776,12 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
                 return pool_failed_rc
         if will_pool:
             if pool_names.len() as i32 - pool_oldest >= pool_width:
-                let retire_rc = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest, timed_names, timed_ns, completed_targets)
+                let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
+                timed_names.push(retire.name)
+                timed_ns.push(retire.spent)
+                if retire.rc == 0:
+                    completed_targets.push(retire.name)
+                let retire_rc = retire.rc
                 let retired_name = pool_names.get(pool_oldest as i64)
                 pool_oldest = pool_oldest + 1
                 if retire_rc != 0:
@@ -1772,8 +1789,11 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
                         survey_failed.push(retired_name)
                     if not survey:
                         while pool_oldest < pool_names.len() as i32:
-                            let drain_rc = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest, timed_names, timed_ns, completed_targets)
-                            let _ = drain_rc
+                            let drain = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
+                            timed_names.push(drain.name)
+                            timed_ns.push(drain.spent)
+                            if drain.rc == 0:
+                                completed_targets.push(drain.name)
                             pool_oldest = pool_oldest + 1
                         return retire_rc
             let pool_capture_dir = resolve_join(root, "out/command/" ++ build_action_safe_label(target.name))
@@ -1785,8 +1805,11 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
             if pid <= 0:
                 with_eprint("error: could not spawn worker for build.w target '" ++ target.name ++ "'")
                 while pool_oldest < pool_names.len() as i32:
-                    let drain_rc = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest, timed_names, timed_ns, completed_targets)
-                    let _ = drain_rc
+                    let drain = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
+                    timed_names.push(drain.name)
+                    timed_ns.push(drain.spent)
+                    if drain.rc == 0:
+                        completed_targets.push(drain.name)
                     pool_oldest = pool_oldest + 1
                 return 1
             pool_names.push(target.name)
@@ -1940,7 +1963,12 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
         build_cache_record(root, target, comp.tracked_input_paths(), Vec.new())
         completed_targets.push(target.name)
     while pool_oldest < pool_names.len() as i32:
-        let retire_rc = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest, timed_names, timed_ns, completed_targets)
+        let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
+        timed_names.push(retire.name)
+        timed_ns.push(retire.spent)
+        if retire.rc == 0:
+            completed_targets.push(retire.name)
+        let retire_rc = retire.rc
         if retire_rc != 0:
             if survey:
                 survey_failed.push(pool_names.get(pool_oldest as i64))

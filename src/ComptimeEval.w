@@ -1046,7 +1046,7 @@ fn comptime_glob_segment_matches(pattern: str, name: str) -> bool:
             return false
     true
 
-fn comptime_glob_segments_match(pat_segs: Vec[str], pi: i32, file_segs: Vec[str], fi: i32) -> bool:
+fn comptime_glob_segments_match(pat_segs: &Vec[str], pi: i32, file_segs: &Vec[str], fi: i32) -> bool:
     if pi >= pat_segs.len() as i32:
         return fi >= file_segs.len() as i32
     let seg = pat_segs.get(pi as i64)

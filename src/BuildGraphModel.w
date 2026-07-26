@@ -429,7 +429,7 @@ fn build_graph_selected_targets_new -> BuildGraphSelectedTargets:
         visiting_names: Vec.new(),
     }
 
-fn build_graph_name_vec_contains(names: Vec[str], name: str) -> bool:
+fn build_graph_name_vec_contains(names: &Vec[str], name: str) -> bool:
     for i in 0..names.len() as i32:
         if names.get(i as i64) == name:
             return true

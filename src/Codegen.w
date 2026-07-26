@@ -741,14 +741,18 @@ impl Codegen:
         fact.effects = if sig >= 0 and param_index >= 0 and param_index < self.sema.sig_get_param_count(sig): self.sema.sig_param_effect(sig, param_index) else: 0
         fact.flags = (strategy as i32) | ((op_kind & 255) << 8) | (if share: 65536 else: 0) | (if ref_table: 131072 else: 0)
         fact.name = name
+        // Strategy verdicts are derived before the enum's last use below;
+        // analysis_marshal_strategy_name consumes it.
+        let strategy_unmarshaled = strategy == AnalysisMarshalStrategy.DirectValue or strategy == AnalysisMarshalStrategy.MissingSignature
+        let strategy_temp_copy = strategy == AnalysisMarshalStrategy.TemporaryAddress and (op_kind == OperandKind.OK_COPY or op_kind == OperandKind.OK_MOVE)
         fact.detail = analysis_marshal_strategy_name(strategy) ++ f" raw={raw} marshaled={marshaled} sig={sig} sema-share={share} ref-table={ref_table}"
         let selected = self.analysis_fact_selected(&fact)
         self.analysis_add(move fact)
         if selected and share and not callee_is_extern and not ref_table:
             self.analysis_fail(f"call {name} body={body.fn_sym} args={args_id} param={param_index}: Sema share-place contract is absent from Codegen ref table")
-        if selected and share and not callee_is_extern and (strategy == AnalysisMarshalStrategy.DirectValue or strategy == AnalysisMarshalStrategy.MissingSignature):
+        if selected and share and not callee_is_extern and strategy_unmarshaled:
             self.analysis_fail(f"call {name} body={body.fn_sym} args={args_id} param={param_index}: share-place parameter was not marshaled as an address")
-        if selected and share and not callee_is_extern and strategy == AnalysisMarshalStrategy.TemporaryAddress and (op_kind == OperandKind.OK_COPY or op_kind == OperandKind.OK_MOVE):
+        if selected and share and not callee_is_extern and strategy_temp_copy:
             self.analysis_fail(f"call {name} body={body.fn_sym} args={args_id} param={param_index}: addressable share-place operand was copied into a temporary")
 
     fn record_codegen_param_binding(body: &MirBody, fn_sym: i32, param_index: i32, strategy: AnalysisMarshalStrategy, incoming: i64, storage: i64):
@@ -769,12 +773,14 @@ impl Codegen:
         fact.effects = if sig >= 0 and param_index < self.sema.sig_get_param_count(sig): self.sema.sig_param_effect(sig, param_index) else: 0
         fact.flags = (strategy as i32) | (if share: 65536 else: 0) | (if ref_table: 131072 else: 0) | (if incoming_ptr: 262144 else: 0)
         fact.name = name
+        // Derived before analysis_marshal_strategy_name consumes the enum.
+        let strategy_not_alias = strategy != AnalysisMarshalStrategy.CalleePlaceAlias
         fact.detail = analysis_marshal_strategy_name(strategy) ++ f" incoming={incoming} storage={storage} sig={sig} sema-share={share} ref-table={ref_table} llvm-pointer={incoming_ptr}"
         let selected = self.analysis_fact_selected(&fact)
         self.analysis_add(move fact)
         if selected and share and not ref_table:
             self.analysis_fail(f"callee {name} sig={sig} param={param_index}: Sema share-place contract is absent from Codegen ref table")
-        if selected and share and strategy != AnalysisMarshalStrategy.CalleePlaceAlias:
+        if selected and share and strategy_not_alias:
             self.analysis_fail(f"callee {name} sig={sig} param={param_index}: share-place parameter does not alias the incoming caller place")
 
 fn Codegen.init_with_opt(module_name: str, opt_level: i32) -> Codegen:

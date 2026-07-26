@@ -281,7 +281,7 @@ fn ci_set_include_paths(paths: Vec[str]):
 fn ci_set_sdk_path(path: str):
     with_cimport_set_sdk_path(path)
 
-fn ci_build_define_prefix(defines: Vec[str]) -> str:
+fn ci_build_define_prefix(defines: &Vec[str]) -> str:
     var out = StringBuilder.new()
     for i in 0..defines.len() as i32:
         let define = defines.get(i as i64)
@@ -571,7 +571,7 @@ fn process_c_import(header_spec: str) -> str:
     let defines: Vec[str] = Vec.new()
     process_c_import_with_defines(header_spec, defines)
 
-fn process_c_import_with_defines(header_spec: str, defines: Vec[str]) -> str:
+fn process_c_import_with_defines(header_spec: str, defines: &Vec[str]) -> str:
     c_import_last_error_clear()
     c_import_untranslated_macros_clear()
     c_import_omitted_symbols_clear()

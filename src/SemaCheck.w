@@ -16504,16 +16504,24 @@ impl Sema:
         let param_concrete_types: Vec[i32] = Vec.new()
         self.check_fn_body_concrete(fn_node, tp_syms, tp_types, mono_sym, param_concrete_types)
 
-fn sema_push_concrete_subst(names: Vec[i32], types: Vec[i32], sym: i32, tid: i32):
-    if sym == 0 or tid == 0:
-        return
-    for i in 0..names.len() as i32:
-        if names.get(i as i64) == sym:
-            if types.get(i as i64) != tid:
-                sema_phase_bug(f"BUG: conflicting concrete substitution for symbol {sym}")
+// Deduplicating symbol→type substitution accumulator. A mut-receiver
+// method because the pushes must land in the caller's vectors; an owned
+// Vec parameter would consume them (pre-#691 handle-copy aliasing is gone).
+type ConcreteSubst { names: Vec[i32], types: Vec[i32] }
+
+fn ConcreteSubst.init() -> ConcreteSubst: ConcreteSubst { names: Vec.new(), types: Vec.new() }
+
+impl ConcreteSubst:
+    mut fn push(sym: i32, tid: i32):
+        if sym == 0 or tid == 0:
             return
-    names.push(sym)
-    types.push(tid)
+        for i in 0..self.names.len() as i32:
+            if self.names.get(i as i64) == sym:
+                if self.types.get(i as i64) != tid:
+                    sema_phase_bug(f"BUG: conflicting concrete substitution for symbol {sym}")
+                return
+        self.names.push(sym)
+        self.types.push(tid)
 
 // Synthetic drop glue has no source call node to trigger generic method
 // specialization. Enumerate every concrete generic type before freeze and
@@ -16557,10 +16565,9 @@ impl Sema:
             if method_node == 0:
                 sema_phase_bug(f"BUG: Drop.drop declaration is missing for concrete generic type {resolved}")
 
-            let subst_names: Vec[i32] = Vec.new()
-            let subst_types: Vec[i32] = Vec.new()
+            var subst = ConcreteSubst.init()
             for si in 0..matched_subst_names.len() as i32:
-                sema_push_concrete_subst(subst_names, subst_types, matched_subst_names.get(si as i64), matched_subst_types.get(si as i64))
+                subst.push(matched_subst_names.get(si as i64), matched_subst_types.get(si as i64))
 
             let owner_sym = self.get_generic_inst_base(resolved)
             if self.type_decl_nodes.contains(owner_sym):
@@ -16572,9 +16579,9 @@ impl Sema:
                 for ti in 0..owner_tp_count:
                     let tp_sym = self.ast.get_extra(tp_pos)
                     let bound_count = self.ast.get_extra(tp_pos + 1)
-                    sema_push_concrete_subst(subst_names, subst_types, tp_sym, self.get_generic_inst_arg(resolved, ti))
+                    subst.push(tp_sym, self.get_generic_inst_arg(resolved, ti))
                     tp_pos = tp_pos + 2 + bound_count
-            sema_push_concrete_subst(subst_names, subst_types, self.syms.self_type, resolved)
+            subst.push(self.syms.self_type, resolved)
 
             var mono_text = f"{self.pool_resolve(method_fn)}__receiver__{resolved}"
             for ai in 0..self.get_generic_inst_arg_count(resolved):
@@ -16583,7 +16590,7 @@ impl Sema:
             var sig_idx = self.get_sig(mono_sym)
             if sig_idx < 0:
                 let concrete_params: Vec[i32] = Vec.new()
-                sig_idx = self.check_fn_body_concrete(method_node, subst_names, subst_types, mono_sym, concrete_params)
+                sig_idx = self.check_fn_body_concrete(method_node, subst.names, subst.types, mono_sym, concrete_params)
             if sig_idx < 0:
                 sema_phase_bug(f"BUG: failed to specialize Drop.drop for concrete generic type {resolved}")
             self.concrete_drop_sigs.insert(resolved, sig_idx)
@@ -16614,10 +16621,9 @@ impl Sema:
         let target = self.impl_target_match(impl_node, resolved)
         if target.ok == 0:
             return
-        let subst_names: Vec[i32] = Vec.new()
-        let subst_types: Vec[i32] = Vec.new()
+        var subst = ConcreteSubst.init()
         for si in 0..target.subst_names.len() as i32:
-            sema_push_concrete_subst(subst_names, subst_types, target.subst_names.get(si as i64), target.subst_types.get(si as i64))
+            subst.push(target.subst_names.get(si as i64), target.subst_types.get(si as i64))
         let owner_sym = self.get_generic_inst_base(resolved)
         if self.type_decl_nodes.contains(owner_sym):
             let owner_decl = self.type_decl_nodes.get(owner_sym).unwrap()
@@ -16627,9 +16633,9 @@ impl Sema:
                 for ti in 0..owner_tp_count:
                     let tp_sym = self.ast.get_extra(tp_pos)
                     let bound_count = self.ast.get_extra(tp_pos + 1)
-                    sema_push_concrete_subst(subst_names, subst_types, tp_sym, self.get_generic_inst_arg(resolved, ti))
+                    subst.push(tp_sym, self.get_generic_inst_arg(resolved, ti))
                     tp_pos = tp_pos + 2 + bound_count
-        sema_push_concrete_subst(subst_names, subst_types, self.syms.self_type, resolved)
+        subst.push(self.syms.self_type, resolved)
         var mono_text = f"{self.pool_resolve(deref_fn)}__receiver__{resolved}"
         for ai in 0..self.get_generic_inst_arg_count(resolved):
             mono_text = f"{mono_text}_{self.get_generic_inst_arg(resolved, ai)}"
@@ -16637,7 +16643,7 @@ impl Sema:
         var sig_idx = self.get_sig(mono_sym)
         if sig_idx < 0:
             let concrete_params: Vec[i32] = Vec.new()
-            sig_idx = self.check_fn_body_concrete(fn_node, subst_names, subst_types, mono_sym, concrete_params)
+            sig_idx = self.check_fn_body_concrete(fn_node, subst.names, subst.types, mono_sym, concrete_params)
         if sig_idx < 0:
             return
         self.resolved_call_sigs.insert(expr, sig_idx)

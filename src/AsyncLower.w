@@ -52,7 +52,7 @@ fn async_ast_get_start(ast: AstPool, node: i32) -> i32:
 fn async_ast_kind(ast: AstPool, node: i32) -> i32:
     ast.kind(node)
 
-fn async_body_suspend_count(body: AsyncMirBody) -> i32:
+fn async_body_suspend_count(body: &AsyncMirBody) -> i32:
     body.suspend_count()
 
 fn lower_async_module(mir_mod: &MirModule, ast: AstPool, pool: InternPool, sema: &Sema, diags: DiagnosticList) -> AsyncLowerResult:

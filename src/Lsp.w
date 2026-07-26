@@ -660,15 +660,15 @@ fn lsp_line_col_to_offset(text: str, line: i32, col: i32) -> i32:
 
 // ── Diagnostics ──────────────────────────────────────────────
 
-fn lsp_publish_diagnostics(state: LspState, uri: str, text: str):
-    let idx = state.find_doc(uri)
+fn LspState.publish_diagnostics(mut self: LspState, uri: str, text: str):
+    let idx = self.find_doc(uri)
     if idx >= 0:
-        state.ensure_doc_analyzed(idx)
+        self.ensure_doc_analyzed(idx)
 
     // Use cached diagnostics if available
     var dl = DiagnosticList.init()
-    if idx >= 0 and state.documents.get(idx as i64).cache_valid:
-        dl = state.documents.get(idx as i64).cached_diags
+    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
+        dl = self.documents.get(idx as i64).cached_diags
     else:
         var comp = Compilation.init()
         comp.set_prelude_mode(2)
@@ -699,7 +699,7 @@ fn lsp_publish_diagnostics(state: LspState, uri: str, text: str):
 
 // ── Go to definition ─────────────────────────────────────────
 
-fn lsp_definition(id: i32, state: LspState, uri: str, text: str, line: i32, col: i32):
+fn LspState.definition(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     var lexer = Lexer.init(text, 0)
@@ -716,17 +716,17 @@ fn lsp_definition(id: i32, state: LspState, uri: str, text: str, line: i32, col:
         return
 
     // Try slow tier first (cross-file via decl_source_paths)
-    let idx = state.find_doc(uri)
+    let idx = self.find_doc(uri)
     if idx >= 0:
-        state.ensure_doc_analyzed(idx)
+        self.ensure_doc_analyzed(idx)
     var slow_pool = AstPool.new()
     var slow_intern = InternPool.init()
     var slow_paths: Vec[str] = Vec.new()
     var slow_valid = false
-    if idx >= 0 and state.documents.get(idx as i64).cache_valid:
-        slow_pool = state.documents.get(idx as i64).cached_pool
-        slow_intern = state.documents.get(idx as i64).cached_intern
-        slow_paths = state.documents.get(idx as i64).cached_decl_paths
+    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
+        slow_pool = self.documents.get(idx as i64).cached_pool
+        slow_intern = self.documents.get(idx as i64).cached_intern
+        slow_paths = self.documents.get(idx as i64).cached_decl_paths
         slow_valid = true
     if slow_valid:
         for di in 0..slow_pool.decl_count():
@@ -754,7 +754,7 @@ fn lsp_definition(id: i32, state: LspState, uri: str, text: str, line: i32, col:
                     return
 
     // Fall back to fast-tier same-file lookup (parse-only, cached)
-    let parsed = state.get_parsed(uri, text)
+    let parsed = self.get_parsed(uri, text)
     for di in 0..parsed.pool.decl_count():
         let decl = parsed.pool.get_decl(di)
         let kind = parsed.pool.kind(decl)
@@ -806,7 +806,7 @@ fn lsp_extract_doc_comment(text: str, decl_start: i32) -> str:
         i = i - 1
     result
 
-fn lsp_hover(id: i32, state: LspState, uri: str, text: str, line: i32, col: i32):
+fn LspState.hover(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     var lexer = Lexer.init(text, 0)
@@ -822,14 +822,14 @@ fn lsp_hover(id: i32, state: LspState, uri: str, text: str, line: i32, col: i32)
         lsp_write_response(jrpc_result_null(id))
         return
 
-    let idx = state.find_doc(uri)
+    let idx = self.find_doc(uri)
     if idx >= 0:
-        state.ensure_doc_analyzed(idx)
+        self.ensure_doc_analyzed(idx)
     var pool = AstPool.new()
     var intern = InternPool.init()
-    if idx >= 0 and state.documents.get(idx as i64).cache_valid:
-        pool = state.documents.get(idx as i64).cached_pool
-        intern = state.documents.get(idx as i64).cached_intern
+    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
+        pool = self.documents.get(idx as i64).cached_pool
+        intern = self.documents.get(idx as i64).cached_intern
     else:
         var comp = Compilation.init()
         comp.set_prelude_mode(2)
@@ -877,7 +877,7 @@ fn lsp_hover(id: i32, state: LspState, uri: str, text: str, line: i32, col: i32)
 
 // ── Dot completion ───────────────────────────────────────────
 
-fn lsp_dot_completion(id: i32, state: LspState, uri: str, text: str, offset: i32, dot_pos: i32):
+fn LspState.dot_completion(mut self: LspState, id: i32, uri: str, text: str, offset: i32, dot_pos: i32):
     // Find the receiver identifier before the dot
     var recv_end = dot_pos
     var recv_start = recv_end - 1
@@ -890,14 +890,14 @@ fn lsp_dot_completion(id: i32, state: LspState, uri: str, text: str, offset: i32
     let receiver = text.slice(recv_start as i64, recv_end as i64)
 
     // Parse file to find receiver's type (cached)
-    let parsed = state.get_parsed(uri, text)
+    let parsed = self.get_parsed(uri, text)
     var type_name = lsp_resolve_receiver_type(parsed.pool, parsed.intern, receiver, offset)
 
     // Slow-tier fallback: use typed_expr_types for type inference
     if type_name.len() == 0:
-        let cidx = state.find_doc(uri)
-        if cidx >= 0 and state.documents.get(cidx as i64).cache_valid:
-            type_name = state.documents.get(cidx as i64).type_at_offset(recv_start)
+        let cidx = self.find_doc(uri)
+        if cidx >= 0 and self.documents.get(cidx as i64).cache_valid:
+            type_name = self.documents.get(cidx as i64).type_at_offset(recv_start)
 
     // Build items JSON inline (Vec is pass-by-value, can't use helpers)
     var items = jarr_start()
@@ -1005,9 +1005,9 @@ fn lsp_dot_completion(id: i32, state: LspState, uri: str, text: str, offset: i32
                         items = items ++ jobj_start() ++ jkv_str("label", mname) ++ "," ++ jkv_int("kind", 2) ++ jobj_end()
                 break
         // Sema-based trait methods from slow tier (includes imported traits)
-        let cidx = state.find_doc(uri)
-        if cidx >= 0 and state.documents.get(cidx as i64).cache_valid:
-            let trait_methods = state.documents.get(cidx as i64).trait_methods_for_type(type_name)
+        let cidx = self.find_doc(uri)
+        if cidx >= 0 and self.documents.get(cidx as i64).cache_valid:
+            let trait_methods = self.documents.get(cidx as i64).trait_methods_for_type(type_name)
             for tmi in 0..trait_methods.len() as i32:
                 let tmname = trait_methods.get(tmi as i64)
                 if not first: items = items ++ ","
@@ -1117,7 +1117,7 @@ fn lsp_type_node_to_name(pool: AstPool, intern: InternPool, type_node: i32) -> s
 
 // ── Completion ───────────────────────────────────────────────
 
-fn lsp_completion(id: i32, state: LspState, uri: str, text: str, line: i32, col: i32):
+fn LspState.completion(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Find the line text up to cursor to detect context
@@ -1160,18 +1160,18 @@ fn lsp_completion(id: i32, state: LspState, uri: str, text: str, line: i32, col:
     while dot_pos >= 0 and text.byte_at(dot_pos as i64) == 32:
         dot_pos = dot_pos - 1
     if dot_pos >= 0 and text.byte_at(dot_pos as i64) == 46:
-        lsp_dot_completion(id, state, uri, text, offset, dot_pos)
+        self.dot_completion(id, uri, text, offset, dot_pos)
         return
 
     // Get cached analysis
-    let cidx = state.find_doc(uri)
+    let cidx = self.find_doc(uri)
     if cidx >= 0:
-        state.ensure_doc_analyzed(cidx)
+        self.ensure_doc_analyzed(cidx)
     var pool = AstPool.new()
     var intern = InternPool.init()
-    if cidx >= 0 and state.documents.get(cidx as i64).cache_valid:
-        pool = state.documents.get(cidx as i64).cached_pool
-        intern = state.documents.get(cidx as i64).cached_intern
+    if cidx >= 0 and self.documents.get(cidx as i64).cache_valid:
+        pool = self.documents.get(cidx as i64).cached_pool
+        intern = self.documents.get(cidx as i64).cached_intern
     else:
         var comp = Compilation.init()
         comp.set_prelude_mode(2)
@@ -1182,7 +1182,7 @@ fn lsp_completion(id: i32, state: LspState, uri: str, text: str, line: i32, col:
     // Find the enclosing function, collect its parameters and local bindings
     // that are visible at the cursor position.
     // Fast-tier scope-aware completion (cached).
-    let parsed = state.get_parsed(uri, text)
+    let parsed = self.get_parsed(uri, text)
     let parse_pool = parsed.pool
     let parse_intern = parsed.intern
     let enclosing_fn = lsp_find_enclosing_fn(parse_pool, offset)
@@ -1484,7 +1484,7 @@ fn lsp_keywords() -> Vec[str]:
 
 // ── Signature help ───────────────────────────────────────────
 
-fn lsp_signature_help(id: i32, state: LspState, uri: str, text: str, line: i32, col: i32):
+fn LspState.signature_help(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Walk tokens backward from cursor to find the opening ( and function name.
@@ -1528,7 +1528,7 @@ fn lsp_signature_help(id: i32, state: LspState, uri: str, text: str, line: i32, 
     let fn_name = text.slice(tokens.get_start(fn_name_tok) as i64, tokens.get_end(fn_name_tok) as i64)
 
     // Look up the function declaration in the parsed AST (cached)
-    let parsed = state.get_parsed(uri, text)
+    let parsed = self.get_parsed(uri, text)
     var sig_label = ""
     let param_labels: Vec[str] = Vec.new()
 
@@ -1585,7 +1585,7 @@ fn lsp_signature_help(id: i32, state: LspState, uri: str, text: str, line: i32, 
 
 // ── Find references ──────────────────────────────────────────
 
-fn lsp_find_references(id: i32, state: LspState, uri: str, text: str, line: i32, col: i32):
+fn LspState.find_references(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Find the identifier at cursor
@@ -1604,7 +1604,7 @@ fn lsp_find_references(id: i32, state: LspState, uri: str, text: str, line: i32,
 
     // Determine if target is a top-level declaration or a local variable.
     // For locals, restrict references to the enclosing function scope.
-    let parsed = state.get_parsed(uri, text)
+    let parsed = self.get_parsed(uri, text)
     var is_top_level = false
     var scope_start = 0
     var scope_end = text.len() as i32
@@ -1657,12 +1657,12 @@ fn lsp_find_references(id: i32, state: LspState, uri: str, text: str, line: i32,
         locs = locs ++ jarr_end()
         lsp_write_response(jrpc_result(id, locs))
         return
-    let idx = state.find_doc(uri)
+    let idx = self.find_doc(uri)
     if idx >= 0:
-        state.ensure_doc_analyzed(idx)
+        self.ensure_doc_analyzed(idx)
     var cached_paths: Vec[str] = Vec.new()
-    if idx >= 0 and state.documents.get(idx as i64).cache_valid:
-        cached_paths = state.documents.get(idx as i64).cached_decl_paths
+    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
+        cached_paths = self.documents.get(idx as i64).cached_decl_paths
     if cached_paths.len() > 0:
         var scanned_paths = uri_to_path(uri) ++ "\n"
         for di in 0..cached_paths.len() as i32:
@@ -1699,15 +1699,15 @@ fn lsp_find_references(id: i32, state: LspState, uri: str, text: str, line: i32,
 
 // ── Document symbols ─────────────────────────────────────────
 
-fn lsp_document_symbols(id: i32, state: LspState, uri: str, text: str):
-    let idx = state.find_doc(uri)
+fn LspState.document_symbols(mut self: LspState, id: i32, uri: str, text: str):
+    let idx = self.find_doc(uri)
     if idx >= 0:
-        state.ensure_doc_analyzed(idx)
+        self.ensure_doc_analyzed(idx)
     var pool = AstPool.new()
     var intern = InternPool.init()
-    if idx >= 0 and state.documents.get(idx as i64).cache_valid:
-        pool = state.documents.get(idx as i64).cached_pool
-        intern = state.documents.get(idx as i64).cached_intern
+    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
+        pool = self.documents.get(idx as i64).cached_pool
+        intern = self.documents.get(idx as i64).cached_intern
     else:
         var comp = Compilation.init()
         comp.set_prelude_mode(2)
@@ -1765,7 +1765,7 @@ fn lsp_is_valid_ident(name: str) -> bool:
             return false
     true
 
-fn lsp_rename(id: i32, state: LspState, uri: str, text: str, line: i32, col: i32, new_name: str):
+fn LspState.rename(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32, new_name: str):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Find the identifier at cursor
@@ -1814,12 +1814,12 @@ fn lsp_rename(id: i32, state: LspState, uri: str, text: str, line: i32, col: i32
     first_file = false
 
     // Cross-file edits via cached decl_source_paths
-    let cidx = state.find_doc(uri)
+    let cidx = self.find_doc(uri)
     if cidx >= 0:
-        state.ensure_doc_analyzed(cidx)
+        self.ensure_doc_analyzed(cidx)
     var cached_paths: Vec[str] = Vec.new()
-    if cidx >= 0 and state.documents.get(cidx as i64).cache_valid:
-        cached_paths = state.documents.get(cidx as i64).cached_decl_paths
+    if cidx >= 0 and self.documents.get(cidx as i64).cache_valid:
+        cached_paths = self.documents.get(cidx as i64).cached_decl_paths
     if cached_paths.len() > 0:
         var scanned_paths = uri_to_path(uri) ++ "\n"
         for di in 0..cached_paths.len() as i32:
@@ -1924,7 +1924,7 @@ fn run_lsp() -> i32:
             if oi >= 0:
                 state.ensure_doc_parsed(oi)
                 state.ensure_doc_analyzed(oi)
-            lsp_publish_diagnostics(state, uri, text)
+            state.publish_diagnostics(uri, text)
 
         else if method == "textDocument/didChange":
             let uri = lsp_extract_uri(msg, tokens, params_idx)
@@ -1937,7 +1937,7 @@ fn run_lsp() -> i32:
                 text = json_tok_str(msg, tokens, json_find(msg, tokens, change_idx, "text"))
             if text.len() > 0:
                 state.set_doc(uri, text, 0)
-                lsp_publish_diagnostics(state, uri, text)
+                state.publish_diagnostics(uri, text)
 
         else if method == "textDocument/didSave":
             let uri = lsp_extract_uri(msg, tokens, params_idx)
@@ -1946,7 +1946,7 @@ fn run_lsp() -> i32:
                 // Re-analyze on save (slow tier refreshes cross-file data)
                 state.ensure_doc_analyzed(idx)
                 let doc = state.documents.get(idx as i64)
-                lsp_publish_diagnostics(state, uri, doc.text)
+                state.publish_diagnostics(uri, doc.text)
 
         else if method == "textDocument/hover":
             let uri = lsp_extract_uri(msg, tokens, params_idx)
@@ -1956,7 +1956,7 @@ fn run_lsp() -> i32:
             let idx = state.find_doc(uri)
             if idx >= 0:
                 let doc = state.documents.get(idx as i64)
-                lsp_hover(id, state, uri, doc.text, line, character)
+                state.hover(id, uri, doc.text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
 
@@ -1968,7 +1968,7 @@ fn run_lsp() -> i32:
             let idx = state.find_doc(uri)
             if idx >= 0:
                 let doc = state.documents.get(idx as i64)
-                lsp_definition(id, state, uri, doc.text, line, character)
+                state.definition(id, uri, doc.text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
 
@@ -1995,7 +1995,7 @@ fn run_lsp() -> i32:
             let idx = state.find_doc(uri)
             if idx >= 0:
                 let doc = state.documents.get(idx as i64)
-                lsp_completion(id, state, uri, doc.text, line, character)
+                state.completion(id, uri, doc.text, line, character)
             else:
                 lsp_write_response(jrpc_result(id, jobj_start() ++ jkv_raw("items", "[]") ++ jobj_end()))
 
@@ -2007,7 +2007,7 @@ fn run_lsp() -> i32:
             let idx = state.find_doc(uri)
             if idx >= 0:
                 let doc = state.documents.get(idx as i64)
-                lsp_signature_help(id, state, uri, doc.text, line, character)
+                state.signature_help(id, uri, doc.text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
 
@@ -2019,7 +2019,7 @@ fn run_lsp() -> i32:
             let idx = state.find_doc(uri)
             if idx >= 0:
                 let doc = state.documents.get(idx as i64)
-                lsp_find_references(id, state, uri, doc.text, line, character)
+                state.find_references(id, uri, doc.text, line, character)
             else:
                 lsp_write_response(jrpc_result(id, "[]"))
 
@@ -2028,7 +2028,7 @@ fn run_lsp() -> i32:
             let idx = state.find_doc(uri)
             if idx >= 0:
                 let doc = state.documents.get(idx as i64)
-                lsp_document_symbols(id, state, uri, doc.text)
+                state.document_symbols(id, uri, doc.text)
             else:
                 lsp_write_response(jrpc_result(id, "[]"))
 
@@ -2041,7 +2041,7 @@ fn run_lsp() -> i32:
             let idx = state.find_doc(uri)
             if idx >= 0:
                 let doc = state.documents.get(idx as i64)
-                lsp_rename(id, state, uri, doc.text, line, character, new_name)
+                state.rename(id, uri, doc.text, line, character, new_name)
             else:
                 lsp_write_response(jrpc_result_null(id))
 

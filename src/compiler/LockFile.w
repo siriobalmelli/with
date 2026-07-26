@@ -348,16 +348,24 @@ fn lock_entry_from_installed_c_dep(project_root: str, name: str, version: str) -
         return LockEntry { name: "", source: "", version: "", recipe_rev: "", package_id: "", package_rev: "", sha256: "" }
     LockEntry { name: dep_name, source: "conan", version, recipe_rev, package_id, package_rev, sha256: digest }
 
-fn lock_upsert_installed_c_dep_tree_seen(lock: LockFile, project_root: str, name: str, version: str, seen: Vec[str]) -> LockFile:
+// The dedup memo travels WITH the lock through the recursion: sibling
+// subtrees must see each other's visits, and an owned Vec parameter is
+// consumed by the first recursive call (pre-#691 handle-copy aliasing is
+// gone), so both are threaded as one walk value.
+type LockDepWalk { lock: LockFile, seen: Vec[str] }
+
+fn lock_upsert_installed_c_dep_tree_seen(walk: LockDepWalk, project_root: str, name: str, version: str) -> LockDepWalk:
     let key = name ++ "/" ++ version
-    for i in 0..seen.len() as i32:
-        if seen.get(i as i64) == key:
-            return lock
-    seen.push(key)
+    var out = walk
+    for i in 0..out.seen.len() as i32:
+        if out.seen.get(i as i64) == key:
+            return out
+    out.seen.push(key)
     let entry = lock_entry_from_installed_c_dep(project_root, name, version)
     if entry.name.len() == 0:
-        return LockFile { entries: Vec.new() }
-    var out = lock_upsert(lock, entry)
+        out.lock = LockFile { entries: Vec.new() }
+        return out
+    out.lock = lock_upsert(move out.lock, entry)
     let meta = runtime_read_file(lock_c_dep_dir(project_root, name, version) ++ "/metadata.json")
     let requirements = lock_json_extract_string_array(meta, "requires")
     for i in 0..requirements.len() as i32:
@@ -366,15 +374,17 @@ fn lock_upsert_installed_c_dep_tree_seen(lock: LockFile, project_root: str, name
         let req_version = lock_ref_version(req)
         if req_name.len() == 0 or req_version.len() == 0:
             runtime_eprint("error: unsupported locked Conan requirement reference: " ++ req)
-            return LockFile { entries: Vec.new() }
-        out = lock_upsert_installed_c_dep_tree_seen(move out, project_root, req_name, req_version, seen)
-        if out.entries.len() == 0:
+            out.lock = LockFile { entries: Vec.new() }
+            return out
+        out = lock_upsert_installed_c_dep_tree_seen(move out, project_root, req_name, req_version)
+        if out.lock.entries.len() == 0:
             return out
     out
 
 pub fn lock_upsert_installed_c_dep_tree(lock: LockFile, project_root: str, name: str, version: str) -> LockFile:
-    let seen: Vec[str] = Vec.new()
-    lock_upsert_installed_c_dep_tree_seen(move lock, project_root, name, version, seen)
+    let walk = LockDepWalk { lock, seen: Vec.new() }
+    let done = lock_upsert_installed_c_dep_tree_seen(move walk, project_root, name, version)
+    done.lock
 
 fn lock_c_name(entry_name: str) -> str:
     if entry_name.starts_with("c."):

@@ -1033,7 +1033,7 @@ fn conan_c_compiler -> str:
         return cc
     "cc"
 
-fn conan_compile_c_source(source: str, obj: str, include_dirs: Vec[str]) -> i32:
+fn conan_compile_c_source(source: str, obj: str, include_dirs: &Vec[str]) -> i32:
     var argv = ""
     argv = conan_argv_append(argv, conan_c_compiler())
     argv = conan_argv_append(argv, "-O2")

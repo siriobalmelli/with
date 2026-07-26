@@ -391,7 +391,7 @@ fn project_config_parse_nonnegative_i64(value: str) -> i64:
         out = out * 10 + (ch - 48) as i64
     out
 
-fn project_config_vec_contains(values: Vec[str], needle: str) -> bool:
+fn project_config_vec_contains(values: &Vec[str], needle: str) -> bool:
     for i in 0..values.len() as i32:
         if values.get(i as i64) == needle:
             return true
@@ -634,7 +634,7 @@ fn project_config_is_string_array_value(value: str) -> bool:
             return false
     not expect_value or project_config_trim(text.slice(1, text.len() - 1)).len() == 0
 
-fn project_config_resolve_c_import_header(cfg: ProjectConfig, decl_dir: str, header_spec_raw: str) -> str:
+fn project_config_resolve_c_import_header(cfg: &ProjectConfig, decl_dir: str, header_spec_raw: str) -> str:
     let header_spec = project_config_trim(header_spec_raw)
     if header_spec.len() == 0:
         return header_spec_raw
@@ -666,7 +666,7 @@ fn project_config_resolve_c_import_header(cfg: ProjectConfig, decl_dir: str, hea
         return "<" ++ header_name ++ ">"
     header_spec_raw
 
-fn project_config_resolve_header_path(cfg: ProjectConfig, decl_dir: str, header_name: str) -> str:
+fn project_config_resolve_header_path(cfg: &ProjectConfig, decl_dir: str, header_name: str) -> str:
     if header_name.len() == 0:
         return ""
     if project_config_is_absolute_path(header_name):
