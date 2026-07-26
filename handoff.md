@@ -1,5 +1,17 @@
 # Active Handoff — D22 implementation, Stage 6 (2026-07-24)
 
+## 2026-07-26 session tail v5: #729 residue = unguarded inline partial drop
+
+Read the last #729 comment first — it has the exact asm coordinates. The
+release-only crash is an UNGUARDED inline 5-free cluster (base sp+0x16e8,
+plan tag, offsets 0x50/0x70/0x90/0xb0/0x100) emitted per plans-loop
+iteration by the CURRENT MirLower — absent from seed-lowered bodies; the
+properly blanked+guarded plan slot is fine. Suspect: lost stmt-temp
+cancellation or a statically-filtered partial drop of the
+workspace_compile_plan sret return temp. Probe order: emit-ir the fn,
+trace the cancel with WITH_TRACE_RESETS, fix MirLower, pin with a
+drop-audit cell (sret temp -> move to local -> loop shape).
+
 ## 2026-07-26 session tail v4: D24 landed; #729 residue is a codegen reset bug
 
 D24 (36fa4530) process-isolates parallel workspace compiles per Eric's
