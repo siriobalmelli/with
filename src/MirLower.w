@@ -10733,8 +10733,12 @@ impl MirBuilder:
         let payload_place = self.body.new_field_place(downcast_place, 0, payload_ty)
         if method_name == "filter":
             let filter_args: Vec[i32] = Vec.new()
-            let filter_ref_ty = self.sema.find_exact_type(TypeKind.TY_REF, payload_ty, 0, 0) as i32
-            filter_args.push(self.operand_for_place_arg(payload_place, payload_ty, filter_ref_ty, span))
+            // Sema types the predicate's parameter OWNED (`x => x > 3` checks x
+            // as T), so pass by value. The old &T spelling was dormant: before
+            // D22 `find_exact_type(TY_REF, T)` found nothing (no &T in the type
+            // table) and fell back to by-value; D22 programs mint &T constantly,
+            // which activated the mismatch (ptr passed, i32 expected).
+            filter_args.push(self.operand_for_place(payload_place, payload_ty))
             let keep_op = self.lower_call_with_operand_args(mapper_op, filter_args, self.sema.ty_bool as i32, node)
             let keep_bb = self.new_block()
             let reject_bb = self.new_block()

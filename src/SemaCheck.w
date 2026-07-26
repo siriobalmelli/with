@@ -603,6 +603,15 @@ impl Sema:
             final_type = if expected != 0: expected else: self.ty_never as i32
         else if final_type == 0:
             final_type = if owned_candidate != 0: owned_candidate else: reference_candidate
+        else if owned_candidate != 0 and reference_candidate == 0 and self.contextual_join_value_accepts(final_type, owned_candidate) == 0:
+            // The enclosing expectation cannot absorb the arms' agreed owned
+            // type directly — e.g. a Result-returning tail, where the happy
+            // path wraps implicitly (`v ?? return Err(..)` produces the
+            // PAYLOAD, and return checking Ok-wraps it). The expectation is a
+            // soft anchor, not a cage: let the agreed candidate stand and the
+            // enclosing position perform its own coercion/wrapping check —
+            // a genuine mismatch still errors there, at the right layer.
+            final_type = owned_candidate
         if final_type == 0:
             self.emit_error(join_name ++ " expressions do not establish one compatible result type", report_node)
             return 0
