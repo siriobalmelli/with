@@ -74,6 +74,10 @@ type MirBuilder = ephemeral {
     stmt_temp_locals: Vec[i32],
     stmt_temp_starts: Vec[i32],
     pending_reset_locals: Vec[i32],
+    // #719: per-statement-frame snapshots of the pending-reset stacks.
+    stmt_reset_starts: Vec[i32],
+    stmt_reset_field_starts: Vec[i32],
+    stmt_reset_temp_starts: Vec[i32],
     // Field-place niche (Slice E): a conditionally-moved Drop-bearing field place
     // and its sema type, blanked at the branch/statement boundary so the owner's
     // guarded per-field drop skips it — the field analogue of pending_reset_locals.
@@ -183,6 +187,9 @@ fn MirBuilder.init(sema: &Sema, ast: AstPool, pool: InternPool, fn_sym: i32) -> 
         stmt_temp_locals: Vec.new(),
         stmt_temp_starts: Vec.new(),
         pending_reset_locals: Vec.new(),
+        stmt_reset_starts: Vec.new(),
+        stmt_reset_field_starts: Vec.new(),
+        stmt_reset_temp_starts: Vec.new(),
         pending_reset_field_places: Vec.new(),
         pending_reset_field_types: Vec.new(),
         pending_move_temp_locals: Vec.new(),
@@ -636,6 +643,13 @@ impl MirBuilder:
     fn push_stmt_temp_frame() -> i32:
         let depth = self.stmt_temp_starts.len() as i32
         self.stmt_temp_starts.push(self.stmt_temp_locals.len() as i32)
+        // #719: remember what was already pending so this frame flushes only the
+        // resets ITS OWN statement queues. Flushing from 0 drained the enclosing
+        // expression's pending resets — e.g. a struct literal that already
+        // consumed field 0 — blanking a value a later field still reads.
+        self.stmt_reset_starts.push(self.pending_reset_locals.len() as i32)
+        self.stmt_reset_field_starts.push(self.pending_reset_field_places.len() as i32)
+        self.stmt_reset_temp_starts.push(self.pending_move_temp_locals.len() as i32)
         depth
 
     fn stmt_temp_needs_drop(type_id: i32) -> i32:
@@ -760,7 +774,17 @@ impl MirBuilder:
         while self.stmt_temp_locals.len() as i32 > start:
             self.stmt_temp_locals.pop()
         self.stmt_temp_starts.pop()
-        self.flush_pending_resets()
+        var reset_start = 0
+        var reset_field_start = 0
+        var reset_temp_start = 0
+        if self.stmt_reset_starts.len() as i32 > 0:
+            reset_start = self.stmt_reset_starts.get((self.stmt_reset_starts.len() as i32 - 1) as i64)
+            reset_field_start = self.stmt_reset_field_starts.get((self.stmt_reset_field_starts.len() as i32 - 1) as i64)
+            reset_temp_start = self.stmt_reset_temp_starts.get((self.stmt_reset_temp_starts.len() as i32 - 1) as i64)
+            self.stmt_reset_starts.pop()
+            self.stmt_reset_field_starts.pop()
+            self.stmt_reset_temp_starts.pop()
+        self.flush_pending_resets_since(reset_start, reset_field_start, reset_temp_start)
 
     mut fn flush_pending_resets() -> Unit:
         self.flush_pending_resets_since(0, 0, 0)
