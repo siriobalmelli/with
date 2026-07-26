@@ -1193,6 +1193,57 @@ fn ce_clone_capability_record(r: &ComptimeCapabilityRecord) -> ComptimeCapabilit
         network: r.network,
     }
 
+fn ce_clone_value_vec(values: &Vec[ComptimeValue]) -> Vec[ComptimeValue]:
+    let out: Vec[ComptimeValue] = Vec.new()
+    for i in 0..values.len() as i32:
+        out.push(values.get(i as i64))
+    out
+
+fn ce_clone_link_env_vec(values: &Vec[LinkStageEnvVar]) -> Vec[LinkStageEnvVar]:
+    let out: Vec[LinkStageEnvVar] = Vec.new()
+    for i in 0..values.len() as i32:
+        let e = &values[i as i64]
+        out.push(LinkStageEnvVar { name: e.name, value: e.value })
+    out
+
+fn ce_clone_link_command(c: &LinkStageCommand) -> LinkStageCommand:
+    LinkStageCommand {
+        linker: c.linker,
+        args: ce_clone_str_vec(&c.args),
+        cwd: c.cwd,
+        env: ce_clone_link_env_vec(&c.env),
+        inputs: ce_clone_str_vec(&c.inputs),
+        outputs: ce_clone_str_vec(&c.outputs),
+        cleanup_files: ce_clone_str_vec(&c.cleanup_files),
+    }
+
+// Independent deep clone: every workspace-record read below goes through
+// this, because a bare element copy shares the stored record's buffers and
+// both owners free them post-#691 (the workspace-file double free).
+fn ce_clone_workspace_record(r: &ComptimeWorkspaceRecord) -> ComptimeWorkspaceRecord:
+    ComptimeWorkspaceRecord {
+        name: r.name,
+        files: ce_clone_str_vec(&r.files),
+        string_names: ce_clone_str_vec(&r.string_names),
+        string_sources: ce_clone_str_vec(&r.string_sources),
+        options: r.options,
+        migrate_options: r.migrate_options,
+        intercept_active: r.intercept_active,
+        intercept_terminal: r.intercept_terminal,
+        generation: r.generation,
+        intercept_phase: r.intercept_phase,
+        messages: ce_clone_value_vec(&r.messages),
+        message_cursor: r.message_cursor,
+        intercept_started: r.intercept_started,
+        pending_link_active: r.pending_link_active,
+        pending_link_obj_path: r.pending_link_obj_path,
+        pending_link_bin_path: r.pending_link_bin_path,
+        pending_link_output_path: r.pending_link_output_path,
+        pending_link_output_kind: r.pending_link_output_kind,
+        pending_link_debug_info: r.pending_link_debug_info,
+        pending_link_command: ce_clone_link_command(&r.pending_link_command),
+    }
+
 fn comptime_action_outputs(output: str, extra_outputs: &Vec[str]) -> Vec[str]:
     let outputs: Vec[str] = Vec.new()
     if output.len() > 0:
@@ -1233,7 +1284,7 @@ fn comptime_action_capability_record(package_name: str, package_version: str, pr
 impl ComptimeEvaluator:
     fn cleanup_workspace_pending_links():
         for wi in 0..self.workspace_records.len() as i32:
-            var record = self.workspace_records.get(wi as i64)
+            var record = ce_clone_workspace_record(&self.workspace_records[wi as i64])
             if record.pending_link_active == 0:
                 continue
             link_stage_cleanup_files(record.pending_link_command.cleanup_files)
@@ -1248,7 +1299,7 @@ impl ComptimeEvaluator:
         if self.had_error != 0:
             return
         for wi in 0..self.workspace_records.len() as i32:
-            let record = self.workspace_records.get(wi as i64)
+            let record = ce_clone_workspace_record(&self.workspace_records[wi as i64])
             if record.intercept_active == 0:
                 continue
             if record.intercept_terminal != 0 and record.message_cursor >= record.messages.len() as i32:
@@ -1637,7 +1688,7 @@ impl ComptimeEvaluator:
         if handle_id < 0 or handle_id >= self.capability_records.len() as i32:
             let _ = self.fail(node, "invalid tool capability handle for " ++ method)
             return -1
-        let record = self.capability_records.get(handle_id as i64)
+        let record = ce_clone_capability_record(&self.capability_records[handle_id as i64])
         if record.kind != expected_kind or record.generation != value.extra_start:
             let _ = self.fail(node, "stale or invalid tool capability handle for " ++ method)
             return -1
@@ -3514,7 +3565,7 @@ impl ComptimeEvaluator:
         let handle = self.validate_capability(recv_value, CapabilityKind.CK_BUILD_WORKSPACE, method, node)
         if handle < 0:
             return -1
-        let capability = self.capability_records.get(handle as i64)
+        let capability = ce_clone_capability_record(&self.capability_records[handle as i64])
         let workspace_id = capability.workspace_id
         if workspace_id < 0 or workspace_id >= self.workspace_records.len() as i32:
             let _ = self.fail(node, "invalid Workspace handle for " ++ method)
@@ -4564,7 +4615,7 @@ impl ComptimeEvaluator:
             let handle = self.validate_capability(recv_value, CapabilityKind.CK_BUILD_CTX, method, node)
             if handle < 0:
                 return comptime_control_error()
-            let record = self.capability_records.get(handle as i64)
+            let record = ce_clone_capability_record(&self.capability_records[handle as i64])
             let project_info_type = self.capability_type_id(CapabilityKind.CK_BUILD_PROJECT_INFO, node)
             if project_info_type == 0:
                 return comptime_control_error()
@@ -4588,7 +4639,7 @@ impl ComptimeEvaluator:
             let child_type = self.capability_type_id(child_kind, node)
             if child_type == 0:
                 return comptime_control_error()
-            let record = self.capability_records.get(handle as i64)
+            let record = ce_clone_capability_record(&self.capability_records[handle as i64])
             let child = comptime_capability_record(child_kind, record.package_name, record.package_version, record.project_root)
             return comptime_control_value(self.mint_capability(child_type, move child))
         self.fail(node, "BuildCtx capability method '" ++ method ++ "' is not implemented yet")
@@ -4599,7 +4650,7 @@ impl ComptimeEvaluator:
         let handle = self.validate_capability(recv_value, CapabilityKind.CK_BUILD_PROJECT_INFO, method, node)
         if handle < 0:
             return comptime_control_error()
-        let record = self.capability_records.get(handle as i64)
+        let record = ce_clone_capability_record(&self.capability_records[handle as i64])
         if method == "package_name":
             return comptime_control_value(comptime_value_str(record.package_name))
         if method == "package_version":
@@ -5015,7 +5066,7 @@ impl ComptimeEvaluator:
         let handle = self.validate_capability(recv_value, CapabilityKind.CK_BUILD_TOOL_FS, method, node)
         if handle < 0:
             return comptime_control_error()
-        let record = self.capability_records.get(handle as i64)
+        let record = ce_clone_capability_record(&self.capability_records[handle as i64])
 
         // In worker mode the parent already performed every ToolFs mutation during
         // its own build(ctx) evaluation; the worker re-evaluates build(ctx) only to
@@ -5332,7 +5383,7 @@ impl ComptimeEvaluator:
         let handle = self.validate_capability(recv_value, CapabilityKind.CK_BUILD_PROCESS_RUNNER, method, node)
         if handle < 0:
             return comptime_control_error()
-        let record = self.capability_records.get(handle as i64)
+        let record = ce_clone_capability_record(&self.capability_records[handle as i64])
         if method == "run_spec":
             if not self.capability_expect_arg_count(arg_count, 3, method, node):
                 return comptime_control_error()
@@ -5526,7 +5577,7 @@ impl ComptimeEvaluator:
         let handle = self.validate_capability(recv_value, CapabilityKind.CK_BUILD_ACTION_CTX, method, node)
         if handle < 0:
             return comptime_control_error()
-        let record = self.capability_records.get(handle as i64)
+        let record = ce_clone_capability_record(&self.capability_records[handle as i64])
         if method == "env_input":
             if not self.capability_expect_arg_count(arg_count, 1, method, node):
                 return comptime_control_error()
@@ -5606,11 +5657,11 @@ impl ComptimeEvaluator:
         let workspace_id = self.workspace_record_index(recv_value, method, node)
         if workspace_id < 0:
             return comptime_control_error()
-        var record = self.workspace_records.get(workspace_id as i64)
+        var record = ce_clone_workspace_record(&self.workspace_records[workspace_id as i64])
         let capability_handle = self.validate_capability(recv_value, CapabilityKind.CK_BUILD_WORKSPACE, method, node)
         if capability_handle < 0:
             return comptime_control_error()
-        let capability = self.capability_records.get(capability_handle as i64)
+        let capability = ce_clone_capability_record(&self.capability_records[capability_handle as i64])
         if method == "name":
             if not self.capability_expect_arg_count(arg_count, 0, method, node):
                 return comptime_control_error()
@@ -5698,7 +5749,7 @@ impl ComptimeEvaluator:
                 if self.had_error != 0:
                     return comptime_control_error()
                 self.store_workspace_record(workspace_id, record)
-                record = self.workspace_records.get(workspace_id as i64)
+                record = ce_clone_workspace_record(&self.workspace_records[workspace_id as i64])
             if record.message_cursor < record.messages.len() as i32:
                 let message = record.messages.get(record.message_cursor as i64)
                 let phase = self.compiler_message_phase_id(message)
@@ -7188,11 +7239,11 @@ impl ComptimeEvaluator:
             let capability_handle = self.validate_capability(workspace_value, CapabilityKind.CK_BUILD_WORKSPACE, "parallel", node)
             if capability_handle < 0:
                 return comptime_control_error()
-            let record = self.workspace_records.get(workspace_id as i64)
+            let record = ce_clone_workspace_record(&self.workspace_records[workspace_id as i64])
             if record.intercept_active != 0:
                 if record.intercept_started != 0 or record.messages.len() > 0 or record.pending_link_active != 0:
                     return self.fail(node, "parallel does not support partially consumed intercepted workspaces yet")
-            let capability = self.capability_records.get(capability_handle as i64)
+            let capability = ce_clone_capability_record(&self.capability_records[capability_handle as i64])
             let plan = self.workspace_compile_plan(record, capability, node)
             if plan.valid == 0:
                 return comptime_control_error()
@@ -7235,7 +7286,7 @@ impl ComptimeEvaluator:
                 comptime_workspace_native_compile_result_free(native)
                 return comptime_control_error()
             if intercepted.get(i as i64) != 0:
-                var record = self.workspace_records.get(workspace_ids.get(i as i64) as i64)
+                var record = ce_clone_workspace_record(&self.workspace_records[workspace_ids.get(i as i64) as i64])
                 let messages =
                     if native.rc == 0 and native.comp as i64 != 0:
                         unsafe:
