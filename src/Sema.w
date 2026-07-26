@@ -5694,13 +5694,13 @@ impl Sema:
             let callee_pi = self.consume_call_sites.get((i + 2) as i64)
             let file_id = self.consume_call_sites.get((i + 3) as i64)
             i = i + 9
-            // share-place param: the caller keeps ownership; no transfer needed.
-            // (Only movable named bindings were recorded, so an owned param here is a
-            // genuine ownership transfer that must be made explicit.)
+            // #714 (D5 supersession, spec §3.8): a plain call is always legal;
+            // the transfer was marked moved at check time and later uses diagnose
+            // there. This pass keeps recording sites for move-sites analytics.
+            let _ = arg_node
+            let _ = file_id
             if self.sig_param_uses_value_ref_abi(callee_sig, callee_pi) != 0:
                 continue
-            self.local_file_id = file_id
-            self.emit_error("this parameter takes ownership of a non-Copy value (it is consumed or escapes the call); pass `move x` to transfer ownership, or `copy x` for an independent copy (§3.8)", arg_node)
 
     fn get_sig(name: i32) -> i32:
         if self.sig_lookup.contains(name):

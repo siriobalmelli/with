@@ -14620,6 +14620,9 @@ impl Sema:
                                     let consume_root = self.place_root_sym(eff_arg_nd)
                                     if consume_root != 0 and self.scope_has(consume_root) != 0:
                                         self.record_consume_call_site(eff_arg_nd, sig_idx, param_i)
+                                        // #714: the plain call consumes (§3.8); mark
+                                        // moved so later uses diagnose.
+                                        self.mark_moved_if_consumed(eff_arg_nd)
                 // escape_view: move/copy is forbidden because they invalidate the view's origin
                 if (param_eff & EFF_ESCAPE_VIEW) != 0:
                     let ev_arg_nd = if has_resolved != 0: self.get_resolved_call_arg(node, ai) else: self.ast.get_extra(resolved_extra_start + ai)
@@ -18954,11 +18957,16 @@ impl Sema:
                 // this semantic boundary instead of silently moving a plain named
                 // binding in MIR. Rvalues need no spelling; `copy` keeps the
                 // source; `move` is invalidated by check_expr itself.
+                // #714 (D5 supersession, spec §3.8): "a plain call f(x) is always
+                // legal and means whatever the signature says." A store consumes;
+                // mark the binding moved — the same transition `move x` performs —
+                // so any later use is a use-of-moved-value error. The demand that
+                // stood here enforced the SUPERSEDED D5 by name.
                 let mc_store_arg_kind = self.ast.kind(mc_arg_node)
                 if mc_store_arg_kind != NodeKind.NK_MOVE_ARG and mc_store_arg_kind != NodeKind.NK_COPY_ARG and self.is_copy(mc_arg_ty as TypeId) == 0:
                     let mc_store_root = self.place_root_sym(mc_arg_node)
                     if mc_store_root != 0 and self.scope_has(mc_store_root) != 0:
-                        self.emit_error("this parameter takes ownership of a non-Copy value (it is consumed or escapes the call); pass `move x` to transfer ownership, or `copy x` for an independent copy (§3.8)", mc_arg_node)
+                        self.mark_moved_if_consumed(mc_arg_node)
                 // #625 (viral-escape, decisions.md D2): storing an ephemeral
                 // element propagates its stack view-origins onto the container
                 // binding, so a later escape (return / heap-store / box) of the

@@ -159,17 +159,17 @@ pub fn ProjectInfo.new() -> ProjectInfo:
 impl ProjectInfo:
     pub move fn add_module(module_info: ModuleInfo) -> ProjectInfo:
         var out = self
-        out.module_items.push(move module_info)
+        out.module_items.push(module_info)
         out
 
     pub move fn add_function(function: FunctionInfo) -> ProjectInfo:
         var out = self
-        out.function_items.push(move function)
+        out.function_items.push(function)
         out
 
     pub move fn add_type(type_info: TypeInfo) -> ProjectInfo:
         var out = self
-        out.type_items.push(move type_info)
+        out.type_items.push(type_info)
         out
 
 pub fn ProjectInfo.modules(self: &Self) -> &Vec[ModuleInfo]:

@@ -5,7 +5,7 @@ use std.cfg.stackify
 fn no_args -> Vec[i32]:
     Vec.new()
 
-fn count_kind(tree: StackifyTree, kind: i32) -> i32:
+fn count_kind(tree: &StackifyTree, kind: i32) -> i32:
     var count = 0
     var i = 0
     while i < tree.nodes.len() as i32:
@@ -14,7 +14,7 @@ fn count_kind(tree: StackifyTree, kind: i32) -> i32:
         i = i + 1
     count
 
-fn has_node_for_block(tree: StackifyTree, kind: i32, block: i32) -> bool:
+fn has_node_for_block(tree: &StackifyTree, kind: i32, block: i32) -> bool:
     var i = 0
     while i < tree.nodes.len() as i32:
         let node = tree.nodes.get(i as i64)
@@ -34,12 +34,12 @@ fn test_straight_line:
     values.push(7)
     g.set_return(b1, values)
 
-    let result = stackify_graph(move g)
+    let result = stackify_graph(g)
     assert(result.ok)
     assert(result.tree.roots_count == 4)
-    assert(count_kind(result.tree, StackifyNodeKind.Leaf) == 2)
-    assert(count_kind(result.tree, StackifyNodeKind.ParamTransfer) == 1)
-    assert(count_kind(result.tree, StackifyNodeKind.Return) == 1)
+    assert(count_kind(&result.tree, StackifyNodeKind.Leaf) == 2)
+    assert(count_kind(&result.tree, StackifyNodeKind.ParamTransfer) == 1)
+    assert(count_kind(&result.tree, StackifyNodeKind.Return) == 1)
 
 fn test_diamond_merge:
     var g = StackifyGraph.new(0)
@@ -53,11 +53,11 @@ fn test_diamond_merge:
     g.set_br(right, merge, no_args())
     g.set_return(merge, no_args())
 
-    let result = stackify_graph(move g)
+    let result = stackify_graph(g)
     assert(result.ok)
-    assert(has_node_for_block(result.tree, StackifyNodeKind.Block, merge))
-    assert(count_kind(result.tree, StackifyNodeKind.If) == 1)
-    assert(count_kind(result.tree, StackifyNodeKind.Br) == 2)
+    assert(has_node_for_block(&result.tree, StackifyNodeKind.Block, merge))
+    assert(count_kind(&result.tree, StackifyNodeKind.If) == 1)
+    assert(count_kind(&result.tree, StackifyNodeKind.Br) == 2)
 
 fn test_natural_loop:
     var g = StackifyGraph.new(0)
@@ -69,10 +69,10 @@ fn test_natural_loop:
     g.set_cond_br(header, 11, header, no_args(), done, no_args())
     g.set_return(done, no_args())
 
-    let result = stackify_graph(move g)
+    let result = stackify_graph(g)
     assert(result.ok)
-    assert(has_node_for_block(result.tree, StackifyNodeKind.Loop, header))
-    assert(count_kind(result.tree, StackifyNodeKind.Br) >= 1)
+    assert(has_node_for_block(&result.tree, StackifyNodeKind.Loop, header))
+    assert(count_kind(&result.tree, StackifyNodeKind.Br) >= 1)
 
 fn one_arg(value: i32) -> Vec[i32]:
     let args: Vec[i32] = Vec.new()
@@ -97,10 +97,10 @@ fn test_select_targets_transfer_params:
     g.set_return(right, no_args())
     g.set_return(default_block, no_args())
 
-    let result = stackify_graph(move g)
+    let result = stackify_graph(g)
     assert(result.ok)
-    assert(count_kind(result.tree, StackifyNodeKind.Select) == 1)
-    assert(count_kind(result.tree, StackifyNodeKind.ParamTransfer) >= 3)
+    assert(count_kind(&result.tree, StackifyNodeKind.Select) == 1)
+    assert(count_kind(&result.tree, StackifyNodeKind.ParamTransfer) >= 3)
 
 fn test_irreducible_rejected:
     var g = StackifyGraph.new(0)
@@ -112,7 +112,7 @@ fn test_irreducible_rejected:
     g.set_br(left, right, no_args())
     g.set_br(right, left, no_args())
 
-    let result = stackify_graph(move g)
+    let result = stackify_graph(g)
     assert(not result.ok)
     assert(result.message.len() > 0)
 
