@@ -817,6 +817,9 @@ fn run_cli(argc: i32) -> i32:
         if not ok:
             return 1
         return 0
+    if cli_command(argc) == "__workspace-compile":
+        // D24 (#729): child entry for one process-isolated workspace compile.
+        return comptime_workspace_compile_subprocess(with_arg_at(2), with_arg_at(3))
     if cli_command(argc) == "analyze":
         if source == "":
             with_eprint("error: 'analyze' requires a source file argument")

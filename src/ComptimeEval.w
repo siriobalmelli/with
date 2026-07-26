@@ -34,6 +34,7 @@ extern fn with_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path: s
 extern fn with_exec_argv_capture_input(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, stdin_path: str) -> i32
 extern fn with_exec_argv_capture_spawn(args: str, stdout_path: str, stderr_path: str) -> i32
 extern fn with_exec_wait(pid: i32, timeout_ms: i32) -> i32
+extern fn with_arg_at(idx: i32) -> str
 @[effect(fn_ptr: escape_value, ctx: escape_value)]
 extern fn with_thread_spawn(fn_ptr: *mut u8, ctx: *mut u8) -> i64
 extern fn with_thread_join(handle: i64) -> i32
@@ -190,11 +191,6 @@ type ComptimeWorkspaceNativeCompileResult {
     artifact_path: str,
     comp: *mut Compilation,
     is_migrate: i32,
-}
-
-type ComptimeWorkspaceThreadJob {
-    plan: ComptimeWorkspaceCompilePlan,
-    result: ComptimeWorkspaceNativeCompileResult,
 }
 
 type ComptimeLineColumn {
@@ -1285,6 +1281,224 @@ fn ce_clone_compile_plan(p: &ComptimeWorkspaceCompilePlan) -> ComptimeWorkspaceC
         migrate_one: p.migrate_one,
         migrate_shared_fragment: p.migrate_shared_fragment,
     }
+
+fn comptime_parse_i32_default(text: str, default_value: i32) -> i32:
+    if text.len() == 0:
+        return default_value
+    var sign = 1
+    var i: i64 = 0
+    if text.byte_at(0) == 45:
+        sign = -1
+        i = 1
+    var v = 0
+    var any = 0
+    while i < text.len():
+        let ch = text.byte_at(i)
+        if ch < 48 or ch > 57:
+            return default_value
+        v = v * 10 + (ch - 48)
+        any = 1
+        i = i + 1
+    if any == 0:
+        return default_value
+    v * sign
+
+fn cpp_put_int(out: str, v: i32) -> str: out ++ f"{v}\n"
+
+fn cpp_put_str(out: str, s: str) -> str: out ++ f"{s.len()}\n" ++ s ++ "\n"
+
+fn cpp_put_vec(out: str, v: &Vec[str]) -> str:
+    var acc = out ++ f"{v.len() as i32}\n"
+    for i in 0..v.len() as i32:
+        acc = cpp_put_str(acc, v.get(i as i64))
+    acc
+
+fn cpp_put_bool(out: str, b: bool) -> str: out ++ (if b: "1\n" else: "0\n")
+
+// Process-isolated workspace compiles (D24, #729): the parallel() plan
+// crosses to a child `with __workspace-compile` process as this
+// length-prefixed text; independent builds never share an address space.
+fn comptime_plan_serialize(p: &ComptimeWorkspaceCompilePlan) -> str:
+    var out = ""
+    out = cpp_put_int(out, p.valid)
+    out = cpp_put_str(out, p.name)
+    out = cpp_put_int(out, p.is_migrate)
+    out = cpp_put_str(out, p.final_output)
+    out = cpp_put_str(out, p.absolute_output)
+    out = cpp_put_int(out, p.output_kind)
+    out = cpp_put_int(out, p.has_strings)
+    out = cpp_put_vec(out, &p.source_paths)
+    out = cpp_put_vec(out, &p.source_texts)
+    out = cpp_put_str(out, p.absolute_source)
+    out = cpp_put_vec(out, &p.include_paths)
+    out = cpp_put_vec(out, &p.defines)
+    out = cpp_put_vec(out, &p.link_libs)
+    out = cpp_put_int(out, p.opt_level)
+    out = cpp_put_bool(out, p.no_std)
+    out = cpp_put_bool(out, p.alloc_mode)
+    out = cpp_put_bool(out, p.runtime_available)
+    out = cpp_put_bool(out, p.debug_info)
+    out = cpp_put_bool(out, p.compiler_hooks_enabled)
+    out = cpp_put_int(out, p.prelude_mode)
+    out = cpp_put_int(out, p.overflow_mode)
+    out = cpp_put_int(out, p.migrate_is_dir)
+    out = cpp_put_str(out, p.migrate_source)
+    out = cpp_put_vec(out, &p.migrate_include_paths)
+    out = cpp_put_vec(out, &p.migrate_forced_includes)
+    out = cpp_put_vec(out, &p.migrate_defines)
+    out = cpp_put_str(out, p.migrate_exclude_basenames)
+    out = cpp_put_bool(out, p.migrate_no_c_export)
+    out = cpp_put_bool(out, p.migrate_c_export_functions)
+    out = cpp_put_bool(out, p.migrate_convert_goto_to_structured)
+    out = cpp_put_int(out, p.migrate_block_style)
+    out = cpp_put_int(out, p.migrate_width_slice)
+    out = cpp_put_str(out, p.migrate_shared_defs)
+    out = cpp_put_str(out, p.migrate_one)
+    out = cpp_put_str(out, p.migrate_shared_fragment)
+    out
+
+type CppCursor { text: str, pos: i64, ok: i32 }
+
+impl CppCursor:
+    mut fn next_line() -> str:
+        if self.ok == 0:
+            return ""
+        var end = self.pos
+        let n = self.text.len()
+        while end < n and self.text.byte_at(end) != 10:
+            end = end + 1
+        if end >= n:
+            self.ok = 0
+            return ""
+        let line = self.text.slice(self.pos, end)
+        self.pos = end + 1
+        line
+
+    mut fn next_int() -> i32: comptime_parse_i32_default(self.next_line(), 0)
+
+    mut fn next_str() -> str:
+        let lenline = self.next_line()
+        if self.ok == 0:
+            return ""
+        let want = comptime_parse_i32_default(lenline, -1)
+        if want < 0 or self.pos + want as i64 + 1 > self.text.len():
+            self.ok = 0
+            return ""
+        let s = self.text.slice(self.pos, self.pos + want as i64)
+        self.pos = self.pos + want as i64 + 1
+        s
+
+    mut fn next_vec() -> Vec[str]:
+        let out: Vec[str] = Vec.new()
+        let count = self.next_int()
+        for i in 0..count:
+            out.push(self.next_str())
+        out
+
+    mut fn next_bool() -> bool: self.next_int() != 0
+
+unsafe fn comptime_plan_deserialize(plan_out: *mut ComptimeWorkspaceCompilePlan, text: str) -> i32:
+    var c = CppCursor { text, pos: 0, ok: 1 }
+    let valid = c.next_int()
+    let name = c.next_str()
+    let is_migrate = c.next_int()
+    let final_output = c.next_str()
+    let absolute_output = c.next_str()
+    let output_kind = c.next_int()
+    let has_strings = c.next_int()
+    let source_paths = c.next_vec()
+    let source_texts = c.next_vec()
+    let absolute_source = c.next_str()
+    let include_paths = c.next_vec()
+    let defines = c.next_vec()
+    let link_libs = c.next_vec()
+    let opt_level = c.next_int()
+    let no_std = c.next_bool()
+    let alloc_mode = c.next_bool()
+    let runtime_available = c.next_bool()
+    let debug_info = c.next_bool()
+    let compiler_hooks_enabled = c.next_bool()
+    let prelude_mode = c.next_int()
+    let overflow_mode = c.next_int()
+    let migrate_is_dir = c.next_int()
+    let migrate_source = c.next_str()
+    let migrate_include_paths = c.next_vec()
+    let migrate_forced_includes = c.next_vec()
+    let migrate_defines = c.next_vec()
+    let migrate_exclude_basenames = c.next_str()
+    let migrate_no_c_export = c.next_bool()
+    let migrate_c_export_functions = c.next_bool()
+    let migrate_convert_goto_to_structured = c.next_bool()
+    let migrate_block_style = c.next_int()
+    let migrate_width_slice = c.next_int()
+    let migrate_shared_defs = c.next_str()
+    let migrate_one = c.next_str()
+    let migrate_shared_fragment = c.next_str()
+    if c.ok == 0:
+        return 1
+    var out = comptime_workspace_compile_plan_invalid()
+    out.valid = valid
+    out.name = name
+    out.is_migrate = is_migrate
+    out.final_output = final_output
+    out.absolute_output = absolute_output
+    out.output_kind = output_kind
+    out.has_strings = has_strings
+    out.source_paths = source_paths
+    out.source_texts = source_texts
+    out.absolute_source = absolute_source
+    out.include_paths = include_paths
+    out.defines = defines
+    out.link_libs = link_libs
+    out.opt_level = opt_level
+    out.no_std = no_std
+    out.alloc_mode = alloc_mode
+    out.runtime_available = runtime_available
+    out.debug_info = debug_info
+    out.compiler_hooks_enabled = compiler_hooks_enabled
+    out.prelude_mode = prelude_mode
+    out.overflow_mode = overflow_mode
+    out.migrate_is_dir = migrate_is_dir
+    out.migrate_source = migrate_source
+    out.migrate_include_paths = migrate_include_paths
+    out.migrate_forced_includes = migrate_forced_includes
+    out.migrate_defines = migrate_defines
+    out.migrate_exclude_basenames = migrate_exclude_basenames
+    out.migrate_no_c_export = migrate_no_c_export
+    out.migrate_c_export_functions = migrate_c_export_functions
+    out.migrate_convert_goto_to_structured = migrate_convert_goto_to_structured
+    out.migrate_block_style = migrate_block_style
+    out.migrate_width_slice = migrate_width_slice
+    out.migrate_shared_defs = migrate_shared_defs
+    out.migrate_one = migrate_one
+    out.migrate_shared_fragment = migrate_shared_fragment
+    unsafe:
+        *plan_out = move out
+    0
+
+// Child entry for `with __workspace-compile <plan> <result>` (D24, #729).
+pub fn comptime_workspace_compile_subprocess(plan_path: str, result_path: str) -> i32:
+    let text = with_fs_read_file(plan_path)
+    if text.len() == 0:
+        with_eprint("error: __workspace-compile: missing or empty plan file: " ++ plan_path)
+        return 1
+    var plan = comptime_workspace_compile_plan_invalid()
+    var parse_rc = 1
+    unsafe:
+        parse_rc = comptime_plan_deserialize(&raw mut plan, text)
+    if parse_rc != 0 or plan.valid == 0:
+        with_eprint("error: __workspace-compile: malformed plan file: " ++ plan_path)
+        return 1
+    let native = comptime_execute_workspace_compile_plan(plan)
+    var out = f"{native.rc}\n"
+    out = out ++ f"{native.artifact_path.len()}\n" ++ native.artifact_path ++ "\n"
+    out = out ++ f"{native.is_migrate}\n"
+    let wrc = with_fs_write_file(result_path, out)
+    comptime_workspace_native_compile_result_free(native)
+    if wrc != 0:
+        with_eprint("error: __workspace-compile: could not write result file: " ++ result_path)
+        return 1
+    0
 
 fn comptime_action_outputs(output: str, extra_outputs: &Vec[str]) -> Vec[str]:
     let outputs: Vec[str] = Vec.new()
@@ -4440,12 +4654,6 @@ fn comptime_execute_workspace_compile_plan(plan: ComptimeWorkspaceCompilePlan) -
             return comptime_workspace_native_compile_invalid()
     comptime_workspace_native_compile_result(if success: 0 else: 1, artifact_path, move comp, 0)
 
-unsafe fn comptime_workspace_thread_entry(arg: *mut u8) -> i32:
-    let job = arg as *mut ComptimeWorkspaceThreadJob
-    let native = comptime_execute_workspace_compile_plan((*job).plan)
-    (*job).result = native
-    0
-
 impl ComptimeEvaluator:
     mut fn compile_workspace_record(record: &ComptimeWorkspaceRecord, capability: ComptimeCapabilityRecord, node: i32, want_messages: i32) -> ComptimeWorkspaceCompileResult:
         let plan = self.workspace_compile_plan(record, capability, node)
@@ -7274,6 +7482,7 @@ impl ComptimeEvaluator:
         if result_type == 0:
             return self.fail(node, "parallel result type is unknown")
         let plans: Vec[ComptimeWorkspaceCompilePlan] = Vec.new()
+        var par_project_root = ""
         let workspace_ids: Vec[i32] = Vec.new()
         let intercepted: Vec[i32] = Vec.new()
         for i in 0..workspaces.extra_count:
@@ -7289,6 +7498,8 @@ impl ComptimeEvaluator:
                 if record.intercept_started != 0 or record.messages.len() > 0 or record.pending_link_active != 0:
                     return self.fail(node, "parallel does not support partially consumed intercepted workspaces yet")
             let capability = ce_clone_capability_record(&self.capability_records[capability_handle as i64])
+            if par_project_root.len() == 0:
+                par_project_root = capability.project_root
             let plan = self.workspace_compile_plan(record, capability, node)
             if plan.valid == 0:
                 return comptime_control_error()
@@ -7299,27 +7510,63 @@ impl ComptimeEvaluator:
         if plans.len() as i32 == 1:
             native_results.push(comptime_execute_workspace_compile_plan(ce_clone_compile_plan(&plans[0])))
         else:
-            let jobs: Vec[ComptimeWorkspaceThreadJob] = Vec.new()
-            let handles: Vec[i64] = Vec.new()
+            // D24 (#729, BDFL ruling 2026-07-26): independent builds never
+            // share an address space. Each parallel workspace compile runs as
+            // its own `with __workspace-compile` child process; the plan
+            // crosses as a serialized file and the result comes back the same
+            // way. An intercept-active workspace still runs in-process (its
+            // message stream needs the live Compilation), sequentially, like
+            // the single-plan path.
+            let par_dir = par_project_root ++ "/out/.workspace-parallel"
+            let _par_mkdir = with_fs_mkdir_p(par_dir)
+            let self_exe = with_arg_at(0)
+            let pids: Vec[i32] = Vec.new()
+            let result_paths: Vec[str] = Vec.new()
+            let err_paths: Vec[str] = Vec.new()
             for i in 0..plans.len() as i32:
-                jobs.push(ComptimeWorkspaceThreadJob { plan: ce_clone_compile_plan(&plans[i as i64]), result: comptime_workspace_native_compile_invalid() })
-            for i in 0..jobs.len() as i32:
-                let job_ptr = (jobs.ptr as *mut ComptimeWorkspaceThreadJob) + i as u64
-                let handle = with_thread_spawn(comptime_workspace_thread_entry as *mut u8, job_ptr as *mut u8)
-                if handle < 0:
-                    for hi in 0..handles.len() as i32:
-                        let _ = with_thread_join(handles.get(hi as i64))
-                    return self.fail(node, "parallel failed to spawn workspace thread")
-                handles.push(handle)
-            var thread_rc = 0
-            for hi in 0..handles.len() as i32:
-                let rc = with_thread_join(handles.get(hi as i64))
-                if rc != 0 and thread_rc == 0:
-                    thread_rc = rc
-            if thread_rc != 0:
-                return self.fail(node, "parallel workspace thread failed")
-            for i in 0..jobs.len() as i32:
-                native_results.push(jobs.get(i as i64).result)
+                if intercepted.get(i as i64) != 0:
+                    pids.push(-1)
+                    result_paths.push("")
+                    err_paths.push("")
+                    continue
+                let plan_path = par_dir ++ f"/plan-{i}.txt"
+                let result_path = par_dir ++ f"/result-{i}.txt"
+                let out_path = par_dir ++ f"/stdout-{i}.log"
+                let err_path = par_dir ++ f"/stderr-{i}.log"
+                let _rm_result = with_fs_remove_file(result_path)
+                if with_fs_write_file(plan_path, comptime_plan_serialize(&plans[i as i64])) != 0:
+                    return self.fail(node, "parallel could not write the workspace plan file")
+                var argv = self_exe ++ "\0"
+                argv = argv ++ "__workspace-compile\0"
+                argv = argv ++ plan_path ++ "\0"
+                argv = argv ++ result_path ++ "\0"
+                let pid = with_exec_argv_capture_spawn(argv, out_path, err_path)
+                if pid <= 0:
+                    return self.fail(node, "parallel failed to spawn a workspace compile process")
+                pids.push(pid)
+                result_paths.push(result_path)
+                err_paths.push(err_path)
+            for i in 0..plans.len() as i32:
+                if pids.get(i as i64) < 0:
+                    native_results.push(comptime_execute_workspace_compile_plan(ce_clone_compile_plan(&plans[i as i64])))
+                    continue
+                let wait_rc = with_exec_wait(pids.get(i as i64), 1200000)
+                let result_text = with_fs_read_file(result_paths.get(i as i64))
+                var child = comptime_workspace_native_compile_invalid()
+                if result_text.len() > 0:
+                    var rcur = CppCursor { text: result_text, pos: 0, ok: 1 }
+                    let child_rc = rcur.next_int()
+                    let artifact = rcur.next_str()
+                    let child_is_migrate = rcur.next_int()
+                    if rcur.ok != 0:
+                        child = ComptimeWorkspaceNativeCompileResult { rc: child_rc, artifact_path: artifact, comp: null as *mut Compilation, is_migrate: child_is_migrate }
+                if child.rc == 0 and wait_rc != 0:
+                    child.rc = wait_rc
+                if child.rc != 0:
+                    let err_text = with_fs_read_file(err_paths.get(i as i64))
+                    if err_text.len() > 0:
+                        with_eprint(err_text)
+                native_results.push(child)
         let results: Vec[ComptimeValue] = Vec.new()
         for i in 0..native_results.len() as i32:
             let plan = &plans[i as i64]
