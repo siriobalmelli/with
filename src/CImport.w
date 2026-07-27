@@ -572,6 +572,13 @@ fn process_c_import(header_spec: str) -> str:
     let defines: Vec[str] = Vec.new()
     process_c_import_with_defines(header_spec, defines)
 
+fn ci_clear_macro_translation_state:
+    g_macro_type_names = ""
+    g_macro_type_aliases = ""
+    g_migrate_macro_values = ""
+    g_migrate_macro_miss_names = Vec.new()
+    g_migrate_macro_session = 0
+
 fn process_c_import_with_defines(header_spec: str, defines: Vec[str]) -> str:
     c_import_last_error_clear()
     c_import_untranslated_macros_clear()
@@ -585,6 +592,7 @@ fn process_c_import_with_defines(header_spec: str, defines: Vec[str]) -> str:
         return ""
     g_cimport_raw_function_names = ""
     ci_record_field_caches_clear()
+    ci_clear_macro_translation_state()
     g_cimport_report_untranslated_macros = ci_should_report_untranslated_macros(header_spec)
     if with_cimport_available() == 0:
         return ""
@@ -594,12 +602,20 @@ fn process_c_import_with_defines(header_spec: str, defines: Vec[str]) -> str:
     let session = with_cimport_parse(include_text)
     if session == 0:
         g_cimport_last_error = "failed to create c_import parse session"
+        ci_clear_macro_translation_state()
         return ""
 
     let err_msg = with_cimport_error(session)
     if err_msg.len() > 0:
         g_cimport_last_error = err_msg
         with_cimport_dispose(session)
+        ci_clear_macro_translation_state()
+        return ""
+    let bridge_error = with_cimport_isystem_error()
+    if bridge_error.len() > 0:
+        g_cimport_last_error = bridge_error
+        with_cimport_dispose(session)
+        ci_clear_macro_translation_state()
         return ""
 
     g_cimport_included_files = with_cimport_included_files(session)
@@ -704,7 +720,16 @@ fn process_c_import_with_defines(header_spec: str, defines: Vec[str]) -> str:
         evi = evi + 1
 
     let macro_session = with_cimport_parse_macros(include_text)
+    let macro_error = with_cimport_isystem_error()
+    if macro_error.len() > 0:
+        g_cimport_last_error = macro_error
+        if macro_session != 0:
+            with_cimport_dispose_macros(macro_session)
+        with_cimport_dispose(session)
+        ci_clear_macro_translation_state()
+        return ""
     if macro_session != 0:
+        g_migrate_macro_session = macro_session
         g_migrate_macro_values = ci_collect_object_macro_values(macro_session)
         g_migrate_macro_miss_names = Vec.new()
 
@@ -720,6 +745,12 @@ fn process_c_import_with_defines(header_spec: str, defines: Vec[str]) -> str:
     let typedef_shadowed = ci_prepopulate_names(session, count)
     g_macro_type_names = ci_collect_macro_type_names(session)
     g_macro_type_aliases = ci_collect_macro_type_aliases(session)
+    if g_cimport_last_error.len() > 0:
+        if macro_session != 0:
+            with_cimport_dispose_macros(macro_session)
+        with_cimport_dispose(session)
+        ci_clear_macro_translation_state()
+        return ""
 
     var i = 0
     while i < count:
@@ -756,7 +787,22 @@ fn process_c_import_with_defines(header_spec: str, defines: Vec[str]) -> str:
             let sa_name = with_cimport_decl_name(session, i)
             if sa_name.len() > 0:
                 output.push_str("// static_assert: " ++ sa_name ++ "\n")
+        if g_cimport_last_error.len() > 0 or with_cimport_isystem_error().len() > 0:
+            if g_cimport_last_error.len() == 0:
+                g_cimport_last_error = with_cimport_isystem_error()
+            if macro_session != 0:
+                with_cimport_dispose_macros(macro_session)
+            with_cimport_dispose(session)
+            ci_clear_macro_translation_state()
+            return ""
         i = i + 1
+
+    if g_cimport_last_error.len() > 0:
+        if macro_session != 0:
+            with_cimport_dispose_macros(macro_session)
+        with_cimport_dispose(session)
+        ci_clear_macro_translation_state()
+        return ""
 
     // Member function detection (Zig-style): attach C functions whose first
     // parameter is *StructType as methods of that struct.
@@ -765,11 +811,15 @@ fn process_c_import_with_defines(header_spec: str, defines: Vec[str]) -> str:
     if macro_session != 0:
         output.push_str(ci_translate_macros(macro_session, session, extern_vars, include_text))
         with_cimport_dispose_macros(macro_session)
+        let translation_error = with_cimport_isystem_error()
+        if translation_error.len() > 0:
+            g_cimport_last_error = translation_error
+        if g_cimport_last_error.len() > 0:
+            with_cimport_dispose(session)
+            ci_clear_macro_translation_state()
+            return ""
     with_cimport_dispose(session)
-    g_macro_type_names = ""
-    g_macro_type_aliases = ""
-    g_migrate_macro_values = ""
-    g_migrate_macro_miss_names = Vec.new()
+    ci_clear_macro_translation_state()
 
     let rendered = output.to_str()
     ci_omitted_manifest_comments() ++ rendered
@@ -2630,23 +2680,31 @@ fn ci_collect_object_macro_type_map(session: i64, macro_source: str) -> str:
     if macro_source.len() == 0:
         return ""
     let count = with_cimport_macro_count(session)
-    var names = ""
+    var names = StringBuilder.new()
     var i = 0
     while i < count:
         if with_cimport_macro_is_fn_like(session, i) == 0:
             let name = with_cimport_macro_name(session, i)
             let value = ci_trim(ci_strip_c_comments(with_cimport_macro_value(session, i)))
             if name.len() > 0 and name.byte_at(0) != 95 and value.len() > 0:
-                names = names ++ "|" ++ name ++ "|"
+                names.push_str("|")
+                names.push_str(name)
+                names.push_str("|")
         i = i + 1
-    if names.len() == 0:
+    let name_text = names.to_str()
+    if name_text.len() == 0:
         return ""
     ci_prepare_clang_resource_dir()
-    with_cimport_collect_object_macro_types(macro_source, names)
+    let result = with_cimport_collect_object_macro_types(macro_source, name_text)
+    let bridge_error = with_cimport_isystem_error()
+    if bridge_error.len() > 0:
+        g_cimport_last_error = bridge_error
+        return ""
+    result
 
 fn ci_collect_object_macro_values(session: i64) -> str:
     let count = with_cimport_macro_count(session)
-    var values = ""
+    var values = StringBuilder.new()
     for i in 0..count:
         if with_cimport_macro_is_fn_like(session, i) != 0:
             continue
@@ -2656,8 +2714,11 @@ fn ci_collect_object_macro_values(session: i64) -> str:
             continue
         if ci_str_contains(value, "|"):
             continue
-        values = values ++ "|" ++ name ++ "=" ++ value
-    values
+        values.push_str("|")
+        values.push_str(name)
+        values.push_str("=")
+        values.push_str(value)
+    values.to_str()
 
 fn ci_offsetof_record_type_name(raw_type: str) -> str:
     let t = ci_trim(raw_type)
@@ -2738,6 +2799,9 @@ fn ci_try_translate_object_macro_probe(macro_source: str, name: str) -> str:
     ci_prepare_clang_resource_dir()
     let probe_session = with_cimport_parse_macro_probe(macro_source, name)
     if probe_session == 0:
+        let bridge_error = with_cimport_isystem_error()
+        if bridge_error.len() > 0:
+            g_cimport_last_error = bridge_error
         return ""
     let probe_name = "__with_macro_probe_" ++ name
     let count = with_cimport_decl_count(probe_session)
@@ -2765,11 +2829,16 @@ fn ci_record_untranslated_object_macro(name: str, is_system: i32):
 
 fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_source: str) -> str:
     let count = with_cimport_macro_count(session)
-    var output = ""
+    var output = StringBuilder.new()
     var known_values = ""
     var known_macro_returns = ""
     var blank_macros = ""
     let object_macro_types = ci_collect_object_macro_type_map(session, macro_source)
+    if g_cimport_last_error.len() > 0:
+        g_migrate_macro_session = 0
+        g_macro_type_names = ""
+        g_macro_type_aliases = ""
+        return output.to_str()
     g_migrate_macro_session = session
     for i in 0..count:
         let name = with_cimport_macro_name(session, i)
@@ -2830,7 +2899,8 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
                             epi = epi + 1
                         let r = ci_render_generated_fn_body("fn " ++ safe_name ++ "(" ++ empty_params ++ ") -> Unit", "    return")
                         if not ci_migrate_shared_decl_add("fn", safe_name, r):
-                            output = output ++ r ++ "\n"
+                            output.push_str(r)
+                            output.push_str("\n")
                         continue
                     // Build pipe-delimited param string: "|a|b|c|"
                     var param_names = ""
@@ -2866,7 +2936,8 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
                         if stripped_identity == original_param:
                             let r = ci_render_generated_fn_body("fn " ++ safe_name ++ "[T](" ++ safe_param ++ ": T) -> T", "    " ++ safe_param)
                             if not ci_migrate_shared_decl_add("fn", safe_name, r):
-                                output = output ++ r ++ "\n"
+                                output.push_str(r)
+                                output.push_str("\n")
                             continue
 
                     // DISCARD pattern: (void)(X) or ((void)(X)) — discard value
@@ -2886,7 +2957,8 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
                             if body_trimmed == "#" ++ p0 or body_trimmed == "(#" ++ p0 ++ ")":
                                 let r = ci_render_generated_fn_body("fn " ++ safe_name ++ "(x: str) -> str", "    x")
                                 if not ci_migrate_shared_decl_add("fn", safe_name, r):
-                                    output = output ++ r ++ "\n"
+                                    output.push_str(r)
+                                    output.push_str("\n")
                                 continue
                         ci_record_untranslated_macro(name)
                         continue
@@ -2911,7 +2983,8 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
                         let fn_kw = if ci_translation_calls_raw_function(translated): "unsafe fn " else: "fn "
                         let r = ci_render_generated_fn_body(fn_kw ++ safe_name ++ type_params ++ "(" ++ param_decl ++ ") -> " ++ inferred_ret, "    " ++ translated)
                         if not ci_migrate_shared_decl_add("fn", safe_name, r):
-                            output = output ++ r ++ "\n"
+                            output.push_str(r)
+                            output.push_str("\n")
                         known_macro_returns = known_macro_returns ++ safe_name ++ "=" ++ inferred_ret ++ "|"
                     else:
                         ci_record_untranslated_macro(name)
@@ -2956,7 +3029,8 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
             known_values = known_values ++ name ++ "=" ++ clean_value ++ "|"
             let let_line = "let " ++ safe_name ++ ": " ++ int_ty ++ " = " ++ clean_value
             if not ci_migrate_shared_decl_add("let", safe_name, let_line):
-                output = output ++ let_line ++ "\n"
+                output.push_str(let_line)
+                output.push_str("\n")
         else if ci_is_char_literal(stripped):
             let char_val = ci_char_to_int(stripped)
             if char_val.len() > 0:
@@ -2965,7 +3039,8 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
                 known_values = known_values ++ name ++ "=" ++ char_val ++ "|"
                 let let_line = "let " ++ safe_name ++ ": c_int = " ++ char_val
                 if not ci_migrate_shared_decl_add("let", safe_name, let_line):
-                    output = output ++ let_line ++ "\n"
+                    output.push_str(let_line)
+                    output.push_str("\n")
         else if ci_is_float_literal(stripped):
             let safe_name = ci_escape_reserved(name)
             let float_ty = ci_float_type_from_suffix(stripped)
@@ -2973,14 +3048,16 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
             with_cimport_mark_name_emitted(name)
             let let_line = "let " ++ safe_name ++ ": " ++ float_ty ++ " = " ++ clean_value
             if not ci_migrate_shared_decl_add("let", safe_name, let_line):
-                output = output ++ let_line ++ "\n"
+                output.push_str(let_line)
+                output.push_str("\n")
         else if ci_is_concatenated_string(stripped) or ci_is_string_literal(stripped):
             let safe_name = ci_escape_reserved(name)
             let concat_value = ci_concat_strings(stripped)
             with_cimport_mark_name_emitted(name)
             let let_line = "let " ++ safe_name ++ " = " ++ concat_value
             if not ci_migrate_shared_decl_add("let", safe_name, let_line):
-                output = output ++ let_line ++ "\n"
+                output.push_str(let_line)
+                output.push_str("\n")
         else:
             if ci_object_macro_value_is_type_like(stripped):
                 continue
@@ -2991,10 +3068,16 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
                 continue
             if compound_literal_result.len() == 0:
                 let probe_result = if macro_is_system == 0: ci_try_translate_object_macro_probe(macro_source, name) else: ""
+                if g_cimport_last_error.len() > 0:
+                    g_migrate_macro_session = 0
+                    g_macro_type_names = ""
+                    g_macro_type_aliases = ""
+                    return output.to_str()
                 if probe_result.len() > 0:
                     with_cimport_mark_name_emitted(name)
                     if not ci_migrate_shared_decl_add("let", ci_escape_reserved(name), probe_result):
-                        output = output ++ probe_result ++ "\n"
+                        output.push_str(probe_result)
+                        output.push_str("\n")
                     continue
             let offsetof_result = if compound_literal_result.len() > 0: "" else: ci_try_translate_offsetof_expr(type_session, stripped)
             let cast_expr_result = if offsetof_result.len() > 0: offsetof_result else: ci_translate_c_expr(stripped, "", known_values)
@@ -3018,7 +3101,8 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
                 with_cimport_mark_name_emitted(name)
                 let let_line = "let " ++ safe_name ++ ": " ++ cast_expr_ty ++ " = " ++ macro_expr_result
                 if not ci_migrate_shared_decl_add("let", safe_name, let_line):
-                    output = output ++ let_line ++ "\n"
+                    output.push_str(let_line)
+                    output.push_str("\n")
             else:
                 let eval_result = ci_eval_const_expr_ctx(stripped, known_values)
                 if eval_result.len() > 0:
@@ -3027,7 +3111,8 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
                     known_values = known_values ++ name ++ "=" ++ eval_result ++ "|"
                     let let_line = "let " ++ safe_name ++ ": c_int = " ++ eval_result
                     if not ci_migrate_shared_decl_add("let", safe_name, let_line):
-                        output = output ++ let_line ++ "\n"
+                        output.push_str(let_line)
+                        output.push_str("\n")
                 else:
                     // Try expression translation — may reference extern vars
                     let expr_result = cast_expr_result
@@ -3037,17 +3122,19 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: str, macro_
                         let expr_ty = if cast_expr_ty.len() > 0: cast_expr_ty else: "c_int"
                         if ci_expr_references_var(expr_result, extern_vars):
                             // References a mutable extern var — emit as function
-                            output = output ++ ci_render_generated_fn_body("fn " ++ safe_name ++ "() -> " ++ expr_ty, "    " ++ expr_result) ++ "\n"
+                            output.push_str(ci_render_generated_fn_body("fn " ++ safe_name ++ "() -> " ++ expr_ty, "    " ++ expr_result))
+                            output.push_str("\n")
                         else:
                             let let_line = "let " ++ safe_name ++ ": " ++ expr_ty ++ " = " ++ expr_result
                             if not ci_migrate_shared_decl_add("let", safe_name, let_line):
-                                output = output ++ let_line ++ "\n"
+                                output.push_str(let_line)
+                                output.push_str("\n")
                     else:
                         ci_record_untranslated_object_macro(name, macro_is_system)
     g_migrate_macro_session = 0
     g_macro_type_names = ""
     g_macro_type_aliases = ""
-    output
+    output.to_str()
 
 // ── C expression → With source translator ────────────────────
 // Translates a C macro body to With source code.
@@ -7968,10 +8055,10 @@ impl CiExprPool:
                 let s = self.add_string(eval_text)
                 return self.add(CiExprKind.CIE_STRING_LIT, s, 0, 0, 0 as CiTypeId)
 
-            let expansion_expanded = ci_expand_string_macro_sequence(session, expansion_src)
-            let expansion_arg_expanded = ci_expand_string_macro_sequence(session, expansion_arg)
-            let spelling_expanded = ci_expand_string_macro_sequence(session, spelling_src)
-            let source_expanded = ci_expand_string_macro_sequence(session, source_src)
+            let expansion_expanded = ci_expand_string_macro_sequence(g_migrate_macro_session, expansion_src)
+            let expansion_arg_expanded = ci_expand_string_macro_sequence(g_migrate_macro_session, expansion_arg)
+            let spelling_expanded = ci_expand_string_macro_sequence(g_migrate_macro_session, spelling_src)
+            let source_expanded = ci_expand_string_macro_sequence(g_migrate_macro_session, source_src)
             var preprocessed_expanded = ""
             var text = literal_src
             if ci_is_string_literal(spelling_literal):
@@ -8000,7 +8087,7 @@ impl CiExprPool:
                     text = stringify_val
                 else:
                     let preprocessed_raw_src = if expansion_src.len() > 0: expansion_src else if source_src.len() > 0: source_src else: literal_src
-                    preprocessed_expanded = ci_expand_string_macro_sequence(session, ci_preprocessed_string_sequence_for_cursor(session, cursor, preprocessed_raw_src))
+                    preprocessed_expanded = ci_expand_string_macro_sequence(g_migrate_macro_session, ci_preprocessed_string_sequence_for_cursor(g_migrate_macro_session, cursor, preprocessed_raw_src))
                     if preprocessed_expanded.len() > 0:
                         text = preprocessed_expanded
                     else:
@@ -8009,7 +8096,7 @@ impl CiExprPool:
                 return 0 as CiExprId
             if preprocessed_expanded.len() == 0 and ci_string_text_contains_macro_like_ident(text):
                 let preprocessed_raw_src = if expansion_src.len() > 0: expansion_src else if source_src.len() > 0: source_src else: literal_src
-                preprocessed_expanded = ci_expand_string_macro_sequence(session, ci_preprocessed_string_sequence_for_cursor(session, cursor, preprocessed_raw_src))
+                preprocessed_expanded = ci_expand_string_macro_sequence(g_migrate_macro_session, ci_preprocessed_string_sequence_for_cursor(g_migrate_macro_session, cursor, preprocessed_raw_src))
             if text != preprocessed_expanded and preprocessed_expanded.len() > 0 and ci_string_text_contains_macro_like_ident(text):
                 text = preprocessed_expanded
             if eval_is_safe and text != eval_text and ci_string_text_contains_macro_like_ident(text):
@@ -9324,7 +9411,7 @@ impl CiStmtPool:
                             return ci_value_ir_invalid()
                         arg_id = exprs.add(CiExprKind.CIE_ARRAY_DECAY, arg_id as i32, elem_ty as i32, 0, 0 as CiTypeId)
                 let arg_src = with_ci_cursor_source_text(session, arg_cursor)
-                if ci_expand_string_macro_sequence(session, arg_src).len() > 0 and exprs.kind(arg_id) != CiExprKind.CIE_STRING_LIT:
+                if ci_expand_string_macro_sequence(g_migrate_macro_session, arg_src).len() > 0 and exprs.kind(arg_id) != CiExprKind.CIE_STRING_LIT:
                     return ci_value_ir_invalid()
                 let param_index = ai - first_arg
                 if callee_decl_idx >= 0 and param_index >= 0 and param_index < callee_param_count:
@@ -9416,10 +9503,10 @@ impl CiStmtPool:
 
         if kind != CXK_INIT_LIST and kind != CXK_COMPOUND_LITERAL:
             let raw_src = with_ci_cursor_source_text(session, cursor)
-            var expanded_src = ci_expand_string_macro_sequence(session, raw_src)
+            var expanded_src = ci_expand_string_macro_sequence(g_migrate_macro_session, raw_src)
             if expanded_src.len() > 0 and ci_string_text_contains_macro_like_ident(expanded_src):
-                let preprocessed_src = ci_preprocessed_string_sequence_for_cursor(session, cursor, raw_src)
-                let preprocessed_expanded = ci_expand_string_macro_sequence(session, preprocessed_src)
+                let preprocessed_src = ci_preprocessed_string_sequence_for_cursor(g_migrate_macro_session, cursor, raw_src)
+                let preprocessed_expanded = ci_expand_string_macro_sequence(g_migrate_macro_session, preprocessed_src)
                 if preprocessed_expanded.len() > 0:
                     expanded_src = preprocessed_expanded
             if expanded_src.len() > 0:
@@ -10864,7 +10951,7 @@ impl CiStmtPool:
                         let str_idx = exprs.add_string(source_init_expr)
                         init_id = exprs.add(CiExprKind.CIE_STRING_LIT, str_idx, 0, 0, 0 as CiTypeId)
                     if (init_id as i32) == 0 and init_has_macro:
-                        let expanded_init = ci_expand_string_macro_sequence(session, init_src)
+                        let expanded_init = ci_expand_string_macro_sequence(g_migrate_macro_session, init_src)
                         if expanded_init.len() > 0:
                             let str_idx = exprs.add_string(expanded_init)
                             init_id = exprs.add(CiExprKind.CIE_STRING_LIT, str_idx, 0, 0, 0 as CiTypeId)
@@ -11127,18 +11214,18 @@ fn ci_str_replace(text: str, needle: str, replacement: str) -> str:
         return text
     if needle.len() > text.len():
         return text
-    var result = ""
+    var result = StringBuilder.new()
     var i = 0
     let limit = text.len() as i32
     while i < limit:
         if i as i64 + needle.len() <= text.len():
             if text.slice(i as i64, i as i64 + needle.len()) == needle:
-                result = result ++ replacement
+                result.push_str(replacement)
                 i = i + needle.len() as i32
                 continue
-        result = result ++ text.slice(i as i64, i as i64 + 1)
+        result.push_str(text.slice(i as i64, i as i64 + 1))
         i = i + 1
-    result
+    result.to_str()
 
 fn ci_indent_block(text: str, indent: i32) -> str:
     if text.len() == 0:
@@ -12044,17 +12131,17 @@ fn ci_string_sequence_at(s: str, start: i32) -> str:
         pos = end
     result
 
-fn ci_preprocessed_text_for_cursor(session: i64, cursor: i32, raw_src: str) -> str:
+fn ci_preprocessed_text_for_cursor(macro_session: i64, cursor: i32, raw_src: str) -> str:
     // #348: the raw source of the construct is already in hand — expand its
     // macro references directly from the session instead of slicing a cc -E
     // dump by cursor location. (cursor retained for signature stability.)
     let _ = cursor
     if g_migrate_raw_source.len() == 0 or raw_src.len() == 0:
         return ""
-    ci_expand_macros_in_text(session, raw_src)
+    ci_expand_macros_in_text(macro_session, raw_src)
 
-fn ci_preprocessed_string_sequence_for_cursor(session: i64, cursor: i32, raw_src: str) -> str:
-    let preprocessed = ci_preprocessed_text_for_cursor(session, cursor, raw_src)
+fn ci_preprocessed_string_sequence_for_cursor(macro_session: i64, cursor: i32, raw_src: str) -> str:
+    let preprocessed = ci_preprocessed_text_for_cursor(macro_session, cursor, raw_src)
     if preprocessed.len() == 0:
         return ""
     let first_token = ci_first_string_literal_token(raw_src)
@@ -12136,8 +12223,8 @@ fn ci_expand_string_macro_token(session: i64, token: str, depth: i32) -> str:
         return ci_expand_string_macro_sequence_depth(session, macro_value, depth + 1)
     ""
 
-fn ci_expand_string_macro_sequence(session: i64, s: str) -> str:
-    ci_expand_string_macro_sequence_depth(session, s, 0)
+fn ci_expand_string_macro_sequence(macro_session: i64, s: str) -> str:
+    ci_expand_string_macro_sequence_depth(macro_session, s, 0)
 
 fn ci_expand_string_macro_sequence_depth(session: i64, s: str, depth: i32) -> str:
     if depth > 12:
@@ -12501,13 +12588,13 @@ fn ci_translate_c_initializer_for_cursor_type(session: i64, init_src: str, ty: s
         return ci_translate_c_initializer_for_cursor_type(session, inner, ty, cxtype)
     ""
 
-fn ci_preprocess_initializer_text(session: i64, var_cursor: i32, raw_decl_src: str) -> str:
+fn ci_preprocess_initializer_text(macro_session: i64, var_cursor: i32, raw_decl_src: str) -> str:
     // #348: expand the raw declaration text directly from the macro session
     // instead of slicing a cc -E dump by cursor location.
     let _ = var_cursor
     if g_migrate_raw_source.len() == 0 or g_migrate_current_input_path.len() == 0 or raw_decl_src.len() == 0:
         return ""
-    let expanded_decl = ci_expand_macros_in_text(session, raw_decl_src)
+    let expanded_decl = ci_expand_macros_in_text(macro_session, raw_decl_src)
     if ci_trim(expanded_decl).len() == 0:
         return ""
     ci_extract_var_initializer_text(ci_trim(expanded_decl))
@@ -12771,7 +12858,7 @@ fn ci_string_macro_arg_from_expansion(session: i64, cursor: i32) -> str:
     var i = 0
     while i < args.len() as i32:
         let arg = ci_trim(args.get(i as i64))
-        if ci_expand_string_macro_sequence(session, arg).len() > 0:
+        if ci_expand_string_macro_sequence(g_migrate_macro_session, arg).len() > 0:
             found = arg
             found_count = found_count + 1
         i = i + 1
@@ -12805,7 +12892,7 @@ fn ci_var_init_expr_from_decl_source(session: i64, var_cursor: i32) -> str:
 
 fn ci_var_init_expr_from_preprocessed_cursor_for_type(session: i64, var_cursor: i32, target_type: str) -> str:
     let raw_decl_src = with_ci_cursor_expansion_text(session, var_cursor)
-    let preprocessed = ci_preprocess_initializer_text(session, var_cursor, raw_decl_src)
+    let preprocessed = ci_preprocess_initializer_text(g_migrate_macro_session, var_cursor, raw_decl_src)
     if preprocessed.len() == 0:
         return ""
     let cursor_ty_str = with_ci_type_translated(session, with_ci_cursor_type(session, var_cursor))
@@ -12821,7 +12908,7 @@ fn ci_var_initializer_text_from_cursor(session: i64, var_cursor: i32) -> str:
     if init_src.len() > 0:
         return init_src
     let expansion_src = ci_trim(with_ci_cursor_expansion_text(session, var_cursor))
-    if ci_expand_string_macro_sequence(session, expansion_src).len() > 0:
+    if ci_expand_string_macro_sequence(g_migrate_macro_session, expansion_src).len() > 0:
         return expansion_src
     let macro_body_param = ci_macro_body_initializer_param_from_cursor(session, var_cursor)
     if macro_body_param.len() > 0:
@@ -12852,12 +12939,12 @@ fn ci_var_init_expr_from_decl_source_for_type(session: i64, var_cursor: i32, tar
     let cursor_ty_str = with_ci_type_translated(session, with_ci_cursor_type(session, var_cursor))
     let vty_str = if target_type.len() > 0: target_type else: cursor_ty_str
     let var_cxtype = with_ci_cursor_type(session, var_cursor)
-    let preprocessed = ci_preprocess_initializer_text(session, var_cursor, raw_decl_src)
+    let preprocessed = ci_preprocess_initializer_text(g_migrate_macro_session, var_cursor, raw_decl_src)
     if preprocessed.len() > 0:
         let translated = ci_translate_c_initializer_for_cursor_type(session, preprocessed, vty_str, var_cxtype)
         if ci_var_init_translation_is_valid(vty_str, translated):
             return translated
-    let expanded = ci_expand_string_macro_sequence(session, init_src)
+    let expanded = ci_expand_string_macro_sequence(g_migrate_macro_session, init_src)
     if expanded.len() > 0:
         let translated = ci_translate_c_initializer_for_cursor_type(session, expanded, vty_str, var_cxtype)
         if ci_var_init_translation_is_valid(vty_str, translated):
@@ -14736,15 +14823,12 @@ fn ci_get_nth_pipe_entry(entries: str, n: i32) -> str:
             pos = pos + 1
     ""
 
-// Check if a source location path is a system header.
 fn ci_is_system_path(loc: str) -> bool:
-    if ci_starts_with(loc, "/usr/"): return true
-    if ci_starts_with(loc, "/Library/"): return true
-    if ci_starts_with(loc, "/Applications/Xcode"): return true
-    if ci_str_contains(loc, "/usr/include/"): return true
-    if ci_str_contains(loc, "/SDKs/"): return true
-    if ci_str_contains(loc, "/clang/"): return true
-    false
+    let status = with_cimport_system_path_status(loc)
+    if status == CImportSystemPathStatus.Error:
+        g_cimport_last_error = with_cimport_isystem_error()
+        return true
+    status == CImportSystemPathStatus.System
 
 let CI_LIBC_KIND_FN: i32 = 1
 let CI_LIBC_KIND_VAR: i32 = 2
@@ -14811,7 +14895,10 @@ fn ci_is_system_prelude_collision_decl(session: i64, idx: i32, name: str) -> boo
         return false
     let cursor = with_cimport_decl_cursor(session, idx)
     let loc = with_ci_cursor_location(session, cursor)
-    loc.len() > 0 and ci_is_system_path(loc)
+    let is_system = loc.len() > 0 and ci_is_system_path(loc)
+    if with_cimport_isystem_error().len() > 0:
+        return false
+    is_system
 
 fn ci_note_filtered_system_symbol_ref(session: i64, name: str, kind: i32) -> bool:
     if name.len() == 0:
@@ -14821,6 +14908,8 @@ fn ci_note_filtered_system_symbol_ref(session: i64, name: str, kind: i32) -> boo
         return true
     let loc = ci_get_decl_location(session, name)
     let filtered = ci_is_system_decl(name) or (loc.len() > 0 and ci_is_system_path(loc))
+    if with_cimport_isystem_error().len() > 0:
+        return false
     if not filtered:
         return true
     let loc_suffix = if loc.len() > 0: " from " ++ loc else: ""
@@ -14835,6 +14924,8 @@ fn ci_note_filtered_system_symbol_ref_at(session: i64, cursor: i32, name: str, k
         return true
     let loc = with_ci_cursor_referenced_location(session, cursor)
     let filtered = ci_is_system_decl(name) or (loc.len() > 0 and ci_is_system_path(loc))
+    if with_cimport_isystem_error().len() > 0:
+        return false
     if not filtered:
         return true
     let loc_suffix = if loc.len() > 0: " from " ++ loc else: ""

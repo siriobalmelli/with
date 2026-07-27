@@ -25,6 +25,7 @@ extern fn with_fs_remove_file(path: str) -> i32
 extern fn with_fs_file_exists(path: str) -> i32
 extern fn with_getenv_str(name: str) -> str
 extern fn with_sysinfo_os() -> str
+extern fn with_eprint(s: str) -> Unit
 
 // ── libclang types ──────────────────────────────────────────────
 // Struct layouts match the C ABI exactly.
@@ -567,8 +568,33 @@ var g_emitted_cap: i32 = 0
 
 var g_cimport_include_paths: [32]*mut u8 = [0 as *mut u8; 32]
 var g_cimport_include_count: i32 = 0
+let CIMPORT_CLANG_ARG_CAP: i32 = 128
+// Reserve -x c, optional sysroot/resource-dir pairs, and all 32 include pairs.
+let CIMPORT_ISYSTEM_PATH_CAP: i32 = 29
+var g_cimport_isystem_paths: [29]*mut u8 = [0 as *mut u8; 29]
+var g_cimport_isystem_count: i32 = 0
+// This process snapshots WITH_CIMPORT_ISYSTEM once before its first c_import.
+// A failed snapshot is sticky, so later imports cannot use a partial path set.
+enum CImportISystemSnapshot: i32:
+    Uninitialized
+    Ready
+    Failed
+
+enum CImportSystemPathStatus: i32:
+    NotSystem
+    System
+    Error
+
+var g_cimport_isystem_snapshot = CImportISystemSnapshot.Uninitialized
+var g_cimport_isystem_error: str = ""
+let CIMPORT_POINTER_BYTES: i64 = 8  // The compiler currently supports 64-bit targets only.
+let CIMPORT_TEMP_TEMPLATE_CAP: i64 = 4096
 // §16.1: target SDK sysroot from with.toml [c_import] sdk_path (empty = none).
 var g_cimport_sdk_path: str = ""
+
+fn cimport_record_error(message: str):
+    if g_cimport_isystem_error.len() == 0:
+        g_cimport_isystem_error = message
 
 pub fn with_cimport_set_sdk_path(path: str) -> Unit:
     g_cimport_sdk_path = path
@@ -625,6 +651,50 @@ unsafe fn copy_first_line_to_buf(text: str, dst: *mut u8, cap: i64) -> i32:
 
 unsafe fn c_path_to_str(path: *const u8) -> str:
     make_str(path)
+
+fn cimport_temp_separator(root: str, windows: bool) -> str:
+    if windows and root.len() >= 2 and root.byte_at(1) == 58: "\\" else: "/"
+
+pub fn with_cimport_temp_root_for_test(with_tmpdir: str, tmpdir: str, temp: str, tmp: str, windows: bool) -> str:
+    var root = with_tmpdir
+    if root.len() == 0: root = tmpdir
+    if root.len() == 0: root = temp
+    if root.len() == 0: root = tmp
+    if root.len() == 0:
+        root = if windows: "C:\\Windows\\Temp" else: "/tmp"
+    while root.len() > 1 and (root.byte_at(root.len() - 1) == 47 or root.byte_at(root.len() - 1) == 92):
+        root = root.slice(0, root.len() - 1)
+    root
+
+unsafe fn cimport_temp_root() -> str:
+    with_cimport_temp_root_for_test(with_getenv_str("WITH_TMPDIR"), with_getenv_str("TMPDIR"), with_getenv_str("TEMP"), with_getenv_str("TMP"), with_sysinfo_os() == "Windows")
+
+unsafe fn cimport_build_temp_template(buf: *mut u8, cap: i64, name: str) -> i32:
+    let root = cimport_temp_root()
+    let path = root ++ cimport_temp_separator(root, with_sysinfo_os() == "Windows") ++ name
+    if cap <= 0 or path.len() + 1 > cap:
+        cimport_record_error("c_import: temporary path exceeds fixed template buffer")
+        return 0
+    with_memcpy(buf, str_data_ptr(path), path.len())
+    *((buf as i64 + path.len()) as *mut u8) = 0
+    1
+
+pub fn with_cimport_synthetic_path_for_test(path: str, root: str, windows: bool) -> bool:
+    let normalized = with_cimport_temp_root_for_test(root, "", "", "", windows)
+    let prefix = normalized ++ cimport_temp_separator(normalized, windows) ++ "with_cimport_"
+    // The prefix ends in an incomplete filename component.
+    if path.len() < prefix.len():
+        return false
+    var i: i64 = 0
+    while i < prefix.len():
+        if not cimport_path_byte_equal(path.byte_at(i), prefix.byte_at(i), windows):
+            return false
+        i = i + 1
+    true
+
+pub fn with_cimport_temp_template_fits_for_test(root: str, name: str, cap: i64, windows: bool) -> bool:
+    let normalized = with_cimport_temp_root_for_test(root, "", "", "", windows)
+    normalized.len() + cimport_temp_separator(normalized, windows).len() + name.len() + 1 <= cap
 
 unsafe fn get_sdk_path() -> *const u8:
     if with_sysinfo_os() != "Macos":
@@ -684,6 +754,175 @@ unsafe fn get_clang_resource_dir() -> *const u8:
     if resource_dir_buf[0] != 0:
         return &resource_dir_buf as *const [1024]u8 as *const u8
     0 as *const u8
+
+fn cimport_path_list_separator() -> i32:
+    if with_sysinfo_os() == "Windows": 59 else: 58
+
+pub fn with_cimport_isystem_entry_count_for_test(value: str, windows: bool) -> i32:
+    let separator = if windows: 59 else: 58
+    var count: i32 = 0
+    var start: i64 = 0
+    var i: i64 = 0
+    while i <= value.len():
+        if i == value.len() or value.byte_at(i) == separator:
+            if i > start:
+                count = count + 1
+            start = i + 1
+        i = i + 1
+    count
+
+fn cimport_path_byte_equal(left: i32, right: i32, windows: bool) -> bool:
+    var lhs = left
+    var rhs = right
+    if windows and (lhs == 47 or lhs == 92): lhs = 47
+    if windows and (rhs == 47 or rhs == 92): rhs = 47
+    if windows and lhs >= 65 and lhs <= 90: lhs = lhs + 32
+    if windows and rhs >= 65 and rhs <= 90: rhs = rhs + 32
+    lhs == rhs
+
+pub fn with_cimport_path_under_dir_for_test(path: str, raw_dir: str, windows: bool) -> bool:
+    var end = raw_dir.len()
+    while end > 1 and (raw_dir.byte_at(end - 1) == 47 or raw_dir.byte_at(end - 1) == 92):
+        if end == 3 and raw_dir.byte_at(1) == 58:
+            break
+        end = end - 1
+    if end == 0 or path.len() < end:
+        return false
+    var i: i64 = 0
+    while i < end:
+        if not cimport_path_byte_equal(path.byte_at(i), raw_dir.byte_at(i), windows):
+            return false
+        i = i + 1
+    if path.len() == end or end == 1 or (end == 3 and raw_dir.byte_at(1) == 58):
+        return true
+    let next = path.byte_at(end)
+    next == 47 or next == 92 or next == 58
+
+unsafe fn load_cimport_isystem_paths() -> bool:
+    if g_cimport_isystem_snapshot == CImportISystemSnapshot.Ready:
+        return true
+    if g_cimport_isystem_snapshot == CImportISystemSnapshot.Failed:
+        return false
+    let value = with_getenv_str("WITH_CIMPORT_ISYSTEM")
+    if value.len() == 0:
+        g_cimport_isystem_snapshot = CImportISystemSnapshot.Ready
+        return true
+    var pending: [29]*mut u8 = [0 as *mut u8; 29]
+    var pending_count: i32 = 0
+    let separator = cimport_path_list_separator()
+    var start: i64 = 0
+    var i: i64 = 0
+    while i <= value.len():
+        if i == value.len() or value.byte_at(i) == separator:
+            if i > start:
+                if pending_count >= CIMPORT_ISYSTEM_PATH_CAP:
+                    cimport_free_pending_isystem_paths(&raw mut pending as *mut [29]*mut u8 as *mut *mut u8, pending_count)
+                    cimport_record_error("c_import: too many WITH_CIMPORT_ISYSTEM paths")
+                    g_cimport_isystem_snapshot = CImportISystemSnapshot.Failed
+                    return false
+                let path = value.slice(start, i)
+                let c_path = str_to_cstr(path)
+                if c_path as i64 == 0:
+                    cimport_free_pending_isystem_paths(&raw mut pending as *mut [29]*mut u8 as *mut *mut u8, pending_count)
+                    cimport_record_error("c_import: could not allocate WITH_CIMPORT_ISYSTEM path")
+                    g_cimport_isystem_snapshot = CImportISystemSnapshot.Failed
+                    return false
+                pending[pending_count as i64] = c_path
+                pending_count = pending_count + 1
+            start = i + 1
+        i = i + 1
+    var pending_i: i32 = 0
+    while pending_i < pending_count:
+        g_cimport_isystem_paths[pending_i as i64] = pending[pending_i as i64]
+        pending_i = pending_i + 1
+    g_cimport_isystem_count = pending_count
+    g_cimport_isystem_snapshot = CImportISystemSnapshot.Ready
+    true
+
+unsafe fn cimport_free_pending_isystem_paths(paths: *mut *mut u8, count: i32):
+    var i: i32 = 0
+    while i < count:
+        with_free(*((paths as i64 + i as i64 * CIMPORT_POINTER_BYTES) as *mut *mut u8))
+        i = i + 1
+
+pub fn with_cimport_isystem_error() -> str:
+    g_cimport_isystem_error
+
+unsafe fn cimport_push_arg(args: *mut *const u8, nargs: i32, capacity: i32, arg: *const u8) -> i32:
+    if nargs >= capacity:
+        cimport_record_error("c_import: too many Clang arguments")
+        return -1
+    *((args as i64 + nargs as i64 * CIMPORT_POINTER_BYTES) as *mut *const u8) = arg
+    nargs + 1
+
+unsafe fn cimport_build_args(args: *mut *const u8, capacity: i32) -> i32:
+    if not load_cimport_isystem_paths():
+        return -1
+    var nargs: i32 = 0
+    let sysroot = get_sdk_path()
+    if sysroot as i64 != 0:
+        nargs = cimport_push_arg(args, nargs, capacity, "-isysroot\0" as *const u8)
+        if nargs < 0:
+            return -1
+        nargs = cimport_push_arg(args, nargs, capacity, sysroot)
+        if nargs < 0:
+            return -1
+    let resdir = get_clang_resource_dir()
+    if resdir as i64 != 0:
+        nargs = cimport_push_arg(args, nargs, capacity, "-resource-dir\0" as *const u8)
+        if nargs < 0:
+            return -1
+        nargs = cimport_push_arg(args, nargs, capacity, resdir)
+        if nargs < 0:
+            return -1
+    nargs = cimport_push_arg(args, nargs, capacity, "-x\0" as *const u8)
+    if nargs < 0:
+        return -1
+    nargs = cimport_push_arg(args, nargs, capacity, "c\0" as *const u8)
+    if nargs < 0:
+        return -1
+    var isystem_i: i32 = 0
+    while isystem_i < g_cimport_isystem_count:
+        nargs = cimport_push_arg(args, nargs, capacity, "-isystem\0" as *const u8)
+        if nargs < 0:
+            return -1
+        nargs = cimport_push_arg(args, nargs, capacity, g_cimport_isystem_paths[isystem_i as i64] as *const u8)
+        if nargs < 0:
+            return -1
+        isystem_i = isystem_i + 1
+    var include_i: i32 = 0
+    while include_i < g_cimport_include_count:
+        nargs = cimport_push_arg(args, nargs, capacity, "-I\0" as *const u8)
+        if nargs < 0:
+            return -1
+        nargs = cimport_push_arg(args, nargs, capacity, g_cimport_include_paths[include_i as i64] as *const u8)
+        if nargs < 0:
+            return -1
+        include_i = include_i + 1
+    nargs
+
+unsafe fn cstr_path_under_dir(path: *const u8, dir: *const u8) -> bool:
+    if path as i64 == 0 or dir as i64 == 0:
+        return false
+    var end = c_strlen(dir)
+    while end > 1 and (*((dir as i64 + end - 1) as *const u8) == 47 or *((dir as i64 + end - 1) as *const u8) == 92):
+        if end == 3 and *((dir as i64 + 1) as *const u8) == 58:
+            break
+        end = end - 1
+    if end == 0 or c_strlen(path) < end:
+        return false
+    let windows = with_sysinfo_os() == "Windows"
+    var i: i64 = 0
+    while i < end:
+        let path_byte = *((path as i64 + i) as *const u8) as i32
+        let dir_byte = *((dir as i64 + i) as *const u8) as i32
+        if not cimport_path_byte_equal(path_byte, dir_byte, windows):
+            return false
+        i = i + 1
+    if *((path as i64 + end) as *const u8) == 0 or end == 1 or (end == 3 and *((dir as i64 + 1) as *const u8) == 58):
+        return true
+    let next = *((path as i64 + end) as *const u8)
+    next == 47 or next == 92 or next == 58
 
 // ── Name deduplication ──────────────────────────────────────────
 
@@ -1144,6 +1383,8 @@ pub fn with_cimport_set_resource_dir(path: str) -> Unit:
 
 pub fn with_cimport_parse(header_code: str) -> i64:
     unsafe:
+        if g_cimport_isystem_snapshot != CImportISystemSnapshot.Failed:
+            g_cimport_isystem_error = ""
         let size = 232  // sizeof(CImportSession) — all pointer fields
         let s = with_alloc(size) as *mut CImportSession
         if s as i64 == 0: return 0
@@ -1151,9 +1392,9 @@ pub fn with_cimport_parse(header_code: str) -> i64:
 
         // Create temp file
         var template_path: [4096]u8 = [0 as u8; 4096]
-        let tmpl = "/tmp/with_cimport_XXXXXX\0"
-        let tp = *(&tmpl as *const *const u8)
-        with_memcpy(&raw mut template_path as *mut [4096]u8 as *mut u8, tp, 25)
+        if cimport_build_temp_template(&raw mut template_path as *mut [4096]u8 as *mut u8, CIMPORT_TEMP_TEMPLATE_CAP, "with_cimport_XXXXXX") == 0:
+            (*s).err_msg = c_strdup("c_import: temporary path exceeds fixed template buffer\0" as *const u8)
+            return s as i64
         let fd = mkstemp(&raw mut template_path as *mut [4096]u8 as *mut u8)
         if fd < 0:
             (*s).err_msg = c_strdup("failed to create temp file\0" as *const u8)
@@ -1164,36 +1405,23 @@ pub fn with_cimport_parse(header_code: str) -> i64:
         let _ = rt_write(fd, "\n\0" as *const u8, 1 as u64)
         let _ = rt_close(fd)
         (*s).tmp_path = c_strdup(&template_path as *const [4096]u8 as *const u8)
+        if (*s).tmp_path as i64 == 0:
+            cimport_record_error("c_import: could not copy primary translation unit temporary path")
+            (*s).err_msg = c_strdup("c_import: could not copy primary translation unit temporary path\0" as *const u8)
+            let _ = unlink(&template_path as *const [4096]u8 as *const u8)
+            return s as i64
 
         // Build compiler args
-        var args: [64]*const u8 = [0 as *const u8; 64]
-        var nargs: i32 = 0
-        let sysroot = get_sdk_path()
-        if sysroot as i64 != 0:
-            args[nargs as i64] = "-isysroot\0" as *const u8
-            nargs = nargs + 1
-            args[nargs as i64] = sysroot
-            nargs = nargs + 1
-        let resdir = get_clang_resource_dir()
-        if resdir as i64 != 0:
-            args[nargs as i64] = "-resource-dir\0" as *const u8
-            nargs = nargs + 1
-            args[nargs as i64] = resdir
-            nargs = nargs + 1
-        args[nargs as i64] = "-x\0" as *const u8
-        nargs = nargs + 1
-        args[nargs as i64] = "c\0" as *const u8
-        nargs = nargs + 1
-        var ip: i32 = 0
-        while ip < g_cimport_include_count and nargs < 62:
-            args[nargs as i64] = "-I\0" as *const u8
-            nargs = nargs + 1
-            args[nargs as i64] = g_cimport_include_paths[ip as i64] as *const u8
-            nargs = nargs + 1
-            ip = ip + 1
+        var args: [128]*const u8 = [0 as *const u8; 128]
+        let nargs = cimport_build_args(&raw mut args as *mut [128]*const u8 as *mut *const u8, CIMPORT_CLANG_ARG_CAP)
+        if nargs < 0:
+            (*s).err_msg = str_to_cstr(g_cimport_isystem_error)
+            if (*s).err_msg as i64 == 0:
+                (*s).err_msg = c_strdup("c_import: failed to preserve system include error\0" as *const u8)
+            return s as i64
 
         (*s).index = clang_createIndex(0, 0)
-        (*s).tu = clang_parseTranslationUnit((*s).index, (*s).tmp_path as *const u8, &args as *const [64]*const u8 as *const *const u8, nargs, 0 as *mut u8, 0 as u32, 0 as u32)
+        (*s).tu = clang_parseTranslationUnit((*s).index, (*s).tmp_path as *const u8, &args as *const [128]*const u8 as *const *const u8, nargs, 0 as *mut u8, 0 as u32, 0 as u32)
 
         if (*s).tu as i64 == 0:
             (*s).err_msg = c_strdup("failed to parse translation unit\0" as *const u8)
@@ -1295,7 +1523,7 @@ unsafe fn collect_inclusion(included_file: *mut u8, inclusion_stack: *mut u8, in
     if path.len() == 0:
         return
     // The synthetic main file is a throwaway temp; it is not a dependency.
-    if path.starts_with("/tmp/with_cimport_") or path.starts_with("/private/tmp/with_cimport_"):
+    if with_cimport_synthetic_path_for_test(path, cimport_temp_root(), with_sysinfo_os() == "Windows") or path.starts_with("/private/tmp/with_cimport_"):
         return
     g_bridge_inclusion_files = g_bridge_inclusion_files ++ path ++ "\n"
 
@@ -1926,36 +2154,53 @@ pub fn with_cimport_realpath(path: str) -> str:
 
 // ── Macro extraction ────────────────────────────────────────
 
-unsafe fn cimport_location_path_is_system(path: *const u8) -> i32:
+unsafe fn cimport_location_path_system_status(path: *const u8) -> CImportSystemPathStatus:
     if path as i64 == 0:
-        return 0
+        return CImportSystemPathStatus.NotSystem
+    if not load_cimport_isystem_paths():
+        return CImportSystemPathStatus.Error
+    var isystem_i: i32 = 0
+    while isystem_i < g_cimport_isystem_count:
+        if cstr_path_under_dir(path, g_cimport_isystem_paths[isystem_i as i64] as *const u8):
+            return CImportSystemPathStatus.System
+        isystem_i = isystem_i + 1
     if c_strncmp(path, "/usr/\0" as *const u8, 5) == 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strncmp(path, "/Library/\0" as *const u8, 9) == 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strncmp(path, "/Applications/Xcode\0" as *const u8, 19) == 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "/usr/include/\0" as *const u8) as i64 != 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "/SDKs/\0" as *const u8) as i64 != 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "/clang/\0" as *const u8) as i64 != 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "\\clang\\\0" as *const u8) as i64 != 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "/lib/clang/\0" as *const u8) as i64 != 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "\\lib\\clang\\\0" as *const u8) as i64 != 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "/Windows Kits/\0" as *const u8) as i64 != 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "\\Windows Kits\\\0" as *const u8) as i64 != 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "/VC/Tools/MSVC/\0" as *const u8) as i64 != 0:
-        return 1
+        return CImportSystemPathStatus.System
     if c_strstr(path, "\\VC\\Tools\\MSVC\\\0" as *const u8) as i64 != 0:
-        return 1
-    0
+        return CImportSystemPathStatus.System
+    CImportSystemPathStatus.NotSystem
+
+pub fn with_cimport_system_path_status(path: str) -> CImportSystemPathStatus:
+    unsafe:
+        let c_path = str_to_cstr(path)
+        if c_path as i64 == 0:
+            cimport_record_error("c_import: could not allocate path for system-header classification")
+            return CImportSystemPathStatus.Error
+        let status = cimport_location_path_system_status(c_path as *const u8)
+        with_free(c_path)
+        status
 
 unsafe fn macro_location_from_cursor(s: *mut CImportSession, cursor: CXCursor) -> str:
     let loc = clang_getCursorLocation(cursor)
@@ -2040,9 +2285,11 @@ unsafe fn macro_location_is_system_from_cursor(cursor: CXCursor) -> i32:
         return 0
     let fname = clang_getFileName(file)
     let fname_str = clang_getCString(fname)
-    let result = cimport_location_path_is_system(fname_str)
+    let status = cimport_location_path_system_status(fname_str)
     clang_disposeString(fname)
-    result
+    if status == CImportSystemPathStatus.Error:
+        return -1
+    if status == CImportSystemPathStatus.System: 1 else: 0
 
 unsafe fn macro_session_grow(ms: *mut MacroSession):
     if (*ms).count < (*ms).cap:
@@ -2179,6 +2426,8 @@ unsafe fn collect_macro_def(cursor: CXCursor, parent: CXCursor, data: *mut u8) -
     let ms = (*ctx).macros
     let loc = macro_location_from_cursor(s, cursor)
     let is_system = macro_location_is_system_from_cursor(cursor)
+    if is_system < 0:
+        return CXChildVisit_Break
     var source = macro_source_line_from_cursor(s, cursor)
     if not macro_source_is_define_line(source):
         source = cursor_source_text_from_cursor(s, cursor)
@@ -2199,15 +2448,17 @@ unsafe fn cimport_collect_macros_from_libclang(ms: *mut MacroSession, header_cod
     let size = 232  // sizeof(CImportSession)
     let s = with_alloc(size) as *mut CImportSession
     if s as i64 == 0:
+        cimport_record_error("c_import: could not allocate macro collection session")
         return 0
     with_memset(s as *mut u8, 0, size)
 
     var template_path: [4096]u8 = [0 as u8; 4096]
-    let tmpl = "/tmp/with_cimport_macro_XXXXXX\0"
-    let tp = *(&tmpl as *const *const u8)
-    with_memcpy(&raw mut template_path as *mut [4096]u8 as *mut u8, tp, 31)
+    if cimport_build_temp_template(&raw mut template_path as *mut [4096]u8 as *mut u8, CIMPORT_TEMP_TEMPLATE_CAP, "with_cimport_macro_XXXXXX") == 0:
+        with_cimport_dispose(s as i64)
+        return 0
     let fd = mkstemp(&raw mut template_path as *mut [4096]u8 as *mut u8)
     if fd < 0:
+        cimport_record_error("c_import: could not create macro collection temporary file")
         with_cimport_dispose(s as i64)
         return 0
     let src_ptr = *(&header_code as *const *const u8)
@@ -2215,42 +2466,36 @@ unsafe fn cimport_collect_macros_from_libclang(ms: *mut MacroSession, header_cod
     let _ = rt_write(fd, "\n\0" as *const u8, 1 as u64)
     let _ = rt_close(fd)
     (*s).tmp_path = c_strdup(&template_path as *const [4096]u8 as *const u8)
+    if (*s).tmp_path as i64 == 0:
+        cimport_record_error("c_import: could not copy macro collection temporary path")
+        let _ = unlink(&template_path as *const [4096]u8 as *const u8)
+        with_cimport_dispose(s as i64)
+        return 0
 
-    var args: [64]*const u8 = [0 as *const u8; 64]
-    var nargs: i32 = 0
-    let sysroot = get_sdk_path()
-    if sysroot as i64 != 0:
-        args[nargs as i64] = "-isysroot\0" as *const u8
-        nargs = nargs + 1
-        args[nargs as i64] = sysroot
-        nargs = nargs + 1
-    let resdir = get_clang_resource_dir()
-    if resdir as i64 != 0:
-        args[nargs as i64] = "-resource-dir\0" as *const u8
-        nargs = nargs + 1
-        args[nargs as i64] = resdir
-        nargs = nargs + 1
-    args[nargs as i64] = "-x\0" as *const u8
-    nargs = nargs + 1
-    args[nargs as i64] = "c\0" as *const u8
-    nargs = nargs + 1
-    var ip: i32 = 0
-    while ip < g_cimport_include_count and nargs < 62:
-        args[nargs as i64] = "-I\0" as *const u8
-        nargs = nargs + 1
-        args[nargs as i64] = g_cimport_include_paths[ip as i64] as *const u8
-        nargs = nargs + 1
-        ip = ip + 1
+    var args: [128]*const u8 = [0 as *const u8; 128]
+    let nargs = cimport_build_args(&raw mut args as *mut [128]*const u8 as *mut *const u8, CIMPORT_CLANG_ARG_CAP)
+    if nargs < 0:
+        cimport_record_error("c_import: could not build macro collection Clang arguments")
+        with_cimport_dispose(s as i64)
+        return 0
 
     (*s).index = clang_createIndex(0, 0)
-    (*s).tu = clang_parseTranslationUnit((*s).index, (*s).tmp_path as *const u8, &args as *const [64]*const u8 as *const *const u8, nargs, 0 as *mut u8, 0 as u32, CXTranslationUnit_DetailedPreprocessingRecord)
+    if (*s).index as i64 == 0:
+        cimport_record_error("c_import: could not create macro collection Clang index")
+        with_cimport_dispose(s as i64)
+        return 0
+    (*s).tu = clang_parseTranslationUnit((*s).index, (*s).tmp_path as *const u8, &args as *const [128]*const u8 as *const *const u8, nargs, 0 as *mut u8, 0 as u32, CXTranslationUnit_DetailedPreprocessingRecord)
     if (*s).tu as i64 == 0:
+        cimport_record_error("c_import: could not parse macro collection translation unit")
         with_cimport_dispose(s as i64)
         return 0
 
     var ctx = MacroCollectContext { session: s, macros: ms }
     let root = clang_getTranslationUnitCursor((*s).tu)
     let _ = clang_visitChildren(root, collect_macro_def as *const u8, &raw mut ctx as *mut MacroCollectContext as *mut u8)
+    if g_cimport_isystem_error.len() > 0:
+        with_cimport_dispose(s as i64)
+        return 0
     with_cimport_dispose(s as i64)
     1
 
@@ -2258,15 +2503,14 @@ pub fn with_cimport_parse_macros(header_code: str) -> i64:
     unsafe:
         let ms_size = 72  // sizeof(MacroSession)
         let ms = with_alloc(ms_size) as *mut MacroSession
-        if ms as i64 == 0: return 0
+        if ms as i64 == 0:
+            cimport_record_error("c_import: could not allocate macro session")
+            return 0
         with_memset(ms as *mut u8, 0, ms_size)
         if cimport_collect_macros_from_libclang(ms, header_code) != 0:
             return ms as i64
-        // §16.1: libclang is the only macro engine — no `cc -E -dM` fallback.
-        // A failed collection means the header parse itself failed; the
-        // c_import header-parse diagnostic surfaces that loudly. Return the
-        // empty session rather than a second engine that can disagree.
-        ms as i64
+        with_cimport_dispose_macros(ms as i64)
+        0
 
 pub fn with_cimport_collect_object_macro_types(header_code: str, macro_names: str) -> str:
     unsafe:
@@ -2276,15 +2520,17 @@ pub fn with_cimport_collect_object_macro_types(header_code: str, macro_names: st
         let size = 232  // sizeof(CImportSession)
         let s = with_alloc(size) as *mut CImportSession
         if s as i64 == 0:
+            cimport_record_error("c_import: could not allocate macro type collection session")
             return ""
         with_memset(s as *mut u8, 0, size)
 
         var template_path: [4096]u8 = [0 as u8; 4096]
-        let tmpl = "/tmp/with_cimport_XXXXXX\0"
-        let tp = *(&tmpl as *const *const u8)
-        with_memcpy(&raw mut template_path as *mut [4096]u8 as *mut u8, tp, 25)
+        if cimport_build_temp_template(&raw mut template_path as *mut [4096]u8 as *mut u8, CIMPORT_TEMP_TEMPLATE_CAP, "with_cimport_XXXXXX") == 0:
+            with_cimport_dispose(s as i64)
+            return ""
         let fd = mkstemp(&raw mut template_path as *mut [4096]u8 as *mut u8)
         if fd < 0:
+            cimport_record_error("c_import: could not create macro type collection temporary file")
             with_cimport_dispose(s as i64)
             return ""
 
@@ -2306,36 +2552,27 @@ pub fn with_cimport_collect_object_macro_types(header_code: str, macro_names: st
                 let _ = rt_write(fd, probe_ptr, probe_line.len() as u64)
         let _ = rt_close(fd)
         (*s).tmp_path = c_strdup(&template_path as *const [4096]u8 as *const u8)
+        if (*s).tmp_path as i64 == 0:
+            cimport_record_error("c_import: could not copy macro type collection temporary path")
+            let _ = unlink(&template_path as *const [4096]u8 as *const u8)
+            with_cimport_dispose(s as i64)
+            return ""
 
-        var args: [64]*const u8 = [0 as *const u8; 64]
-        var nargs: i32 = 0
-        let sysroot = get_sdk_path()
-        if sysroot as i64 != 0:
-            args[nargs as i64] = "-isysroot\0" as *const u8
-            nargs = nargs + 1
-            args[nargs as i64] = sysroot
-            nargs = nargs + 1
-        let resdir = get_clang_resource_dir()
-        if resdir as i64 != 0:
-            args[nargs as i64] = "-resource-dir\0" as *const u8
-            nargs = nargs + 1
-            args[nargs as i64] = resdir
-            nargs = nargs + 1
-        args[nargs as i64] = "-x\0" as *const u8
-        nargs = nargs + 1
-        args[nargs as i64] = "c\0" as *const u8
-        nargs = nargs + 1
-        var ip: i32 = 0
-        while ip < g_cimport_include_count and nargs < 62:
-            args[nargs as i64] = "-I\0" as *const u8
-            nargs = nargs + 1
-            args[nargs as i64] = g_cimport_include_paths[ip as i64] as *const u8
-            nargs = nargs + 1
-            ip = ip + 1
+        var args: [128]*const u8 = [0 as *const u8; 128]
+        let nargs = cimport_build_args(&raw mut args as *mut [128]*const u8 as *mut *const u8, CIMPORT_CLANG_ARG_CAP)
+        if nargs < 0:
+            cimport_record_error("c_import: could not build macro type collection Clang arguments")
+            with_cimport_dispose(s as i64)
+            return ""
 
         (*s).index = clang_createIndex(0, 0)
-        (*s).tu = clang_parseTranslationUnit((*s).index, (*s).tmp_path as *const u8, &args as *const [64]*const u8 as *const *const u8, nargs, 0 as *mut u8, 0 as u32, 0 as u32)
+        if (*s).index as i64 == 0:
+            cimport_record_error("c_import: could not create macro type collection Clang index")
+            with_cimport_dispose(s as i64)
+            return ""
+        (*s).tu = clang_parseTranslationUnit((*s).index, (*s).tmp_path as *const u8, &args as *const [128]*const u8 as *const *const u8, nargs, 0 as *mut u8, 0 as u32, 0 as u32)
         if (*s).tu as i64 == 0:
+            cimport_record_error("c_import: could not parse macro type collection translation unit")
             with_cimport_dispose(s as i64)
             return ""
 
@@ -2370,15 +2607,17 @@ pub fn with_cimport_parse_macro_probe(header_code: str, macro_name: str) -> i64:
         let size = 232  // sizeof(CImportSession)
         let s = with_alloc(size) as *mut CImportSession
         if s as i64 == 0:
+            cimport_record_error("c_import: could not allocate macro probe session")
             return 0
         with_memset(s as *mut u8, 0, size)
 
         var template_path: [4096]u8 = [0 as u8; 4096]
-        let tmpl = "/tmp/with_cimport_XXXXXX\0"
-        let tp = *(&tmpl as *const *const u8)
-        with_memcpy(&raw mut template_path as *mut [4096]u8 as *mut u8, tp, 25)
+        if cimport_build_temp_template(&raw mut template_path as *mut [4096]u8 as *mut u8, CIMPORT_TEMP_TEMPLATE_CAP, "with_cimport_XXXXXX") == 0:
+            with_cimport_dispose(s as i64)
+            return 0
         let fd = mkstemp(&raw mut template_path as *mut [4096]u8 as *mut u8)
         if fd < 0:
+            cimport_record_error("c_import: could not create macro probe temporary file")
             with_cimport_dispose(s as i64)
             return 0
 
@@ -2390,36 +2629,27 @@ pub fn with_cimport_parse_macro_probe(header_code: str, macro_name: str) -> i64:
         let _ = rt_write(fd, probe_ptr, probe_line.len() as u64)
         let _ = rt_close(fd)
         (*s).tmp_path = c_strdup(&template_path as *const [4096]u8 as *const u8)
+        if (*s).tmp_path as i64 == 0:
+            cimport_record_error("c_import: could not copy macro probe temporary path")
+            let _ = unlink(&template_path as *const [4096]u8 as *const u8)
+            with_cimport_dispose(s as i64)
+            return 0
 
-        var args: [64]*const u8 = [0 as *const u8; 64]
-        var nargs: i32 = 0
-        let sysroot = get_sdk_path()
-        if sysroot as i64 != 0:
-            args[nargs as i64] = "-isysroot\0" as *const u8
-            nargs = nargs + 1
-            args[nargs as i64] = sysroot
-            nargs = nargs + 1
-        let resdir = get_clang_resource_dir()
-        if resdir as i64 != 0:
-            args[nargs as i64] = "-resource-dir\0" as *const u8
-            nargs = nargs + 1
-            args[nargs as i64] = resdir
-            nargs = nargs + 1
-        args[nargs as i64] = "-x\0" as *const u8
-        nargs = nargs + 1
-        args[nargs as i64] = "c\0" as *const u8
-        nargs = nargs + 1
-        var ip: i32 = 0
-        while ip < g_cimport_include_count and nargs < 62:
-            args[nargs as i64] = "-I\0" as *const u8
-            nargs = nargs + 1
-            args[nargs as i64] = g_cimport_include_paths[ip as i64] as *const u8
-            nargs = nargs + 1
-            ip = ip + 1
+        var args: [128]*const u8 = [0 as *const u8; 128]
+        let nargs = cimport_build_args(&raw mut args as *mut [128]*const u8 as *mut *const u8, CIMPORT_CLANG_ARG_CAP)
+        if nargs < 0:
+            cimport_record_error("c_import: could not build macro probe Clang arguments")
+            with_cimport_dispose(s as i64)
+            return 0
 
         (*s).index = clang_createIndex(0, 0)
-        (*s).tu = clang_parseTranslationUnit((*s).index, (*s).tmp_path as *const u8, &args as *const [64]*const u8 as *const *const u8, nargs, 0 as *mut u8, 0 as u32, 0 as u32)
+        if (*s).index as i64 == 0:
+            cimport_record_error("c_import: could not create macro probe Clang index")
+            with_cimport_dispose(s as i64)
+            return 0
+        (*s).tu = clang_parseTranslationUnit((*s).index, (*s).tmp_path as *const u8, &args as *const [128]*const u8 as *const *const u8, nargs, 0 as *mut u8, 0 as u32, 0 as u32)
         if (*s).tu as i64 == 0:
+            cimport_record_error("c_import: could not parse macro probe translation unit")
             with_cimport_dispose(s as i64)
             return 0
 

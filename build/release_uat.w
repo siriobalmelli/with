@@ -179,13 +179,14 @@ fn ruat_sequence_1_to_100() -> str:
     out
 
 fn ruat_tiny_c_source() -> str:
-    "#define SCALE 2\n\n" ++
+    "#define SCALE 2\n" ++
+    "#define START_VALUE 20\n\n" ++
     "struct Pair { int a; int b; };\n\n" ++
     "int add_pair(struct Pair p) {\n" ++
     "    return (p.a + p.b) * SCALE;\n" ++
     "}\n\n" ++
     "int main(void) {\n" ++
-    "    struct Pair p = { 20, 1 };\n" ++
+    "    struct Pair p = { START_VALUE, 1 };\n" ++
     "    return add_pair(p) == 42 ? 0 : 1;\n" ++
     "}\n"
 

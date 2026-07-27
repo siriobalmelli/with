@@ -657,7 +657,7 @@ fn migrate_host_compat_preamble() -> str:
     "#undef stpcpy\n#undef stpncpy\n"
 
 fn ci_capture_macro_values(session: i64):
-    g_migrate_macro_values = ""
+    var values = StringBuilder.new()
     g_migrate_macro_miss_names = Vec.new()
     let count = with_cimport_macro_count(session)
     var i = 0
@@ -666,8 +666,13 @@ fn ci_capture_macro_values(session: i64):
             let name = with_cimport_macro_name(session, i)
             let value = with_cimport_macro_value(session, i)
             if name.len() > 0 and value.len() > 0:
-                g_migrate_macro_values = g_migrate_macro_values ++ "|" ++ name ++ "=" ++ value ++ "|"
+                values.push_str("|")
+                values.push_str(name)
+                values.push_str("=")
+                values.push_str(value)
+                values.push_str("|")
         i = i + 1
+    g_migrate_macro_values = values.to_str()
 
 fn ci_collect_macro_type_names(session: i64) -> str:
     let count = with_cimport_decl_count(session)
@@ -780,6 +785,12 @@ impl CiProject:
             eprint("migrate: failed to parse " ++ input_path)
             return 1
 
+        let bridge_error = with_cimport_isystem_error()
+        if bridge_error.len() > 0:
+            eprint("migrate: parse error: " ++ bridge_error)
+            with_cimport_dispose(session)
+            return 1
+
         let err_msg = with_cimport_error(session)
         if err_msg.len() > 0:
             eprint("migrate: parse error: " ++ err_msg)
@@ -794,7 +805,13 @@ impl CiProject:
                 let name = with_cimport_decl_name(session, i)
                 let cursor = with_cimport_decl_cursor(session, i)
                 let loc = if cursor >= 0: with_ci_cursor_location(session, cursor) else: ""
-                if name.len() == 0 or ci_is_system_decl(name) or (loc.len() > 0 and ci_is_system_path(loc)):
+                let system_path = loc.len() > 0 and ci_is_system_path(loc)
+                let bridge_error_during_filter = with_cimport_isystem_error()
+                if bridge_error_during_filter.len() > 0:
+                    eprint("migrate: bridge error: " ++ bridge_error_during_filter)
+                    with_cimport_dispose(session)
+                    return 1
+                if name.len() == 0 or ci_is_system_decl(name) or system_path:
                     i = i + 1
                     continue
                 if with_cimport_var_storage_class(session, i) == CX_SC_STATIC:
@@ -848,7 +865,13 @@ impl CiProject:
                 let name = with_cimport_decl_name(session, i)
                 let cursor = with_cimport_decl_cursor(session, i)
                 let loc = if cursor >= 0: with_ci_cursor_location(session, cursor) else: ""
-                if name.len() == 0 or ci_is_system_decl(name) or (loc.len() > 0 and ci_is_system_path(loc)):
+                let system_path = loc.len() > 0 and ci_is_system_path(loc)
+                let bridge_error_during_filter = with_cimport_isystem_error()
+                if bridge_error_during_filter.len() > 0:
+                    eprint("migrate: bridge error: " ++ bridge_error_during_filter)
+                    with_cimport_dispose(session)
+                    return 1
+                if name.len() == 0 or ci_is_system_decl(name) or system_path:
                     i = i + 1
                     continue
                 if with_cimport_fn_storage_class(session, i) == CX_SC_STATIC:
@@ -902,6 +925,7 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
     let source = ci_migrate_wrapped_source(input_path)
     if source.len() == 0:
         eprint("migrate: cannot read " ++ input_path)
+        ci_migrate_clear_file_state()
         return 1
     let source_prefix = ci_migrate_source_prefix()
     g_migrate_current_input_path = input_path
@@ -910,25 +934,40 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
     // Pass to libclang via cimport_parse
     let session = with_cimport_parse(source)
     if session == 0:
-        g_migrate_raw_source = ""
-        g_migrate_current_input_path = ""
         eprint("migrate: failed to parse " ++ input_path)
+        ci_migrate_clear_file_state()
+        return 1
+
+    let bridge_error = with_cimport_isystem_error()
+    if bridge_error.len() > 0:
+        eprint("migrate: parse error: " ++ bridge_error)
+        with_cimport_dispose(session)
+        ci_migrate_clear_file_state()
         return 1
 
     let err_msg = with_cimport_error(session)
     if err_msg.len() > 0:
-        g_migrate_raw_source = ""
-        g_migrate_current_input_path = ""
         eprint("migrate: parse error: " ++ err_msg)
         with_cimport_dispose(session)
+        ci_migrate_clear_file_state()
         return 1
 
     let abs_input = with_cimport_realpath(input_path)
     if abs_input.len() == 0:
         eprint("migrate: fatal: realpath failed for '" ++ input_path ++ "' — cannot collect macros with relative path")
+        with_cimport_dispose(session)
+        ci_migrate_clear_file_state()
         return 1
     let macro_include = source_prefix ++ "#include \"" ++ abs_input ++ "\"\n"
     let macro_session = with_cimport_parse_macros(macro_include)
+    let macro_error = with_cimport_isystem_error()
+    if macro_error.len() > 0:
+        eprint("migrate: macro parse error: " ++ macro_error)
+        if macro_session != 0:
+            with_cimport_dispose_macros(macro_session)
+        with_cimport_dispose(session)
+        ci_migrate_clear_file_state()
+        return 1
     if macro_session != 0:
         g_migrate_macro_session = macro_session
         ci_capture_macro_values(macro_session)
@@ -947,6 +986,14 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
 
     let count = with_cimport_decl_count(session)
     ci_migrate_collect_unsafe_extern_fns(session, count, input_path, project_active, project)
+    let bridge_error_after_unsafe_scan = with_cimport_isystem_error()
+    if bridge_error_after_unsafe_scan.len() > 0:
+        eprint("migrate: bridge error: " ++ bridge_error_after_unsafe_scan)
+        if macro_session != 0:
+            with_cimport_dispose_macros(macro_session)
+        with_cimport_dispose(session)
+        ci_migrate_clear_file_state()
+        return 1
 
     // Pre-scan: collect demoted types and prepopulate names
     let demoted_types = ci_collect_demoted_types(session, count)
@@ -979,9 +1026,19 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
             continue
         // Skip declarations from system headers (check source location)
         let decl_loc = ci_get_decl_location(session, decl_name)
-        if decl_loc.len() > 0 and ci_is_system_path(decl_loc):
-            i = i + 1
-            continue
+        if decl_loc.len() > 0:
+            let system_path = ci_is_system_path(decl_loc)
+            let bridge_error_during_filter = with_cimport_isystem_error()
+            if bridge_error_during_filter.len() > 0:
+                eprint("migrate: bridge error: " ++ bridge_error_during_filter)
+                if macro_session != 0:
+                    with_cimport_dispose_macros(macro_session)
+                with_cimport_dispose(session)
+                ci_migrate_clear_file_state()
+                return 1
+            if system_path:
+                i = i + 1
+                continue
         // C2: skip width-family declarations when width slicing is active
         if ci_migrate_is_width_family_name(decl_name):
             i = i + 1
@@ -1017,21 +1074,16 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
         i = i + 1
 
     output_parts.push(ci_migrate_translate_vars(session, count, input_path, project_active, project))
-    if g_migrate_file_error.len() > 0:
-        eprint(g_migrate_file_error)
-        g_macro_type_names = ci_collect_macro_type_names(session)
-        g_macro_type_aliases = ci_collect_macro_type_aliases(session)
+    let bridge_error_after_declarations = with_cimport_isystem_error()
+    if bridge_error_after_declarations.len() > 0 or g_migrate_file_error.len() > 0:
+        if bridge_error_after_declarations.len() > 0:
+            eprint("migrate: bridge error: " ++ bridge_error_after_declarations)
+        else:
+            eprint(g_migrate_file_error)
         with_cimport_dispose(session)
         if macro_session != 0:
             with_cimport_dispose_macros(macro_session)
-        g_migrate_macro_values = ""
-        g_migrate_macro_miss_names = Vec.new()
-        g_migrate_macro_session = 0
-        g_migrate_raw_source = ""
-        g_migrate_current_input_path = ""
-        g_macro_type_names = ""
-        g_macro_type_aliases = ""
-        g_migrate_file_error = ""
+        ci_migrate_clear_file_state()
         return 1
 
     // Member function detection
@@ -1040,15 +1092,14 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
     if macro_session != 0:
         output_parts.push(ci_translate_macros(macro_session, session, extern_vars, macro_include))
         with_cimport_dispose_macros(macro_session)
+    let bridge_error_after_macros = with_cimport_isystem_error()
+    if bridge_error_after_macros.len() > 0:
+        eprint("migrate: bridge error: " ++ bridge_error_after_macros)
+        with_cimport_dispose(session)
+        ci_migrate_clear_file_state()
+        return 1
     with_cimport_dispose(session)
-    g_migrate_macro_values = ""
-    g_migrate_macro_miss_names = Vec.new()
-    g_migrate_macro_session = 0
-    g_migrate_raw_source = ""
-    g_migrate_current_input_path = ""
-    g_macro_type_names = ""
-    g_macro_type_aliases = ""
-    g_migrate_file_error = ""
+    ci_migrate_clear_file_state()
 
     var output = output_parts.join("")
     output = ci_migrate_insert_libc_use(output)
@@ -1070,11 +1121,7 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
     let write_result = with_fs_write_file(output_path, output)
     if write_result != 0:
         eprint("migrate: failed to write " ++ output_path)
-        g_migrate_macro_values = ""
-        g_migrate_macro_miss_names = Vec.new()
-        g_migrate_macro_session = 0
-        g_migrate_raw_source = ""
-        g_migrate_current_input_path = ""
+        ci_migrate_clear_file_state()
         return 1
 
     // Print stats
@@ -1553,6 +1600,16 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
 
 
 // ── ci_migrate_var_* helpers (moved from CImport.w in D3) ─────
+fn ci_migrate_clear_file_state:
+    g_migrate_macro_values = ""
+    g_migrate_macro_miss_names = Vec.new()
+    g_migrate_macro_session = 0
+    g_migrate_raw_source = ""
+    g_migrate_current_input_path = ""
+    g_macro_type_names = ""
+    g_macro_type_aliases = ""
+    g_migrate_file_error = ""
+
 fn ci_migrate_set_error(msg: str):
     if g_migrate_file_error.len() == 0:
         g_migrate_file_error = msg
@@ -1606,7 +1663,10 @@ fn ci_migrate_collect_unsafe_extern_fns(session: i64, count: i32, primary_path: 
         let name = with_cimport_decl_name(session, i)
         let cursor = with_cimport_decl_cursor(session, i)
         let loc = if cursor >= 0: with_ci_cursor_location(session, cursor) else: ""
-        if name.len() == 0 or ci_is_system_decl(name) or (loc.len() > 0 and ci_is_system_path(loc)):
+        let system_path = loc.len() > 0 and ci_is_system_path(loc)
+        if with_cimport_isystem_error().len() > 0:
+            return
+        if name.len() == 0 or ci_is_system_decl(name) or system_path:
             i = i + 1
             continue
         if ci_migrate_is_width_family_name(name):
@@ -1824,7 +1884,10 @@ fn ci_migrate_translate_vars(session: i64, count: i32, primary_path: str, projec
             if not ci_migrate_is_width_family_name(name):
                 let cursor = with_cimport_decl_cursor(session, i)
                 let loc = if cursor >= 0: with_ci_cursor_location(session, cursor) else: ""
-                if not ci_is_system_decl(name) and not (loc.len() > 0 and ci_is_system_path(loc)):
+                let system_path = loc.len() > 0 and ci_is_system_path(loc)
+                if with_cimport_isystem_error().len() > 0:
+                    return output.to_str()
+                if not ci_is_system_decl(name) and not system_path:
                     output.push_str(ci_migrate_translate_var(session, i, count, primary_path, true, project_active, project))
         i = i + 1
     i = 0
@@ -1834,7 +1897,10 @@ fn ci_migrate_translate_vars(session: i64, count: i32, primary_path: str, projec
             if not ci_migrate_is_width_family_name(name):
                 let cursor = with_cimport_decl_cursor(session, i)
                 let loc = if cursor >= 0: with_ci_cursor_location(session, cursor) else: ""
-                if not ci_is_system_decl(name) and not (loc.len() > 0 and ci_is_system_path(loc)):
+                let system_path = loc.len() > 0 and ci_is_system_path(loc)
+                if with_cimport_isystem_error().len() > 0:
+                    return output.to_str()
+                if not ci_is_system_decl(name) and not system_path:
                     output.push_str(ci_migrate_translate_var(session, i, count, primary_path, false, project_active, project))
         i = i + 1
     output.to_str()
