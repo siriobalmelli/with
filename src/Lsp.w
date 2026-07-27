@@ -610,7 +610,7 @@ impl LspState:
         with self.documents.slot(analyzed_slot_idx) as mut slot:
             slot.set(move reanalyzed)
 
-    mut fn get_parsed(uri: str, text: str) -> LspParseResult:
+    fn get_parsed(uri: str, text: str) -> LspParseResult:
         // Always a fresh caller-owned parse. Returning the cached fast_pool /
         // fast_intern handed out handle copies of the document's pools; every
         // caller dropped its result and freed the cache's buffers, and the
@@ -676,15 +676,17 @@ fn LspState.publish_diagnostics(mut self: LspState, uri: str, text: str):
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
 
-    // Use cached diagnostics if available
-    var dl = DiagnosticList.init()
-    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
-        dl = (&self.documents[idx as i64]).cached_diags
-    else:
-        var comp = Compilation.init()
+    // Read diagnostics through a view. Copying cached_diags (or comp.zcu's
+    // list) into an owned local bit-copied the Vec header, and the local's
+    // drop freed the document's buffers while the document kept its pointer
+    // (the lsp-use-std shutdown crash). comp stays at function scope so the
+    // fresh branch's view outlives its use.
+    var comp = Compilation.init()
+    let use_cache = idx >= 0 and (&self.documents[idx as i64]).cache_valid
+    if not use_cache:
         comp.set_prelude_mode(2)
         let pool = comp.compile_source_text(uri_to_path(uri), text)
-        dl = comp.zcu.diagnostics
+    let dl = if use_cache: &self.documents[idx as i64].cached_diags else: &comp.zcu.diagnostics
 
     var diags = jarr_start()
     var first = true
@@ -730,15 +732,13 @@ fn LspState.definition(mut self: LspState, id: i32, uri: str, text: str, line: i
     let idx = self.find_doc(uri)
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
-    var slow_pool = AstPool.new()
-    var slow_intern = InternPool.init()
-    var slow_paths: Vec[str] = Vec.new()
-    var slow_valid = false
-    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
-        slow_pool = (&self.documents[idx as i64]).cached_pool
-        slow_intern = (&self.documents[idx as i64]).cached_intern
-        slow_paths = (&self.documents[idx as i64]).cached_decl_paths
-        slow_valid = true
+    let empty_pool = AstPool.new()
+    let empty_intern = InternPool.init()
+    let empty_paths: Vec[str] = Vec.new()
+    let slow_valid = idx >= 0 and (&self.documents[idx as i64]).cache_valid
+    let slow_pool = if slow_valid: &self.documents[idx as i64].cached_pool else: &empty_pool
+    let slow_intern = if slow_valid: &self.documents[idx as i64].cached_intern else: &empty_intern
+    let slow_paths = if slow_valid: &self.documents[idx as i64].cached_decl_paths else: &empty_paths
     if slow_valid:
         for di in 0..slow_pool.decl_count():
             let decl = slow_pool.get_decl(di)
@@ -836,16 +836,14 @@ fn LspState.hover(mut self: LspState, id: i32, uri: str, text: str, line: i32, c
     let idx = self.find_doc(uri)
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
-    var pool = AstPool.new()
-    var intern = InternPool.init()
-    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
-        pool = (&self.documents[idx as i64]).cached_pool
-        intern = (&self.documents[idx as i64]).cached_intern
-    else:
-        var comp = Compilation.init()
+    var comp = Compilation.init()
+    var fresh_pool = AstPool.new()
+    let use_cache = idx >= 0 and (&self.documents[idx as i64]).cache_valid
+    if not use_cache:
         comp.set_prelude_mode(2)
-        pool = comp.compile_source_text(uri_to_path(uri), text)
-        intern = comp.zcu.pool
+        fresh_pool = comp.compile_source_text(uri_to_path(uri), text)
+    let pool = if use_cache: &self.documents[idx as i64].cached_pool else: &fresh_pool
+    let intern = if use_cache: &self.documents[idx as i64].cached_intern else: &comp.zcu.pool
 
     var hover = ""
     var decl_start = 0
@@ -1178,16 +1176,14 @@ fn LspState.completion(mut self: LspState, id: i32, uri: str, text: str, line: i
     let cidx = self.find_doc(uri)
     if cidx >= 0:
         self.ensure_doc_analyzed(cidx)
-    var pool = AstPool.new()
-    var intern = InternPool.init()
-    if cidx >= 0 and (&self.documents[cidx as i64]).cache_valid:
-        pool = (&self.documents[cidx as i64]).cached_pool
-        intern = (&self.documents[cidx as i64]).cached_intern
-    else:
-        var comp = Compilation.init()
+    var comp = Compilation.init()
+    var fresh_pool = AstPool.new()
+    let use_cache = cidx >= 0 and (&self.documents[cidx as i64]).cache_valid
+    if not use_cache:
         comp.set_prelude_mode(2)
-        pool = comp.compile_source_text(uri_to_path(uri), text)
-        intern = comp.zcu.pool
+        fresh_pool = comp.compile_source_text(uri_to_path(uri), text)
+    let pool = if use_cache: &self.documents[cidx as i64].cached_pool else: &fresh_pool
+    let intern = if use_cache: &self.documents[cidx as i64].cached_intern else: &comp.zcu.pool
 
     // Phase 2: scope-aware completion via AST walking.
     // Find the enclosing function, collect its parameters and local bindings
@@ -1671,9 +1667,9 @@ fn LspState.find_references(mut self: LspState, id: i32, uri: str, text: str, li
     let idx = self.find_doc(uri)
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
-    var cached_paths: Vec[str] = Vec.new()
-    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
-        cached_paths = (&self.documents[idx as i64]).cached_decl_paths
+    let empty_paths: Vec[str] = Vec.new()
+    let use_cache = idx >= 0 and (&self.documents[idx as i64]).cache_valid
+    let cached_paths = if use_cache: &self.documents[idx as i64].cached_decl_paths else: &empty_paths
     if cached_paths.len() > 0:
         var scanned_paths = uri_to_path(uri) ++ "\n"
         for di in 0..cached_paths.len() as i32:
@@ -1714,16 +1710,14 @@ fn LspState.document_symbols(mut self: LspState, id: i32, uri: str, text: str):
     let idx = self.find_doc(uri)
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
-    var pool = AstPool.new()
-    var intern = InternPool.init()
-    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
-        pool = (&self.documents[idx as i64]).cached_pool
-        intern = (&self.documents[idx as i64]).cached_intern
-    else:
-        var comp = Compilation.init()
+    var comp = Compilation.init()
+    var fresh_pool = AstPool.new()
+    let use_cache = idx >= 0 and (&self.documents[idx as i64]).cache_valid
+    if not use_cache:
         comp.set_prelude_mode(2)
-        pool = comp.compile_source_text(uri_to_path(uri), text)
-        intern = comp.zcu.pool
+        fresh_pool = comp.compile_source_text(uri_to_path(uri), text)
+    let pool = if use_cache: &self.documents[idx as i64].cached_pool else: &fresh_pool
+    let intern = if use_cache: &self.documents[idx as i64].cached_intern else: &comp.zcu.pool
 
     var items = jarr_start()
     var first = true
@@ -1828,9 +1822,9 @@ fn LspState.rename(mut self: LspState, id: i32, uri: str, text: str, line: i32, 
     let cidx = self.find_doc(uri)
     if cidx >= 0:
         self.ensure_doc_analyzed(cidx)
-    var cached_paths: Vec[str] = Vec.new()
-    if cidx >= 0 and (&self.documents[cidx as i64]).cache_valid:
-        cached_paths = (&self.documents[cidx as i64]).cached_decl_paths
+    let empty_paths: Vec[str] = Vec.new()
+    let use_cache = cidx >= 0 and (&self.documents[cidx as i64]).cache_valid
+    let cached_paths = if use_cache: &self.documents[cidx as i64].cached_decl_paths else: &empty_paths
     if cached_paths.len() > 0:
         var scanned_paths = uri_to_path(uri) ++ "\n"
         for di in 0..cached_paths.len() as i32:
