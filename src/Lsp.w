@@ -611,12 +611,11 @@ impl LspState:
             slot.set(move reanalyzed)
 
     mut fn get_parsed(uri: str, text: str) -> LspParseResult:
-        let idx = self.find_doc(uri)
-        if idx >= 0:
-            self.ensure_doc_parsed(idx)
-            let doc = &self.documents[idx as i64]
-            if doc.fast_valid:
-                return LspParseResult { pool: doc.fast_pool, intern: doc.fast_intern }
+        // Always a fresh caller-owned parse. Returning the cached fast_pool /
+        // fast_intern handed out handle copies of the document's pools; every
+        // caller dropped its result and freed the cache's buffers, and the
+        // shutdown drop freed them again (post-#691 double free). Fast-tier
+        // parse is ~1ms; share the cache via views if it ever matters.
         lsp_parse_file(text)
 
     mut fn set_doc(uri: str, text: str, version: i32):
