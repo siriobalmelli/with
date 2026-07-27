@@ -917,6 +917,9 @@ type Sema {
     // Typed dump sidecar maps (keyed by span start byte offset)
     typed_expr_types: HashMap[i32, i32],
     typed_binding_types: HashMap[i32, i32],
+    // D22 §13.6: field-access exprs whose base is a shared view and whose
+    // field type is non-Copy — an owned demand on one is an error.
+    view_projection_exprs: HashMap[i32, i32],
     typed_binding_names: HashMap[i32, i32],
     typed_binding_muts: HashMap[i32, i32],
     ephemeral_task_binding_nodes: HashMap[i32, i32],
@@ -1711,6 +1714,7 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
     let drop_method_cache = sema_new_map_i32_i32()
     let typed_expr_types = sema_new_map_i32_i32()
     let typed_binding_types = sema_new_map_i32_i32()
+    let view_projection_exprs = sema_new_map_i32_i32()
     let typed_binding_names = sema_new_map_i32_i32()
     let typed_binding_muts = sema_new_map_i32_i32()
     let ephemeral_task_binding_nodes = sema_new_map_i32_i32()
@@ -2042,6 +2046,7 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         regex_capture_name_syms: Vec.new(),
         typed_expr_types,
         typed_binding_types,
+        view_projection_exprs,
         typed_binding_names,
         typed_binding_muts,
         ephemeral_task_binding_nodes,

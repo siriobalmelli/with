@@ -8682,6 +8682,40 @@ impl Sema:
             return 1
         0
 
+    // D22 §13.6: record a field access whose base is a SHARED VIEW and whose
+    // field type is non-Copy, non-reference. The record itself is inert —
+    // borrows, receivers, and reads stay legal; an OWNED demand on the
+    // recorded expression (binding/assignment) is the non-conforming case
+    // and errors at the consumption site.
+    mut fn note_view_field_projection(expr: i32, obj_type: i32, field_ty: i32):
+        if expr <= 0 or obj_type == 0 or field_ty == 0:
+            return
+        let base_resolved = self.resolve_alias(obj_type as TypeId)
+        if self.get_type_kind(base_resolved) != TypeKind.TY_REF:
+            return
+        if self.get_type_d1(base_resolved) != 0:
+            return
+        let field_resolved = self.resolve_alias(field_ty as TypeId)
+        let fk = self.get_type_kind(field_resolved)
+        if fk == TypeKind.TY_REF or fk == TypeKind.TY_PTR:
+            return
+        if self.is_copy(field_ty as TypeId) != 0:
+            return
+        self.view_projection_exprs.insert(expr, field_ty)
+
+    mut fn reject_owned_demand_from_view_projection(value_node: i32, demanded: i32, context: str):
+        if value_node <= 0:
+            return
+        if not self.view_projection_exprs.contains(value_node):
+            return
+        if demanded != 0:
+            let demanded_resolved = self.resolve_alias(demanded as TypeId)
+            let dk = self.get_type_kind(demanded_resolved)
+            if dk == TypeKind.TY_REF or dk == TypeKind.TY_PTR:
+                return
+        let fty: i32 = self.view_projection_exprs.get(value_node).unwrap()
+        self.emit_error("cannot take ownership of a non-Copy field through a borrow (" ++ self.type_name(fty) ++ " is not Copy); borrow the field, clone it, or restructure so the owner transfers it (D22 §13.6) — " ++ context, value_node)
+
     mut fn check_let_binding(node: i32) -> i32:
         let name = self.ast.get_data0(node)
         var bind_name = self.extract_decl_name_after(node, "let")
@@ -8735,6 +8769,7 @@ impl Sema:
         self.match_in_stmt_pos = 0
         let val_type = if ann_type != 0: self.check_expr_with_owned_demand(value, ann_type) else: self.check_expr_value_context(value)
         self.match_in_stmt_pos = saved_match_stmt
+        self.reject_owned_demand_from_view_projection(value, ann_type as i32, "let binding")
         var bind_type: TypeId = val_type
         if ann_type != 0:
             bind_type = ann_type
@@ -9753,6 +9788,7 @@ impl Sema:
                     self.emit_error("type does not support multi-dimensional indexed assignment (missing multi_index_set method required by MultiIndexMut)", target)
 
             let value_type = if expected_value_type != 0: self.check_expr_with_owned_demand(value, expected_value_type as TypeId) else: self.check_expr(value)
+            self.reject_owned_demand_from_view_projection(value, expected_value_type, "assignment")
             self.note_place_effect(base_expr, EFF_WRITE)
             self.record_global_place_write(base_expr, node)
 
@@ -10711,6 +10747,7 @@ impl Sema:
             let field_ty = self.struct_field_type(field_base as i32, field)
             if field_ty == 0:
                 self.emit_error("unknown field '" ++ self.pool_resolve(field) ++ "' for type '" ++ self.type_name(field_base as i32) ++ "'", node)
+            self.note_view_field_projection(node, obj_type as i32, field_ty)
             return field_ty
 
         if ftk == TypeKind.TY_GENERIC_INST:
@@ -10721,6 +10758,7 @@ impl Sema:
             let field_ty2 = self.field_access_type_direct(field_base, field)
             if field_ty2 == 0:
                 self.emit_error("unknown field '" ++ self.pool_resolve(field) ++ "' for type '" ++ self.type_name(field_base as i32) ++ "'", node)
+            self.note_view_field_projection(node, obj_type as i32, field_ty2)
             return field_ty2
 
         if ftk == TypeKind.TY_TUPLE:

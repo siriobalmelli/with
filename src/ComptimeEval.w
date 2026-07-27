@@ -1101,7 +1101,11 @@ fn comptime_eval_result_invalid() -> ComptimeEvalResult:
         effect_records: Vec.new(),
     }
 
-unsafe fn comptime_eval_finish(sema_ptr: *mut Sema, evaluator: &ComptimeEvaluator, value: ComptimeValue) -> ComptimeEvalResult:
+// Consumes the evaluator: this drains its owned state (extras, effect
+// records, pending diag, synced sema) into the result. Through a &view
+// those reads were silent aliasing bit-copies — the caller's drop then
+// freed what the result now owns (D22 §13.6, #730).
+unsafe fn comptime_eval_finish(sema_ptr: *mut Sema, evaluator: ComptimeEvaluator, value: ComptimeValue) -> ComptimeEvalResult:
     let has_pending_diag = evaluator.has_pending_diag
     let pending_diag = evaluator.pending_diag
     let extras = evaluator.extra_values
