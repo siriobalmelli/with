@@ -314,6 +314,20 @@ fn empty_file_target(name: str, output: str) -> Target:
     target = target.write_scope(build_project_dirname(output))
     target
 
+fn target_with_llvm_link_metadata_env_args(target: Target, ctx: &BuildCtx) -> Target:
+    var out = target
+    let names: Vec[str] = Vec.new()
+    names.push("WITH_DARWIN_CXX_LIB_DIR")
+    names.push("WITH_LINUX_DYNAMIC_STDCXX")
+    names.push("WITH_LINUX_CRT_DIR")
+    names.push("WITH_LINUX_GCC_DIR")
+    names.push("WITH_LINUX_SYSLIB_DIR")
+    names.push("SDKROOT")
+    for i in 0..names.len() as i32:
+        let name = names.get(i as i64)
+        out = out.arg(name ++ "=" ++ ctx.env_input(name))
+    out
+
 
 fn target_with_embedded_stdlib_inputs(target: Target, ctx: &BuildCtx) -> Target:
     var out = target
@@ -1437,6 +1451,7 @@ pub fn build(ctx: BuildCtx) -> Build:
 
     var bootstrap_llvm_link_metadata = target_new(.Action, "bootstrap-llvm-link-metadata", "").output("out/bootstrap-lib/.llvm-link-ready")
     bootstrap_llvm_link_metadata.action = run_generate_llvm_link_metadata_action
+    bootstrap_llvm_link_metadata = target_with_llvm_link_metadata_env_args(move bootstrap_llvm_link_metadata, ctx)
     bootstrap_llvm_link_metadata = bootstrap_llvm_link_metadata.input("out/bootstrap-lib/llvm_bridge.o")
     bootstrap_llvm_link_metadata = bootstrap_llvm_link_metadata.input("out/bootstrap-lib/clang_bridge.o")
     bootstrap_llvm_link_metadata = bootstrap_llvm_link_metadata.extra_output("out/bootstrap-lib/llvm_link.rsp")
@@ -1552,6 +1567,7 @@ pub fn build(ctx: BuildCtx) -> Build:
 
     var llvm_link_metadata = target_new(.Action, "llvm-link-metadata", "").output("out/lib/.llvm-link-ready")
     llvm_link_metadata.action = run_generate_llvm_link_metadata_action
+    llvm_link_metadata = target_with_llvm_link_metadata_env_args(move llvm_link_metadata, ctx)
     llvm_link_metadata = llvm_link_metadata.input("out/lib/llvm_bridge.o")
     llvm_link_metadata = llvm_link_metadata.input("out/lib/clang_bridge.o")
     llvm_link_metadata = llvm_link_metadata.extra_output("out/lib/llvm_link.rsp")
@@ -1568,6 +1584,8 @@ pub fn build(ctx: BuildCtx) -> Build:
     stage1 = stage1.input("out/gen/main.w")
     stage1 = target_with_compiler_source_inputs(move stage1, ctx)
     stage1 = stage1.arg("-O1")
+    // Cache-only arg; comp_record_seed_input reads the live environment.
+    stage1 = stage1.arg("seed-input-sha256=" ++ ctx.env_input("WITH_SEED_INPUT_SHA256"))
     stage1 = stage1.extra_output("out/command/stage1")
     stage1 = stage1.extra_output("out/.build-state/seed-input.json")
     stage1 = stage1.input(host_bin("out/bin/with-sha256"))
@@ -2161,7 +2179,26 @@ pub fn build(ctx: BuildCtx) -> Build:
     test_green = test_green.input(host_bin("out/bin/with-sha256"))
     test_green = test_green.write_scope("out/.build-state")
     test_green = test_green.write_scope("out/command/test-green")
+    test_green = test_green.allow_parallel()
     test_green = test_green.dep("with-sha256")
+    test_green = test_green.dep("behavior-tests")
+    test_green = test_green.dep("native-compile-error-tests")
+    test_green = test_green.dep("native-codegen-tests")
+    test_green = test_green.dep("native-spec-tests")
+    test_green = test_green.dep("native-phase-tests")
+    test_green = test_green.dep("selfcheck")
+    test_green = test_green.dep("cli-selfhost-smoke-tests")
+    test_green = test_green.dep("cli-selfhost-one-liner-tests")
+    test_green = test_green.dep("cli-selfhost-object-symbol-tests")
+    test_green = test_green.dep("cli-selfhost-build-w-tests")
+    test_green = test_green.dep("cli-selfhost-project-tests")
+    test_green = test_green.dep("cli-selfhost-edge-tests")
+    test_green = test_green.dep("cli-selfhost-parallel-tests")
+    test_green = test_green.dep("c-migrator-basic-tests")
+    test_green = test_green.dep("c-migrator-core-tests")
+    test_green = test_green.dep("issue61-regression")
+    test_green = test_green.dep("embedded-runtime-regression")
+    test_green = test_green.dep("emit-c-smoke")
     out = out.add_target(test_green)
 
     var tests = target_new(.Group, "test", "")

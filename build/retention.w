@@ -115,17 +115,18 @@ fn ret_json_escape(text: str) -> str:
     out
 
 fn ret_safe_label(text: str) -> str:
-    var out = ""
+    var out = StringBuilder.new()
     for i in 0..text.len() as i32:
         let ch = text.byte_at(i as i64)
         let keep = (ch >= 48 and ch <= 57) or (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 45 or ch == 46 or ch == 95
         if keep:
-            out = out ++ text.slice(i as i64, (i + 1) as i64)
+            out.push_str(text.slice(i as i64, (i + 1) as i64))
         else:
-            out = out ++ "_"
-    if out.len() == 0:
+            out.push_str("_")
+    let result = out.to_str()
+    if result.len() == 0:
         return "unknown"
-    out
+    result
 
 fn ret_short(text: str, n: i32) -> str:
     if text.len() <= n:
@@ -212,22 +213,41 @@ fn ret_str_compare(a: str, b: str) -> i32:
         return -1
     1
 
+fn ret_merge_sorted_strings(left: Vec[str], right: Vec[str]) -> Vec[str]:
+    let out: Vec[str] = Vec.new()
+    var li = 0
+    var ri = 0
+    while li < left.len() as i32 and ri < right.len() as i32:
+        let left_item = left.get(li as i64)
+        let right_item = right.get(ri as i64)
+        if ret_str_compare(left_item, right_item) <= 0:
+            out.push(left_item)
+            li = li + 1
+        else:
+            out.push(right_item)
+            ri = ri + 1
+    while li < left.len() as i32:
+        out.push(left.get(li as i64))
+        li = li + 1
+    while ri < right.len() as i32:
+        out.push(right.get(ri as i64))
+        ri = ri + 1
+    out
+
 fn ret_sorted_strings(items: Vec[str]) -> Vec[str]:
-    var sorted: Vec[str] = Vec.new()
+    if items.len() <= 1:
+        return items
+    let middle = items.len() as i32 / 2
+    let left: Vec[str] = Vec.new()
+    let right: Vec[str] = Vec.new()
     for i in 0..items.len() as i32:
-        let item = items.get(i as i64)
-        var inserted = false
-        let next: Vec[str] = Vec.new()
-        for j in 0..sorted.len() as i32:
-            let existing = sorted.get(j as i64)
-            if not inserted and ret_str_compare(item, existing) < 0:
-                next.push(item)
-                inserted = true
-            next.push(existing)
-        if not inserted:
-            next.push(item)
-        sorted = next
-    sorted
+        if i < middle:
+            left.push(items.get(i as i64))
+        else:
+            right.push(items.get(i as i64))
+    let sorted_left = ret_sorted_strings(move left)
+    let sorted_right = ret_sorted_strings(move right)
+    ret_merge_sorted_strings(move sorted_left, move sorted_right)
 
 fn ret_release_version_component(version: str, part: i32) -> i32:
     var start = 0
@@ -300,7 +320,7 @@ fn ret_direct_w_files(fs: &ToolFs, dir: str) -> Vec[str]:
         let path = files.get(i as i64)
         if path.ends_with(".w") and ret_dirname(path) == dir:
             out.push(path)
-    ret_sorted_strings(out)
+    ret_sorted_strings(move out)
 
 fn ret_sha256_hex_list(ctx: &ActionCtx, label: str, files: &Vec[str]) -> Vec[str]:
     let out: Vec[str] = Vec.new()
@@ -321,30 +341,37 @@ fn ret_expected_test_marker(ctx: &ActionCtx, target_name: str, entry: str) -> st
     // compiler and every test file are keyed by content sha256, so stale
     // evidence cannot survive a compiler rebuild (the v1 marker recorded
     // the compiler by path only).
-    var text = "v2\n"
-    text = text ++ "target:" ++ target_name ++ "\n"
-    text = text ++ "kind:2\n"
-    text = text ++ "entry:" ++ entry ++ "\n"
-    text = text ++ "output:\n"
-    text = text ++ "opt:0\n"
-    text = text ++ "target-kind:0\n"
-    text = text ++ "arg:compiler=" ++ compiler_path ++ "\n"
-    text = text ++ "compiler:" ++ compiler_path ++ "\n"
+    var text = StringBuilder.new()
+    text.push_str("v2\ntarget:")
+    text.push_str(target_name)
+    text.push_str("\nkind:2\nentry:")
+    text.push_str(entry)
+    text.push_str("\noutput:\nopt:0\ntarget-kind:0\narg:compiler=")
+    text.push_str(compiler_path)
+    text.push_str("\ncompiler:")
+    text.push_str(compiler_path)
+    text.push_str("\n")
     let comp_files: Vec[str] = Vec.new()
     comp_files.push(compiler_path)
     let comp_hexes = ret_sha256_hex_list(ctx, ret_safe_label(target_name) ++ "-marker-compiler", comp_files)
     if comp_hexes.len() as i32 != 1:
         ctx.diagnostics().error(ctx.target_name() ++ ": could not hash test compiler for marker " ++ target_name)
         return ""
-    text = text ++ "compiler-sha256:" ++ comp_hexes.get(0) ++ "\n"
+    text.push_str("compiler-sha256:")
+    text.push_str(comp_hexes.get(0))
+    text.push_str("\n")
     let files = ret_direct_w_files(fs, ret_dirname(entry))
     let file_hexes = ret_sha256_hex_list(ctx, ret_safe_label(target_name) ++ "-marker-files", files)
     if file_hexes.len() != files.len():
         ctx.diagnostics().error(ctx.target_name() ++ ": could not hash test files for marker " ++ target_name)
         return ""
     for i in 0..files.len() as i32:
-        text = text ++ "file:" ++ files.get(i as i64) ++ ":" ++ file_hexes.get(i as i64) ++ "\n"
-    text
+        text.push_str("file:")
+        text.push_str(files.get(i as i64))
+        text.push_str(":")
+        text.push_str(file_hexes.get(i as i64))
+        text.push_str("\n")
+    text.to_str()
 
 fn ret_host_bin(path: str) -> str:
     if os() == "Windows":
@@ -368,7 +395,13 @@ fn ret_append_test_marker(ctx: &ActionCtx, combined: str, target_name: str, entr
     if actual != expected:
         ctx.diagnostics().error(ctx.target_name() ++ ": stale test pass marker " ++ marker_path ++ "; run `with build :test`")
         return ""
-    combined ++ "marker:" ++ target_name ++ "\n" ++ actual
+    var out = StringBuilder.new()
+    out.push_str(combined)
+    out.push_str("marker:")
+    out.push_str(target_name)
+    out.push_str("\n")
+    out.push_str(actual)
+    out.to_str()
 
 fn ret_append_state_file(ctx: &ActionCtx, combined: str, target_name: str) -> str:
     let state_path = "out/.build-state/" ++ target_name ++ ".state"
@@ -376,12 +409,19 @@ fn ret_append_state_file(ctx: &ActionCtx, combined: str, target_name: str) -> st
     if state.len() == 0:
         ctx.diagnostics().error(ctx.target_name() ++ ": missing build state " ++ state_path ++ "; run `with build :test`")
         return ""
-    combined ++ "state:" ++ target_name ++ "\n" ++ state ++ "\n"
+    var out = StringBuilder.new()
+    out.push_str(combined)
+    out.push_str("state:")
+    out.push_str(target_name)
+    out.push_str("\n")
+    out.push_str(state)
+    out.push_str("\n")
+    out.to_str()
 
 fn ret_sha256_files_manifest(ctx: &ActionCtx, label: str, files: &Vec[str]) -> str:
     if files.len() == 0:
         return ""
-    var out = ""
+    var out = StringBuilder.new()
     var batch: Vec[str] = Vec.new()
     var batch_names: Vec[str] = Vec.new()
     var batch_index = 0
@@ -403,18 +443,27 @@ fn ret_sha256_files_manifest(ctx: &ActionCtx, label: str, files: &Vec[str]) -> s
                 let line = lines.get(li as i64)
                 if line.len() < 64:
                     return ""
-                out = out ++ line.slice(0, 64) ++ "  " ++ batch_names.get(li as i64) ++ "\n"
+                out.push_str(line.slice(0, 64))
+                out.push_str("  ")
+                out.push_str(batch_names.get(li as i64))
+                out.push_str("\n")
             batch = Vec.new()
             batch_names = Vec.new()
             batch_index = batch_index + 1
-    out
+    out.to_str()
 
 fn ret_append_file_hashes(combined: str, ctx: &ActionCtx, label: str, files: &Vec[str]) -> str:
     let manifest = ret_sha256_files_manifest(ctx, label, files)
     if files.len() > 0 and manifest.len() == 0:
         ctx.diagnostics().error(ctx.target_name() ++ ": could not hash " ++ label ++ " files")
         return ""
-    combined ++ "files:" ++ label ++ "\n" ++ manifest
+    var out = StringBuilder.new()
+    out.push_str(combined)
+    out.push_str("files:")
+    out.push_str(label)
+    out.push_str("\n")
+    out.push_str(manifest)
+    out.to_str()
 
 fn ret_build_driver_sources_manifest(ctx: &ActionCtx) -> str:
     let fs = ctx.fs()
@@ -440,7 +489,13 @@ fn ret_append_test_file_hashes(combined: str, ctx: &ActionCtx, entry: str) -> st
     if manifest.len() == 0:
         ctx.diagnostics().error(ctx.target_name() ++ ": could not hash " ++ entry ++ " files")
         return ""
-    combined ++ "files:" ++ entry ++ "\n" ++ manifest
+    var out = StringBuilder.new()
+    out.push_str(combined)
+    out.push_str("files:")
+    out.push_str(entry)
+    out.push_str("\n")
+    out.push_str(manifest)
+    out.to_str()
 
 fn ret_test_green_fingerprint(ctx: &ActionCtx) -> str:
     var combined = ret_build_driver_sources_manifest(ctx)
@@ -823,7 +878,7 @@ fn ret_small_prune_candidates(ctx: &ActionCtx) -> Vec[str]:
     candidates = ret_add_stale_state_files(fs, ret_live_targets(ctx.args()), move candidates)
     candidates = ret_add_old_seed_archives(fs, move candidates)
     candidates = ret_add_old_release_artifacts(fs, move candidates)
-    ret_sorted_strings(candidates)
+    ret_sorted_strings(move candidates)
 
 fn ret_apply_small_prune(ctx: &ActionCtx, candidates: Vec[str]) -> i32:
     let fs = ctx.fs()
@@ -849,7 +904,7 @@ fn ret_immediate_children(fs: &ToolFs, dir: str) -> Vec[str]:
         let path = files.get(i as i64)
         if ret_dirname(path) == dir:
             out.push(path)
-    ret_sorted_strings(out)
+    ret_sorted_strings(move out)
 
 fn ret_temp_bin_candidates(fs: &ToolFs) -> Vec[str]:
     let out: Vec[str] = Vec.new()
@@ -862,7 +917,7 @@ fn ret_temp_bin_candidates(fs: &ToolFs) -> Vec[str]:
                 out.push(path)
         else if base.contains(".tmp."):
             out.push(path)
-    ret_sorted_strings(out)
+    ret_sorted_strings(move out)
 
 fn ret_temp_archive_candidates(fs: &ToolFs, dir: str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
@@ -872,7 +927,7 @@ fn ret_temp_archive_candidates(fs: &ToolFs, dir: str) -> Vec[str]:
         let base = ret_basename(path)
         if not fs.is_dir(path) and base.contains(".o.") and base.ends_with(".a"):
             out.push(path)
-    ret_sorted_strings(out)
+    ret_sorted_strings(move out)
 
 fn ret_issue61_stale_candidates(fs: &ToolFs) -> Vec[str]:
     let out: Vec[str] = Vec.new()
@@ -881,7 +936,7 @@ fn ret_issue61_stale_candidates(fs: &ToolFs) -> Vec[str]:
         let path = files.get(i as i64)
         if fs.is_dir(path) and ret_basename(path) != "repo":
             out.push(path)
-    ret_sorted_strings(out)
+    ret_sorted_strings(move out)
 
 fn ret_embedded_compiler_candidates(fs: &ToolFs) -> Vec[str]:
     let out: Vec[str] = Vec.new()
@@ -956,7 +1011,7 @@ fn ret_report_large_prune(ctx: &ActionCtx):
     examples = ret_append_all_prune_candidates(move examples, bootstrap)
     examples = ret_append_all_prune_candidates(move examples, issue61)
     examples = ret_append_all_prune_candidates(move examples, embedded)
-    examples = ret_sorted_strings(examples)
+    examples = ret_sorted_strings(move examples)
     var shown = 0
     for i in 0..examples.len() as i32:
         if shown >= 50:

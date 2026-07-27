@@ -94,7 +94,9 @@ fn comp_windows_sdk_ucrt_lib(name: str) -> str:
 fn comp_windows_msvc_lib(name: str) -> str:
     comp_rsp_path("C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.29.30133/lib/x64/" ++ name)
 
-fn comp_linux_system_lib_arg(fs: &ToolFs, name: str) -> str:
+fn comp_linux_system_lib_arg(ctx: &ActionCtx, fs: &ToolFs, name: str) -> str:
+    if ctx.env_input("WITH_LINUX_SYSLIB_DIR").len() > 0:
+        return "-l" ++ name
     if name == "z":
         if fs.host_exists("/usr/lib/x86_64-linux-gnu/libz.so"):
             return "-lz"
@@ -283,7 +285,7 @@ pub fn compiler_default_libclang_archive_path() -> str:
     prefix ++ "/lib/libclang.a"
 
 fn comp_host_sdk_path(ctx: &ActionCtx) -> str:
-    let sdkroot = env("SDKROOT")
+    let sdkroot = ctx.env_input("SDKROOT")
     if sdkroot.len() > 0:
         return sdkroot
     let fs = ctx.fs()
@@ -303,7 +305,9 @@ fn comp_arg_value(args: &Vec[str], prefix: str) -> str:
     ""
 
 fn comp_arg_allowed_for_compiler(arg: str) -> bool:
-    not arg.starts_with("compiler=") and not arg.starts_with("overflow=")
+    not arg.starts_with("compiler=") and
+        not arg.starts_with("overflow=") and
+        not arg.starts_with("seed-input-sha256=")
 
 // Wall-clock budget for one compiler build/ir step. The 10-minute
 // default fits native hosts; emulated hosts (e.g. an x86_64 bootstrap
@@ -381,6 +385,12 @@ fn comp_path_for_process(root: str, path: str) -> str:
         return path
     comp_abs(root, path)
 
+fn comp_forward_env(ctx: &ActionCtx, base: ProcessEnv, name: str) -> ProcessEnv:
+    let value = ctx.env_input(name)
+    if value.len() > 0:
+        return base.set(name, value)
+    base
+
 fn comp_run_compiler_capture(ctx: &ActionCtx, label: str, argv: Vec[str], stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32:
     let root = ctx.project_info().project_root()
     var process_env = process_env()
@@ -406,6 +416,20 @@ fn comp_run_compiler_capture(ctx: &ActionCtx, label: str, argv: Vec[str], stdout
     let libclang_file = env("LIBCLANG_FILE")
     if libclang_file.len() > 0:
         process_env = process_env.set("LIBCLANG_FILE", libclang_file)
+    process_env = comp_forward_env(ctx, move process_env, "WITH_DARWIN_CXX_LIB_DIR")
+    process_env = comp_forward_env(ctx, move process_env, "WITH_LINK_CC")
+    process_env = comp_forward_env(ctx, move process_env, "WITH_LINUX_DYNAMIC_STDCXX")
+    process_env = comp_forward_env(ctx, move process_env, "WITH_LINUX_DYNAMIC_LINKER")
+    process_env = comp_forward_env(ctx, move process_env, "WITH_LINUX_CRT_DIR")
+    process_env = comp_forward_env(ctx, move process_env, "WITH_LINUX_GCC_DIR")
+    process_env = comp_forward_env(ctx, move process_env, "WITH_LINUX_SYSLIB_DIR")
+    process_env = comp_forward_env(ctx, move process_env, "WITH_CIMPORT_ISYSTEM")
+    process_env = comp_forward_env(ctx, move process_env, "SDKROOT")
+    process_env = comp_forward_env(ctx, move process_env, "WITH_TMPDIR")
+    process_env = comp_forward_env(ctx, move process_env, "TMPDIR")
+    process_env = comp_forward_env(ctx, move process_env, "TEMP")
+    process_env = comp_forward_env(ctx, move process_env, "TMP")
+    process_env = comp_forward_env(ctx, move process_env, "WITH_PCRE2_SOURCE")
     let overflow_mode = comp_arg_value(ctx.args(), "overflow=")
     if overflow_mode.len() > 0:
         process_env = process_env.set("WITH_INTERNAL_OVERFLOW_MODE", overflow_mode)
@@ -1241,6 +1265,15 @@ fn comp_sha256_file(ctx: &ActionCtx, capture_dir: str, label: str, path: str) ->
         return output.slice(0, 64)
     ""
 
+fn comp_is_sha256(text: str) -> bool:
+    if text.len() != 64:
+        return false
+    for i in 0..64:
+        let ch = text.byte_at(i as i64)
+        if not ((ch >= 48 and ch <= 57) or (ch >= 65 and ch <= 70) or (ch >= 97 and ch <= 102)):
+            return false
+    true
+
 fn comp_record_seed_input(ctx: &ActionCtx, compiler_path: str, capture_dir: str) -> i32:
     let fs = ctx.fs()
     if fs.mkdir_all("out/.build-state") != 0:
@@ -1253,7 +1286,14 @@ fn comp_record_seed_input(ctx: &ActionCtx, compiler_path: str, capture_dir: str)
     if version.len() == 0:
         return comp_fail(ctx, "could not read seed compiler version")
     let resolved_path = comp_resolve_command_file(ctx, capture_dir, compiler_path)
-    let sha = comp_sha256_file(ctx, capture_dir, "seed-input", resolved_path)
+    let precomputed_sha = ctx.env_input("WITH_SEED_INPUT_SHA256")
+    var sha = ""
+    if precomputed_sha.len() > 0:
+        if not comp_is_sha256(precomputed_sha):
+            return comp_fail(ctx, "invalid WITH_SEED_INPUT_SHA256: expected exactly 64 hexadecimal characters")
+        sha = precomputed_sha
+    else:
+        sha = comp_sha256_file(ctx, capture_dir, "seed-input", resolved_path)
     if sha.len() == 0:
         return comp_fail(ctx, "could not hash seed compiler: " ++ resolved_path)
     let text =
@@ -1557,30 +1597,56 @@ pub fn run_generate_llvm_link_metadata_action(ctx: ActionCtx) -> i32:
         if sdk_path.len() > 0:
             rsp = rsp ++ "-isysroot\n" ++ sdk_path ++ "\n"
             ld_rsp = ld_rsp ++ "-syslibroot\n" ++ sdk_path ++ "\n"
+        let cxx_lib_dir = ctx.env_input("WITH_DARWIN_CXX_LIB_DIR")
+        if cxx_lib_dir.len() > 0:
+            rsp = rsp ++ "-L" ++ cxx_lib_dir ++ "\n"
+            ld_rsp = ld_rsp ++ "-L" ++ cxx_lib_dir ++ "\n"
         rsp = rsp ++ "-lm\n"
         rsp = rsp ++ "-lc++\n"
         ld_rsp = ld_rsp ++ "-lm\n"
         ld_rsp = ld_rsp ++ "-lc++\n"
+        if cxx_lib_dir.len() > 0:
+            rsp = rsp ++ "-lc++abi\n"
+            ld_rsp = ld_rsp ++ "-lc++abi\n"
     else if os() == "Linux":
+        let dynamic_stdcxx = ctx.env_input("WITH_LINUX_DYNAMIC_STDCXX").len() > 0
+        let linux_syslib_dir = ctx.env_input("WITH_LINUX_SYSLIB_DIR")
+        if linux_syslib_dir.len() > 0:
+            rsp = rsp ++ "-L" ++ linux_syslib_dir ++ "\n"
+            ld_rsp = ld_rsp ++ "-L" ++ linux_syslib_dir ++ "\n"
+        let linux_crt_dir = ctx.env_input("WITH_LINUX_CRT_DIR")
+        if linux_crt_dir.len() > 0:
+            rsp = rsp ++ "-L" ++ linux_crt_dir ++ "\n"
+            ld_rsp = ld_rsp ++ "-L" ++ linux_crt_dir ++ "\n"
+        let linux_gcc_dir = ctx.env_input("WITH_LINUX_GCC_DIR")
+        if linux_gcc_dir.len() > 0:
+            rsp = rsp ++ "-L" ++ linux_gcc_dir ++ "\n"
+            ld_rsp = ld_rsp ++ "-L" ++ linux_gcc_dir ++ "\n"
         rsp = rsp ++ "-lpthread\n"
         rsp = rsp ++ "-ldl\n"
         rsp = rsp ++ "-lm\n"
-        rsp = rsp ++ "-static-libstdc++\n"
-        rsp = rsp ++ "-static-libgcc\n"
-        rsp = rsp ++ comp_linux_system_lib_arg(fs, "z") ++ "\n"
-        rsp = rsp ++ comp_linux_system_lib_arg(fs, "zstd") ++ "\n"
-        rsp = rsp ++ comp_linux_system_lib_arg(fs, "xml2") ++ "\n"
-        ld_rsp = ld_rsp ++ "-Bstatic\n"
+        if dynamic_stdcxx:
+            rsp = rsp ++ "-lstdc++\n"
+            rsp = rsp ++ "-lgcc\n"
+        else:
+            rsp = rsp ++ "-static-libstdc++\n"
+            rsp = rsp ++ "-static-libgcc\n"
+        rsp = rsp ++ comp_linux_system_lib_arg(ctx, fs, "z") ++ "\n"
+        rsp = rsp ++ comp_linux_system_lib_arg(ctx, fs, "zstd") ++ "\n"
+        rsp = rsp ++ comp_linux_system_lib_arg(ctx, fs, "xml2") ++ "\n"
+        if not dynamic_stdcxx:
+            ld_rsp = ld_rsp ++ "-Bstatic\n"
         ld_rsp = ld_rsp ++ "-lstdc++\n"
         ld_rsp = ld_rsp ++ "-lgcc\n"
         ld_rsp = ld_rsp ++ "-lgcc_eh\n"
-        ld_rsp = ld_rsp ++ "-Bdynamic\n"
+        if not dynamic_stdcxx:
+            ld_rsp = ld_rsp ++ "-Bdynamic\n"
         ld_rsp = ld_rsp ++ "-lpthread\n"
         ld_rsp = ld_rsp ++ "-ldl\n"
         ld_rsp = ld_rsp ++ "-lm\n"
-        ld_rsp = ld_rsp ++ comp_linux_system_lib_arg(fs, "z") ++ "\n"
-        ld_rsp = ld_rsp ++ comp_linux_system_lib_arg(fs, "zstd") ++ "\n"
-        ld_rsp = ld_rsp ++ comp_linux_system_lib_arg(fs, "xml2") ++ "\n"
+        ld_rsp = ld_rsp ++ comp_linux_system_lib_arg(ctx, fs, "z") ++ "\n"
+        ld_rsp = ld_rsp ++ comp_linux_system_lib_arg(ctx, fs, "zstd") ++ "\n"
+        ld_rsp = ld_rsp ++ comp_linux_system_lib_arg(ctx, fs, "xml2") ++ "\n"
     else if os() == "Windows":
         rsp = rsp ++ comp_windows_msvc_lib("libcpmt.lib") ++ "\n"
         rsp = rsp ++ comp_windows_msvc_lib("libcmt.lib") ++ "\n"
