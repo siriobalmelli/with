@@ -68,7 +68,14 @@ fn collect_targets(entry: str) -> CollectResult:
             continue
         if fact.kind != AnalysisFactKind.Parameter: continue
         if fact.stage != AnalysisStage.Sema: continue
-        if fact.flags & 1 == 0: continue
+        // Post-D5 the classifier is gone, so value_ref_abi no longer marks
+        // candidates. Select §3.8 conformance targets directly: an OWNED
+        // (non-Copy, non-reference) parameter whose final effect only reads
+        // observes its value and should declare the borrow. eff=[read] can
+        // lie for bodies that move out through the param (#730) — always
+        // sweep the apply diff for `self.x = p.f` / `.set(p)` / `.push(p)` /
+        // `.insert(p)` shapes before trusting a run.
+        if not fact.detail.starts_with("owned"): continue
         if fact.effects & (MIG_EFF_WRITE | MIG_EFF_CONSUME | MIG_EFF_ESCAPE_VALUE) != 0: continue
         var is_recv_sig = false
         for r in receiver_sigs:
