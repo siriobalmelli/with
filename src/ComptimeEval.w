@@ -7009,7 +7009,8 @@ impl ComptimeEvaluator:
             saved_subst_tys: saved_subst_tys,
         }
 
-    mut fn restore_generic_substitutions(snapshot: &ComptimeGenericSubstSnapshot):
+    // Consumes: saved subst vecs move back into sema (see restore_label_registry).
+    mut fn restore_generic_substitutions(snapshot: ComptimeGenericSubstSnapshot):
         for i in 0..snapshot.tp_syms.len() as i32:
             let tp_sym = snapshot.tp_syms.get(i as i64)
             if snapshot.saved_named_had.get(i as i64) == 1:

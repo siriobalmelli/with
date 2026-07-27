@@ -2427,7 +2427,9 @@ impl Sema:
             order_counter: self.fn_label_order_counter,
         }
 
-    mut fn restore_label_registry(state: &LabelRegistryState):
+    // Consumes: the fields move back into self (a view here silently
+    // bit-copies and the caller's drop frees what self now owns — #730).
+    mut fn restore_label_registry(state: LabelRegistryState):
         self.fn_label_syms = state.label_syms
         self.fn_label_nodes = state.label_nodes
         self.fn_label_paths = state.label_paths

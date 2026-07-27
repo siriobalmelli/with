@@ -120,13 +120,13 @@ pub trait ScopedMut[T]:    fn with_enter_mut(self:
 // Core trait impls for primitive types
 
 impl Eq for i32:
-    fn eq(self: &Self, other: &i32) -> bool: *self == other
+    fn eq(self: &Self, other: i32) -> bool: *self == other
 
 impl Eq for bool:
-    fn eq(self: &Self, other: &bool) -> bool: *self == other
+    fn eq(self: &Self, other: bool) -> bool: *self == other
 
 impl Eq for u8:
-    fn eq(self: &Self, other: &u8) -> bool: *self == other
+    fn eq(self: &Self, other: u8) -> bool: *self == other
 
 impl Default for i32:
     fn default() -> i32:
@@ -152,28 +152,28 @@ impl Eq for str:
     fn eq(self: &Self, other: str) -> bool: *self == other
 
 impl Eq for i64:
-    fn eq(self: &Self, other: &i64) -> bool: *self == other
+    fn eq(self: &Self, other: i64) -> bool: *self == other
 
 impl Ord for i32:
-    fn cmp(self: &Self, other: &i32) -> i32:
+    fn cmp(self: &Self, other: i32) -> i32:
         if *self < other: return -1
         if *self > other: return 1
         0
 
 impl Ord for i64:
-    fn cmp(self: &Self, other: &i64) -> i32:
+    fn cmp(self: &Self, other: i64) -> i32:
         if *self < other: return -1
         if *self > other: return 1
         0
 
 impl Ord for u8:
-    fn cmp(self: &Self, other: &u8) -> i32:
+    fn cmp(self: &Self, other: u8) -> i32:
         if *self < other: return -1
         if *self > other: return 1
         0
 
 impl Ord for bool:
-    fn cmp(self: &Self, other: &bool) -> i32:
+    fn cmp(self: &Self, other: bool) -> i32:
         if *self == other: return 0
         if not *self and other: return -1
         1

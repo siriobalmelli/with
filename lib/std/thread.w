@@ -28,5 +28,5 @@ pub fn spawn_os(worker: fn() -> i32) -> JoinHandle:
     JoinHandle { handle: with_thread_spawn(raw.fn_ptr, raw.ctx) }
 
 /// Wait for a thread to finish and return its result.
-pub fn join(handle: &JoinHandle) -> i32:
+pub fn join(handle: JoinHandle) -> i32:
     with_thread_join(handle.handle)

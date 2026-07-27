@@ -1626,7 +1626,8 @@ impl Codegen:
         self.loop_labels = Vec.new()
         self.loop_depth = 0
 
-    mut fn restore_loop_state(state: &LoopState):
+    // Consumes: fields move back into self (see restore_label_registry).
+    mut fn restore_loop_state(state: LoopState):
         self.loop_break_bbs = state.break_bbs
         self.loop_continue_bbs = state.continue_bbs
         self.loop_result_allocas = state.result_allocas
