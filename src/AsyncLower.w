@@ -30,7 +30,10 @@ type AsyncLower = ephemeral {
     sema: &Sema,
     diags: DiagnosticList,
     out_mod: AsyncMirModule,
-    cur_mir_body: MirBody,
+    // Index into mir_mod.bodies, not a copy: holding the body bit-copied its
+    // blocks/locals vectors out of mir_mod, and the next assignment dropped
+    // them while mir_mod still owned them (#715 class).
+    cur_mir_body_index: i32,
     cur_body: AsyncMirBody,
 }
 
@@ -63,7 +66,7 @@ fn lower_async_module(mir_mod: &MirModule, ast: AstPool, pool: InternPool, sema:
         sema,
         diags,
         out_mod: AsyncMirModule.init(),
-        cur_mir_body: MirBody.init_for_fn(0),
+        cur_mir_body_index: -1,
         cur_body: AsyncMirBody.init(0, AsyncBodyKind.Sync),
     }
     lower.run()
@@ -75,14 +78,14 @@ fn lower_async_module(mir_mod: &MirModule, ast: AstPool, pool: InternPool, sema:
 impl AsyncLower:
     mut fn run():
         for bi in 0..self.mir_mod.bodies.len() as i32:
-            let mir_body: MirBody = self.mir_mod.bodies.get(bi as i64)
-            self.lower_body(move mir_body)
+            self.lower_body(bi)
 
-    mut fn lower_body(mir_body: MirBody):
-        let fn_decl = async_find_fn_decl(self.ast, mir_body.fn_sym)
+    mut fn lower_body(body_index: i32):
+        let body_fn_sym = (&self.mir_mod.bodies[body_index as i64]).fn_sym
+        let fn_decl = async_find_fn_decl(self.ast, body_fn_sym)
         let flavor = async_fn_flavor(self.ast, fn_decl)
-        self.cur_mir_body = mir_body
-        self.cur_body = AsyncMirBody.init(self.cur_mir_body.fn_sym, flavor)
+        self.cur_mir_body_index = body_index
+        self.cur_body = AsyncMirBody.init(body_fn_sym, flavor)
 
         if fn_decl != 0:
             let fn_body_node = async_ast_get_data1(self.ast, fn_decl as i32)
@@ -108,7 +111,7 @@ impl AsyncLower:
     fn record_suspend(node: i32, suspend_kind: i32):
         let span_start = async_ast_get_start(self.ast, node)
         let span_end = async_ast_get_end(self.ast, node)
-        let snap = async_snapshot_for_span(self.cur_mir_body, span_start)
+        let snap = async_snapshot_for_span(&self.mir_mod.bodies[self.cur_mir_body_index as i64], span_start)
         self.cur_body.add_suspend(suspend_kind, span_start, span_end, snap.resume_bb, snap.live_locals, snap.storage_dead, snap.drop_count)
 
     fn walk_expr(node: i32):

@@ -2079,12 +2079,14 @@ fn run_graph_target_command(target_name: str) -> i32:
     graph_options.selected_target = target_name
     run_build_command(move build_options, graph_options)
 
-fn build_graph_find_target_by_name(graph: &BuildGraph, target_name: str) -> BuildGraphTarget:
+// Returns the INDEX, not a copy: returning the element bit-copied its
+// inputs/outputs/args vectors out of the caller's graph, and the copy's drop
+// freed buffers the graph still owned (#715 class). Callers borrow the element.
+fn build_graph_find_target_index_by_name(graph: &BuildGraph, target_name: str) -> i32:
     for i in 0..graph.targets.len() as i32:
-        let target = graph.targets.get(i as i64)
-        if target.name == target_name:
-            return target
-    empty_build_graph_target()
+        if (&graph.targets[i as i64]).name == target_name:
+            return i
+    -1
 
 fn repo_lock_path() -> str:
     let out_dir = with_getenv_str("WITH_OUT_DIR")
@@ -2355,11 +2357,11 @@ fn run_run_project_command(selected_target_hint: str, opt_level: i32, no_std: bo
     if selected_target_name.len() == 0:
         with_eprint("error: 'run' needs an executable default target in build.w or ':target'")
         return 1
-    let selected_target = build_graph_find_target_by_name(&graph, selected_target_name)
-    if selected_target.name.len() == 0:
+    let selected_index = build_graph_find_target_index_by_name(&graph, selected_target_name)
+    if selected_index < 0:
         with_eprint("error: target '" ++ selected_target_name ++ "' not found in build graph")
         return 1
-    if selected_target.kind != 0:
+    if (&graph.targets[selected_index as i64]).kind != 0:
         with_eprint("error: run target '" ++ selected_target_name ++ "' is not executable")
         return 1
     let selected_graph = build_graph_filter_target(&graph, selected_target_name)
@@ -2372,8 +2374,11 @@ fn run_run_project_command(selected_target_hint: str, opt_level: i32, no_std: bo
     repo_lock_release()
     if build_rc != 0:
         return build_rc
-    let selected_built_target = build_graph_find_target_by_name(&selected_graph, selected_target_name)
-    let bin_path = build_graph_output_path(root, selected_built_target, "", selected_graph.targets.len() as i32)
+    let built_index = build_graph_find_target_index_by_name(&selected_graph, selected_target_name)
+    if built_index < 0:
+        with_eprint("error: target '" ++ selected_target_name ++ "' vanished from the filtered build graph")
+        return 1
+    let bin_path = build_graph_output_path(root, &selected_graph.targets[built_index as i64], "", selected_graph.targets.len() as i32)
     if bin_path.len() == 0 or with_fs_file_exists(bin_path) == 0:
         with_eprint("error: run target '" ++ selected_target_name ++ "' did not produce executable output")
         return 1

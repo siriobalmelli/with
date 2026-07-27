@@ -246,19 +246,16 @@ impl Zcu:
                 return i
         -1
 
-    fn render_diag_frontend(diag: Diagnostic):
+    // Borrows: rendering only reads. Consuming it made the caller copy an
+    // element out of self.diagnostics.items — an aliasing bit-copy whose
+    // drop freed the stored diagnostic's label/note buffers (#715 class,
+    // reproduced as a DOUBLE FREE under --debug-alloc).
+    fn render_diag_frontend(diag: &Diagnostic):
         let map_idx = self.cli_diag_mapping_index(diag.primary.start)
         if map_idx >= 0:
             let gen_start = self.cli_diag_gen_starts.get(map_idx as i64)
             let source = Source.from_string(self.cli_diag_source_names.get(map_idx as i64), self.cli_diag_source_texts.get(map_idx as i64), 0)
-            var mapped = diag
-            mapped.primary.start = mapped.primary.start - gen_start
-            mapped.primary.end = mapped.primary.end - gen_start
-            if mapped.primary.start < 0:
-                mapped.primary.start = 0
-            if mapped.primary.end <= mapped.primary.start:
-                mapped.primary.end = mapped.primary.start + 1
-            mapped.render(source)
+            diag.render_at_offset(source, gen_start)
             return
         let source = self.source_for_file_id_frontend(diag.primary.file)
         // #670: labels can point into other files (e.g. E0921's concurrency
@@ -297,8 +294,7 @@ impl Zcu:
 
     fn render_all_diagnostics_frontend():
         for i in 0..self.diagnostics.items.len() as i32:
-            let diag = self.diagnostics.items.get(i as i64)
-            self.render_diag_frontend(move diag)
+            self.render_diag_frontend(&self.diagnostics.items[i as i64])
             if i + 1 < self.diagnostics.items.len() as i32:
                 runtime_eprint("")
 

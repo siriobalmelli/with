@@ -101,21 +101,39 @@ impl Diagnostic:
         let no_texts: Vec[str] = Vec.new()
         self.render_with_label_sources(source, &no_paths, &no_texts)
 
+    // Render with the primary span shifted back into an original file's
+    // coordinates (generated-source mapping). Takes the offset instead of a
+    // mutated copy: copying a Diagnostic out of a stored list aliases its
+    // label/note buffers and double-frees on drop (#715 class).
+    fn render_at_offset(source: &Source, gen_start: i32):
+        let no_paths: Vec[str] = Vec.new()
+        let no_texts: Vec[str] = Vec.new()
+        self.render_with_label_sources_at_offset(source, &no_paths, &no_texts, gen_start)
+
     // #670: a label whose span lives in another file must resolve line/col
     // against THAT file's text and say which file it is. label_paths/label_texts
     // are parallel to labels; an empty path means "same file as the primary".
     fn render_with_label_sources(source: &Source, label_paths: &Vec[str], label_texts: &Vec[str]):
+        self.render_with_label_sources_at_offset(source, label_paths, label_texts, 0)
+
+    fn render_with_label_sources_at_offset(source: &Source, label_paths: &Vec[str], label_texts: &Vec[str], gen_start: i32):
+        var pstart = self.primary.start - gen_start
+        if pstart < 0:
+            pstart = 0
+        var pend = self.primary.end - gen_start
+        if pend <= pstart:
+            pend = pstart + 1
         let code: str = self.code
         let message: str = self.message
         with_eprint(render_diag_header(self.severity, code, message))
 
-        let loc = source.offset_to_location(self.primary.start)
+        let loc = source.offset_to_location(pstart)
         let source_path: str = source.path
         with_eprint(render_diag_location(source_path, loc.line, loc.col))
 
         let line_text: str = source.line_text(loc.line)
         with_eprint(render_diag_source_line(loc.line, line_text))
-        with_eprint(render_diag_marker_line(loc.col, span_underline_len(self.primary.start, self.primary.end)))
+        with_eprint(render_diag_marker_line(loc.col, span_underline_len(pstart, pend)))
 
         for i in 0..self.labels.len() as i32:
             let lab: DiagnosticLabel = self.labels.get(i as i64)
