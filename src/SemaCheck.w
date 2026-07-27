@@ -3553,7 +3553,7 @@ impl Sema:
         for abi_pi in 0..param_count:
             let cfc_vra = self.fn_param_uses_value_ref_abi(param_start, abi_pi, method_owner_sym, self_type_id)
             if with_getenv_str("WITH_DEBUG_SUBST").len() > 0:
-                with_eprint(f"[vra] mono={self.pool_resolve(mono_sym)} sig={sig_idx} param={abi_pi} vra={cfc_vra} owner={method_owner_sym} self_ty={self_type_id}")
+                with_eprint(f"[vra] mono={self.pool_resolve(mono_sym)} sig={sig_idx} param={abi_pi} vra={cfc_vra} owner={method_owner_sym} self_ty={self_type_id} kind={self.get_type_kind(self.resolve_alias(self_type_id as TypeId))}")
             if cfc_vra != 0:
                 self.set_sig_param_value_ref_abi(sig_idx, abi_pi, 1)
 

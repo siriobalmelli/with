@@ -1084,6 +1084,12 @@ impl Sema:
         self.diags.emit(move diag)
 
     fn fn_param_uses_value_ref_abi(param_start: i32, param_idx: i32, method_owner_sym: i32, self_type_id: i32) -> i32:
+        // D12 receivers occupy parameter 0 only. Matching later params by
+        // owner type name made `other: i32` in `impl Eq for i32` share-place
+        // (#732) — and post-D5 there is no effects sweep to co-decide, so the
+        // positional rule is the whole rule.
+        if param_idx != 0:
+            return 0
         if method_owner_sym == 0 or self_type_id == 0:
             return 0
         if self.pool_resolve(method_owner_sym) == "str":
@@ -1114,13 +1120,25 @@ impl Sema:
         if p_kind == NodeKind.NK_TYPE_NAMED:
             p_sym = self.ast.get_data0(p_type_node)
         else if p_kind == NodeKind.NK_TYPE_GENERIC:
-            let p_base = self.ast.get_data0(p_type_node)
-            let p_base_kind = self.ast.kind(p_base)
-            if p_base_kind == NodeKind.NK_TYPE_NAMED or p_base_kind == NodeKind.NK_IDENT:
-                p_sym = self.ast.get_data0(p_base)
+            // NK_TYPE_GENERIC d0 IS the base symbol (Parser.add_node passes
+            // type_name directly), not a base type node. The old node-deref
+            // read garbage and never matched, so generic receivers
+            // (`mut self: Atomic[i64]`) only ever got share-place from the
+            // deleted D5 effects sweep — Atomic.add lost its in-place
+            // receiver when that sweep died.
+            p_sym = self.ast.get_data0(p_type_node)
         else:
             return 0
-        if p_sym == self.syms.self_type or p_sym == method_owner_sym:
+        // Per-module interning can give the declared receiver type and the
+        // mono-name-derived owner different symbol ids for the same text
+        // (Atomic.add's mut self lost share-place this way once the D5 sweep
+        // no longer re-covered it); compare canonically.
+        if with_getenv_str("WITH_DEBUG_SUBST").len() > 0:
+            with_eprint(f"[vra-decl] p_kind={p_kind} p_sym={p_sym} p_text={self.pool_resolve(p_sym)} owner={method_owner_sym} owner_text={self.pool_resolve(method_owner_sym)}")
+        var p_is_owner = p_sym == method_owner_sym
+        if not p_is_owner and p_sym != 0 and method_owner_sym != 0:
+            p_is_owner = self.pool_resolve(p_sym) == self.pool_resolve(method_owner_sym)
+        if p_sym == self.syms.self_type or p_is_owner:
             // §9.5/G2 (D6): a `move self` receiver is CONSUMED (owned) — it is dropped
             // by the callee, so it does NOT use the value-ref (IndirectPlace /
             // share-place) ABI. `mut self` / `&self` / plain `self` remain share-place
