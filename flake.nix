@@ -19,6 +19,21 @@
 
       flake.overlays.default = final: prev: {
         withlang-bin = prev.callPackage ./nix/withlang-bin { };
+        withlang-ninja = prev.callPackage ./nix/withlang-ninja.nix {
+          lld = prev.llvmPackages.lld;
+          stdenv = prev.llvmPackages.stdenv;
+        };
+        withlang-cmake = prev.callPackage ./nix/withlang-cmake.nix {
+          lld = prev.llvmPackages.lld;
+          ninja = final.withlang-ninja;
+          stdenv = prev.llvmPackages.stdenv;
+        };
+        withlang-llvm = prev.callPackage ./nix/withlang-llvm.nix {
+          cmake = final.withlang-cmake;
+          lld = prev.llvmPackages.lld;
+          ninja = final.withlang-ninja;
+          stdenv = prev.llvmPackages.stdenv;
+        };
       };
 
       perSystem =
@@ -34,7 +49,12 @@
 
           packages = {
             default = pkgs.withlang-bin;
-            inherit (pkgs) withlang-bin;
+            inherit (pkgs)
+              withlang-bin
+              withlang-cmake
+              withlang-llvm
+              withlang-ninja
+              ;
           };
 
           apps.default = {
