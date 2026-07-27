@@ -16587,10 +16587,28 @@ impl Codegen:
             let es = self.enum_by_llvm.get(ty)
             if es.is_some():
                 return self.intern.resolve(es.unwrap())
-            return "struct"
+            // An anonymous struct as bare "struct" made #731's mismatch
+            // unactionable; render one level of element structure.
+            var anon = "struct{"
+            let elem_n = wl_count_struct_elem_types(ty)
+            for ei in 0..elem_n:
+                if ei > 0:
+                    anon = anon ++ ","
+                let ety = wl_struct_get_type_at(ty, ei)
+                let ek = wl_get_type_kind(ety)
+                if ek == wl_struct_type_kind():
+                    let esym = self.find_struct_type_by_llvm(ety)
+                    anon = anon ++ (if esym != 0: self.intern.resolve(esym) else: f"struct#{wl_count_struct_elem_types(ety)}")
+                else if ek == wl_integer_type_kind():
+                    anon = anon ++ f"i{wl_get_int_type_width(ety)}"
+                else if ek == wl_pointer_type_kind():
+                    anon = anon ++ "ptr"
+                else:
+                    anon = anon ++ "?"
+            return anon ++ "}"
         if tk == wl_array_type_kind():
             return "array"
-        "unknown"
+        f"unknown#{tk}"
 
     mut fn monomorphize_generic_call_core(_fn_sym: i32, _fn_node: i32, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, arg_vals: &Vec[i64], _arg_tys: &Vec[i64], _arg_nodes: &Vec[i32], _arg_sema_tys: &Vec[i32]) -> i64:
         let concrete = self.ensure_concrete_mir_function(call_node, concrete_sig, concrete_sym, 0, "generic function call")

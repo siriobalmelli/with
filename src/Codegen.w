@@ -5335,14 +5335,24 @@ impl Codegen:
     fn collection_wrapper_name_2(prefix: str, t0: i64, t1: i64) -> str:
         prefix ++ "." ++ self.deterministic_type_tag(t0) ++ "." ++ self.deterministic_type_tag(t1)
 
+    // Dual-keyed collection type caches (#731): the sema tid preserves
+    // generic identity, but duplicate insts of the same instantiation
+    // (per-module tids, MIR-mapped tids) must share ONE named LLVM type —
+    // caller and callee otherwise lower the same tuple to identity-distinct
+    // structs and the call-site store rejects it. The structural key (the
+    // element llvm type handle, a pointer, so it cannot collide with small
+    // tid keys) unifies them; a tid hit stays the fast path.
     fn get_or_create_vec_type(sema_tid: i32, elem_ty: i64) -> i64:
-        // Use sema type ID as cache key when available (preserves generic identity).
-        // Fall back to LLVM element type pointer for MIR intrinsic contexts where
-        // sema type is not available (sema_tid == 0).
-        let cache_key = if sema_tid > 0: sema_tid as i64 else: elem_ty
-        let cached = self.vec_cache_map.get(cache_key)
-        if cached.is_some():
-            return cached.unwrap()
+        if sema_tid > 0:
+            let tid_hit = self.vec_cache_map.get(sema_tid as i64)
+            if tid_hit.is_some():
+                return tid_hit.unwrap()
+        let struct_hit = self.vec_cache_map.get(elem_ty)
+        if struct_hit.is_some():
+            let existing: i64 = struct_hit.unwrap()
+            if sema_tid > 0:
+                self.vec_cache_map.insert(sema_tid as i64, existing)
+            return existing
         // Vec[T] = { ptr, i64, i64 } — ptr, len, cap (elem_size at runtime)
         let body: Vec[i64] = Vec.new()
         body.push(wl_ptr_type(self.context))
@@ -5356,20 +5366,32 @@ impl Codegen:
         vec_ty
 
     fn cache_vec_type(sema_tid: i32, elem_ty: i64, vec_ty: i64) -> i64:
-        let cache_key = if sema_tid > 0: sema_tid as i64 else: elem_ty
-        let cached = self.vec_cache_map.get(cache_key)
-        if cached.is_some():
-            return cached.unwrap()
-        self.vec_cache_map.insert(cache_key, vec_ty)
+        let struct_hit = self.vec_cache_map.get(elem_ty)
+        if struct_hit.is_some():
+            let existing: i64 = struct_hit.unwrap()
+            if sema_tid > 0 and not self.vec_cache_map.get(sema_tid as i64).is_some():
+                self.vec_cache_map.insert(sema_tid as i64, existing)
+            return existing
+        self.vec_cache_map.insert(elem_ty, vec_ty)
+        if sema_tid > 0:
+            self.vec_cache_map.insert(sema_tid as i64, vec_ty)
         self.vec_is_vec.insert(vec_ty, 1)
         vec_ty
 
     fn get_or_create_hashmap_type(sema_tid: i32, key_ty: i64, val_ty: i64) -> i64:
-        let hash = if sema_tid > 0: sema_tid as i64 else: (key_ty *% 65537) +% val_ty
-        let cached = self.hm_cache_map.get(hash)
+        let struct_key = (key_ty *% 65537) +% val_ty
+        if sema_tid > 0:
+            let tid_hit = self.hm_cache_map.get(sema_tid as i64)
+            if tid_hit.is_some():
+                let tid_existing = tid_hit.unwrap() as i64
+                if self.hm_is_hm.contains(tid_existing):
+                    return tid_existing
+        let cached = self.hm_cache_map.get(struct_key)
         if cached.is_some():
-            let existing = cached.unwrap() as i64
+            let existing: i64 = (cached.unwrap()) as i64
             if self.hm_is_hm.contains(existing):
+                if sema_tid > 0:
+                    self.hm_cache_map.insert(sema_tid as i64, existing)
                 return existing
         // HashMap is opaque { ptr }
         let body: Vec[i64] = Vec.new()
@@ -5381,43 +5403,60 @@ impl Codegen:
         hm_ty
 
     fn cache_hashmap_type(sema_tid: i32, key_ty: i64, val_ty: i64, hm_ty: i64) -> i64:
-        let hash = if sema_tid > 0: sema_tid as i64 else: (key_ty *% 65537) +% val_ty
-        let cached = self.hm_cache_map.get(hash)
+        let struct_key = (key_ty *% 65537) +% val_ty
+        let cached = self.hm_cache_map.get(struct_key)
         if cached.is_some():
-            let existing = cached.unwrap()
+            let existing: i64 = cached.unwrap()
             if self.hm_is_hm.contains(existing):
+                if sema_tid > 0 and not self.hm_cache_map.get(sema_tid as i64).is_some():
+                    self.hm_cache_map.insert(sema_tid as i64, existing)
                 return existing
-        if self.hm_is_hm.contains(hm_ty):
-            self.hm_cache_map.insert(hash, hm_ty)
-            return hm_ty
         self.hm_is_hm.insert(hm_ty, 1)
-        self.hm_cache_map.insert(hash, hm_ty)
+        self.hm_cache_map.insert(struct_key, hm_ty)
+        if sema_tid > 0:
+            self.hm_cache_map.insert(sema_tid as i64, hm_ty)
         hm_ty
 
     fn get_or_create_hashset_type(sema_tid: i32, elem_ty: i64) -> i64:
-        let cache_key = if sema_tid > 0: sema_tid as i64 else: elem_ty
-        let cached = self.hs_cache_map.get(cache_key)
-        if cached.is_some():
-            return cached.unwrap()
+        if sema_tid > 0:
+            let tid_hit = self.hs_cache_map.get(sema_tid as i64)
+            if tid_hit.is_some():
+                return tid_hit.unwrap()
+        let struct_hit = self.hs_cache_map.get(elem_ty)
+        if struct_hit.is_some():
+            let existing: i64 = struct_hit.unwrap()
+            if sema_tid > 0:
+                self.hs_cache_map.insert(sema_tid as i64, existing)
+            return existing
         let body: Vec[i64] = Vec.new()
         body.push(wl_ptr_type(self.context))
         let name = self.collection_wrapper_name_1("__with.HashSet", elem_ty)
         let hs_ty = wl_struct_create_named(self.context, name)
         wl_struct_set_body(hs_ty, vec_data_i64(&body), 1, 0)
-        self.hs_cache_map.insert(cache_key, hs_ty)
+        self.hs_cache_map.insert(elem_ty, hs_ty)
+        if sema_tid > 0:
+            self.hs_cache_map.insert(sema_tid as i64, hs_ty)
         hs_ty
 
     fn get_or_create_slotmap_type(sema_tid: i32, elem_ty: i64) -> i64:
-        let cache_key = if sema_tid > 0: sema_tid as i64 else: elem_ty
-        let cached = self.slotmap_cache_map.get(cache_key)
-        if cached.is_some():
-            return cached.unwrap()
+        if sema_tid > 0:
+            let tid_hit = self.slotmap_cache_map.get(sema_tid as i64)
+            if tid_hit.is_some():
+                return tid_hit.unwrap()
+        let struct_hit = self.slotmap_cache_map.get(elem_ty)
+        if struct_hit.is_some():
+            let existing: i64 = struct_hit.unwrap()
+            if sema_tid > 0:
+                self.slotmap_cache_map.insert(sema_tid as i64, existing)
+            return existing
         let body: Vec[i64] = Vec.new()
         body.push(wl_ptr_type(self.context))
         let name = self.collection_wrapper_name_1("__with.SlotMap", elem_ty)
         let sm_ty = wl_struct_create_named(self.context, name)
         wl_struct_set_body(sm_ty, vec_data_i64(&body), 1, 0)
-        self.slotmap_cache_map.insert(cache_key, sm_ty)
+        self.slotmap_cache_map.insert(elem_ty, sm_ty)
+        if sema_tid > 0:
+            self.slotmap_cache_map.insert(sema_tid as i64, sm_ty)
         sm_ty
 
     // ── Monomorphize struct (stub) ────────────────────────────────────
