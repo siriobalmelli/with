@@ -1421,6 +1421,10 @@ enum MirDropState: i32:
     Init = 1
     Moved = 2
     Maybe = 3
+    // Some path reaching here never touched the place at all — not even the
+    // reset-on-move blank — so its memory is stack garbage there. A drop of
+    // a MaybeGarbage place is the #729 class (join-block temp drop).
+    MaybeGarbage = 4
 
 type MirDropStateMapState {
     keys: Vec[str],
@@ -1532,16 +1536,31 @@ fn mir_drop_state_map_clone(map: MirDropStateMap) -> MirDropStateMap:
 fn mir_drop_state_join(a: i32, b: i32) -> i32:
     if a == b:
         return a
+    if a == MirDropState.MaybeGarbage or b == MirDropState.MaybeGarbage:
+        return MirDropState.MaybeGarbage
     MirDropState.Maybe
 
 fn mir_drop_state_join_into(dst: MirDropStateMap, src: MirDropStateMap):
+    // A key absent from one predecessor means that path never touched the
+    // place — not even a blanking reset — so its memory is garbage there.
+    // Absence therefore joins as MaybeGarbage, never as keep-the-other-side
+    // (the old behavior, which is why --validate-all missed #729).
+    let dst_count = mir_drop_state_map_len(dst)
+    for di in 0..dst_count:
+        let dkey = mir_drop_state_map_key(dst, di)
+        if dkey.len() == 0:
+            continue
+        if mir_drop_state_map_find(src, dkey) < 0:
+            let dstate = mir_drop_state_map_state(dst, di)
+            if dstate != MirDropState.Uninit:
+                mir_drop_state_map_set(dst, dkey, MirDropState.MaybeGarbage)
     let count = mir_drop_state_map_len(src)
     for i in 0..count:
         let key = mir_drop_state_map_key(src, i)
         let state = mir_drop_state_map_state(src, i)
         let existing = mir_drop_state_map_find(dst, key)
         if existing < 0:
-            mir_drop_state_map_set(dst, key, state)
+            mir_drop_state_map_set(dst, key, if state == MirDropState.Uninit: MirDropState.Uninit else: MirDropState.MaybeGarbage)
         else:
             mir_drop_state_map_set(dst, key, mir_drop_state_join(mir_drop_state_map_state(dst, existing), state))
 
@@ -1552,6 +1571,8 @@ fn mir_drop_state_name(state: i32) -> str:
         return "Moved"
     if state == MirDropState.Maybe:
         return "Maybe"
+    if state == MirDropState.MaybeGarbage:
+        return "MaybeGarbage"
     "Uninit"
 
 // Memoized: "_{local_id}" is a pure function of local_id (body-independent), so
@@ -2267,6 +2288,17 @@ fn validate_ownership_body(mir_mod: &MirModule, body: &MirBody) -> str:
                     return f"fn sym{body.fn_sym} stmt{stmt_id} span={span}: ownership target place out of range"
                 if mir_validate_place_type(mir_mod, body, d0) == 0:
                     return f"fn sym{body.fn_sym} stmt{stmt_id} span={span}: ownership target has no concrete MIR type"
+            if kind == StmtKind.Drop and body.place_proj_counts.get(d0 as i64) == 0:
+                // #729 class: a drop must only reach places every path has at
+                // least blanked. MaybeGarbage means some predecessor never
+                // touched the place at all — the join-block temp drop that
+                // freed uninitialized stack passed this validator before the
+                // absence-aware join existed.
+                let drop_key = mir_place_text(body, d0)
+                let drop_idx = mir_drop_state_map_find(state, drop_key)
+                let drop_state = if drop_idx >= 0: mir_drop_state_map_state(state, drop_idx) else: MirDropState.Uninit
+                if drop_state == MirDropState.MaybeGarbage:
+                    return f"fn sym{body.fn_sym} stmt{stmt_id} span={span}: drop of {drop_key} reaches a path that never initialized it (MaybeGarbage)"
             mir_drop_state_transfer_stmt(state, body, stmt_id)
         if body.term_kind(bb) == TermKind.TK_CALL or body.term_kind(bb) == TermKind.TK_DROP_AND_GOTO:
             let place_id = if body.term_kind(bb) == TermKind.TK_CALL: body.term_data2(bb) else: body.term_data0(bb)
