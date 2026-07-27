@@ -2385,6 +2385,22 @@ pub fn with_vec_free_drop_origin(v: *mut u8, drop_origin: *const u8, drop_origin
     let cap = vec_get_cap(v)
     let es = vec_get_elem_size(v)
     if p as i64 != 0 and cap > 0 and es > 0:
+        // A header whose cap*elem_size overflows is not a Vec anymore: the
+        // memory was freed and reused under us (the lsp-use-std hunt read
+        // response-JSON bytes here and trapped on the bare multiply, which
+        // disguised heap corruption as arithmetic). Name the corruption.
+        if cap > 9223372036854775807 / es:
+            dbg_puts("corrupt vec header at free: addr=" as *const u8, 33)
+            dbg_put_i64(v as i64)
+            dbg_puts(" cap=" as *const u8, 5)
+            dbg_put_i64(cap)
+            dbg_puts(" elem_size=" as *const u8, 11)
+            dbg_put_i64(es)
+            if drop_origin as i64 != 0 and drop_origin_len > 0:
+                dbg_puts(" origin=" as *const u8, 8)
+                dbg_puts(drop_origin, drop_origin_len)
+            dbg_puts("\n" as *const u8, 1)
+            with_panic_core(make_str("corrupt vec header: freed memory reused or overwritten" as *const u8, 54), make_str("" as *const u8, 0), 0)
         rt_free_sized_with_drop_origin(p, cap * es, drop_origin, drop_origin_len)
     vec_set_ptr_field(v, 0 as *mut u8)
     vec_set_len(v, 0)
