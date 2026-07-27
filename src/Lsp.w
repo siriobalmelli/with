@@ -576,33 +576,45 @@ fn LspState.new() -> LspState:
 impl LspState:
     fn find_doc(uri: str) -> i32:
         for i in 0..self.documents.len() as i32:
-            if self.documents.get(i as i64).uri == uri:
+            if (&self.documents[i as i64]).uri == uri:
                 return i
         -1
 
     mut fn ensure_doc_parsed(idx: i32):
         if idx < 0:
             return
-        var doc = self.documents.get(idx as i64)
-        doc.ensure_parsed()
-        let slot_idx = idx as i64
-        with self.documents.slot(slot_idx) as mut slot:
-            slot.set(doc)
+        // Never get-mutate-set an owning element: the read is a bit-copy that
+        // shares the stored document's pools/maps, and slot.set drops the old
+        // element — freeing buffers the copy just stored (post-#691 this is a
+        // real double free; pre-flip it merely leaked). Decide from a VIEW,
+        // then replace the slot with an independently built document.
+        let parsed_view = &self.documents[idx as i64]
+        if parsed_view.fast_valid and parsed_view.fast_text_len == parsed_view.text.len() as i32:
+            return
+        var reparsed = LspDocument.new(parsed_view.uri, parsed_view.path, parsed_view.text, parsed_view.version)
+        reparsed.ensure_parsed()
+        let parsed_slot_idx = idx as i64
+        with self.documents.slot(parsed_slot_idx) as mut slot:
+            slot.set(move reparsed)
 
     mut fn ensure_doc_analyzed(idx: i32):
         if idx < 0:
             return
-        var doc = self.documents.get(idx as i64)
-        doc.ensure_analyzed()
-        let slot_idx = idx as i64
-        with self.documents.slot(slot_idx) as mut slot:
-            slot.set(doc)
+        let analyzed_view = &self.documents[idx as i64]
+        if analyzed_view.cache_valid and analyzed_view.cached_text_len == analyzed_view.text.len() as i32:
+            return
+        var reanalyzed = LspDocument.new(analyzed_view.uri, analyzed_view.path, analyzed_view.text, analyzed_view.version)
+        reanalyzed.ensure_parsed()
+        reanalyzed.ensure_analyzed()
+        let analyzed_slot_idx = idx as i64
+        with self.documents.slot(analyzed_slot_idx) as mut slot:
+            slot.set(move reanalyzed)
 
     mut fn get_parsed(uri: str, text: str) -> LspParseResult:
         let idx = self.find_doc(uri)
         if idx >= 0:
             self.ensure_doc_parsed(idx)
-            let doc = self.documents.get(idx as i64)
+            let doc = &self.documents[idx as i64]
             if doc.fast_valid:
                 return LspParseResult { pool: doc.fast_pool, intern: doc.fast_intern }
         lsp_parse_file(text)
@@ -667,8 +679,8 @@ fn LspState.publish_diagnostics(mut self: LspState, uri: str, text: str):
 
     // Use cached diagnostics if available
     var dl = DiagnosticList.init()
-    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
-        dl = self.documents.get(idx as i64).cached_diags
+    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
+        dl = (&self.documents[idx as i64]).cached_diags
     else:
         var comp = Compilation.init()
         comp.set_prelude_mode(2)
@@ -723,10 +735,10 @@ fn LspState.definition(mut self: LspState, id: i32, uri: str, text: str, line: i
     var slow_intern = InternPool.init()
     var slow_paths: Vec[str] = Vec.new()
     var slow_valid = false
-    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
-        slow_pool = self.documents.get(idx as i64).cached_pool
-        slow_intern = self.documents.get(idx as i64).cached_intern
-        slow_paths = self.documents.get(idx as i64).cached_decl_paths
+    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
+        slow_pool = (&self.documents[idx as i64]).cached_pool
+        slow_intern = (&self.documents[idx as i64]).cached_intern
+        slow_paths = (&self.documents[idx as i64]).cached_decl_paths
         slow_valid = true
     if slow_valid:
         for di in 0..slow_pool.decl_count():
@@ -827,9 +839,9 @@ fn LspState.hover(mut self: LspState, id: i32, uri: str, text: str, line: i32, c
         self.ensure_doc_analyzed(idx)
     var pool = AstPool.new()
     var intern = InternPool.init()
-    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
-        pool = self.documents.get(idx as i64).cached_pool
-        intern = self.documents.get(idx as i64).cached_intern
+    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
+        pool = (&self.documents[idx as i64]).cached_pool
+        intern = (&self.documents[idx as i64]).cached_intern
     else:
         var comp = Compilation.init()
         comp.set_prelude_mode(2)
@@ -896,8 +908,8 @@ fn LspState.dot_completion(mut self: LspState, id: i32, uri: str, text: str, off
     // Slow-tier fallback: use typed_expr_types for type inference
     if type_name.len() == 0:
         let cidx = self.find_doc(uri)
-        if cidx >= 0 and self.documents.get(cidx as i64).cache_valid:
-            type_name = self.documents.get(cidx as i64).type_at_offset(recv_start)
+        if cidx >= 0 and (&self.documents[cidx as i64]).cache_valid:
+            type_name = (&self.documents[cidx as i64]).type_at_offset(recv_start)
 
     // Build items JSON inline (Vec is pass-by-value, can't use helpers)
     var items = jarr_start()
@@ -1006,8 +1018,8 @@ fn LspState.dot_completion(mut self: LspState, id: i32, uri: str, text: str, off
                 break
         // Sema-based trait methods from slow tier (includes imported traits)
         let cidx = self.find_doc(uri)
-        if cidx >= 0 and self.documents.get(cidx as i64).cache_valid:
-            let trait_methods = self.documents.get(cidx as i64).trait_methods_for_type(type_name)
+        if cidx >= 0 and (&self.documents[cidx as i64]).cache_valid:
+            let trait_methods = (&self.documents[cidx as i64]).trait_methods_for_type(type_name)
             for tmi in 0..trait_methods.len() as i32:
                 let tmname = trait_methods.get(tmi as i64)
                 if not first: items = items ++ ","
@@ -1169,9 +1181,9 @@ fn LspState.completion(mut self: LspState, id: i32, uri: str, text: str, line: i
         self.ensure_doc_analyzed(cidx)
     var pool = AstPool.new()
     var intern = InternPool.init()
-    if cidx >= 0 and self.documents.get(cidx as i64).cache_valid:
-        pool = self.documents.get(cidx as i64).cached_pool
-        intern = self.documents.get(cidx as i64).cached_intern
+    if cidx >= 0 and (&self.documents[cidx as i64]).cache_valid:
+        pool = (&self.documents[cidx as i64]).cached_pool
+        intern = (&self.documents[cidx as i64]).cached_intern
     else:
         var comp = Compilation.init()
         comp.set_prelude_mode(2)
@@ -1661,8 +1673,8 @@ fn LspState.find_references(mut self: LspState, id: i32, uri: str, text: str, li
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
     var cached_paths: Vec[str] = Vec.new()
-    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
-        cached_paths = self.documents.get(idx as i64).cached_decl_paths
+    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
+        cached_paths = (&self.documents[idx as i64]).cached_decl_paths
     if cached_paths.len() > 0:
         var scanned_paths = uri_to_path(uri) ++ "\n"
         for di in 0..cached_paths.len() as i32:
@@ -1705,9 +1717,9 @@ fn LspState.document_symbols(mut self: LspState, id: i32, uri: str, text: str):
         self.ensure_doc_analyzed(idx)
     var pool = AstPool.new()
     var intern = InternPool.init()
-    if idx >= 0 and self.documents.get(idx as i64).cache_valid:
-        pool = self.documents.get(idx as i64).cached_pool
-        intern = self.documents.get(idx as i64).cached_intern
+    if idx >= 0 and (&self.documents[idx as i64]).cache_valid:
+        pool = (&self.documents[idx as i64]).cached_pool
+        intern = (&self.documents[idx as i64]).cached_intern
     else:
         var comp = Compilation.init()
         comp.set_prelude_mode(2)
@@ -1818,8 +1830,8 @@ fn LspState.rename(mut self: LspState, id: i32, uri: str, text: str, line: i32, 
     if cidx >= 0:
         self.ensure_doc_analyzed(cidx)
     var cached_paths: Vec[str] = Vec.new()
-    if cidx >= 0 and self.documents.get(cidx as i64).cache_valid:
-        cached_paths = self.documents.get(cidx as i64).cached_decl_paths
+    if cidx >= 0 and (&self.documents[cidx as i64]).cache_valid:
+        cached_paths = (&self.documents[cidx as i64]).cached_decl_paths
     if cached_paths.len() > 0:
         var scanned_paths = uri_to_path(uri) ++ "\n"
         for di in 0..cached_paths.len() as i32:
@@ -1945,8 +1957,8 @@ fn run_lsp() -> i32:
             if idx >= 0:
                 // Re-analyze on save (slow tier refreshes cross-file data)
                 state.ensure_doc_analyzed(idx)
-                let doc = state.documents.get(idx as i64)
-                state.publish_diagnostics(uri, doc.text)
+                let doc_text = (&state.documents[idx as i64]).text
+                state.publish_diagnostics(uri, doc_text)
 
         else if method == "textDocument/hover":
             let uri = lsp_extract_uri(msg, tokens, params_idx)
@@ -1955,8 +1967,8 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc = state.documents.get(idx as i64)
-                state.hover(id, uri, doc.text, line, character)
+                let doc_text = (&state.documents[idx as i64]).text
+                state.hover(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
 
@@ -1967,8 +1979,8 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc = state.documents.get(idx as i64)
-                state.definition(id, uri, doc.text, line, character)
+                let doc_text = (&state.documents[idx as i64]).text
+                state.definition(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
 
@@ -1976,10 +1988,10 @@ fn run_lsp() -> i32:
             let uri = lsp_extract_uri(msg, tokens, params_idx)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc = state.documents.get(idx as i64)
-                let formatted = format_source(doc.text)
-                if formatted != doc.text:
-                    let el = lsp_offset_to_line(doc.text, doc.text.len() as i32)
+                let doc_text = (&state.documents[idx as i64]).text
+                let formatted = format_source(doc_text)
+                if formatted != doc_text:
+                    let el = lsp_offset_to_line(doc_text, doc_text.len() as i32)
                     let edit = jarr_start() ++ jobj_start() ++ jkv_raw("range", jrange(0, 0, el + 1, 0)) ++ "," ++ jkv_str("newText", formatted) ++ jobj_end() ++ jarr_end()
                     lsp_write_response(jrpc_result(id, edit))
                 else:
@@ -1994,8 +2006,8 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc = state.documents.get(idx as i64)
-                state.completion(id, uri, doc.text, line, character)
+                let doc_text = (&state.documents[idx as i64]).text
+                state.completion(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result(id, jobj_start() ++ jkv_raw("items", "[]") ++ jobj_end()))
 
@@ -2006,8 +2018,8 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc = state.documents.get(idx as i64)
-                state.signature_help(id, uri, doc.text, line, character)
+                let doc_text = (&state.documents[idx as i64]).text
+                state.signature_help(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
 
@@ -2018,8 +2030,8 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc = state.documents.get(idx as i64)
-                state.find_references(id, uri, doc.text, line, character)
+                let doc_text = (&state.documents[idx as i64]).text
+                state.find_references(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result(id, "[]"))
 
@@ -2027,8 +2039,8 @@ fn run_lsp() -> i32:
             let uri = lsp_extract_uri(msg, tokens, params_idx)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc = state.documents.get(idx as i64)
-                state.document_symbols(id, uri, doc.text)
+                let doc_text = (&state.documents[idx as i64]).text
+                state.document_symbols(id, uri, doc_text)
             else:
                 lsp_write_response(jrpc_result(id, "[]"))
 
@@ -2040,8 +2052,8 @@ fn run_lsp() -> i32:
             let new_name = json_tok_str(msg, tokens, json_find(msg, tokens, params_idx, "newName"))
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc = state.documents.get(idx as i64)
-                state.rename(id, uri, doc.text, line, character, new_name)
+                let doc_text = (&state.documents[idx as i64]).text
+                state.rename(id, uri, doc_text, line, character, new_name)
             else:
                 lsp_write_response(jrpc_result_null(id))
 
