@@ -5558,49 +5558,12 @@ impl Sema:
                 projection_only = projection_only + 1
         f"receiver-projection-audit: mismatches={mismatches} projection-only={projection_only} root-paths={root_paths}\n" ++ out
 
-    // #D5/D6 P1: with effects complete, classify every non-Copy by-value parameter
-    // whose effect excludes consume/escape_value as PassMode::IndirectPlace
-    // (share-place) by setting its value_ref_abi flag. `arg_pass_mode` /
-    // `declare_function` then pass it as a pointer to the caller's place, the
-    // cathedral marshals its address, and MIR skips the callee drop — so the callee
-    // mutates the caller's place and does not own it. Owned params (consume/
-    // escape_value) keep the by-value/Indirect ABI and are dropped by the callee.
-    // escape_view is share-place (satisfied by view-origin tracking), so it is NOT
-    // excluded here. An async function is the exception: its ordinary by-value
-    // parameters escape the call expression into the spawned fiber environment and
-    // therefore must be owned. Explicit references and read/mut method receivers
-    // remain borrows and make the returned Task ephemeral. Runs after
-    // fixpoint_effect_flow so the effect is final.
-    mut fn assign_share_place_abi_for_sig(si: i32):
-        let fn_sym = self.sig_names.get(si as i64)
-        let is_async = self.task_fns.contains(fn_sym)
-        let receiver_mode = self.sig_receiver_mode(si)
-        let pc = self.sig_get_param_count(si)
-        for pi in 0..pc:
-            let pty = self.sig_param_type(si, pi)
-            if pty <= 0:
-                continue
-            let is_receiver = pi == 0 and receiver_mode != ReceiverMode.None
-            if is_async and not is_receiver and self.param_type_is_by_value(pty) != 0:
-                self.set_sig_param_value_ref_abi(si, pi, 0)
-                continue
-            if self.sig_param_uses_value_ref_abi(si, pi) != 0:
-                continue
-            if self.param_type_is_by_value(pty) == 0:
-                continue
-            if self.is_copy(pty as TypeId) != 0:
-                continue
-            let eff = self.sig_param_effect(si, pi)
-            if (eff & (EFF_CONSUME | EFF_ESCAPE_VALUE)) != 0:
-                continue
-            self.set_sig_param_value_ref_abi(si, pi, 1)
-
-    mut fn assign_share_place_abi():
-        let n = self.sig_param_eff_starts.len() as i32
-        var si = 0
-        while si < n:
-            self.assign_share_place_abi_for_sig(si)
-            si = si + 1
+    // D5 (superseded — docs/decisions.md): the effects-based share-place
+    // classifier for FREE parameters is deleted. The signature states the
+    // ownership mode: `&T` borrows, plain `T` consumes — a body edit can
+    // never silently change a public calling convention again. Receiver
+    // share-place (D12) is unaffected; it is declared, not inferred, and is
+    // set from fn_param_uses_value_ref_abi at declaration finalize.
 
     // #D5/D6: dump the per-parameter ownership/ABI classification for every function
     // signature — the ground truth for share-place vs owned, without inferring it
@@ -5687,8 +5650,8 @@ impl Sema:
     // to an OWNED parameter (consume/escape_value → not share-place) must be given up
     // explicitly. Emit the "requires move/copy" error for each such NAMED binding
     // (an rvalue is consumed directly and needs nothing). Runs after
-    // assign_share_place_abi so the share-place verdict is complete — never
-    // mis-classifying a forward-reference owned param as share-place.
+    // declared parameter modes (D5 superseded) — never mis-classifying a
+    // forward-reference owned param as a borrow.
     mut fn finalize_call_site_ownership():
         let n = self.consume_call_sites.len() as i32
         var i = 0
@@ -5979,9 +5942,8 @@ impl Sema:
         self.fixpoint_effect_flow()
         self.finalize_receiver_requirements()
         self.enforce_receiver_modes()
-        // #D5/P1: classify share-place params (IndirectPlace) from the final effect,
-        // then require explicit move/copy for plain args to owned params.
-        self.assign_share_place_abi()
+        // D5 superseded: free-parameter share-place is no longer inferred from
+        // effects — the declared signature is authoritative (&T borrows, T owns).
         self.finalize_call_site_ownership()
         self.check_reachable_comptime_errors()
 

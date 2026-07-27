@@ -2056,7 +2056,7 @@ impl Sema:
             for pi in 0..eff_pc:
                 self.current_fn_param_syms.push(self.ast.fn_param_name(eff_ps, pi))
                 // §9.5/G2 (D6): a `move self` receiver is CONSUMED by the callee, so
-                // seed its effect with CONSUME. assign_share_place_abi then classifies
+                // seed its effect with CONSUME. The declared mode (D5 superseded) decides
                 // it OWNED (not share-place), matching how the MIR already treats it —
                 // so the FnAbi descriptor / --dump-abi agree with the drop discipline.
                 self.current_fn_param_effs.push(0)
@@ -3511,7 +3511,7 @@ impl Sema:
             sig_idx = self.get_sig(mono_sym)
         else:
             // A RE-check must not lose the effects-based share-place
-            // classification (assign_share_place_abi ran at end-of-check):
+            // classification (receiver vra assigned at declaration finalize):
             // the fresh zero rows below wiped value_ref_abi for every
             // specialization re-checked during MIR lowering, so MirLower
             // passed share-place args as owned moves and codegen marshaled
@@ -7201,6 +7201,13 @@ type SemaTryInfo {
 fn sema_try_info_none -> SemaTryInfo:
     SemaTryInfo { ok: 0, carrier_ty: 0, continue_ty: 0, break_ty: 0, branch_result_ty: 0, branch_fn: 0, from_break_fn: 0 }
 
+type AutoderefStep {
+    next: i32,
+    has_step: i32,
+    step_fn: i32,
+    step_ty: i32,
+}
+
 type SemaDerefInfo {
     ok: i32,
     target_ty: i32,
@@ -10444,23 +10451,21 @@ impl Sema:
             return self.pipeline_generic_builtin_method_exists(owner, method)
         0
 
-    mut fn autoderef_next_type(current: TypeId, node: i32, expr: i32, step_fns: Vec[i32], step_tys: Vec[i32]) -> TypeId:
+    // One deref-walk step. At most one (fn, ty) step is produced per call;
+    // returning it beats the old share-place vec out-params (D5 superseded).
+    mut fn autoderef_next_type(current: TypeId, node: i32, expr: i32) -> AutoderefStep:
         let tk = self.get_type_kind(current)
         if tk == TypeKind.TY_PTR or tk == TypeKind.TY_REF:
             let inner = self.get_type_d0(current)
             if inner == 0:
-                return current
+                return AutoderefStep { next: current as i32, has_step: 0, step_fn: 0, step_ty: 0 }
             let resolved_inner = self.resolve_alias(inner as TypeId)
-            step_fns.push(0)
-            step_tys.push(resolved_inner as i32)
-            return resolved_inner
+            return AutoderefStep { next: resolved_inner as i32, has_step: 1, step_fn: 0, step_ty: resolved_inner as i32 }
         let deref_info = self.resolve_user_deref_info(current as i32, node)
         if deref_info.ok == 0:
-            return current
+            return AutoderefStep { next: current as i32, has_step: 0, step_fn: 0, step_ty: 0 }
         self.ensure_user_deref_specialization(deref_info.deref_fn, current as i32, expr)
-        step_fns.push(deref_info.deref_fn)
-        step_tys.push(deref_info.result_ref_ty)
-        self.resolve_alias(deref_info.result_ref_ty as TypeId)
+        AutoderefStep { next: self.resolve_alias(deref_info.result_ref_ty as TypeId) as i32, has_step: 1, step_fn: deref_info.deref_fn, step_ty: deref_info.result_ref_ty }
 
     mut fn auto_deref_field_type(tid: TypeId, field: i32, node: i32, expr: i32) -> TypeId:
         var current = self.resolve_alias(tid)
@@ -10478,7 +10483,11 @@ impl Sema:
                 self.emit_error("auto-deref cycle through Deref implementation", node)
                 return current
             seen.push(current as i32)
-            let next = self.autoderef_next_type(current, node, expr, step_fns, step_tys)
+            let step = self.autoderef_next_type(current, node, expr)
+            if step.has_step != 0:
+                step_fns.push(step.step_fn)
+                step_tys.push(step.step_ty)
+            let next = step.next as TypeId
             if next == current:
                 return current
             current = next
@@ -10500,7 +10509,11 @@ impl Sema:
                 self.emit_error("auto-deref cycle through Deref implementation", node)
                 return current
             seen.push(current as i32)
-            let next = self.autoderef_next_type(current, node, expr, step_fns, step_tys)
+            let step = self.autoderef_next_type(current, node, expr)
+            if step.has_step != 0:
+                step_fns.push(step.step_fn)
+                step_tys.push(step.step_ty)
+            let next = step.next as TypeId
             if next == current:
                 return current
             current = next

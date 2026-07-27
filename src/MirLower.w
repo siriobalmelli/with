@@ -13926,10 +13926,6 @@ fn mir_vec_contains_i32(v: &Vec[i32], value: i32) -> bool:
             return true
     false
 
-fn mir_push_unique_i32(v: Vec[i32], value: i32) -> Unit:
-    if not mir_vec_contains_i32(&v, value):
-        v.push(value)
-
 fn mir_body_has_call_to(body: &MirBody, target_sym: i32) -> bool:
     for bb in 0..body.block_count():
         if body.term_kind(bb) != TermKind.TK_CALL:

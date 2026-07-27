@@ -2154,6 +2154,7 @@ impl Zcu:
 
 type DepOrderAccumState {
     order: Vec[str],
+    seen: HashMap[str, i32],
 }
 
 type DepOrderAccum {
@@ -2162,9 +2163,9 @@ type DepOrderAccum {
 impl Copy for DepOrderAccum
 
 fn DepOrderAccum.new() -> DepOrderAccum:
-    let ptr = with_alloc(32) as *mut DepOrderAccumState
+    let ptr = with_alloc(64) as *mut DepOrderAccumState
     unsafe:
-        *ptr = DepOrderAccumState { order: Vec.new() }
+        *ptr = DepOrderAccumState { order: Vec.new(), seen: HashMap.new() }
     DepOrderAccum { state: ptr }
 
 type ReorderedTier {
@@ -2175,12 +2176,12 @@ type ReorderedTier {
 }
 
 impl Zcu:
-    fn collect_module_dependency_order_frontend(path: str, wanted_paths: &HashMap[str, i32], seen_paths: HashMap[str, i32], accum: DepOrderAccum) -> Unit:
+    fn collect_module_dependency_order_frontend(path: str, wanted_paths: &HashMap[str, i32], accum: DepOrderAccum) -> Unit:
         if path.len() == 0:
             return
-        if seen_paths.contains(path):
+        if accum.state.seen.contains(path):
             return
-        seen_paths.insert(frontend_owned_text(path), 1)
+        accum.state.seen.insert(frontend_owned_text(path), 1)
         let module_id = self.find_module_id_by_path_frontend(path)
         if module_id >= 0:
             let mod = self.last_resolved.modules.get(module_id as i64)
@@ -2190,7 +2191,7 @@ impl Zcu:
                     continue
                 let dep = self.last_resolved.modules.get(imp.target_module as i64)
                 if wanted_paths.contains(dep.path):
-                    self.collect_module_dependency_order_frontend(dep.path, wanted_paths, seen_paths, accum)
+                    self.collect_module_dependency_order_frontend(dep.path, wanted_paths, accum)
         accum.state.order.push(frontend_owned_text(path))
 
     fn reorder_import_tier_frontend(decls: &Vec[i32], paths: &Vec[str], file_ids: &Vec[i32], ci_flags: &Vec[i32]) -> ReorderedTier:
@@ -2206,9 +2207,8 @@ impl Zcu:
             first_seen_paths.push(frontend_owned_text(path))
 
         let accum = DepOrderAccum.new()
-        let seen_paths: HashMap[str, i32] = HashMap.new()
         for i in 0..first_seen_paths.len() as i32:
-            self.collect_module_dependency_order_frontend(first_seen_paths.get(i as i64), wanted_paths, seen_paths, accum)
+            self.collect_module_dependency_order_frontend(first_seen_paths.get(i as i64), wanted_paths, accum)
 
         let module_order = accum.state.order
         let out_decls: Vec[i32] = Vec.new()
