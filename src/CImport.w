@@ -13446,7 +13446,7 @@ impl CiGotoCfgContext:
         self.state.cfg.graph.set_cond_br(self.state.current, cond as i32, true_block, ci_stackify_no_args(), false_block, ci_stackify_no_args())
         self.state.current = -1
 
-    mut fn return_current(values: Vec[i32]):
+    mut fn return_current(values: &Vec[i32]):
         if not self.state.ok or self.state.current < 0:
             return
         self.state.cfg.graph.set_return(self.state.current, values)
