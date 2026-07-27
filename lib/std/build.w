@@ -659,7 +659,7 @@ pub fn Diagnostics.error(self: &Self, message: str) -> Unit:
 fn tool_path_is_project_relative(path: str) -> bool:
     if path.len() == 0:
         return false
-    if path.byte_at(0) == 47:
+    if tool_path_is_absolute(path):
         return false
     if path.contains(".."):
         return false
@@ -668,6 +668,17 @@ fn tool_path_is_project_relative(path: str) -> bool:
         if ch == 0 or ch == 9 or ch == 10 or ch == 13:
             return false
     true
+
+fn tool_path_is_absolute(path: str) -> bool:
+    if path.len() == 0:
+        return false
+    let first = path.byte_at(0)
+    if first == 47 or first == 92:
+        return true
+    if path.len() < 3 or path.byte_at(1) != 58:
+        return false
+    let is_letter = (first >= 65 and first <= 90) or (first >= 97 and first <= 122)
+    is_letter and (path.byte_at(2) == 47 or path.byte_at(2) == 92)
 
 fn tool_path_require_project_relative(path: str):
     if not tool_path_is_project_relative(path):
@@ -886,11 +897,20 @@ pub fn ToolFs.exists(self: &Self, path: str) -> bool:
 
 pub fn ToolFs.host_exists(self: &Self, path: str) -> bool:
     tool_capability_require(self.token, "ToolFs")
-    with_fs_file_exists(path) != 0
+    with_fs_file_exists(self.host_path(path)) != 0
+
+fn ToolFs.host_path(self: &Self, path: str) -> str:
+    if tool_path_is_absolute(path):
+        return path
+    self.resolve_path(path)
+
+pub fn ToolFs.host_is_dir(self: &Self, path: str) -> bool:
+    tool_capability_require(self.token, "ToolFs")
+    with_fs_is_dir(self.host_path(path)) != 0
 
 pub fn ToolFs.host_read_text(self: &Self, path: str) -> str:
     tool_capability_require(self.token, "ToolFs")
-    with_fs_read_file(path)
+    with_fs_read_file(self.host_path(path))
 
 fn tool_sha256_text(data: str) -> str:
     var digest: [32]u8 = [0 as u8; 32]
@@ -904,7 +924,7 @@ pub fn ToolFs.sha256_file(self: &Self, path: str) -> str:
 
 pub fn ToolFs.host_list_files(self: &Self, path: str) -> Vec[str]:
     tool_capability_require(self.token, "ToolFs")
-    tool_split_nonempty_lines(with_fs_list_files(path))
+    tool_split_nonempty_lines(with_fs_list_files(self.host_path(path)))
 
 pub fn ToolFs.is_dir(self: &Self, path: str) -> bool:
     with_fs_is_dir(self.resolve_path(path)) != 0
@@ -1473,6 +1493,14 @@ pub fn ToolFs.copy_tree(self: &Self, src: str, dst: str) -> i32:
     tool_path_require_project_relative(src)
     self.require_write_file_allowed(dst)
     with_fs_copy_tree(self.resolve_path(src), self.resolve_path(dst))
+
+pub fn ToolFs.copy_host_tree(self: &Self, src: str, dst: str) -> i32:
+    tool_capability_require(self.token, "ToolFs")
+    let resolved_src = self.host_path(src)
+    if with_fs_file_exists(resolved_src) == 0 or with_fs_is_dir(resolved_src) == 0:
+        return -1
+    self.require_write_file_allowed(dst)
+    with_fs_copy_tree(resolved_src, self.resolve_path(dst))
 
 pub fn ToolFs.symlink(self: &Self, target: str, link_path: str) -> i32:
     tool_path_require_project_relative(target)

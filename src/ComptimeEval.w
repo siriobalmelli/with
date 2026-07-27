@@ -428,7 +428,7 @@ fn comptime_decode_string_escapes(text: str) -> str:
 fn comptime_tool_path_is_project_relative(path: str) -> bool:
     if path.len() == 0:
         return false
-    if path.byte_at(0) == 47:
+    if comptime_tool_path_is_absolute(path):
         return false
     if path.contains(".."):
         return false
@@ -437,6 +437,17 @@ fn comptime_tool_path_is_project_relative(path: str) -> bool:
         if ch == 0 or ch == 9 or ch == 10 or ch == 13:
             return false
     true
+
+fn comptime_tool_path_is_absolute(path: str) -> bool:
+    if path.len() == 0:
+        return false
+    let first = path.byte_at(0)
+    if first == 47 or first == 92:
+        return true
+    if path.len() < 3 or path.byte_at(1) != 58:
+        return false
+    let is_letter = (first >= 65 and first <= 90) or (first >= 97 and first <= 122)
+    is_letter and (path.byte_at(2) == 47 or path.byte_at(2) == 92)
 
 fn comptime_tool_path_dirname(path: str) -> str:
     var last_slash = -1
@@ -4977,7 +4988,7 @@ impl ComptimeEvaluator:
 // (exists, read_text, list_files, join, normalize, ...) are not listed and run
 // normally so the reconstructed graph still observes the parent's outputs.
 fn comptime_toolfs_method_is_mutating(method: str) -> bool:
-    method == "write_text" or method == "write_binary" or method == "copy_file" or method == "chmod" or method == "rename" or method == "copy_tree" or method == "symlink" or method == "write_tar" or method == "write_tar_gz" or method == "extract_tar" or method == "mkdir_all" or method == "remove_file" or method == "remove_tree"
+    method == "write_text" or method == "write_binary" or method == "copy_file" or method == "chmod" or method == "rename" or method == "copy_tree" or method == "copy_host_tree" or method == "symlink" or method == "write_tar" or method == "write_tar_gz" or method == "extract_tar" or method == "mkdir_all" or method == "remove_file" or method == "remove_tree"
 
 impl ComptimeEvaluator:
     mut fn eval_toolfs_capability_method(recv_value: ComptimeValue, method: str, extra_start: i32, arg_count: i32, node: i32) -> ComptimeControl:
@@ -5119,7 +5130,7 @@ impl ComptimeEvaluator:
                 if not self.capability_require_write_file_allowed(record, path, method, node):
                     return comptime_control_error()
                 return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i32 as i32), with_fs_remove_tree(resolved) as i64))
-        if method == "host_exists" or method == "host_read_text":
+        if method == "host_exists" or method == "host_read_text" or method == "host_is_dir":
             if not self.capability_expect_arg_count(arg_count, 1, method, node):
                 return comptime_control_error()
             let args_signal = self.capability_args(extra_start, arg_count)
@@ -5128,9 +5139,14 @@ impl ComptimeEvaluator:
             let path = self.capability_arg_str(args_signal.value, 0, method, node)
             if self.had_error != 0:
                 return comptime_control_error()
+            let resolved = if comptime_tool_path_is_absolute(path): path else: self.capability_resolve_project_path(record, path, method, node)
+            if self.had_error != 0:
+                return comptime_control_error()
             if method == "host_read_text":
-                return comptime_control_value(comptime_value_str(with_fs_read_file(path)))
-            return comptime_control_value(comptime_value_bool(if with_fs_file_exists(path) != 0: 1 else: 0))
+                return comptime_control_value(comptime_value_str(with_fs_read_file(resolved)))
+            if method == "host_is_dir":
+                return comptime_control_value(comptime_value_bool(if with_fs_is_dir(resolved) != 0: 1 else: 0))
+            return comptime_control_value(comptime_value_bool(if with_fs_file_exists(resolved) != 0: 1 else: 0))
         if method == "host_list_files":
             if not self.capability_expect_arg_count(arg_count, 1, method, node):
                 return comptime_control_error()
@@ -5140,7 +5156,10 @@ impl ComptimeEvaluator:
             let path = self.capability_arg_str(args_signal.value, 0, method, node)
             if self.had_error != 0:
                 return comptime_control_error()
-            let raw_files = comptime_tool_split_nonempty_lines(with_fs_list_files(path))
+            let resolved = if comptime_tool_path_is_absolute(path): path else: self.capability_resolve_project_path(record, path, method, node)
+            if self.had_error != 0:
+                return comptime_control_error()
+            let raw_files = comptime_tool_split_nonempty_lines(with_fs_list_files(resolved))
             let vec_type = self.node_type_or(node, 0)
             if vec_type == 0:
                 return self.fail(node, "ToolFs.host_list_files result type is unknown")
@@ -5148,7 +5167,7 @@ impl ComptimeEvaluator:
             for i in 0..raw_files.len() as i32:
                 self.extra_values.push(comptime_value_str(raw_files.get(i as i64)))
             return comptime_control_value(comptime_value_vec(vec_type, start, raw_files.len() as i32))
-        if method == "write_text" or method == "copy_file" or method == "chmod" or method == "rename" or method == "copy_tree" or method == "symlink":
+        if method == "write_text" or method == "copy_file" or method == "chmod" or method == "rename" or method == "copy_tree" or method == "copy_host_tree" or method == "symlink":
             let expected =
                 if method == "chmod":
                     2
@@ -5218,6 +5237,22 @@ impl ComptimeEvaluator:
                 if self.had_error != 0:
                     return comptime_control_error()
                 let resolved_src = self.capability_resolve_project_path(record, src, method, node)
+                if not self.capability_require_write_file_allowed(record, dst, method, node):
+                    return comptime_control_error()
+                let resolved_dst = self.capability_resolve_project_path(record, dst, method, node)
+                if self.had_error != 0:
+                    return comptime_control_error()
+                return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i32 as i32), with_fs_copy_tree(resolved_src, resolved_dst) as i64))
+            if method == "copy_host_tree":
+                let src = self.capability_arg_str(args_signal.value, 0, method, node)
+                let dst = self.capability_arg_str(args_signal.value, 1, method, node)
+                if self.had_error != 0:
+                    return comptime_control_error()
+                let resolved_src = if comptime_tool_path_is_absolute(src): src else: self.capability_resolve_project_path(record, src, method, node)
+                if self.had_error != 0:
+                    return comptime_control_error()
+                if with_fs_file_exists(resolved_src) == 0 or with_fs_is_dir(resolved_src) == 0:
+                    return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i32 as i32), -1))
                 if not self.capability_require_write_file_allowed(record, dst, method, node):
                     return comptime_control_error()
                 let resolved_dst = self.capability_resolve_project_path(record, dst, method, node)

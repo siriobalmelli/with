@@ -4920,6 +4920,7 @@ fn bs_check_build_w_workspace_api(ctx: &ActionCtx, compiler_path: str, base_dir:
     let bad_linker_dir = bs_join(base_dir, "workspace_bad_linker")
     rc = bs_write_project_manifest(ctx, bad_linker_dir, "workspacebadlinker")
     if rc != 0: return rc
+    let false_tool = bs_with_string_literal(bs_build_w_tool_from_env("WITH_FALSE", "/bin/false"))
     let bad_linker_build =
         "use std.build\n\n" ++
         "comptime with BuildCtx as ctx:\n" ++
@@ -4935,7 +4936,7 @@ fn bs_check_build_w_workspace_api(ctx: &ActionCtx, compiler_path: str, base_dir:
         "        match envelope.message:\n" ++
         "            CompilerMessage.PreLink(command) =>\n" ++
         "                var replacement = command\n" ++
-        "                replacement.linker = \"/bin/false\"\n" ++
+        "                replacement.linker = " ++ false_tool ++ "\n" ++
         "                ws.set_link_command(replacement)\n" ++
         "            CompilerMessage.Complete(_) => ctx.diagnostics().error(\"bad linker prelink missing\")\n" ++
         "            _ => false\n" ++
@@ -5605,6 +5606,40 @@ fn bs_check_build_w_generated_source(ctx: &ActionCtx, compiler_path: str, base_d
         ctx.diagnostics().error("error: build_w_toolfs_ok missing sandboxed ToolFs output")
         return 1
 
+    let toolfs_host_tree_dir = bs_join(base_dir, "toolfs_host_tree")
+    rc = bs_write_project_manifest(ctx, toolfs_host_tree_dir, "buildwtoolfshosttree")
+    if rc != 0: return rc
+    rc = bs_build_w_write_fixture(ctx, bs_join(toolfs_host_tree_dir, "src/main.w"), "fn main:\n    print(\"toolfs host tree\")\n", ctx.target_name(), "toolfs host tree source")
+    if rc != 0: return rc
+    rc = bs_build_w_write_fixture(ctx, bs_join(toolfs_host_tree_dir, "fixtures/tree/nested/value.txt"), "host tree", ctx.target_name(), "toolfs host tree fixture")
+    if rc != 0: return rc
+    rc = bs_build_w_write_fixture(ctx, bs_join(toolfs_host_tree_dir, "build.w"), "use std.build\n\ncomptime with BuildCtx as ctx:\npub fn build -> Build:\n    let fs = ctx.fs()\n    if fs.mkdir_all(\"out\") != 0:\n        return ctx.new_build()\n    if fs.copy_host_tree(\"fixtures/tree\", \"out/relative\") != 0:\n        return ctx.new_build()\n    let absolute = ctx.project_info().project_root() ++ \"/fixtures/tree\"\n    if fs.copy_host_tree(absolute, \"out/absolute\") != 0:\n        return ctx.new_build()\n    if fs.read_text(\"out/relative/nested/value.txt\") != \"host tree\":\n        return ctx.new_build()\n    if fs.read_text(\"out/absolute/nested/value.txt\") != \"host tree\":\n        return ctx.new_build()\n    if fs.copy_host_tree(\"fixtures/missing\", \"out/missing\") == 0:\n        return ctx.new_build()\n    if fs.write_text(\"out/verified.txt\", \"ok\") != 0:\n        return ctx.new_build()\n    ctx.new_build().executable(\"toolfs-host-tree\", \"src/main.w\")\n", ctx.target_name(), "toolfs host tree build.w")
+    if rc != 0: return rc
+    let toolfs_host_tree = bs_build_w_expect_success(ctx, compiler_path, toolfs_host_tree_dir, "build-w-toolfs-host-tree", bs_blob_to_args(bs_argv_append("", "build")))
+    if toolfs_host_tree.rc != 0: return toolfs_host_tree.rc
+    rc = bs_expect_file_contains(ctx, bs_join(toolfs_host_tree_dir, "out/relative/nested/value.txt"), "host tree", "build_w_toolfs_host_tree_relative")
+    if rc != 0: return rc
+    rc = bs_expect_file_contains(ctx, bs_join(toolfs_host_tree_dir, "out/absolute/nested/value.txt"), "host tree", "build_w_toolfs_host_tree_absolute")
+    if rc != 0: return rc
+    rc = bs_expect_file_contains(ctx, bs_join(toolfs_host_tree_dir, "out/verified.txt"), "ok", "build_w_toolfs_host_tree_verified")
+    if rc != 0: return rc
+
+    let toolfs_host_tree_escape_dir = bs_join(base_dir, "toolfs_host_tree_escape")
+    rc = bs_write_project_manifest(ctx, toolfs_host_tree_escape_dir, "buildwtoolfshosttreeescape")
+    if rc != 0: return rc
+    rc = bs_build_w_write_fixture(ctx, bs_join(toolfs_host_tree_escape_dir, "src/main.w"), "fn main:\n    print(\"should not build\")\n", ctx.target_name(), "toolfs host tree escape source")
+    if rc != 0: return rc
+    rc = bs_build_w_write_fixture(ctx, bs_join(toolfs_host_tree_escape_dir, "fixtures/tree/value.txt"), "tree", ctx.target_name(), "toolfs host tree escape fixture")
+    if rc != 0: return rc
+    rc = bs_build_w_write_fixture(ctx, bs_join(toolfs_host_tree_escape_dir, "build.w"), "use std.build\n\ncomptime with BuildCtx as ctx:\npub fn build -> Build:\n    let _ = ctx.fs().copy_host_tree(\"fixtures/tree\", \"../outside\")\n    ctx.new_build().executable(\"toolfs-host-tree-escape\", \"src/main.w\")\n", ctx.target_name(), "toolfs host tree escape build.w")
+    if rc != 0: return rc
+    let toolfs_host_tree_escape = bs_run_cli_capture_cwd(ctx, compiler_path, "build-w-toolfs-host-tree-escape", bs_blob_to_args(bs_argv_append("", "build")), 120000, toolfs_host_tree_escape_dir)
+    if toolfs_host_tree_escape.rc == 0:
+        ctx.diagnostics().error("error: build_w_toolfs_host_tree_escape unexpectedly succeeded")
+        return 1
+    rc = bs_assert_contains(ctx, toolfs_host_tree_escape.stderr, "ToolFs path escapes project root", "build_w_toolfs_host_tree_escape")
+    if rc != 0: return rc
+
     let toolfs_archive_dir = bs_join(base_dir, "toolfs_archive")
     rc = bs_write_project_manifest(ctx, toolfs_archive_dir, "buildwtoolfsarchive")
     if rc != 0: return rc
@@ -5914,6 +5949,10 @@ fn bs_check_removed_build_kind_diagnostic(ctx: &ActionCtx, compiler_path: str, c
     bs_assert_contains(ctx, result.stderr, "regenerate your build graph", "build_w_removed_kind")
 
 fn bs_check_build_w_action_target(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
+    let cat_tool = bs_with_string_literal(bs_build_w_tool_from_env("WITH_CAT", "/bin/cat"))
+    let env_tool = bs_with_string_literal(bs_build_w_tool_from_env("WITH_ENV", "/usr/bin/env"))
+    let echo_tool = bs_with_string_literal(bs_build_w_tool_from_env("WITH_ECHO", "/bin/echo"))
+    let sleep_tool = bs_with_string_literal(bs_build_w_tool_from_env("WITH_SLEEP", "/bin/sleep"))
     var rc = bs_write_project_manifest(ctx, case_dir, "buildwaction")
     if rc != 0: return rc
     rc = bs_build_w_write_fixture(ctx, bs_join(case_dir, "src/main.w"), "fn main:\n    print(\"unused\")\n", ctx.target_name(), "action source")
@@ -5945,7 +5984,7 @@ fn bs_check_build_w_action_target(ctx: &ActionCtx, compiler_path: str, case_dir:
         "    assert(ctx.fs().write_text(ctx.output(), \"action:\" ++ ctx.args().get(0)) == 0)\n" ++
         "    assert(ctx.fs().write_text(ctx.outputs().get(1), \"extra:\" ++ ctx.args().get(0)) == 0)\n" ++
         "    var env_args: Vec[str] = Vec.new()\n" ++
-        "    env_args |> push(\"/usr/bin/env\")\n" ++
+        "    env_args |> push(" ++ env_tool ++ ")\n" ++
         "    var child_env = process_env()\n" ++
         "    child_env = child_env.set(\"WITH_ACTION_TEST_ENV\", \"present\")\n" ++
         "    let env_result = ctx.process_runner().run_capture_with_env(env_args, \"out/action/env.txt\", \"out/action/env.err\", 120000, child_env)\n" ++
@@ -5957,20 +5996,20 @@ fn bs_check_build_w_action_target(ctx: &ActionCtx, compiler_path: str, case_dir:
         "    assert(inherited_env_result.rc == 0)\n" ++
         "    assert(not inherited_env_result.stdout.contains(\"WITH_TOOL_CAPABILITY_TOKEN=with-\"))\n" ++
         "    assert(not inherited_env_result.stdout.contains(\"WITH_BUILD_ACTION_NAME=generate\"))\n" ++
-        "    let spec = process_spec(\"/usr/bin/env\").env_var(\"WITH_RUN_SPEC_TEST\", \"present\").timeout(120000)\n" ++
+        "    let spec = process_spec(" ++ env_tool ++ ").env_var(\"WITH_RUN_SPEC_TEST\", \"present\").timeout(120000)\n" ++
         "    let spec_result = ctx.process_runner().run_spec(spec, \"out/action/spec-env.txt\", \"out/action/spec-env.err\")\n" ++
         "    assert(spec_result.rc == 0)\n" ++
         "    assert(spec_result.stdout.contains(\"WITH_RUN_SPEC_TEST=present\"))\n" ++
         "    assert(not spec_result.stdout.contains(\"WITH_TOOL_CAPABILITY_TOKEN=with-\"))\n" ++
-        "    let cwd_spec = process_spec(\"/bin/cat\").arg(\"cwd.txt\").working_dir(ctx.project_info().project_root() ++ \"/fixtures/work\").timeout(120000)\n" ++
+        "    let cwd_spec = process_spec(" ++ cat_tool ++ ").arg(\"cwd.txt\").working_dir(ctx.project_info().project_root() ++ \"/fixtures/work\").timeout(120000)\n" ++
         "    let cwd_result = ctx.process_runner().run_spec(cwd_spec, \"out/action/spec-cwd.txt\", \"out/action/spec-cwd.err\")\n" ++
         "    assert(cwd_result.rc == 0)\n" ++
         "    assert(cwd_result.stdout.contains(\"cwd\"))\n" ++
-        "    let timeout_spec = process_spec(\"/bin/sleep\").arg(\"1\").timeout(1)\n" ++
+        "    let timeout_spec = process_spec(" ++ sleep_tool ++ ").arg(\"1\").timeout(1)\n" ++
         "    let timeout_result = ctx.process_runner().run_spec(timeout_spec, \"out/action/spec-timeout.txt\", \"out/action/spec-timeout.err\")\n" ++
         "    assert(timeout_result.timed_out)\n" ++
         "    var direct_args: Vec[str] = Vec.new()\n" ++
-        "    direct_args |> push(\"/bin/echo\")\n" ++
+        "    direct_args |> push(" ++ echo_tool ++ ")\n" ++
         "    direct_args |> push(\"streamed-process-run\")\n" ++
         "    assert(ctx.process_runner().run(direct_args) == 0)\n" ++
         "    0\n\n" ++
@@ -6087,6 +6126,7 @@ fn bs_check_build_w_action_no_deps(ctx: &ActionCtx, compiler_path: str, case_dir
     bs_assert_contains(ctx, with_deps.stderr, "failed with exit code 17", "build_w_action_no_deps_failure")
 
 fn bs_check_build_w_action_failures(ctx: &ActionCtx, compiler_path: str, base_dir: str) -> i32:
+    let echo_tool = bs_with_string_literal(bs_build_w_tool_from_env("WITH_ECHO", "/bin/echo"))
     let missing_dir = bs_join(base_dir, "missing_input")
     var rc = bs_write_project_manifest(ctx, missing_dir, "actionmissing")
     if rc != 0: return rc
@@ -6316,7 +6356,7 @@ fn bs_check_build_w_action_failures(ctx: &ActionCtx, compiler_path: str, base_di
         "use std.build\n\n" ++
         "fn bad_capture(ctx: &ActionCtx) -> i32:\n" ++
         "    let args: Vec[str] = Vec.new()\n" ++
-        "    args.push(\"/bin/echo\")\n" ++
+        "    args.push(" ++ echo_tool ++ ")\n" ++
         "    args.push(\"bad\")\n" ++
         "    let _ = ctx.process_runner().run_capture(args, \"out/other/stdout.txt\", \"out/other/stderr.txt\", 120000)\n" ++
         "    0\n\n" ++
@@ -6364,7 +6404,7 @@ fn bs_check_build_w_action_failures(ctx: &ActionCtx, compiler_path: str, base_di
     let bad_spec_build =
         "use std.build\n\n" ++
         "fn bad_spec(ctx: &ActionCtx) -> i32:\n" ++
-        "    let spec = process_spec(\"/bin/echo\").arg(\"unused\").capture(false, true)\n" ++
+        "    let spec = process_spec(" ++ echo_tool ++ ").arg(\"unused\").capture(false, true)\n" ++
         "    let _ = ctx.process_runner().run_spec(spec, \"out/action/stdout.txt\", \"out/action/stderr.txt\")\n" ++
         "    0\n\n" ++
         "pub fn build(ctx: BuildCtx) -> Build:\n" ++
@@ -6659,6 +6699,111 @@ fn bs_check_pcre2_generated_existing_main(ctx: &ActionCtx, case_dir: str) -> i32
         return bs_fail(ctx, f"pcre2 generated existing main reported {errors} errors")
     0
 
+fn bs_check_pcre2_reference_source_override(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
+    let source_dir = bs_join(case_dir, "source")
+    var rc = bs_write_project_manifest(ctx, case_dir, "pcre2sourceoverride")
+    if rc != 0: return rc
+    rc = bs_write_fixture(ctx, bs_join(source_dir, "src/pcre2_compile.c"), "int pcre2_compile_placeholder;\n", "pcre2 override compile source")
+    if rc != 0: return rc
+    rc = bs_write_fixture(ctx, bs_join(source_dir, "src/pcre2.h.generic"), "#define PCRE2_MAJOR 10\n", "pcre2 override header")
+    if rc != 0: return rc
+    rc = bs_write_fixture(ctx, bs_join(source_dir, "src/config.h.generic"), "#define PCRE2_MINOR 47\n", "pcre2 override config")
+    if rc != 0: return rc
+    rc = bs_write_fixture(ctx, bs_join(source_dir, "src/pcre2_chartables.c.dist"), "int pcre2_chartables_placeholder;\n", "pcre2 override chartables")
+    if rc != 0: return rc
+    rc = bs_write_fixture(ctx, bs_join(source_dir, "RunTest"), "#!/bin/sh\n", "pcre2 override RunTest")
+    if rc != 0: return rc
+    rc = bs_write_fixture(ctx, bs_join(case_dir, "build/pcre2.w"), ctx.fs().read_text("build/pcre2.w"), "pcre2 override action")
+    if rc != 0: return rc
+    rc = bs_write_fixture(ctx, bs_join(case_dir, "build/https_fetch.w"), ctx.fs().read_text("build/https_fetch.w"), "pcre2 override fetch helper")
+    if rc != 0: return rc
+    rc = bs_write_fixture(ctx, bs_join(case_dir, "build.w"), "use std.build\nuse build.pcre2\n\ncomptime with BuildCtx as ctx:\npub fn build -> Build:\n    var out = ctx.new_build()\n    var reference = target_new(.Action, \"reference\", \"\").output(\"out/reference\")\n    reference.action = run_pcre2_reference_action\n    reference = reference.input(\"build/https_fetch.w\")\n    reference = reference.write_scope(\"out\")\n    reference = reference.allow_network()\n    reference = reference.arg(\"pcre2-10.47\")\n    reference = reference.arg(\"https://127.0.0.1:1/pcre2-10.47.tar.gz\")\n    out = out.add_target(reference)\n    out.default(\"reference\")\n", "pcre2 override build")
+    if rc != 0: return rc
+
+    let build_args: Vec[str] = Vec.new()
+    build_args |> push("build")
+    build_args |> push(":reference")
+    var relative_env = ProcessEnv { vars: Vec.new() }
+    relative_env.vars.push(ProcessEnvVar { name: "WITH_PCRE2_SOURCE", value: "source" })
+    let relative = bs_run_cli_capture_cwd_with_env(ctx, compiler_path, "pcre2-source-relative", build_args, 120000, case_dir, relative_env)
+    if relative.rc != 0:
+        return bs_fail(ctx, "relative PCRE2 source override failed: " ++ relative.stderr)
+    rc = bs_expect_file_contains(ctx, bs_join(case_dir, "out/reference/src/pcre2_compile.c"), "pcre2_compile_placeholder", "pcre2_source_relative_copy")
+    if rc != 0: return rc
+    rc = bs_expect_file_contains(ctx, bs_join(case_dir, "out/.build-state/reference.state"), "env:WITH_PCRE2_SOURCE:", "pcre2_source_env_input")
+    if rc != 0: return rc
+
+    rc = bs_write_fixture(ctx, bs_join(source_dir, "src/pcre2_compile.c"), "int pcre2_compile_absolute;\n", "pcre2 override absolute compile source")
+    if rc != 0: return rc
+    var absolute_env = ProcessEnv { vars: Vec.new() }
+    absolute_env.vars.push(ProcessEnvVar { name: "WITH_PCRE2_SOURCE", value: bs_abs(ctx.project_info().project_root(), source_dir) })
+    let absolute = bs_run_cli_capture_cwd_with_env(ctx, compiler_path, "pcre2-source-absolute", build_args, 120000, case_dir, absolute_env)
+    if absolute.rc != 0:
+        return bs_fail(ctx, "absolute PCRE2 source override failed: " ++ absolute.stderr)
+    rc = bs_expect_file_contains(ctx, bs_join(case_dir, "out/reference/.with-reference-source"), bs_abs(ctx.project_info().project_root(), source_dir), "pcre2_source_absolute_marker")
+    if rc != 0: return rc
+    rc = bs_expect_file_contains(ctx, bs_join(case_dir, "out/reference/src/pcre2_compile.c"), "pcre2_compile_absolute", "pcre2_source_absolute_copy")
+    if rc != 0: return rc
+
+    var missing_env = ProcessEnv { vars: Vec.new() }
+    missing_env.vars.push(ProcessEnvVar { name: "WITH_PCRE2_SOURCE", value: "missing-source" })
+    let missing = bs_run_cli_capture_cwd_with_env(ctx, compiler_path, "pcre2-source-missing", build_args, 120000, case_dir, missing_env)
+    if missing.rc == 0:
+        return bs_fail(ctx, "missing PCRE2 source override unexpectedly succeeded")
+    rc = bs_assert_contains(ctx, missing.stderr, "invalid WITH_PCRE2_SOURCE: missing", "pcre2_source_missing")
+    if rc != 0: return rc
+
+    var drive_slash_env = ProcessEnv { vars: Vec.new() }
+    drive_slash_env.vars.push(ProcessEnvVar { name: "WITH_PCRE2_SOURCE", value: "C:/pcre2-missing" })
+    let drive_slash = bs_run_cli_capture_cwd_with_env(ctx, compiler_path, "pcre2-source-drive-slash", build_args, 120000, case_dir, drive_slash_env)
+    if drive_slash.rc == 0:
+        return bs_fail(ctx, "drive slash PCRE2 source override unexpectedly succeeded")
+    rc = bs_assert_contains(ctx, drive_slash.stderr, "missing C:/pcre2-missing", "pcre2_source_drive_slash")
+    if rc != 0: return rc
+
+    var drive_backslash_env = ProcessEnv { vars: Vec.new() }
+    drive_backslash_env.vars.push(ProcessEnvVar { name: "WITH_PCRE2_SOURCE", value: "C:\\pcre2-missing" })
+    let drive_backslash = bs_run_cli_capture_cwd_with_env(ctx, compiler_path, "pcre2-source-drive-backslash", build_args, 120000, case_dir, drive_backslash_env)
+    if drive_backslash.rc == 0:
+        return bs_fail(ctx, "drive backslash PCRE2 source override unexpectedly succeeded")
+    rc = bs_assert_contains(ctx, drive_backslash.stderr, "missing C:\\pcre2-missing", "pcre2_source_drive_backslash")
+    if rc != 0: return rc
+
+    var unc_env = ProcessEnv { vars: Vec.new() }
+    unc_env.vars.push(ProcessEnvVar { name: "WITH_PCRE2_SOURCE", value: "\\\\server\\pcre2-missing" })
+    let unc = bs_run_cli_capture_cwd_with_env(ctx, compiler_path, "pcre2-source-unc", build_args, 120000, case_dir, unc_env)
+    if unc.rc == 0:
+        return bs_fail(ctx, "UNC PCRE2 source override unexpectedly succeeded")
+    rc = bs_assert_contains(ctx, unc.stderr, "missing \\\\server\\pcre2-missing", "pcre2_source_unc")
+    if rc != 0: return rc
+
+    var posix_env = ProcessEnv { vars: Vec.new() }
+    posix_env.vars.push(ProcessEnvVar { name: "WITH_PCRE2_SOURCE", value: "/pcre2-missing" })
+    let posix = bs_run_cli_capture_cwd_with_env(ctx, compiler_path, "pcre2-source-posix", build_args, 120000, case_dir, posix_env)
+    if posix.rc == 0:
+        return bs_fail(ctx, "POSIX PCRE2 source override unexpectedly succeeded")
+    rc = bs_assert_contains(ctx, posix.stderr, "missing /pcre2-missing", "pcre2_source_posix")
+    if rc != 0: return rc
+
+    var file_env = ProcessEnv { vars: Vec.new() }
+    file_env.vars.push(ProcessEnvVar { name: "WITH_PCRE2_SOURCE", value: "build.w" })
+    let file = bs_run_cli_capture_cwd_with_env(ctx, compiler_path, "pcre2-source-file", build_args, 120000, case_dir, file_env)
+    if file.rc == 0:
+        return bs_fail(ctx, "file PCRE2 source override unexpectedly succeeded")
+    rc = bs_assert_contains(ctx, file.stderr, "invalid WITH_PCRE2_SOURCE: not a directory", "pcre2_source_file")
+    if rc != 0: return rc
+
+    var unset_env = ProcessEnv { vars: Vec.new() }
+    unset_env.vars.push(ProcessEnvVar { name: "WITH_PCRE2_SOURCE", value: "" })
+    let unset = bs_run_cli_capture_cwd_with_env(ctx, compiler_path, "pcre2-source-unset", build_args, 120000, case_dir, unset_env)
+    if unset.rc == 0:
+        return bs_fail(ctx, "unset PCRE2 source unexpectedly succeeded")
+    rc = bs_assert_contains(ctx, unset.stderr, "HTTPS fetch helper failed", "pcre2_source_unset_fetch")
+    if rc != 0: return rc
+    if ctx.fs().exists(bs_join(case_dir, "out/reference/.with-reference-source")):
+        return bs_fail(ctx, "unset PCRE2 source retained overridden reference tree")
+    0
+
 pub fn run_cli_selfhost_pcre2_prep_action(ctx: ActionCtx) -> i32:
     let inputs = ctx.inputs()
     if inputs.len() == 0:
@@ -6696,7 +6841,11 @@ pub fn run_cli_selfhost_pcre2_prep_action(ctx: ActionCtx) -> i32:
     if rc != 0: return rc
     rc = bs_check_pcre2_jit_no_support(ctx, compiler_path, bs_join(output_dir, "pcre2_jit_no_support_case"))
     if rc != 0: return rc
-    bs_check_pcre2_generated_existing_main(ctx, bs_join(output_dir, "pcre2_generated_existing_main_case"))
+    rc = bs_check_pcre2_generated_existing_main(ctx, bs_join(output_dir, "pcre2_generated_existing_main_case"))
+    if rc != 0: return rc
+    rc = bs_check_pcre2_reference_source_override(ctx, compiler_path, bs_join(output_dir, "pcre2_source_override_case"))
+    if rc != 0: return rc
+    0
 
 fn bs_split_words(line: str) -> Vec[str]:
     let words: Vec[str] = Vec.new()
