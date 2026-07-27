@@ -1394,10 +1394,22 @@ fn analysis_seam_place_class(sema: &Sema, body: &MirBody, place_id: i32, is_move
 // (`store` = the copy is retained -> clone/view; `read` = transient -> view).
 // Pure classification of one operand use; the caller owns accumulation so
 // nothing mutates through a borrow (the very class this tool reports).
-type SeamRow { ok: i32, class_idx: i32, key: str, row: str }
+type SeamRow { ok: i32, class_idx: i32, key: str, row: str, actionable: i32 }
+
+// A copy only matters when the COPY is retained — stored, aggregated, or
+// handed to a consuming callee — because only then does a second owner drop
+// it. A copy consumed as an operand of a non-storing rvalue (a length read, a
+// comparison) never drops, so it is observed, not actionable. Moves are always
+// actionable: they blank a place another owner still drops.
+fn analysis_seam_context_is_actionable(context: str, is_move: i32) -> i32:
+    if is_move != 0:
+        return 1
+    if context == "read":
+        return 0
+    1
 
 fn analysis_seam_row(sema: &Sema, body: &MirBody, fn_name: str, path: str, span: i32, operand: i32, context: str) -> SeamRow:
-    let none = SeamRow { ok: 0, class_idx: 0, key: "", row: "" }
+    let none = SeamRow { ok: 0, class_idx: 0, key: "", row: "", actionable: 0 }
     if operand < 0 or operand >= body.operand_kinds.len() as i32:
         return none
     let okind = body.operand_kinds.get(operand as i64)
@@ -1414,11 +1426,14 @@ fn analysis_seam_row(sema: &Sema, body: &MirBody, fn_name: str, path: str, span:
         else if class == "copy-view-drop": 3
         else: 4
     let place_ty = body.place_sema_types.get(place_id as i64)
+    let actionable = analysis_seam_context_is_actionable(context, if okind == OperandKind.OK_MOVE: 1 else: 0)
+    let tier = if actionable != 0: "actionable" else: "observed"
     SeamRow {
         ok: 1,
         class_idx,
         key: fn_name ++ "\t" ++ class ++ "\t" ++ place_text ++ "\t" ++ f"{span}",
-        row: path ++ f"\t{span}\t{fn_name}\t{class}\t{context}\t{place_text}\t" ++ sema.type_name(place_ty) ++ "\n",
+        row: path ++ f"\t{span}\t{fn_name}\t{class}\t{tier}\t{context}\t{place_text}\t" ++ sema.type_name(place_ty) ++ "\n",
+        actionable,
     }
 
 // The retention class (#715 / BuildGraphTarget / capability-record shape):
@@ -1538,10 +1553,10 @@ fn analysis_seam_retention_rows(sema: &Sema, body: &MirBody, fn_name: str, path:
 
 fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule, source_path: str, source_text: str) -> str:
     let _ = source_path
-    var out = "path\toffset\tfn\tclass\tcontext\tplace\ttype\n"
+    var out = "path\toffset\tfn\tclass\ttier\tcontext\tplace\ttype\n"
     let report_lines: Vec[str] = Vec.new()
     let counts: Vec[i32] = Vec.new()
-    for _ci in 0..6:
+    for _ci in 0..7:
         counts.push(0)
     var escapes = 0
     let seen: HashMap[str, i32] = HashMap.new()
@@ -1588,6 +1603,8 @@ fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule, source_path: str, sourc
                 if r.ok != 0 and not seen.contains(r.key):
                     seen.insert(r.key, 1)
                     counts.set_i32(r.class_idx as i64, counts.get(r.class_idx as i64) + 1)
+                    if r.actionable != 0:
+                        counts.set_i32(6, counts.get(6) + 1)
                     report_lines.push(r.row)
         // Call arguments: retained when the callee consumes them.
         for bb in 0..body.block_count():
@@ -1625,6 +1642,8 @@ fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule, source_path: str, sourc
                 if cr.ok != 0 and not seen.contains(cr.key):
                     seen.insert(cr.key, 1)
                     counts.set_i32(cr.class_idx as i64, counts.get(cr.class_idx as i64) + 1)
+                    if cr.actionable != 0:
+                        counts.set_i32(6, counts.get(6) + 1)
                     report_lines.push(cr.row)
     for li in 0..report_lines.len() as i32:
         out = out ++ report_lines.get(li as i64)
@@ -1647,7 +1666,14 @@ fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule, source_path: str, sourc
                 continue
             escapes = escapes + 1
             out = out ++ sema.pool_resolve(sema.sig_names.get(si as i64)) ++ "\tescape-view-consume\tparam " ++ f"{pi}" ++ "\t" ++ sema.type_name(param_ty) ++ "\n"
-    out ++ f"seam-sites: {moves_ref + moves_raw + copies_elem + copies_view + copies_raw + escapes} findings — move-through-ref={moves_ref} move-raw-deref={moves_raw} copy-elem-drop={copies_elem} copy-view-drop={copies_view} copy-raw-deref-drop={copies_raw} retained-unowned-copy={retained} escape-view-consume={escapes}\n"
+    // ACTIONABLE is the number that matters: a copy is only a latent
+    // double-free when the copy is retained (stored/aggregated/consumed by a
+    // callee). Read-position copies are operands that never drop — reported
+    // as observed so the inventory does not cry wolf. escape-view-consume is
+    // always actionable.
+    let actionable = counts.get(6) + escapes
+    let total = moves_ref + moves_raw + copies_elem + copies_view + copies_raw + escapes
+    out ++ f"seam-sites: {total} findings ({actionable} actionable, {total - actionable} observed) — move-through-ref={moves_ref} move-raw-deref={moves_raw} copy-elem-drop={copies_elem} copy-view-drop={copies_view} copy-raw-deref-drop={copies_raw} retained-unowned-copy={retained} escape-view-consume={escapes}\n"
 
 // explain:effect (docs/deep-debugging-tools.md): walk the first-setter
 // provenance chain for each ownership-forcing bit of a parameter, from the

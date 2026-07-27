@@ -106,6 +106,20 @@ flipped to a diagnostic once the inventory is clean).
 ./out/stage/bin/with-stage2 analyze src/main.w seam-sites
 ```
 
+Every row carries a **tier**, and the summary counts both:
+
+- **actionable** — the copy is RETAINED (`store-assign`, `store-aggregate`,
+  `call-arg-owned`) or the operand is a move. Only then does a second owner
+  drop it, which is what makes the seam a latent double-free. Moves are
+  always actionable: they blank a place another owner still drops.
+- **observed** — a `read`-position copy: an operand of a non-storing rvalue
+  (a length read, a comparison) that never drops. Reported for completeness,
+  not for burn-down. Without this split the inventory read 1176 findings when
+  5 were real, and a report that cries wolf gets ignored.
+
+Burn down the actionable tier; treat a rising actionable count as the
+regression signal.
+
 One TSV row per deduped `(fn, class, place)`; classes:
 
 - `move-through-ref` — a move of a subplace behind a `&T` root: blanks
