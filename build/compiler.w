@@ -884,7 +884,10 @@ fn comp_impl_commands(fs: &ToolFs) -> Vec[str]:
     var commands: Vec[str] = Vec.new()
     for i in 0..raw.len() as i32:
         let cmd = raw.get(i as i64)
-        if not cmd.starts_with("-"):
+        // `__`-prefixed subcommands are the compiler invoking itself
+        // (D24 `__workspace-compile` process isolation) — internal ABI
+        // like `with_*` symbols, not user CLI surface the spec lists.
+        if not cmd.starts_with("-") and not cmd.starts_with("__"):
             if cmd.len() > 0 and not comp_vec_contains(commands, cmd):
                 commands.push(cmd)
     commands
