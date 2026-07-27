@@ -4638,8 +4638,21 @@ impl Codegen:
         // #606: an enum (or generic enum like Option/Result) with no explicit Drop
         // impl drops the active variant's payloads. Skipped when an explicit drop
         // exists — that drop owns cleanup (no per-payload consumed tracking yet).
+        // Recursive enums (V { L(Vec[V]) }) must go through a NAMED per-type
+        // fn: the inline payload walk re-enters this emitter for the same type
+        // and never terminates. Declaration-before-body breaks the cycle,
+        // exactly like ensure_structural_drop_fn.
         if not has_drop and enum_variants > 0:
-            self.mir_emit_drop_enum_ptr(ptr, ty, resolved)
+            let enum_drop_fn = self.ensure_enum_drop_fn(resolved, ty)
+            if enum_drop_fn != 0:
+                let edf_args: Vec[i64] = Vec.new()
+                edf_args.push(ptr)
+                let edf_params: Vec[i64] = Vec.new()
+                edf_params.push(wl_ptr_type(self.context))
+                let edf_ty = wl_function_type(wl_void_type(self.context), vec_data_i64(&edf_params), 1, 0)
+                let _ = wl_build_call(self.builder, edf_ty, enum_drop_fn, vec_data_i64(&edf_args), 1)
+            else:
+                self.mir_emit_drop_enum_ptr(ptr, ty, resolved)
 
     fn mir_channel_endpoint_kind(sema_ty: i32) -> i32:
         if sema_ty <= 0:
@@ -4714,6 +4727,67 @@ impl Codegen:
         self.current_function_node = saved_fn_node
         self.current_ret_type = saved_ret_ty
         self.member_drop_depth = saved_member_depth
+        if saved_bb != 0:
+            wl_position_at_end(self.builder, saved_bb)
+
+        drop_fn
+
+    // Outline an enum's variant-switched payload drop into a cached per-type
+    // function `__drop_enum_<sema_ty>(ptr)`. Same contract as
+    // ensure_structural_drop_fn below: declared before its body is built, so
+    // a self-referential payload (V { L(Vec[V]) }) finds the declaration and
+    // emits a call instead of recursing the emitter forever; body unguarded,
+    // member depth resets, synthetic per-type drop origin.
+    mut fn ensure_enum_drop_fn(sema_ty: i32, llvm_ty: i64) -> i64:
+        if sema_ty <= 0 or llvm_ty == 0:
+            return 0
+        if self.sema.type_needs_drop_frozen(sema_ty) == 0:
+            return 0
+        let fn_name = "__drop_enum_" ++ f"{sema_ty}"
+        let existing = wl_get_named_function(self.llmod, fn_name)
+        if existing != 0:
+            return existing
+
+        let ptr_ty = wl_ptr_type(self.context)
+        let params: Vec[i64] = Vec.new()
+        params.push(ptr_ty)
+        let fn_ty = wl_function_type(wl_void_type(self.context), vec_data_i64(&params), 1, 0)
+        let drop_fn = wl_add_function(self.llmod, fn_name, fn_ty)
+        wl_set_linkage(drop_fn, wl_internal_linkage())
+
+        let saved_fn = self.current_function
+        let saved_fn_name_sym = self.current_function_name_sym
+        let saved_fn_node = self.current_function_node
+        let saved_ret_ty = self.current_ret_type
+        let saved_bb = wl_get_insert_block(self.builder)
+        let saved_needs_guard = self.current_drop_needs_guard
+        let saved_member_depth = self.member_drop_depth
+        let saved_origin_ptr = self.current_drop_origin_ptr
+        let saved_origin_len = self.current_drop_origin_len
+
+        self.current_function = drop_fn
+        self.current_function_name_sym = 0
+        self.current_function_node = 0
+        self.current_ret_type = wl_void_type(self.context)
+        self.current_drop_needs_guard = false
+        self.member_drop_depth = 0
+        let origin_text = "drop#enum " ++ fn_name
+        self.current_drop_origin_ptr = self.const_c_string_pointer(origin_text, wl_ptr_type(self.context))
+        self.current_drop_origin_len = wl_const_int(wl_i64_type(self.context), origin_text.len(), 0)
+
+        let entry = wl_append_bb(self.context, drop_fn, "entry")
+        wl_position_at_end(self.builder, entry)
+        self.mir_emit_drop_enum_ptr(wl_get_param(drop_fn, 0), llvm_ty, sema_ty)
+        let _ = wl_build_ret_void(self.builder)
+
+        self.current_function = saved_fn
+        self.current_function_name_sym = saved_fn_name_sym
+        self.current_function_node = saved_fn_node
+        self.current_ret_type = saved_ret_ty
+        self.current_drop_needs_guard = saved_needs_guard
+        self.member_drop_depth = saved_member_depth
+        self.current_drop_origin_ptr = saved_origin_ptr
+        self.current_drop_origin_len = saved_origin_len
         if saved_bb != 0:
             wl_position_at_end(self.builder, saved_bb)
 
