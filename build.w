@@ -1016,7 +1016,10 @@ fn run_deep_debug_tool_tests_action(ctx: ActionCtx) -> i32:
         return 1
     if deep_debug_analyze_expect(ctx, root, compiler, ownership_abs, out_dir, "analyze-storage", "audit:storage", "storage-audit") != 0:
         return 1
-    if deep_debug_analyze_expect(ctx, root, compiler, ownership_abs, out_dir, "analyze-matrix", "matrix:name~consume", "callee-place-alias") != 0:
+    // D5 superseded: a read-only free parameter is owned, not share-place —
+    // callee-place-alias marshalling survives only on receivers (D12), so the
+    // matrix probe targets the mut-receiver method.
+    if deep_debug_analyze_expect(ctx, root, compiler, ownership_abs, out_dir, "analyze-matrix", "matrix:name~Matrix.write", "callee-place-alias") != 0:
         return 1
     if deep_debug_analyze_expect(ctx, root, compiler, ownership_abs, out_dir, "analyze-receiver-effects", "matrix:kind=receiver,name~Matrix.transitive_write", "declared=mut required=mut") != 0:
         return 1
