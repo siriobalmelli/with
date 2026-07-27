@@ -1,0 +1,15 @@
+diff --git a/build/pcre2.w b/build/pcre2.w
+--- a/build/pcre2.w
++++ b/build/pcre2.w
+@@ -534 +534 @@ fn pcre2_override_source_path(ctx: &ActionCtx) -> str:
+-    pcre2_abs(ctx.project_info().project_root(), ctx.env_input("WITH_PCRE2_SOURCE"))
++    ctx.env_input("WITH_PCRE2_SOURCE")
+@@ -538 +538 @@ fn pcre2_validate_override_source(ctx: &ActionCtx, source_dir: str) -> i32:
+-    if not fs.host_exists(source_dir):
++    if not fs.exists(source_dir):
+@@ -540 +540 @@ fn pcre2_validate_override_source(ctx: &ActionCtx, source_dir: str) -> i32:
+-    if not fs.host_is_dir(source_dir):
++    if not fs.is_dir(source_dir):
+@@ -560 +560 @@ fn pcre2_copy_override_source(ctx: &ActionCtx, source_dir: str, ref_dir: str) -
+-    if fs.copy_host_tree(source_dir, ref_dir) != 0:
++    if fs.copy_tree(source_dir, ref_dir) != 0:

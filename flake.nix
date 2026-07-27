@@ -15,27 +15,34 @@
       ...
     }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = [ "aarch64-darwin" ];
+      systems = [
+        "aarch64-darwin"
+        "x86_64-linux"
+      ];
 
-      flake.overlays.default = final: prev: {
-        withlang-bin = prev.callPackage ./nix/withlang-bin { };
-        withlang-ninja = prev.callPackage ./nix/withlang-ninja.nix {
-          lld = prev.llvmPackages.lld;
-          stdenv = prev.llvmPackages.stdenv;
+      flake.overlays.default =
+        final: prev:
+        {
+          withlang-ninja = prev.callPackage ./nix/withlang-ninja.nix {
+            lld = prev.llvmPackages.lld;
+            stdenv = prev.llvmPackages.stdenv;
+          };
+          withlang-cmake = prev.callPackage ./nix/withlang-cmake.nix {
+            lld = prev.llvmPackages.lld;
+            ninja = final.withlang-ninja;
+            stdenv = prev.llvmPackages.stdenv;
+          };
+          withlang-llvm = prev.callPackage ./nix/withlang-llvm.nix {
+            cmake = final.withlang-cmake;
+            lld = prev.llvmPackages.lld;
+            ninja = final.withlang-ninja;
+            stdenv = prev.llvmPackages.stdenv;
+          };
+          withlang-seed = final.callPackage ./nix/withlang-seed { };
+        }
+        // nixpkgs.lib.optionalAttrs (prev.stdenv.hostPlatform.system == "aarch64-darwin") {
+          withlang-bin = prev.callPackage ./nix/withlang-bin { };
         };
-        withlang-cmake = prev.callPackage ./nix/withlang-cmake.nix {
-          lld = prev.llvmPackages.lld;
-          ninja = final.withlang-ninja;
-          stdenv = prev.llvmPackages.stdenv;
-        };
-        withlang-llvm = prev.callPackage ./nix/withlang-llvm.nix {
-          cmake = final.withlang-cmake;
-          lld = prev.llvmPackages.lld;
-          ninja = final.withlang-ninja;
-          stdenv = prev.llvmPackages.stdenv;
-        };
-        withlang-seed = final.callPackage ./nix/withlang-seed { };
-      };
 
       perSystem =
         { system, ... }:
@@ -49,23 +56,29 @@
           };
 
           packages = {
-            default = pkgs.withlang-bin;
             inherit (pkgs)
-              withlang-bin
               withlang-cmake
               withlang-llvm
               withlang-ninja
               withlang-seed
               ;
+          }
+          // nixpkgs.lib.optionalAttrs (system == "aarch64-darwin") {
+            default = pkgs.withlang-bin;
+            inherit (pkgs) withlang-bin;
           };
 
-          apps.default = {
-            type = "app";
-            program = "${pkgs.withlang-bin}/bin/with";
-            meta.description = "Run the With compiler";
+          apps = nixpkgs.lib.optionalAttrs (system == "aarch64-darwin") {
+            default = {
+              type = "app";
+              program = "${pkgs.withlang-bin}/bin/with";
+              meta.description = "Run the With compiler";
+            };
           };
 
-          checks.withlang-bin = pkgs.withlang-bin;
+          checks = nixpkgs.lib.optionalAttrs (system == "aarch64-darwin") {
+            withlang-bin = pkgs.withlang-bin;
+          };
         };
     };
 }

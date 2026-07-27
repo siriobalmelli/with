@@ -100,9 +100,10 @@ $ nix run github:withlang-dev/with# -- -e 'print("hello!")'
 hello!
 ```
 
-The default package and app are the fast, prebuilt `withlang-bin` distribution.
+The default Darwin package and app are the fast, prebuilt `withlang-bin`
+distribution.
 They do not build With or its owned LLVM SDK.
-The current binary package supports Darwin arm64.
+The binary package supports Darwin arm64.
 
 Build the binary distribution:
 
@@ -112,6 +113,13 @@ nix build
 
 The Nix package installs pinned upstream release binaries.
 It does not rebuild the compiler from source.
+
+The flake exports the owned SDK and seed components for bootstrap development.
+The seeds are version-checked inputs, not compilers verified against current
+source.
+The full source compiler package remains under development and is not exported.
+See [TODO.md - Full Source Bootstrap](TODO.md#full-source-bootstrap) for exact
+platform blockers and acceptance criteria.
 
 ## Building from Source
 
