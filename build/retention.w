@@ -507,7 +507,7 @@ fn ret_compiler_version(ctx: &ActionCtx, compiler_path: str) -> str:
     args.push("version")
     ret_run_first_line(ctx, "compiler-version", args, 60000)
 
-fn ret_vec_contains(items: Vec[str], item: str) -> bool:
+fn ret_vec_contains(items: &Vec[str], item: str) -> bool:
     for i in 0..items.len() as i32:
         if items.get(i as i64) == item:
             return true
