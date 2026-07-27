@@ -28,7 +28,7 @@ impl Span:
     fn is_valid() -> bool:
         self.file >= 0 and self.start >= 0 and self.end >= self.start
 
-    fn merge(other: Span) -> Span:
+    fn merge(other: &Span) -> Span:
         Span {
             file: self.file,
             start: span_min_i32(self.start, other.start),

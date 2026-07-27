@@ -538,7 +538,7 @@ fn ci_migrate_merge_shared_fragment_text(text: str):
             ci_migrate_merge_usage_keys(body)
         pos = body_end + 7
 
-fn ci_migrate_merge_shared_fragment_texts(output_dir: str, fragments: Vec[str]):
+fn ci_migrate_merge_shared_fragment_texts(output_dir: str, fragments: &Vec[str]):
     ci_migrate_shared_defs_reset()
     var i = 0
     while i < fragments.len() as i32:
@@ -1152,7 +1152,7 @@ fn ci_migrate_file_before(a: str, b: str) -> bool:
         return arank < brank
     ci_str_compare(abase, bbase) < 0
 
-fn ci_migrate_sorted_files(files: Vec[str]) -> Vec[str]:
+fn ci_migrate_sorted_files(files: &Vec[str]) -> Vec[str]:
     let sorted: Vec[str] = Vec.new()
     var rank = 10
     while rank <= 320:
@@ -1205,7 +1205,7 @@ fn ci_migrate_basename_is_hidden(path: str) -> bool:
     let base = ci_migrate_path_basename(path)
     base.len() > 0 and base.byte_at(0) == 46
 
-fn ci_migrate_sorted_insert(files: Vec[str], path: str) -> Vec[str]:
+fn ci_migrate_sorted_insert(files: &Vec[str], path: str) -> Vec[str]:
     let sorted: Vec[str] = Vec.new()
     var inserted = false
     var i = 0
@@ -1237,7 +1237,7 @@ fn ci_migrate_collect_c_files(input_dir: str, exclude_basenames: str) -> Vec[str
         pos = line_end + 1
     files
 
-fn ci_migrate_directory_filewise(input_dir: str, output_dir: str, files: Vec[str]) -> i32:
+fn ci_migrate_directory_filewise(input_dir: str, output_dir: str, files: &Vec[str]) -> i32:
     let fragments: Vec[str] = Vec.new()
     with_fs_mkdir_p(output_dir)
     var migrated = 0

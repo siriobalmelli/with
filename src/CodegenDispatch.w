@@ -317,11 +317,11 @@ fn codegen_regex_state_flags(flags: str) -> i32:
     state_flags
 
 impl Codegen:
-    fn ensure_regex_runtime_fn(name: str, ret_ty: i64, params: Vec[i64]) -> i64:
+    fn ensure_regex_runtime_fn(name: str, ret_ty: i64, params: &Vec[i64]) -> i64:
         var fn_val = wl_get_named_function(self.llmod, name)
         if fn_val != 0:
             return fn_val
-        let fn_ty = wl_function_type(ret_ty, vec_data_i64(&params), params.len() as i32, 0)
+        let fn_ty = wl_function_type(ret_ty, vec_data_i64(params), params.len() as i32, 0)
         wl_add_function(self.llmod, name, fn_ty)
 
     mut fn regex_literal_code_fn() -> i64:
@@ -2749,7 +2749,7 @@ impl Codegen:
         a.push(arg)
         self.call_internal_runtime_fn(fn_name, pts, a, 1, str_ty)
 
-    mut fn ensure_internal_runtime_fn(name: str, orig_param_types: Vec[i64], param_count: i32, ret_ty: i64) -> i64:
+    mut fn ensure_internal_runtime_fn(name: str, orig_param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
         let sym = self.intern.intern(name)
         let fv = self.fn_values.get(sym)
         if fv.is_some():
@@ -2789,7 +2789,7 @@ impl Codegen:
         self.fn_fn_types.insert(sym, fn_type)
         func
 
-    mut fn call_internal_runtime_fn(name: str, orig_param_types: Vec[i64], args: Vec[i64], arg_count: i32, ret_ty: i64) -> i64:
+    mut fn call_internal_runtime_fn(name: str, orig_param_types: &Vec[i64], args: &Vec[i64], arg_count: i32, ret_ty: i64) -> i64:
         let sym = self.intern.intern(name)
         let func = self.ensure_internal_runtime_fn(name, orig_param_types, arg_count, ret_ty)
         let ft = self.fn_fn_types.get(sym).unwrap() as i64
@@ -3157,7 +3157,7 @@ impl Codegen:
 
     // ── FmtBuffer codegen helpers ────────────────────────────────────
 
-    mut fn ensure_fmt_buf_fn(name: str, param_types: Vec[i64], param_count: i32, ret_ty: i64) -> i64:
+    mut fn ensure_fmt_buf_fn(name: str, param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
         self.ensure_internal_runtime_fn(name, param_types, param_count, ret_ty)
 
     mut fn gen_fmt_buf_new() -> i64:
@@ -3990,7 +3990,7 @@ impl Codegen:
             self.mir_emit_guarded_user_drop(ptr, ty, drop_fn_value, drop_fn_type)
         self.mir_emit_drop_fields_ptr(ptr, ty, type_sym, 0)
 
-    fn mir_call_concrete_drop(ptr: i64, ty: i64, concrete: ConcreteMirFunction):
+    fn mir_call_concrete_drop(ptr: i64, ty: i64, concrete: &ConcreteMirFunction):
         let args: Vec[i64] = Vec.new()
         let byval_opt = self.extern_fn_byval_params.get(concrete.sym)
         let byval_mask = if byval_opt.is_some(): byval_opt.unwrap() as i64 else: 0
@@ -4005,7 +4005,7 @@ impl Codegen:
             byval_types = vec_copy_i64(byval_types_opt.unwrap())
         self.apply_c_abi_call_attrs(call, 0, 0, byval_mask, byval_types, 1, 0)
 
-    mut fn mir_emit_guarded_concrete_drop(ptr: i64, ty: i64, concrete: ConcreteMirFunction):
+    mut fn mir_emit_guarded_concrete_drop(ptr: i64, ty: i64, concrete: &ConcreteMirFunction):
         if not self.current_drop_needs_guard and self.member_drop_depth == 0:
             self.mir_call_concrete_drop(ptr, ty, concrete)
             return
@@ -5541,7 +5541,7 @@ impl Codegen:
         args.push(str_val)
         wl_build_call(self.builder, fn_ty, fn_val, vec_data_i64(&args), 1)
 
-    fn free_call_temp_ptrs(ptrs: Vec[i64]):
+    fn free_call_temp_ptrs(ptrs: &Vec[i64]):
         if ptrs.len() == 0:
             return
         var free_fn = wl_get_named_function(self.llmod, "with_free")
@@ -11329,7 +11329,7 @@ impl Codegen:
             return self.coerce_value_to_type(payload, payload_ty)
         self.build_default_value(payload_ty)
 
-    fn mir_call_fn_value(fn_val: i64, ret_ty: i64, args: Vec[i64], arg_count: i32) -> i64:
+    fn mir_call_fn_value(fn_val: i64, ret_ty: i64, args: &Vec[i64], arg_count: i32) -> i64:
         let ptr_ty = wl_ptr_type(self.context)
         let cty = wl_type_of(fn_val)
         var fn_ptr = fn_val
@@ -16233,7 +16233,7 @@ impl Codegen:
                 return Some(decl as i32)
         None
 
-    mut fn infer_static_generic_struct_mono_sym(owner_sym: i32, decl: i32, owner_expr_node: i32, arg_tys: Vec[i64], arg_nodes: Vec[i32], call_sema_ty: i32) -> i32:
+    mut fn infer_static_generic_struct_mono_sym(owner_sym: i32, decl: i32, owner_expr_node: i32, arg_tys: &Vec[i64], arg_nodes: &Vec[i32], call_sema_ty: i32) -> i32:
         let owner_decl_opt = self.generic_structs.get(owner_sym)
         if not owner_decl_opt.is_some():
             return 0
@@ -16518,7 +16518,7 @@ impl Codegen:
             return "array"
         "unknown"
 
-    mut fn monomorphize_generic_call_core(_fn_sym: i32, _fn_node: i32, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, arg_vals: Vec[i64], _arg_tys: Vec[i64], _arg_nodes: Vec[i32], _arg_sema_tys: Vec[i32]) -> i64:
+    mut fn monomorphize_generic_call_core(_fn_sym: i32, _fn_node: i32, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, arg_vals: &Vec[i64], _arg_tys: &Vec[i64], _arg_nodes: &Vec[i32], _arg_sema_tys: &Vec[i32]) -> i64:
         let concrete = self.ensure_concrete_mir_function(call_node, concrete_sig, concrete_sym, 0, "generic function call")
         if concrete.sym == 0:
             return wl_get_undef(wl_i32_type(self.context))
@@ -16545,7 +16545,7 @@ impl Codegen:
 
     // ── While loop ────────────────────────────────────────────────────
 
-    mut fn build_variant_payload_val(payload_ty: i64, args: Vec[i64], arg_count: i32) -> i64:
+    mut fn build_variant_payload_val(payload_ty: i64, args: &Vec[i64], arg_count: i32) -> i64:
         if arg_count <= 0:
             return wl_get_undef(wl_i32_type(self.context))
         if payload_ty == 0:
@@ -16564,7 +16564,7 @@ impl Codegen:
             return payload
         self.coerce_value_to_type(args.get(0), payload_ty)
 
-    mut fn gen_enum_variant_call_val(enum_owner_sym: i32, variant_sym: i32, args: Vec[i64], arg_count: i32) -> i64:
+    mut fn gen_enum_variant_call_val(enum_owner_sym: i32, variant_sym: i32, args: &Vec[i64], arg_count: i32) -> i64:
         let variant_name = self.intern.resolve(variant_sym)
         for ei in 0..self.enum_llvm_types.len() as i32:
             let enum_ty = self.enum_llvm_types.get(ei as i64)
@@ -17964,7 +17964,7 @@ impl Codegen:
             wl_build_br(self.builder, self.mir_bb_values.get(next_bb as i64))
         true
 
-    fn generate_async_trampoline(fn_sym: i32, callee: i64, call_ft: i64, args_struct_ty: i64, arg_types: Vec[i64]) -> i64:
+    fn generate_async_trampoline(fn_sym: i32, callee: i64, call_ft: i64, args_struct_ty: i64, arg_types: &Vec[i64]) -> i64:
         let ctx = self.context
         let ptr_ty = wl_ptr_type(ctx)
         let void_ty = wl_void_type(ctx)

@@ -1299,7 +1299,7 @@ fn resolved_scope_kind_name(kind: i32) -> str:
     if kind == ScopeKind.SK_COMPREHENSION: return "comprehension"
     "unknown"
 
-fn print_resolved(result: ResolveResult, pool: InternPool, root_path: str):
+fn print_resolved(result: &ResolveResult, pool: InternPool, root_path: str):
     with_write(f"resolved root={root_path} modules={result.modules.len() as i32} defs={result.defs.len() as i32}\n")
 
     for mi in 0..result.modules.len() as i32:

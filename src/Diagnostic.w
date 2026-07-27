@@ -96,7 +96,7 @@ impl Diagnostic:
     mut fn add_help(message: str) -> Unit:
         self.helps.push(diagnostic_owned_text(message))
 
-    fn render(source: Source):
+    fn render(source: &Source):
         let no_paths: Vec[str] = Vec.new()
         let no_texts: Vec[str] = Vec.new()
         self.render_with_label_sources(source, &no_paths, &no_texts)
@@ -104,7 +104,7 @@ impl Diagnostic:
     // #670: a label whose span lives in another file must resolve line/col
     // against THAT file's text and say which file it is. label_paths/label_texts
     // are parallel to labels; an empty path means "same file as the primary".
-    fn render_with_label_sources(source: Source, label_paths: &Vec[str], label_texts: &Vec[str]):
+    fn render_with_label_sources(source: &Source, label_paths: &Vec[str], label_texts: &Vec[str]):
         let code: str = self.code
         let message: str = self.message
         with_eprint(render_diag_header(self.severity, code, message))
@@ -168,13 +168,13 @@ impl DiagnosticList:
     fn has_errors() -> bool:
         self.count_by_severity(DiagSeverity.Error) > 0
 
-    fn render_all(source: Source):
+    fn render_all(source: &Source):
         for i in 0..self.items.len() as i32:
             self.items.get(i as i64).render(source)
             if i + 1 < self.items.len() as i32:
                 with_eprint("")
 
-    fn render_warnings(source: Source):
+    fn render_warnings(source: &Source):
         var printed = 0
         for i in 0..self.items.len() as i32:
             if self.items.get(i as i64).severity != DiagSeverity.Warning:

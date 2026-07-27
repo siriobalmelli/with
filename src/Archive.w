@@ -119,7 +119,7 @@ fn ar_str_compare(a: str, b: str) -> i32:
         return 1
     0
 
-fn ar_sort_symbols(items: Vec[ArSymbol]) -> Vec[ArSymbol]:
+fn ar_sort_symbols(items: &Vec[ArSymbol]) -> Vec[ArSymbol]:
     let result: Vec[ArSymbol] = Vec.new()
     for i in 0..items.len() as i32:
         let item = items.get(i as i64)
@@ -240,7 +240,7 @@ fn extract_elf_symbols(data: str) -> Vec[str]:
             sym_pos = sym_pos + sym_entsize
     result
 
-fn create_gnu_indexed_archive(output_path: str, member_names: Vec[str], member_data: Vec[str], sorted: Vec[ArSymbol]) -> i32:
+fn create_gnu_indexed_archive(output_path: str, member_names: &Vec[str], member_data: &Vec[str], sorted: &Vec[ArSymbol]) -> i32:
     var string_table = ""
     for i in 0..sorted.len() as i32:
         string_table = string_table ++ sorted.get(i as i64).name ++ str_from_byte(0)
@@ -298,7 +298,7 @@ fn create_gnu_indexed_archive(output_path: str, member_names: Vec[str], member_d
         return 1
     0
 
-pub fn create_static_archive(output_path: str, member_paths: Vec[str]) -> i32:
+pub fn create_static_archive(output_path: str, member_paths: &Vec[str]) -> i32:
     let member_count = member_paths.len() as i32
     let member_names: Vec[str] = Vec.new()
     let member_data: Vec[str] = Vec.new()

@@ -880,7 +880,7 @@ impl Sema:
     // view of a place, no other argument of the same call may read or view an
     // overlapping part of that place. Diagnostics speak in terms of the user's
     // binding, not the type machinery.
-    mut fn check_mut_slice_call_exclusivity(mut_args: Vec[i32], all_args: Vec[i32]):
+    mut fn check_mut_slice_call_exclusivity(mut_args: &Vec[i32], all_args: &Vec[i32]):
         for mi in 0..mut_args.len() as i32:
             let m_node = mut_args.get(mi as i64)
             let m_root = self.place_root_sym(m_node)
@@ -2427,7 +2427,7 @@ impl Sema:
             order_counter: self.fn_label_order_counter,
         }
 
-    mut fn restore_label_registry(state: LabelRegistryState):
+    mut fn restore_label_registry(state: &LabelRegistryState):
         self.fn_label_syms = state.label_syms
         self.fn_label_nodes = state.label_nodes
         self.fn_label_paths = state.label_paths
@@ -5382,7 +5382,7 @@ impl Sema:
         out.mismatch_node = node
         out
 
-    mut fn combine_body_return_type_info(lhs: BodyReturnTypeInfo, rhs: BodyReturnTypeInfo) -> BodyReturnTypeInfo:
+    mut fn combine_body_return_type_info(lhs: BodyReturnTypeInfo, rhs: &BodyReturnTypeInfo) -> BodyReturnTypeInfo:
         var out = lhs
         if rhs.saw_bare_return != 0:
             out.saw_bare_return = 1

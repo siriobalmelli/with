@@ -199,7 +199,7 @@ impl StackifyGraph:
         b.params_count = b.params_count + 1
         self.update_block(block, move b)
 
-    mut fn add_target(block: i32, args: Vec[i32]) -> i32:
+    mut fn add_target(block: i32, args: &Vec[i32]) -> i32:
         let start = self.target_args.len() as i32
         var i: i64 = 0
         while i < args.len():
@@ -213,7 +213,7 @@ impl StackifyGraph:
         })
         id
 
-    pub mut fn add_branch_target(block: i32, args: Vec[i32]) -> i32:
+    pub mut fn add_branch_target(block: i32, args: &Vec[i32]) -> i32:
         self.add_target(block, args)
 
     mut fn update_block(block: i32, replacement: StackifyBlock):
@@ -222,7 +222,7 @@ impl StackifyGraph:
         unsafe:
             *((self.blocks.ptr as *mut StackifyBlock) + (block as usize)) = replacement
 
-    mut fn set_succs(block: i32, succs: Vec[i32]):
+    mut fn set_succs(block: i32, succs: &Vec[i32]):
         var b = self.blocks.get(block as i64)
         b.succs_start = self.succs.len() as i32
         b.succs_count = succs.len() as i32
@@ -232,7 +232,7 @@ impl StackifyGraph:
             i = i + 1
         self.update_block(block, move b)
 
-    pub mut fn set_br(block: i32, target_block: i32, args: Vec[i32]) -> Unit:
+    pub mut fn set_br(block: i32, target_block: i32, args: &Vec[i32]) -> Unit:
         if block < 0 or block >= self.blocks.len() as i32:
             return
         let target = self.add_target(target_block, args)
@@ -245,7 +245,7 @@ impl StackifyGraph:
         succs.push(target_block)
         self.set_succs(block, succs)
 
-    pub mut fn set_cond_br(block: i32, cond: i32, true_block: i32, true_args: Vec[i32], false_block: i32, false_args: Vec[i32]) -> Unit:
+    pub mut fn set_cond_br(block: i32, cond: i32, true_block: i32, true_args: &Vec[i32], false_block: i32, false_args: &Vec[i32]) -> Unit:
         if block < 0 or block >= self.blocks.len() as i32:
             return
         let first_target = self.targets.len() as i32
@@ -262,7 +262,7 @@ impl StackifyGraph:
         succs.push(false_block)
         self.set_succs(block, succs)
 
-    pub mut fn set_select(block: i32, selector: i32, target_blocks: Vec[i32], default_block: i32) -> Unit:
+    pub mut fn set_select(block: i32, selector: i32, target_blocks: &Vec[i32], default_block: i32) -> Unit:
         if block < 0 or block >= self.blocks.len() as i32:
             return
         let first_target = self.targets.len() as i32
@@ -308,7 +308,7 @@ impl StackifyGraph:
             succs.push(self.targets.get(default_target as i64).block)
         self.set_succs(block, succs)
 
-    pub mut fn set_return(block: i32, values: Vec[i32]) -> Unit:
+    pub mut fn set_return(block: i32, values: &Vec[i32]) -> Unit:
         if block < 0 or block >= self.blocks.len() as i32:
             return
         var b = self.blocks.get(block as i64)
@@ -663,7 +663,7 @@ impl StackifyContext:
             i = i + 1
         child_start
 
-    mut fn tree_add_values_from_vec(values: Vec[i32]) -> i32:
+    mut fn tree_add_values_from_vec(values: &Vec[i32]) -> i32:
         let start = self.tree.values.len() as i32
         var i: i64 = 0
         while i < values.len():
@@ -722,7 +722,7 @@ impl StackifyContext:
     mut fn push_ctrl(kind: i32, label_block: i32):
         self.ctrl_stack.push(StackifyCtrlEntry { kind, label_block })
 
-fn stackify_ctrl_label(entry: StackifyCtrlEntry) -> i32:
+fn stackify_ctrl_label(entry: &StackifyCtrlEntry) -> i32:
     if entry.kind == StackifyCtrlKind.IfThenElse:
         return stackify_invalid()
     entry.label_block
@@ -969,7 +969,7 @@ fn stackify_context_new(graph: StackifyGraph, analysis: StackifyAnalysis) -> Sta
     }
 
 impl StackifyContext:
-    mut fn process(entry: StackifyProcessEntry):
+    mut fn process(entry: &StackifyProcessEntry):
         if entry.kind == StackifyProcessKind.DomSubtree:
             self.handle_dom_subtree(entry.block)
             return

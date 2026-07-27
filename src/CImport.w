@@ -273,7 +273,7 @@ pub fn ci_prepare_clang_resource_dir() -> Unit:
     if dir.len() > 0:
         with_cimport_set_resource_dir(dir)
 
-fn ci_set_include_paths(paths: Vec[str]):
+fn ci_set_include_paths(paths: &Vec[str]):
     with_cimport_clear_include_paths()
     for i in 0..paths.len() as i32:
         with_cimport_add_include_path(paths.get(i as i64))
@@ -14081,7 +14081,7 @@ impl CiStackEmitContext:
             i = i + 1
         stmts.stack_emit_stmt_block(&ids)
 
-    mut fn param_transfer(tree: &StackifyTree, node: StackifyNode, stmts: CiStmtPool) -> CiStmtId:
+    mut fn param_transfer(tree: &StackifyTree, node: &StackifyNode, stmts: CiStmtPool) -> CiStmtId:
         if node.values_count == 0 and node.to_values_count == 0:
             return 0 as CiStmtId
         if node.values_count != node.to_values_count:
@@ -14096,7 +14096,7 @@ impl CiStackEmitContext:
             i = i + 1
         stmts.stack_emit_stmt_block(&ids)
 
-    mut fn emit_return(tree: &StackifyTree, node: StackifyNode, stmts: CiStmtPool) -> CiStmtId:
+    mut fn emit_return(tree: &StackifyTree, node: &StackifyNode, stmts: CiStmtPool) -> CiStmtId:
         if node.values_count == 0:
             return stmts.return_(0 as CiExprId)
         if node.values_count == 1:
@@ -14306,7 +14306,7 @@ impl CiExprPool:
         self.int_lit(zero_idx, ty_id)
 
 impl CiStmtPool:
-    fn native_goto_emit_cfg(cfg: CiGotoCfg, hoisted_stmt_ids: &Vec[i32], exprs: CiExprPool, types: CiTypePool) -> CiStmtId:
+    fn native_goto_emit_cfg(cfg: &CiGotoCfg, hoisted_stmt_ids: &Vec[i32], exprs: CiExprPool, types: CiTypePool) -> CiStmtId:
         let labels = self.native_goto_label_syms(cfg)
         if cfg.graph.entry < 0 or cfg.graph.entry >= labels.len() as i32:
             return ci_native_goto_fail("native goto emitter: entry block out of range")

@@ -1437,7 +1437,7 @@ impl AstPool:
     fn ct_build_binary(node: i32, op: i32, lhs: i32, rhs: i32) -> i32:
         self.add_node(NodeKind.NK_BINARY, self.get_start(node), self.get_end(node), op, lhs, rhs) as i32
 
-    fn ct_build_block(node: i32, stmts: Vec[i32], tail: i32) -> i32:
+    fn ct_build_block(node: i32, stmts: &Vec[i32], tail: i32) -> i32:
         let stmt_extra = self.extra_len()
         for si in 0..stmts.len() as i32:
             self.add_extra(stmts.get(si as i64))
@@ -1960,11 +1960,11 @@ fn ct_build_self_field(out: AstPool, decl: i32, self_sym: i32, field_sym: i32) -
     let self_ident = out.ct_build_ident(decl, self_sym)
     out.ct_build_field_access(decl, self_ident, field_sym)
 
-fn ct_build_method_call(out: AstPool, decl: i32, receiver: i32, method_sym: i32, args: Vec[i32]) -> i32:
+fn ct_build_method_call(out: AstPool, decl: i32, receiver: i32, method_sym: i32, args: &Vec[i32]) -> i32:
     let callee = out.ct_build_field_access(decl, receiver, method_sym)
     out.ct_build_call(decl, callee, args)
 
-fn ct_build_generic_type(out: AstPool, decl: i32, type_sym: i32, args: Vec[i32]) -> i32:
+fn ct_build_generic_type(out: AstPool, decl: i32, type_sym: i32, args: &Vec[i32]) -> i32:
     let arg_start = out.extra_len()
     for ai in 0..args.len() as i32:
         out.add_extra(args.get(ai as i64))
@@ -1981,11 +1981,11 @@ fn ct_build_result_type(out: AstPool, intern: InternPool, decl: i32, ok_type: i3
     args.push(err_type)
     ct_build_generic_type(out, decl, intern.intern("Result"), args)
 
-fn ct_build_variant_call(out: AstPool, intern: InternPool, decl: i32, variant_name: str, args: Vec[i32]) -> i32:
+fn ct_build_variant_call(out: AstPool, intern: InternPool, decl: i32, variant_name: str, args: &Vec[i32]) -> i32:
     let callee = out.ct_build_ident(decl, intern.intern(variant_name))
     out.ct_build_call(decl, callee, args)
 
-fn ct_build_variant_shorthand(out: AstPool, intern: InternPool, decl: i32, variant_name: str, args: Vec[i32]) -> i32:
+fn ct_build_variant_shorthand(out: AstPool, intern: InternPool, decl: i32, variant_name: str, args: &Vec[i32]) -> i32:
     let extra_start = out.extra_len()
     for ai in 0..args.len() as i32:
         out.add_extra(args.get(ai as i64))

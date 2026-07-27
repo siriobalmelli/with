@@ -1074,7 +1074,7 @@ fn comptime_glob_str_compare(a: str, b: str) -> i32:
         return -1
     1
 
-fn comptime_glob_sort(items: Vec[str]) -> Vec[str]:
+fn comptime_glob_sort(items: &Vec[str]) -> Vec[str]:
     var sorted: Vec[str] = Vec.new()
     for i in 0..items.len() as i32:
         let item = items.get(i as i64)
@@ -1101,7 +1101,7 @@ fn comptime_eval_result_invalid() -> ComptimeEvalResult:
         effect_records: Vec.new(),
     }
 
-unsafe fn comptime_eval_finish(sema_ptr: *mut Sema, evaluator: ComptimeEvaluator, value: ComptimeValue) -> ComptimeEvalResult:
+unsafe fn comptime_eval_finish(sema_ptr: *mut Sema, evaluator: &ComptimeEvaluator, value: ComptimeValue) -> ComptimeEvalResult:
     let has_pending_diag = evaluator.has_pending_diag
     let pending_diag = evaluator.pending_diag
     let extras = evaluator.extra_values
@@ -1508,14 +1508,14 @@ fn comptime_action_outputs(output: str, extra_outputs: &Vec[str]) -> Vec[str]:
         outputs.push(extra_outputs.get(i as i64))
     outputs
 
-fn comptime_action_write_scope(output: str, extra_outputs: Vec[str], write_scopes: Vec[str], scratch_path: str) -> Vec[str]:
+fn comptime_action_write_scope(output: str, extra_outputs: &Vec[str], write_scopes: &Vec[str], scratch_path: str) -> Vec[str]:
     let scopes = comptime_action_outputs(output, extra_outputs)
     for i in 0..write_scopes.len() as i32:
         scopes.push(write_scopes.get(i as i64))
     scopes.push(scratch_path)
     scopes
 
-fn comptime_action_capability_record(package_name: str, package_version: str, project_root: str, target_name: str, inputs: Vec[str], output: str, extra_outputs: Vec[str], args: Vec[str], write_scopes: Vec[str], timeout_ms: i32, cwd: str, env: Vec[str], network: i32) -> ComptimeCapabilityRecord:
+fn comptime_action_capability_record(package_name: str, package_version: str, project_root: str, target_name: str, inputs: Vec[str], output: str, extra_outputs: &Vec[str], args: Vec[str], write_scopes: &Vec[str], timeout_ms: i32, cwd: str, env: Vec[str], network: i32) -> ComptimeCapabilityRecord:
     let scratch_path = comptime_action_scratch_dir(target_name)
     ComptimeCapabilityRecord {
         kind: CapabilityKind.CK_BUILD_ACTION_CTX,
@@ -1804,7 +1804,7 @@ impl ComptimeEvaluator:
             return comptime_control_value(signal.value)
         signal
 
-    mut fn eval_package_value(record: ComptimeCapabilityRecord, node: i32) -> ComptimeValue:
+    mut fn eval_package_value(record: &ComptimeCapabilityRecord, node: i32) -> ComptimeValue:
         let package_type = self.named_type_id("Package", node)
         if package_type == 0:
             return comptime_value_invalid()
@@ -1813,7 +1813,7 @@ impl ComptimeEvaluator:
         self.extra_values.push(comptime_value_str(record.package_version))
         comptime_value_struct(package_type, start, 2)
 
-    mut fn eval_new_build_value(record: ComptimeCapabilityRecord, node: i32) -> ComptimeValue:
+    mut fn eval_new_build_value(record: &ComptimeCapabilityRecord, node: i32) -> ComptimeValue:
         let build_type = self.named_type_id("Build", node)
         if build_type == 0:
             return comptime_value_invalid()
@@ -1919,7 +1919,7 @@ impl ComptimeEvaluator:
             pending_link_command: link_stage_empty_command(),
         }
 
-    fn store_workspace_record(workspace_id: i32, record: ComptimeWorkspaceRecord):
+    fn store_workspace_record(workspace_id: i32, record: &ComptimeWorkspaceRecord):
         let slot_index = workspace_id as i64
         with self.workspace_records.slot(slot_index) as mut slot:
             slot.set(record)
@@ -2360,7 +2360,7 @@ impl ComptimeEvaluator:
             return comptime_control_error()
         comptime_control_value(comptime_value_str(with_str_concat(lhs, rhs)))
 
-    mut fn concat_comptime_string_parts(node: i32, parts: Vec[str]) -> ComptimeControl:
+    mut fn concat_comptime_string_parts(node: i32, parts: &Vec[str]) -> ComptimeControl:
         var total: i64 = 0
         for i in 0..parts.len() as i32:
             total = total + parts.get(i as i64).len()
@@ -3459,7 +3459,7 @@ impl ComptimeEvaluator:
             let result = self.eval_user_method_value(recv_node, recv, method, extra_start, arg_count, node, 1)
             let resolved_sig = self.sema.resolved_call_sigs.get(node)
             if resolved_sig.is_some():
-                let sig = resolved_sig.unwrap()
+                let sig: i32 = resolved_sig.unwrap()
                 let call_ret = self.sema.sig_return_type(sig)
                 let threads_receiver = if self.sema.sig_receiver_mode(sig) == ReceiverMode.Mut and self.sema.resolve_alias(call_ret as TypeId) == self.sema.ty_void: 1 else: 0
                 self.sema.pipeline_method_calls.insert(node, method)
@@ -3702,7 +3702,7 @@ fn comptime_sha256_text(data: str) -> str:
     sha256_hex(&digest[0] as *const u8)
 
 impl ComptimeEvaluator:
-    mut fn str_vec_value(values: Vec[str], node: i32) -> ComptimeValue:
+    mut fn str_vec_value(values: &Vec[str], node: i32) -> ComptimeValue:
         let vec_type = self.node_type_or(node, 0)
         if vec_type == 0:
             let _ = self.fail(node, "string vector result type is unknown")
@@ -4152,7 +4152,7 @@ impl ComptimeEvaluator:
                 messages.push(linked)
         messages
 
-    mut fn enum_payload_value(enum_name: str, variant_name: str, payloads: Vec[ComptimeValue], node: i32) -> ComptimeValue:
+    mut fn enum_payload_value(enum_name: str, variant_name: str, payloads: &Vec[ComptimeValue], node: i32) -> ComptimeValue:
         let enum_type = self.named_type_id(enum_name, node)
         if enum_type == 0:
             return comptime_value_invalid()
@@ -4165,7 +4165,7 @@ impl ComptimeEvaluator:
             self.extra_values.push(payloads.get(i as i64))
         comptime_value_enum(enum_type, variant_sym, payload_start, payloads.len() as i32)
 
-    mut fn compiler_message_value(variant_name: str, payloads: Vec[ComptimeValue], node: i32) -> ComptimeValue:
+    mut fn compiler_message_value(variant_name: str, payloads: &Vec[ComptimeValue], node: i32) -> ComptimeValue:
         self.enum_payload_value("CompilerMessage", variant_name, payloads, node)
 
     mut fn compiler_phase_value(phase_value: i32, node: i32) -> ComptimeValue:
@@ -4319,7 +4319,7 @@ impl ComptimeEvaluator:
             out.messages.push(message)
         out
 
-    mut fn enqueue_workspace_compile_result(record: ComptimeWorkspaceRecord, result: ComptimeValue, messages: Vec[ComptimeValue], node: i32) -> ComptimeWorkspaceRecord:
+    mut fn enqueue_workspace_compile_result(record: ComptimeWorkspaceRecord, result: ComptimeValue, messages: &Vec[ComptimeValue], node: i32) -> ComptimeWorkspaceRecord:
         var out = record
         for mi in 0..messages.len() as i32:
             out.messages.push(messages.get(mi as i64))
@@ -4434,7 +4434,7 @@ fn comptime_workspace_native_compile_result(rc: i32, artifact_path: str, comp: C
         *comp_ptr = comp
     ComptimeWorkspaceNativeCompileResult { rc, artifact_path, comp: comp_ptr, is_migrate }
 
-fn comptime_workspace_native_compile_result_free(native: ComptimeWorkspaceNativeCompileResult):
+fn comptime_workspace_native_compile_result_free(native: &ComptimeWorkspaceNativeCompileResult):
     if native.comp as i64 != 0:
         with_free(native.comp as *mut u8)
 
@@ -4468,7 +4468,7 @@ fn comptime_execute_workspace_migrate_plan(plan: &ComptimeWorkspaceCompilePlan) 
     migrate_c_file(plan.migrate_source, plan.absolute_output)
 
 impl ComptimeEvaluator:
-    mut fn workspace_compile_plan(record: &ComptimeWorkspaceRecord, capability: ComptimeCapabilityRecord, node: i32) -> ComptimeWorkspaceCompilePlan:
+    mut fn workspace_compile_plan(record: &ComptimeWorkspaceRecord, capability: &ComptimeCapabilityRecord, node: i32) -> ComptimeWorkspaceCompilePlan:
         let options = record.options
         let migrate_options = record.migrate_options
         let migrate_source_option = self.workspace_str_option(migrate_options, "source_path")
@@ -4609,7 +4609,7 @@ impl ComptimeEvaluator:
             migrate_shared_fragment: "",
         }
 
-fn comptime_execute_workspace_compile_plan(plan: ComptimeWorkspaceCompilePlan) -> ComptimeWorkspaceNativeCompileResult:
+fn comptime_execute_workspace_compile_plan(plan: &ComptimeWorkspaceCompilePlan) -> ComptimeWorkspaceNativeCompileResult:
     if plan.valid == 0:
         return comptime_workspace_native_compile_invalid()
     if plan.is_migrate != 0:
@@ -4655,7 +4655,7 @@ fn comptime_execute_workspace_compile_plan(plan: ComptimeWorkspaceCompilePlan) -
     comptime_workspace_native_compile_result(if success: 0 else: 1, artifact_path, move comp, 0)
 
 impl ComptimeEvaluator:
-    mut fn compile_workspace_record(record: &ComptimeWorkspaceRecord, capability: ComptimeCapabilityRecord, node: i32, want_messages: i32) -> ComptimeWorkspaceCompileResult:
+    mut fn compile_workspace_record(record: &ComptimeWorkspaceRecord, capability: &ComptimeCapabilityRecord, node: i32, want_messages: i32) -> ComptimeWorkspaceCompileResult:
         let plan = self.workspace_compile_plan(record, capability, node)
         if plan.valid == 0:
             return comptime_workspace_compile_invalid()
@@ -4682,7 +4682,7 @@ impl ComptimeEvaluator:
             return comptime_workspace_compile_invalid()
         comptime_workspace_compile_result(result, move messages)
 
-    mut fn start_intercept_workspace_compile(record: ComptimeWorkspaceRecord, capability: ComptimeCapabilityRecord, node: i32) -> ComptimeWorkspaceRecord:
+    mut fn start_intercept_workspace_compile(record: ComptimeWorkspaceRecord, capability: &ComptimeCapabilityRecord, node: i32) -> ComptimeWorkspaceRecord:
         var out = record
         out.intercept_started = 1
         if self.workspace_str_option(out.migrate_options, "source_path").len() > 0:
@@ -6524,7 +6524,7 @@ impl ComptimeEvaluator:
             i = i - 1
         out
 
-    mut fn eval_concat_chain(node: i32, parts: Vec[i32]) -> ComptimeControl:
+    mut fn eval_concat_chain(node: i32, parts: &Vec[i32]) -> ComptimeControl:
         let texts: Vec[str] = Vec.new()
         for i in 0..parts.len() as i32:
             let signal = self.eval_expr(parts.get(i as i64))
@@ -7009,7 +7009,7 @@ impl ComptimeEvaluator:
             saved_subst_tys: saved_subst_tys,
         }
 
-    mut fn restore_generic_substitutions(snapshot: ComptimeGenericSubstSnapshot):
+    mut fn restore_generic_substitutions(snapshot: &ComptimeGenericSubstSnapshot):
         for i in 0..snapshot.tp_syms.len() as i32:
             let tp_sym = snapshot.tp_syms.get(i as i64)
             if snapshot.saved_named_had.get(i as i64) == 1:
@@ -7297,12 +7297,12 @@ impl ComptimeEvaluator:
             return comptime_control_value(comptime_value_str(with_sysinfo_hostname()))
         comptime_control_error()
 
-    mut fn eval_fn_symbol_call_values(fn_sym: i32, arg_values: Vec[ComptimeValue], node: i32) -> ComptimeControl:
+    mut fn eval_fn_symbol_call_values(fn_sym: i32, arg_values: &Vec[ComptimeValue], node: i32) -> ComptimeControl:
         let empty_tp_syms: Vec[i32] = Vec.new()
         let empty_tp_tys: Vec[i32] = Vec.new()
         self.eval_fn_symbol_call_values_with_type_args(fn_sym, arg_values, node, empty_tp_syms, empty_tp_tys)
 
-    mut fn eval_fn_symbol_call_values_with_type_args(fn_sym: i32, arg_values: Vec[ComptimeValue], node: i32, tp_syms: Vec[i32], tp_tys: Vec[i32]) -> ComptimeControl:
+    mut fn eval_fn_symbol_call_values_with_type_args(fn_sym: i32, arg_values: &Vec[ComptimeValue], node: i32, tp_syms: &Vec[i32], tp_tys: &Vec[i32]) -> ComptimeControl:
         self.last_call_has_mut_receiver = 0
         self.last_call_mut_receiver = comptime_value_invalid()
         let fn_name = self.pool.resolve(fn_sym)
@@ -7472,7 +7472,7 @@ impl ComptimeEvaluator:
             return self.fail(fn_node, "loop control escaped comptime function")
         body_signal
 
-    mut fn eval_parallel_workspaces_call(arg_values: Vec[ComptimeValue], node: i32) -> ComptimeControl:
+    mut fn eval_parallel_workspaces_call(arg_values: &Vec[ComptimeValue], node: i32) -> ComptimeControl:
         if arg_values.len() as i32 != 1:
             return self.fail(node, "parallel takes one Vec[Workspace] argument")
         let workspaces = arg_values.get(0)

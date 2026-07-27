@@ -396,7 +396,7 @@ impl Zcu:
         if zcu_debug_pool_flow_enabled() != 0:
             runtime_eprint(f"[zcu] sync_from_sema:after zcu.pool={self.pool.state.symbol_texts.len() as i32} last_sema.pool={self.last_sema.pool.state.symbol_texts.len() as i32} last_sema.ast.decls={self.last_sema.ast.decl_count()}")
 
-    mut fn set_resolve_snapshot(result: ResolveResult, root_path: str):
+    mut fn set_resolve_snapshot(result: &ResolveResult, root_path: str):
         let modules: Vec[ResolvedModule] = Vec.new()
         for i in 0..result.modules.len() as i32:
             let m = result.modules.get(i as i64)
@@ -470,7 +470,7 @@ impl Zcu:
         let empty = zcu_new_vec_str()
         self.last_link_lib_names = empty
 
-    mut fn capture_last_link_lib_names(pool: InternPool, result: ResolveResult) -> Unit:
+    mut fn capture_last_link_lib_names(pool: InternPool, result: &ResolveResult) -> Unit:
         self.reset_last_link_lib_names()
         for li in 0..result.link_libs.len() as i32:
             let lib_sym = result.link_libs.get(li as i64)

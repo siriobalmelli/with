@@ -2175,7 +2175,7 @@ type ReorderedTier {
 }
 
 impl Zcu:
-    fn collect_module_dependency_order_frontend(path: str, wanted_paths: HashMap[str, i32], seen_paths: HashMap[str, i32], accum: DepOrderAccum) -> Unit:
+    fn collect_module_dependency_order_frontend(path: str, wanted_paths: &HashMap[str, i32], seen_paths: HashMap[str, i32], accum: DepOrderAccum) -> Unit:
         if path.len() == 0:
             return
         if seen_paths.contains(path):

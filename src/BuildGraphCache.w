@@ -265,7 +265,7 @@ fn build_cache_str_compare(a: str, b: str) -> i32:
         return -1
     1
 
-fn build_cache_sorted_strings(items: Vec[str]) -> Vec[str]:
+fn build_cache_sorted_strings(items: &Vec[str]) -> Vec[str]:
     var sorted: Vec[str] = Vec.new()
     for i in 0..items.len() as i32:
         let item = items.get(i as i64)
@@ -669,7 +669,7 @@ pub fn build_cache_freshness_reason(root: str, target: &BuildGraphTarget, dep_re
 pub fn build_cache_check_fresh(root: str, target: &BuildGraphTarget, dep_rebuilt: bool) -> bool:
     build_cache_freshness_reason(root, target, dep_rebuilt) == "fresh"
 
-pub fn build_cache_record(root: str, target: &BuildGraphTarget, discovered_deps: Vec[str], effects: Vec[str]) -> Unit:
+pub fn build_cache_record(root: str, target: &BuildGraphTarget, discovered_deps: &Vec[str], effects: &Vec[str]) -> Unit:
     build_cache_forget_fingerprints()
     let state_dir = build_cache_state_dir(root)
     let _ = build_graph_rt_mkdir_p(state_dir)
@@ -708,7 +708,7 @@ pub fn build_cache_record(root: str, target: &BuildGraphTarget, discovered_deps:
         content = content ++ "out:" ++ path ++ ":" ++ hash ++ "\n"
     let _ = build_graph_rt_write_file(state_path, content)
 
-pub fn build_cache_record_build_effects(root: str, effects: Vec[str]) -> Unit:
+pub fn build_cache_record_build_effects(root: str, effects: &Vec[str]) -> Unit:
     let state_dir = build_cache_state_dir(root)
     let _ = build_graph_rt_mkdir_p(state_dir)
     let effects_text = build_cache_effects_text(effects)

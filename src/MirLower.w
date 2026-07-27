@@ -4533,7 +4533,7 @@ impl MirBuilder:
         let base = self.lower_field_base_place_for_field(base_expr, field_idx)
         self.new_projected_field_place(base, field_idx, field_ty)
 
-    mut fn lower_user_deref_result_place(place: i32, current_ty: i32, deref_info: SemaDerefInfo, node: i32) -> i32:
+    mut fn lower_user_deref_result_place(place: i32, current_ty: i32, deref_info: &SemaDerefInfo, node: i32) -> i32:
         let result_ref_ty = if deref_info.target_ty != 0: self.sema.find_exact_type(TypeKind.TY_REF, deref_info.target_ty, 0, 0) as i32 else: deref_info.result_ref_ty
         var recv_ref_ty = 0
         if self.sema.generic_fn_node_for_symbol(deref_info.deref_fn) == 0:
@@ -8297,14 +8297,14 @@ impl MirBuilder:
     // Like lower_call but takes arg node indices in a Vec instead of reading from
     // pool.extra. This avoids mutating the shared AstPool (which would trigger
     // Vec realloc and invalidate other copies' pointers — use-after-free).
-    mut fn lower_call_with_arg_nodes(fn_op: i32, callee_sym: i32, arg_node_vec: Vec[i32], ret_type_id: i32, node: i32) -> i32:
+    mut fn lower_call_with_arg_nodes(fn_op: i32, callee_sym: i32, arg_node_vec: &Vec[i32], ret_type_id: i32, node: i32) -> i32:
         self.lower_call_with_arg_nodes_recv(fn_op, callee_sym, -1, arg_node_vec, ret_type_id, node)
 
     // Variant taking a pre-lowered receiver operand (recv_op >= 0): used by the
     // non-generic method path for `mut self` callees, where the receiver must be
     // an OK_COPY borrow of the caller's place rather than an OK_MOVE consumed
     // argument (§9.5/#641a). Remaining arg nodes shift to sig positions 1..n.
-    mut fn lower_call_with_arg_nodes_recv(fn_op: i32, callee_sym: i32, recv_op: i32, arg_node_vec: Vec[i32], ret_type_id: i32, node: i32) -> i32:
+    mut fn lower_call_with_arg_nodes_recv(fn_op: i32, callee_sym: i32, recv_op: i32, arg_node_vec: &Vec[i32], ret_type_id: i32, node: i32) -> i32:
         var sig_idx = self.call_sig_for_sym(callee_sym)
         let recorded_sig = self.sema.resolved_call_sigs.get(node)
         if recorded_sig.is_some():
@@ -9700,7 +9700,7 @@ impl MirBuilder:
         self.body.push_stmt(self.cur_bb, StmtKind.Assign, tuple_place, tuple_rv, span)
         self.body.new_operand(if self.sema.is_copy_frozen(unwrapped_ty) != 0: OperandKind.OK_COPY else: OperandKind.OK_MOVE, tuple_place)
 
-    mut fn assign_enum_variant_to_place(result_place: i32, result_ty: i32, variant_sym: i32, fields: Vec[i32], span: i32):
+    mut fn assign_enum_variant_to_place(result_place: i32, result_ty: i32, variant_sym: i32, fields: &Vec[i32], span: i32):
         let names: Vec[i32] = Vec.new()
         for _ in 0..fields.len() as i32:
             names.push(0)
@@ -10297,7 +10297,7 @@ impl MirBuilder:
         self.forget_string_flow_facts()
         self.operand_for_place(result_place, result_ty)
 
-    mut fn tuple_operand_from_fields(fields: Vec[i32], result_ty: i32, span: i32) -> i32:
+    mut fn tuple_operand_from_fields(fields: &Vec[i32], result_ty: i32, span: i32) -> i32:
         let names: Vec[i32] = Vec.new()
         for _ in 0..fields.len() as i32:
             names.push(0)
@@ -11437,7 +11437,7 @@ impl MirBuilder:
         let op_kind = if self.sema.is_copy_frozen(type_id) != 0: OperandKind.OK_COPY else: OperandKind.OK_MOVE
         self.body.new_operand(op_kind, place)
 
-    mut fn lower_call_with_operand_args(fn_op: i32, args: Vec[i32], ret_type: i32, node: i32) -> i32:
+    mut fn lower_call_with_operand_args(fn_op: i32, args: &Vec[i32], ret_type: i32, node: i32) -> i32:
         for ai in 0..args.len() as i32:
             self.consume_moved_operand(args.get(ai as i64))
         let args_id = self.body.new_call_args(args)
@@ -11492,10 +11492,10 @@ impl MirBuilder:
         if required:
             self.body.require_call_contract(args_id)
 
-    mut fn lower_resolved_call_with_operand_args(fn_sym: i32, args: Vec[i32], ret_type: i32, node: i32, require_contract: bool = true) -> i32:
+    mut fn lower_resolved_call_with_operand_args(fn_sym: i32, args: &Vec[i32], ret_type: i32, node: i32, require_contract: bool = true) -> i32:
         self.lower_resolved_call_with_operand_args_contract(fn_sym, args, ret_type, node, -1, 0, require_contract)
 
-    mut fn lower_resolved_call_with_operand_args_contract(fn_sym: i32, args: Vec[i32], ret_type: i32, node: i32, explicit_sig: i32, explicit_mono_sym: i32, require_contract: bool = true) -> i32:
+    mut fn lower_resolved_call_with_operand_args_contract(fn_sym: i32, args: &Vec[i32], ret_type: i32, node: i32, explicit_sig: i32, explicit_mono_sym: i32, require_contract: bool = true) -> i32:
         let fn_op = self.lower_var(fn_sym, 0, node)
         var sig_idx = self.call_sig_for_sym(fn_sym)
         let recorded_sig_opt = self.sema.resolved_call_sigs.get(node)
@@ -13469,7 +13469,7 @@ fn lower_generator_constructor(sema: &Sema, ast_pool: AstPool, pool: InternPool,
     builder.terminate(TermKind.TK_RETURN, 0, 0, 0, 0)
     builder.body
 
-fn lower_generator_next_body(sema: &Sema, source: MirBody, fn_node: i32) -> MirBody:
+fn lower_generator_next_body(sema: &Sema, source: &MirBody, fn_node: i32) -> MirBody:
     let fn_sym = source.fn_sym
     let next_sym = sema.generator_fn_next_syms.get(fn_sym).unwrap()
     let state_tid = sema.generator_fn_state_types.get(fn_sym).unwrap()
@@ -13508,7 +13508,7 @@ fn lower_generator_next_body(sema: &Sema, source: MirBody, fn_node: i32) -> MirB
         for ppi in 0..proj_count:
             let src_proj = proj_start + ppi
             out.proj_kinds.push(source.proj_kinds.get(src_proj as i64))
-            out.proj_d0.push(mir_gen_remap_place_projection_data(&source, &local_map, src_proj))
+            out.proj_d0.push(mir_gen_remap_place_projection_data(source, &local_map, src_proj))
         out.place_locals.push(base_local)
         out.place_sema_types.push(source.place_sema_types.get(pi as i64))
         out.place_proj_starts.push(new_proj_start)
@@ -13544,9 +13544,9 @@ fn lower_generator_next_body(sema: &Sema, source: MirBody, fn_node: i32) -> MirB
 
     for ri in 0..source.rval_kinds.len() as i32:
         out.rval_kinds.push(source.rval_kinds.get(ri as i64))
-        out.rval_d0.push(mir_gen_remap_rvalue(&source, &local_map, ri, 0))
-        out.rval_d1.push(mir_gen_remap_rvalue(&source, &local_map, ri, 1))
-        out.rval_d2.push(mir_gen_remap_rvalue(&source, &local_map, ri, 2))
+        out.rval_d0.push(mir_gen_remap_rvalue(source, &local_map, ri, 0))
+        out.rval_d1.push(mir_gen_remap_rvalue(source, &local_map, ri, 1))
+        out.rval_d2.push(mir_gen_remap_rvalue(source, &local_map, ri, 2))
 
     for bb in 0..source.block_count():
         let _ = out.new_block()
@@ -13964,7 +13964,7 @@ fn mir_fn_is_tailrec(ast_pool: AstPool, fn_sym: i32) -> i32:
         return 1
     0
 
-fn mir_tailrec_sig_compatible(sema: Sema, ast_pool: AstPool, fn_a: i32, fn_b: i32) -> i32:
+fn mir_tailrec_sig_compatible(sema: &Sema, ast_pool: AstPool, fn_a: i32, fn_b: i32) -> i32:
     let sig_a = sema.get_sig(fn_a)
     let sig_b = sema.get_sig(fn_b)
     if sig_a < 0 or sig_b < 0:
@@ -14282,7 +14282,7 @@ impl MirModule:
             syms.push(self.bodies.get(body_idx as i64).fn_sym)
         syms
 
-    fn verify_tailrec_contracts(sema: &Sema, ast_pool: AstPool, tailrec_syms: Vec[i32]) -> Vec[TailrecViolation]:
+    fn verify_tailrec_contracts(sema: &Sema, ast_pool: AstPool, tailrec_syms: &Vec[i32]) -> Vec[TailrecViolation]:
         let violations: Vec[TailrecViolation] = Vec.new()
         let body_count = self.body_count()
         var processed: Vec[i32] = Vec.new()

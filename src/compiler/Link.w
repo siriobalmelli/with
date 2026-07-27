@@ -270,7 +270,7 @@ fn link_stage_apply_env(env: &Vec[LinkStageEnvVar]) -> LinkStageSavedEnv:
         let _ = runtime_setenv(item.name, item.value)
     LinkStageSavedEnv { names, values }
 
-fn link_stage_restore_env(saved: LinkStageSavedEnv):
+fn link_stage_restore_env(saved: &LinkStageSavedEnv):
     for i in 0..saved.names.len() as i32:
         let _ = runtime_setenv(saved.names.get(i as i64), saved.values.get(i as i64))
 
@@ -288,7 +288,7 @@ impl LinkStageCommand:
         link_stage_restore_env(saved)
         rc
 
-fn link_stage_make_link_command(linker: str, obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str]) -> LinkStageCommand:
+fn link_stage_make_link_command(linker: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
     let env: Vec[LinkStageEnvVar] = Vec.new()
     let inputs: Vec[str] = Vec.new()
@@ -318,7 +318,7 @@ fn link_stage_make_link_command(linker: str, obj_path: str, bin_path: str, extra
         args.push(link_args.get(i as i64))
     if runtime_sysinfo_os() == "Linux":
         args.push("-lm")
-    let cleanup_files = link_stage_collect_cleanup_files(&extras)
+    let cleanup_files = link_stage_collect_cleanup_files(extras)
     LinkStageCommand { linker, args, cwd: "", env, inputs, outputs, cleanup_files }
 
 fn link_stage_file_exists(path: str) -> bool:
@@ -373,12 +373,12 @@ fn link_stage_linux_system_lib_path(name: str) -> str:
             return "/usr/lib/x86_64-linux-gnu/libxml2.so.16"
     ""
 
-fn link_stage_make_darwin_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str]) -> LinkStageCommand:
+fn link_stage_make_darwin_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
     let env: Vec[LinkStageEnvVar] = Vec.new()
     let inputs: Vec[str] = Vec.new()
     let outputs: Vec[str] = Vec.new()
-    let platform_version = link_stage_darwin_platform_version(obj_path, &extras)
+    let platform_version = link_stage_darwin_platform_version(obj_path, extras)
     args.push("-arch")
     args.push("arm64")
     args.push("-platform_version")
@@ -402,10 +402,10 @@ fn link_stage_make_darwin_llvm_link_command(llvm_ld: str, obj_path: str, bin_pat
     for i in 0..link_args.len() as i32:
         args.push(link_args.get(i as i64))
     args.push("-lSystem")
-    let cleanup_files = link_stage_collect_cleanup_files(&extras)
+    let cleanup_files = link_stage_collect_cleanup_files(extras)
     LinkStageCommand { linker: llvm_ld, args, cwd: "", env, inputs, outputs, cleanup_files }
 
-fn link_stage_make_linux_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str]) -> LinkStageCommand:
+fn link_stage_make_linux_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
     let env: Vec[LinkStageEnvVar] = Vec.new()
     let inputs: Vec[str] = Vec.new()
@@ -474,10 +474,10 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: str, obj_path: str, bin_path
     inputs.push(crtend)
     args.push(crtn)
     inputs.push(crtn)
-    let cleanup_files = link_stage_collect_cleanup_files(&extras)
+    let cleanup_files = link_stage_collect_cleanup_files(extras)
     LinkStageCommand { linker: llvm_ld, args, cwd: "", env, inputs, outputs, cleanup_files }
 
-fn link_stage_make_windows_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str]) -> LinkStageCommand:
+fn link_stage_make_windows_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
     let env: Vec[LinkStageEnvVar] = Vec.new()
     let inputs: Vec[str] = Vec.new()
@@ -529,10 +529,10 @@ fn link_stage_make_windows_llvm_link_command(llvm_ld: str, obj_path: str, bin_pa
     args.push("psapi.lib")
     args.push("dbghelp.lib")
     args.push("ntdll.lib")
-    let cleanup_files = link_stage_collect_cleanup_files(&extras)
+    let cleanup_files = link_stage_collect_cleanup_files(extras)
     LinkStageCommand { linker: llvm_ld, args, cwd: "", env, inputs, outputs, cleanup_files }
 
-fn link_stage_make_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str]) -> LinkStageCommand:
+fn link_stage_make_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let os = runtime_sysinfo_os()
     let arch = runtime_sysinfo_arch()
     if os == "Linux" and arch == "x86_64":
@@ -948,15 +948,15 @@ fn link_stage_link_object_to_binary(obj_path: str, bin_path: str, link_libs: Vec
     let link_args: Vec[str] = Vec.new()
     link_stage_link_object_to_binary_result(obj_path, bin_path, link_libs, link_search_paths, move link_args, needs_async_runtime).ok
 
-fn link_stage_link_object_to_binary_result(obj_path: str, bin_path: str, link_libs: Vec[str], link_search_paths: Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStageResult:
+fn link_stage_link_object_to_binary_result(obj_path: str, bin_path: str, link_libs: Vec[str], link_search_paths: &Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStageResult:
     let no_extra_objects: Vec[str] = Vec.new()
     link_stage_result_for_plan(link_stage_link_object_to_binary_plan_with_units(obj_path, no_extra_objects, bin_path, link_libs, link_search_paths, move link_args, needs_async_runtime))
 
-fn link_stage_link_object_to_binary_plan(obj_path: str, bin_path: str, link_libs: Vec[str], link_search_paths: Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStagePlan:
+fn link_stage_link_object_to_binary_plan(obj_path: str, bin_path: str, link_libs: Vec[str], link_search_paths: &Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStagePlan:
     let no_extra_objects: Vec[str] = Vec.new()
     link_stage_link_object_to_binary_plan_with_units(obj_path, no_extra_objects, bin_path, link_libs, link_search_paths, move link_args, needs_async_runtime)
 
-fn link_stage_link_object_to_binary_plan_with_units(obj_path: str, extra_objects: Vec[str], bin_path: str, link_libs: Vec[str], link_search_paths: Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStagePlan:
+fn link_stage_link_object_to_binary_plan_with_units(obj_path: str, extra_objects: &Vec[str], bin_path: str, link_libs: Vec[str], link_search_paths: &Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStagePlan:
     let extras: Vec[str] = Vec.new()
     // #650 codegen units: sibling .o files are full linker inputs like the
     // primary object (objects always load wholly, so position is irrelevant).

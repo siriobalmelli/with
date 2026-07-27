@@ -322,6 +322,8 @@ enum ReceiverMode: i32:
     Move = 3
     Missing = 4
 
+impl Copy for ReceiverMode
+
 enum WithFormKind: i32:
     Binding = 0
     Guarded = 1
@@ -337,6 +339,8 @@ enum AllocConstructKind: i32:
     ASYNC_FIBER = 7
     FFI_TEMPORARY = 8
     CALLEE = 9
+
+impl Copy for AllocConstructKind
 
 fn sema_effect_bits_text(bits: i32) -> str:
     let public_bits = bits & EFF_DECLARED_MASK
@@ -2582,7 +2586,7 @@ impl Sema:
             return self.ast.get_data2(callee)
         0
 
-    mut fn register_builtin_struct_type(name: str, field_names: Vec[str], field_types: Vec[i32], field_count: i32) -> i32:
+    mut fn register_builtin_struct_type(name: str, field_names: &Vec[str], field_types: &Vec[i32], field_count: i32) -> i32:
         let name_sym = self.pool_intern(name)
         let te_start = self.type_extra.len() as i32
         for fi in 0..field_count:
@@ -3092,7 +3096,7 @@ impl Sema:
                 return ti as TypeId
         0 as TypeId
 
-    fn ensure_tuple_type(elems: Vec[i32], elem_count: i32) -> TypeId:
+    fn ensure_tuple_type(elems: &Vec[i32], elem_count: i32) -> TypeId:
         let existing = self.find_tuple_type(elems, elem_count)
         if existing != 0:
             return existing
@@ -3131,14 +3135,14 @@ impl Sema:
     fn find_extern_fn_type(params: &Vec[i32], param_count: i32, ret: TypeId) -> TypeId:
         self.find_fn_type_of_kind_u(TypeKind.TY_EXTERN_FN, params, param_count, ret, 0)
 
-    fn ensure_fn_type(params: Vec[i32], param_count: i32, ret: TypeId) -> TypeId:
+    fn ensure_fn_type(params: &Vec[i32], param_count: i32, ret: TypeId) -> TypeId:
         self.ensure_callable_type(TypeKind.TY_FN, params, param_count, ret, 0)
 
-    fn ensure_extern_fn_type(params: Vec[i32], param_count: i32, ret: TypeId) -> TypeId:
+    fn ensure_extern_fn_type(params: &Vec[i32], param_count: i32, ret: TypeId) -> TypeId:
         self.ensure_callable_type(TypeKind.TY_EXTERN_FN, params, param_count, ret, 0)
 
-    fn ensure_callable_type(kind: i32, params: Vec[i32], param_count: i32, ret: TypeId, is_unsafe: i32) -> TypeId:
-        let existing = self.find_fn_type_of_kind_u(kind, &params, param_count, ret, is_unsafe)
+    fn ensure_callable_type(kind: i32, params: &Vec[i32], param_count: i32, ret: TypeId, is_unsafe: i32) -> TypeId:
+        let existing = self.find_fn_type_of_kind_u(kind, params, param_count, ret, is_unsafe)
         if existing != 0:
             return existing
         if self.types_frozen != 0:
@@ -3256,7 +3260,7 @@ impl Sema:
                 return ti as TypeId
         0 as TypeId
 
-    fn ensure_generic_inst_type(base_sym: i32, args: Vec[i32], arg_count: i32) -> TypeId:
+    fn ensure_generic_inst_type(base_sym: i32, args: &Vec[i32], arg_count: i32) -> TypeId:
         let existing = self.find_generic_inst_type(base_sym, args, arg_count)
         if existing != 0:
             return existing
@@ -3755,7 +3759,7 @@ impl Sema:
     // substitute_type: walk a TypeId, replacing type parameters with concrete types.
     // subst_syms/subst_tids/count define the mapping: subst_syms[i] → subst_tids[i].
     // Returns the substituted TypeId, or the original if no substitution applies.
-    fn substitute_type(tid: i32, subst_syms: Vec[i32], subst_tids: Vec[i32], count: i32) -> i32:
+    fn substitute_type(tid: i32, subst_syms: &Vec[i32], subst_tids: &Vec[i32], count: i32) -> i32:
         if tid <= 0 or count == 0:
             return tid
         let kind = self.get_type_kind(tid as TypeId)
@@ -4641,7 +4645,7 @@ impl Sema:
                 provenance.poisoned_binding_node = 0
                 slot.set(provenance)
 
-    fn set_binding_view_deps(sym: i32, param_mask: i32, deps: Vec[i32]):
+    fn set_binding_view_deps(sym: i32, param_mask: i32, deps: &Vec[i32]):
         if sym == 0:
             return
         if param_mask == 0 and deps.len() == 0:
@@ -4668,7 +4672,7 @@ impl Sema:
     // already exists — used when a store (Vec.push / HashMap.insert) adds the
     // pushed element's borrow origins to the container binding, so a later escape
     // of the container is caught by the ephemeral-escape checks.
-    fn add_binding_view_deps(sym: i32, param_mask: i32, deps: Vec[i32]):
+    fn add_binding_view_deps(sym: i32, param_mask: i32, deps: &Vec[i32]):
         if sym == 0:
             return
         if param_mask == 0 and deps.len() == 0:
@@ -4974,7 +4978,7 @@ impl Sema:
                 self.emit_error("view '" ++ view_name ++ "' may outlive its origin '" ++ origin_name ++ "'", err_node)
                 return
 
-    fn set_expr_view_deps(expr_node: i32, param_mask: i32, deps: Vec[i32]):
+    fn set_expr_view_deps(expr_node: i32, param_mask: i32, deps: &Vec[i32]):
         if expr_node == 0:
             return
         if param_mask == 0 and deps.len() == 0:

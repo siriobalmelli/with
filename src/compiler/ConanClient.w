@@ -470,7 +470,7 @@ fn conan_json_array(values: &Vec[str]) -> str:
         out = out ++ q ++ conan_json_escape(values.get(i as i64)) ++ q
     out ++ "]"
 
-fn conan_write_metadata(dest_dir: str, name: str, version: str, recipe_rev: str, package_id: str, package_rev: str, include_paths: Vec[str], lib_paths: Vec[str], libs: Vec[str], defines: Vec[str], link_args: Vec[str], requires: Vec[str]) -> i32:
+fn conan_write_metadata(dest_dir: str, name: str, version: str, recipe_rev: str, package_id: str, package_rev: str, include_paths: &Vec[str], lib_paths: &Vec[str], libs: &Vec[str], defines: &Vec[str], link_args: &Vec[str], requires: &Vec[str]) -> i32:
     let q = "\x22"
     let nl = "\n"
     var meta = "{" ++ nl
@@ -479,12 +479,12 @@ fn conan_write_metadata(dest_dir: str, name: str, version: str, recipe_rev: str,
     meta = meta ++ "  " ++ q ++ "recipe_revision" ++ q ++ ": " ++ q ++ conan_json_escape(recipe_rev) ++ q ++ "," ++ nl
     meta = meta ++ "  " ++ q ++ "package_id" ++ q ++ ": " ++ q ++ conan_json_escape(package_id) ++ q ++ "," ++ nl
     meta = meta ++ "  " ++ q ++ "package_revision" ++ q ++ ": " ++ q ++ conan_json_escape(package_rev) ++ q ++ "," ++ nl
-    meta = meta ++ "  " ++ q ++ "include_paths" ++ q ++ ": " ++ conan_json_array(&include_paths) ++ "," ++ nl
-    meta = meta ++ "  " ++ q ++ "lib_paths" ++ q ++ ": " ++ conan_json_array(&lib_paths) ++ "," ++ nl
-    meta = meta ++ "  " ++ q ++ "libs" ++ q ++ ": " ++ conan_json_array(&libs) ++ "," ++ nl
-    meta = meta ++ "  " ++ q ++ "defines" ++ q ++ ": " ++ conan_json_array(&defines) ++ "," ++ nl
-    meta = meta ++ "  " ++ q ++ "link_args" ++ q ++ ": " ++ conan_json_array(&link_args) ++ "," ++ nl
-    meta = meta ++ "  " ++ q ++ "requires" ++ q ++ ": " ++ conan_json_array(&requires) ++ nl
+    meta = meta ++ "  " ++ q ++ "include_paths" ++ q ++ ": " ++ conan_json_array(include_paths) ++ "," ++ nl
+    meta = meta ++ "  " ++ q ++ "lib_paths" ++ q ++ ": " ++ conan_json_array(lib_paths) ++ "," ++ nl
+    meta = meta ++ "  " ++ q ++ "libs" ++ q ++ ": " ++ conan_json_array(libs) ++ "," ++ nl
+    meta = meta ++ "  " ++ q ++ "defines" ++ q ++ ": " ++ conan_json_array(defines) ++ "," ++ nl
+    meta = meta ++ "  " ++ q ++ "link_args" ++ q ++ ": " ++ conan_json_array(link_args) ++ "," ++ nl
+    meta = meta ++ "  " ++ q ++ "requires" ++ q ++ ": " ++ conan_json_array(requires) ++ nl
     meta = meta ++ "}" ++ nl
     runtime_write_file(dest_dir ++ "/metadata.json", meta)
 
@@ -869,7 +869,7 @@ fn conan_resolve_and_install_requirements(requirements: &Vec[str], project_root:
         resolved.push(req_name ++ "/" ++ actual)
     resolved
 
-fn conan_write_binary_metadata(name: str, version: str, recipe_rev: str, package_id: str, package_rev: str, dep_dir: str, requirements: Vec[str]) -> i32:
+fn conan_write_binary_metadata(name: str, version: str, recipe_rev: str, package_id: str, package_rev: str, dep_dir: str, requirements: &Vec[str]) -> i32:
     var include_paths: Vec[str] = Vec.new()
     if runtime_is_dir(dep_dir ++ "/include") != 0:
         include_paths.push("include")

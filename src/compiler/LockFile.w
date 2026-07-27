@@ -249,7 +249,7 @@ pub fn lock_load(project_root: str) -> LockFile:
             current = LockEntry { name: "", source: "", version: "", recipe_rev: "", package_id: "", package_rev: "", sha256: "" }
     lock
 
-pub fn lock_upsert(lock: LockFile, entry: LockEntry) -> LockFile:
+pub fn lock_upsert(lock: &LockFile, entry: LockEntry) -> LockFile:
     let out_entries: Vec[LockEntry] = Vec.new()
     var inserted = false
     for i in 0..lock.entries.len() as i32:
@@ -268,7 +268,7 @@ pub fn lock_upsert(lock: LockFile, entry: LockEntry) -> LockFile:
         out_entries.push(entry)
     LockFile { entries: out_entries }
 
-pub fn lock_remove(lock: LockFile, name: str) -> LockFile:
+pub fn lock_remove(lock: &LockFile, name: str) -> LockFile:
     let out_entries: Vec[LockEntry] = Vec.new()
     for i in 0..lock.entries.len() as i32:
         let entry = lock.entries.get(i as i64)
@@ -276,7 +276,7 @@ pub fn lock_remove(lock: LockFile, name: str) -> LockFile:
             out_entries.push(entry)
     LockFile { entries: out_entries }
 
-pub fn lock_write(project_root: str, lock: LockFile) -> i32:
+pub fn lock_write(project_root: str, lock: &LockFile) -> i32:
     let dir = project_root ++ "/.with"
     if runtime_mkdir_p(dir) != 0:
         runtime_eprint("error: failed to create .with directory")

@@ -670,7 +670,7 @@ fn cli_build_synthetic_source(one: &CliOneLiner) -> CliSyntheticSource:
 fn cli_one_liner_bin_path -> str:
     f"out/tmp/with-cli-one-liner-{with_getpid()}-{with_clock_nanos()}"
 
-fn run_one_liner_command(argc: i32, one: CliOneLiner, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool) -> i32:
+fn run_one_liner_command(argc: i32, one: &CliOneLiner, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool) -> i32:
     let _ = argc
     let _ = debug_info
     if not one.ok:
@@ -1645,7 +1645,8 @@ fn build_options_for_graph_target(root: str, base: &BuildCommandOptions, target:
         options.output_kind = BuildOutputKind.Binary
     options
 
-unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, action_sema: *mut Sema, options: &BuildCommandOptions, survey: bool) -> i32:
+unsafe fn run_build_graph(root: str, cfg: &ProjectConfig, graph: &BuildGraph, action_sema: *mut Sema, options: &BuildCommandOptions, survey: bool) -> i32:
+    let no_strings: Vec[str] = Vec.new()
     if graph.targets.len() == 0:
         with_eprint("error: build.w did not declare any targets")
         return 1
@@ -1831,7 +1832,7 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
         if standard_result.handled:
             if standard_result.rc != 0:
                 return standard_result.rc
-            build_cache_record(root, target, Vec.new(), Vec.new())
+            build_cache_record(root, target, no_strings, no_strings)
             completed_targets.push(target.name)
             continue
         if target.kind == 23:
@@ -1854,7 +1855,7 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
                     survey_failed.push(target.name)
                     continue
                 return action_result.rc
-            build_cache_record(root, target, Vec.new(), action_result.effects)
+            build_cache_record(root, target, no_strings, action_result.effects)
             completed_targets.push(target.name)
             continue
         let source_path = resolve_join(root, target.entry)
@@ -1919,7 +1920,7 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
                 return 1
             comp.print_warnings()
             emit_c_header_next_to(&comp, ar_path)
-            build_cache_record(root, target, comp.tracked_input_paths(), Vec.new())
+            build_cache_record(root, target, comp.tracked_input_paths(), no_strings)
             completed_targets.push(target.name)
             continue
         if target.kind == 3:
@@ -1935,7 +1936,7 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
                 return 1
             comp.print_warnings()
             emit_c_header_next_to(&comp, obj_path)
-            build_cache_record(root, target, comp.tracked_input_paths(), Vec.new())
+            build_cache_record(root, target, comp.tracked_input_paths(), no_strings)
             completed_targets.push(target.name)
             continue
         if target.kind == 4:
@@ -1951,7 +1952,7 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
                 return 1
             comp.print_warnings()
             emit_c_header_next_to(&comp, ar_path)
-            build_cache_record(root, target, comp.tracked_input_paths(), Vec.new())
+            build_cache_record(root, target, comp.tracked_input_paths(), no_strings)
             completed_targets.push(target.name)
             continue
         let bin_path = build_graph_output_path(root, target, options.output_path, graph.targets.len() as i32)
@@ -1965,7 +1966,7 @@ unsafe fn run_build_graph(root: str, cfg: ProjectConfig, graph: &BuildGraph, act
             with_eprint("error: build.w target failed: " ++ target.name)
             return 1
         comp.print_warnings()
-        build_cache_record(root, target, comp.tracked_input_paths(), Vec.new())
+        build_cache_record(root, target, comp.tracked_input_paths(), no_strings)
         completed_targets.push(target.name)
     while pool_oldest < pool_names.len() as i32:
         let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
@@ -2214,7 +2215,7 @@ fn cli_fast_install_blessed(root: str, target_name: str) -> i32:
     with_write("[" ++ target_name ++ "] " ++ dest ++ " <- out/release/bin/with (verified against last-green)\n")
     0
 
-fn run_build_command(options: BuildCommandOptions, graph_options: BuildGraphCommandOptions) -> i32:
+fn run_build_command(options: BuildCommandOptions, graph_options: &BuildGraphCommandOptions) -> i32:
     let cmd_t0 = with_clock_nanos()
     var actual_options = options
     var actual_source = actual_options.source_path
@@ -2743,7 +2744,7 @@ fn discover_bench_functions(text: str) -> BenchDiscovery:
                 bench_names.push(fn_name)
     BenchDiscovery { parse_ok: true, has_main, bench_names }
 
-fn synthesize_bench_main_source(text: str, bench_names: Vec[str]) -> str:
+fn synthesize_bench_main_source(text: str, bench_names: &Vec[str]) -> str:
     var out = StringBuilder.with_capacity(text.len())
     out.push_str(text)
     if text.len() > 0 and with_str_byte_at(text, with_str_len(text) - 1) != 10:
@@ -2766,7 +2767,7 @@ fn synthesize_bench_main_source(text: str, bench_names: Vec[str]) -> str:
         out.push_str("\")\n")
     out.to_str()
 
-fn synthesize_test_main_source(text: str, test_names: Vec[str]) -> str:
+fn synthesize_test_main_source(text: str, test_names: &Vec[str]) -> str:
     var out = StringBuilder.with_capacity(text.len())
     out.push_str(text)
     if text.len() > 0 and with_str_byte_at(text, with_str_len(text) - 1) != 10:
@@ -3118,7 +3119,7 @@ fn test_validate_output(stream_name: str, actual: str, expected_values: &Vec[str
             return false
     true
 
-fn validate_test_run(result: TestRunResult, directives: &TestDirectives, target: str, test_name: str) -> bool:
+fn validate_test_run(result: &TestRunResult, directives: &TestDirectives, target: str, test_name: str) -> bool:
     if directives.has_expect_exit:
         if result.rc != directives.expect_exit:
             emit_test_stage_error(f"exit code {result.rc}, expected {directives.expect_exit}", target, "run", test_name)

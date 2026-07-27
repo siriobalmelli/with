@@ -871,7 +871,7 @@ impl Compilation:
         let pool = self.compile_file_with_config(source_path, move cfg)
         self.check_pool(pool, source_path)
 
-    mut fn check_source_texts(source_paths: Vec[str], source_texts: Vec[str]) -> bool:
+    mut fn check_source_texts(source_paths: &Vec[str], source_texts: &Vec[str]) -> bool:
         let pool = self.compile_entry_source_texts(source_paths, source_texts)
         if source_paths.len() == 0:
             return false
@@ -1050,7 +1050,7 @@ impl Compilation:
         let pool = self.compile_entry_file_with_config(source_path, move cfg)
         self.finish_binary_from_pool(pool, source_path, obj_path, bin_path)
 
-    mut fn build_binary_to_path_with_link_libs(source_path: str, bin_path: str, link_libs: Vec[str]) -> str:
+    mut fn build_binary_to_path_with_link_libs(source_path: str, bin_path: str, link_libs: &Vec[str]) -> str:
         let include_paths: Vec[str] = Vec.new()
         let defines: Vec[str] = Vec.new()
         self.build_binary_to_path_with_build_settings(source_path, bin_path, include_paths, defines, link_libs)
@@ -1093,7 +1093,7 @@ impl Compilation:
         source_texts.push(source_text)
         self.build_entry_binary_from_sources_to_path(source_paths, source_texts, bin_path)
 
-    mut fn build_entry_binary_from_sources_to_path(source_paths: Vec[str], source_texts: Vec[str], bin_path: str) -> str:
+    mut fn build_entry_binary_from_sources_to_path(source_paths: &Vec[str], source_texts: &Vec[str], bin_path: str) -> str:
         if source_paths.len() == 0 or source_texts.len() == 0 or source_paths.len() != source_texts.len():
             runtime_eprint("error: build_entry_binary_from_sources_to_path requires matching non-empty source paths and texts")
             return ""

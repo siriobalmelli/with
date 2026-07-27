@@ -1626,7 +1626,7 @@ impl Codegen:
         self.loop_labels = Vec.new()
         self.loop_depth = 0
 
-    mut fn restore_loop_state(state: LoopState):
+    mut fn restore_loop_state(state: &LoopState):
         self.loop_break_bbs = state.break_bbs
         self.loop_continue_bbs = state.continue_bbs
         self.loop_result_allocas = state.result_allocas
@@ -2075,7 +2075,7 @@ impl Codegen:
                             return alias_known.unwrap()
         0
 
-    mut fn coerce_call_args_for_fn_value(fn_sym: i32, fn_val: i64, args_start: i32, arg_node_base_index: i32, args: Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> Vec[i64]:
+    mut fn coerce_call_args_for_fn_value(fn_sym: i32, fn_val: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> Vec[i64]:
         let out: Vec[i64] = Vec.new()
         let param_count = wl_count_params(fn_val)
         let sret_opt = self.extern_fn_has_sret.get(fn_sym)
@@ -2119,7 +2119,7 @@ impl Codegen:
             out.push(arg_val)
         out
 
-    mut fn build_call_fn_value(fn_sym: i32, fn_val: i64, fn_ty: i64, args_start: i32, arg_node_base_index: i32, args: Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> i64:
+    mut fn build_call_fn_value(fn_sym: i32, fn_val: i64, fn_ty: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> i64:
         let sret_opt = self.extern_fn_has_sret.get(fn_sym)
         let has_sret = if sret_opt.is_some(): sret_opt.unwrap() else: 0
         var sret_ty: i64 = 0
@@ -5655,7 +5655,7 @@ impl Codegen:
         self.gen_function_mir_mono(mono_sym, 0, body)
         ConcreteMirFunction { sym: mono_sym, value: function, fn_type, sig: sig_idx }
 
-    mut fn call_concrete_mir_function(concrete: ConcreteMirFunction, args_start: i32, arg_node_base_index: i32, args: Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> i64:
+    mut fn call_concrete_mir_function(concrete: &ConcreteMirFunction, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> i64:
         if self.sema.task_fns.contains(concrete.sym):
             let task_sema = self.sema.sig_return_type(concrete.sig)
             let task_ty = self.sema_type_to_llvm(task_sema)
@@ -5667,7 +5667,7 @@ impl Codegen:
             return self.emit_async_fn_spawn_task_value(concrete.sym, concrete.value, concrete.fn_type, &coerced, task_ty)
         self.build_call_fn_value(concrete.sym, concrete.value, concrete.fn_type, args_start, arg_node_base_index, args, arg_count, call_context, call_node)
 
-    mut fn monomorphize_struct_method_core(mono_type_sym: i32, method_name: str, _decl: i32, obj: i64, obj_ptr: i64, obj_node: i32, obj_ty: i64, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: Vec[i64]) -> i64:
+    mut fn monomorphize_struct_method_core(mono_type_sym: i32, method_name: str, _decl: i32, obj: i64, obj_ptr: i64, obj_node: i32, obj_ty: i64, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
         let fallback = self.intern.intern(self.intern.resolve(mono_type_sym) ++ "." ++ method_name)
         let concrete = self.ensure_concrete_mir_function(call_node, concrete_sig, concrete_sym, fallback, "method " ++ method_name)
         if concrete.sym == 0:
@@ -5681,7 +5681,7 @@ impl Codegen:
             args.push(pre_args.get(ai as i64))
         self.call_concrete_mir_function(concrete, args_start, 1, args, arg_count + 1, "method " ++ method_name, call_node)
 
-    mut fn monomorphize_struct_static_method_core(mono_type_sym: i32, method_name: str, _decl: i32, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: Vec[i64]) -> i64:
+    mut fn monomorphize_struct_static_method_core(mono_type_sym: i32, method_name: str, _decl: i32, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
         let fallback = self.intern.intern(self.intern.resolve(mono_type_sym) ++ "." ++ method_name)
         let concrete = self.ensure_concrete_mir_function(call_node, concrete_sig, concrete_sym, fallback, "static method " ++ method_name)
         if concrete.sym == 0:

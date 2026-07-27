@@ -11,6 +11,8 @@ pub enum AnalysisStage: i32:
     Diagnostic = 6
     Source = 7
 
+impl Copy for AnalysisStage
+
 pub enum AnalysisFactKind: i32:
     Declaration = 1
     Signature = 2
@@ -39,12 +41,16 @@ pub enum AnalysisFactKind: i32:
 
 // Stable analysis-domain receiver modes. Keep tools on this public schema rather
 // than exposing Sema's internal ReceiverMode representation.
+impl Copy for AnalysisFactKind
+
 pub enum AnalysisReceiverMode: i32:
     None = 0
     Read = 1
     Mut = 2
     Move = 3
     Missing = 4
+
+impl Copy for AnalysisReceiverMode
 
 pub enum AnalysisDeclarationFlag: i32:
     ExplicitReceiver = 256
@@ -93,6 +99,8 @@ enum AnalysisMarshalStrategy: i32:
     CalleePlaceAlias = 7
     CalleeOwnedCopy = 8
     CalleeDirectValue = 9
+
+impl Copy for AnalysisMarshalStrategy
 
 fn analysis_marshal_strategy_name(strategy: AnalysisMarshalStrategy) -> str:
     if strategy == AnalysisMarshalStrategy.DirectValue: return "direct-value"

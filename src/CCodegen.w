@@ -8393,7 +8393,7 @@ impl CCodegen:
                 out = out ++ "void"
         out ++ ");\n"
 
-    fn should_emit_extern_fn_decl(fn_sym: i32, referenced: HashMap[i32, i32]) -> i32:
+    fn should_emit_extern_fn_decl(fn_sym: i32, referenced: &HashMap[i32, i32]) -> i32:
         if not referenced.contains(fn_sym):
             return 0
         let name = self.canonical_extern_name(cc_intern_resolve(self.intern, fn_sym))

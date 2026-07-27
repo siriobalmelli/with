@@ -27,6 +27,7 @@ type NodeId = i32
 // cannot be mixed with another id space without an explicit cast, making
 // the #660 collision class unrepresentable where adopted.
 pub type AstFileId = distinct i32
+impl Copy for AstFileId
 
 pub enum NodeKind: i32:
     // Declarations

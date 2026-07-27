@@ -1031,7 +1031,7 @@ impl Sema:
                     let _ = stack.pop()
                     color.insert(cur, 2)
 
-    mut fn emit_type_cycle_error(cycle_start: i32, cycle_end: i32, closing_edge_node: i32, parent_sym: HashMap[i32, i32], parent_edge: HashMap[i32, i32]):
+    mut fn emit_type_cycle_error(cycle_start: i32, cycle_end: i32, closing_edge_node: i32, parent_sym: &HashMap[i32, i32], parent_edge: &HashMap[i32, i32]):
         // Reconstruct cycle path: cycle_start → ... → cycle_end → cycle_start
         var path_syms: Vec[i32] = Vec.new()
         var path_edges: Vec[i32] = Vec.new()

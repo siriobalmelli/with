@@ -111,7 +111,7 @@ pub fn build_graph_run_external_test_file(root: str, target: &BuildGraphTarget, 
     let _remove_stderr = build_graph_rt_remove_file(stderr_path)
     0
 
-fn build_graph_wait_external_test_job(target: &BuildGraphTarget, job: BuildGraphExternalTestJob) -> i32:
+fn build_graph_wait_external_test_job(target: &BuildGraphTarget, job: &BuildGraphExternalTestJob) -> i32:
     let rc = build_graph_rt_exec_wait(job.pid, 300000)
     if rc == 124:
         build_graph_rt_eprint("error: build.w test target '" ++ target.name ++ "' timed out in '" ++ job.test_path ++ "'; stdout=" ++ job.stdout_path ++ " stderr=" ++ job.stderr_path)

@@ -317,6 +317,8 @@ pub enum Order: i32:
     AcqRel = 3
     SeqCst = 4
 
+impl Copy for Order
+
 /// Atomic memory fence. Enforces ordering without an associated operation.
 pub fn fence(order: Order) -> Unit:
     // Compiler intrinsic — body is replaced by MIR_INTRINSIC_ATOMIC_FENCE

@@ -39,11 +39,11 @@ fn ci_ir_owned_text(text: str) -> str:
         return ""
     with_str_clone(text)
 
-fn ci_ir_free_vec_i32(v: Vec[i32]):
+fn ci_ir_free_vec_i32(v: &Vec[i32]):
     if v.cap > 0 and v.ptr as i64 != 0:
         with_free(v.ptr as *mut u8)
 
-fn ci_ir_free_vec_str(v: Vec[str]):
+fn ci_ir_free_vec_str(v: &Vec[str]):
     if v.cap > 0 and v.ptr as i64 != 0:
         with_free(v.ptr as *mut u8)
 
