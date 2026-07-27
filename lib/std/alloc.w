@@ -260,19 +260,6 @@ impl Drop for ArenaScope:
 pub fn ArenaScope.allocation_count(self: &ArenaScope) -> i32:
     self.allocations
 
-pub fn arena_alloc(arena: Arena, size: i32) -> *i8:
-    arena.alloc(size)
-
-pub fn arena_alloc_zeroed(arena: Arena, count: i32, size: i32) -> *i8:
-    arena.alloc_zeroed(count, size)
-
-pub fn arena_free(arena: Arena, ptr: *i8) -> Unit:
-    let _ = arena
-    let _ = ptr
-
-pub fn arena_reset(arena: Arena) -> Unit:
-    arena.reset()
-
 pub fn scratch_arena() -> TempArena:
     TempArena { allocations: Vec.new() }
 
@@ -352,12 +339,6 @@ impl Drop for PoolAllocator:
         // The owned `pool` field drops transitively (Pool: Drop); an explicit
         // self.pool.drop() here would double-free it.
         ()
-
-pub fn pool_alloc(pool: Pool) -> *i8:
-    pool.alloc()
-
-pub fn pool_free(pool: Pool, ptr: *i8) -> Unit:
-    pool.free(ptr)
 
 pub fn arena_vec_new_in[T](arena: *mut Arena) -> ArenaVec[T]:
     ArenaVec { arena: arena, ptr: 0 as *mut T, len_value: 0, cap_value: 0 }
