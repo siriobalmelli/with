@@ -353,6 +353,11 @@ fn link_stage_linux_emulation() -> str:
     "elf_x86_64"
 
 fn link_stage_linux_dynamic_linker(sysroot: str) -> str:
+    let explicit = runtime_getenv("WITH_LINUX_DYNAMIC_LINKER")
+    if explicit.len() > 0:
+        if link_stage_file_exists(explicit):
+            return explicit
+        return ""
     if link_stage_linux_arch() == "aarch64":
         if link_stage_file_exists(sysroot ++ "/lib/ld-linux-aarch64.so.1"):
             return "/lib/ld-linux-aarch64.so.1"
@@ -366,6 +371,12 @@ fn link_stage_linux_dynamic_linker(sysroot: str) -> str:
     ""
 
 fn link_stage_linux_crt_object(sysroot: str, name: str) -> str:
+    let explicit_dir = runtime_getenv("WITH_LINUX_CRT_DIR")
+    if explicit_dir.len() > 0:
+        let explicit = explicit_dir ++ "/" ++ name
+        if link_stage_file_exists(explicit):
+            return explicit
+        return ""
     let multiarch = link_stage_linux_multiarch()
     let usr = sysroot ++ "/usr/lib/" ++ multiarch ++ "/" ++ name
     if link_stage_file_exists(usr):
@@ -376,6 +387,12 @@ fn link_stage_linux_crt_object(sysroot: str, name: str) -> str:
     ""
 
 fn link_stage_linux_gcc_dir(sysroot: str) -> str:
+    let explicit = runtime_getenv("WITH_LINUX_GCC_DIR")
+    if explicit.len() > 0:
+        if link_stage_file_exists(explicit ++ "/crtbegin.o") and
+            link_stage_file_exists(explicit ++ "/crtend.o"):
+            return explicit
+        return ""
     let base = sysroot ++ "/usr/lib/gcc/" ++ link_stage_linux_multiarch() ++ "/"
     let candidates: Vec[str] = Vec.new()
     candidates.push(base ++ "15")
@@ -392,6 +409,8 @@ fn link_stage_linux_gcc_dir(sysroot: str) -> str:
     ""
 
 fn link_stage_linux_system_lib_path(sysroot: str, name: str) -> str:
+    if runtime_getenv("WITH_LINUX_SYSLIB_DIR").len() > 0:
+        return ""
     let libdir = sysroot ++ "/usr/lib/" ++ link_stage_linux_multiarch()
     if name == "z":
         if link_stage_file_exists(libdir ++ "/libz.so"):
@@ -496,6 +515,12 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: str, obj_path: str, bin_path
         inputs.push(extra)
 
     args.push("-L" ++ gcc_dir)
+    let crt_dir = runtime_getenv("WITH_LINUX_CRT_DIR")
+    if crt_dir.len() > 0:
+        args.push("-L" ++ crt_dir)
+    let syslib_dir = runtime_getenv("WITH_LINUX_SYSLIB_DIR")
+    if syslib_dir.len() > 0:
+        args.push("-L" ++ syslib_dir)
     args.push("-L" ++ sysroot ++ "/usr/lib/" ++ link_stage_linux_multiarch())
     args.push("-L" ++ sysroot ++ "/lib/" ++ link_stage_linux_multiarch())
     args.push("-L" ++ sysroot ++ "/usr/lib")
@@ -733,6 +758,12 @@ fn link_stage_link_with_extras_and_libs_plan(obj_path: str, bin_path: str, extra
     let link_args: Vec[str] = Vec.new()
     link_stage_link_with_extras_libs_args_plan(obj_path, bin_path, extras, link_libs, link_args)
 
+fn link_stage_cc_linker() -> str:
+    let explicit = runtime_getenv("WITH_LINK_CC")
+    if explicit.len() > 0:
+        return explicit
+    "cc"
+
 fn link_stage_link_with_extras_libs_args_plan(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str]) -> LinkStagePlan:
     // Cross links never go through the host cc driver: route to the
     // LLVM linker plan, which dispatches on the active target.
@@ -746,7 +777,7 @@ fn link_stage_link_with_extras_libs_args_plan(obj_path: str, bin_path: str, extr
                 with_eprint("error: cross-target link requires LLVM linker metadata (" ++ root ++ "/llvm_ld)")
             return link_stage_plan_fail()
         return link_stage_link_with_llvm_args_plan(obj_path, bin_path, extras, link_libs, link_args, ld_path)
-    let command = link_stage_make_link_command("cc", obj_path, bin_path, extras, link_libs, link_args)
+    let command = link_stage_make_link_command(link_stage_cc_linker(), obj_path, bin_path, extras, link_libs, link_args)
     link_stage_plan_for_command(move command)
 
 fn link_stage_link_with_llvm(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], llvm_ld: str) -> bool:
