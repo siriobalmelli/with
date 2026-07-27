@@ -355,6 +355,11 @@ impl Sema:
                 return di
         -1
 
+    fn decl_index_source_path(di: i32) -> str:
+        if di < 0 or di >= self.decl_source_paths.len() as i32:
+            return ""
+        self.decl_source_paths.get(di as i64)
+
     fn decls_share_source_file(a: i32, b: i32) -> i32:
         if a < 0 or b < 0:
             return 0
@@ -1799,6 +1804,10 @@ impl Sema:
     fn impl_decl_has_method(impl_node: i32, method_sym: i32) -> i32:
         let start = self.ast.get_start(impl_node)
         let end = self.ast.get_end(impl_node)
+        // Same-file guard: spans are per-file offsets, so containment alone is
+        // not membership in a multi-module pool (#734, see
+        // impl_decl_method_node).
+        let impl_path = self.decl_index_source_path(self.find_decl_index(impl_node))
         let method_name = self.pool_resolve(method_sym)
         for di in 0..self.ast.decl_count():
             let decl = self.ast.get_decl(di)
@@ -1807,6 +1816,9 @@ impl Sema:
             let decl_start = self.ast.get_start(decl)
             let decl_end = self.ast.get_end(decl)
             if decl_start < start or decl_end > end:
+                continue
+            let decl_path = self.decl_index_source_path(di)
+            if impl_path.len() > 0 and decl_path.len() > 0 and decl_path != impl_path:
                 continue
             let fn_sym = self.ast.get_data0(decl)
             let fn_name = self.pool_resolve(fn_sym)

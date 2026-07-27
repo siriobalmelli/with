@@ -16637,6 +16637,8 @@ impl Sema:
             for ai in 0..self.get_generic_inst_arg_count(resolved):
                 mono_text = f"{mono_text}_{self.get_generic_inst_arg(resolved, ai)}"
             let mono_sym = self.pool_intern(mono_text)
+            if with_getenv_str("WITH_DEBUG_SUBST").len() > 0:
+                with_eprint(f"[gdrop] tid={resolved} base={self.pool_resolve(self.get_generic_inst_base(resolved))} method_fn={self.pool_resolve(method_fn)} node={method_node} mono={mono_text}")
             var sig_idx = self.get_sig(mono_sym)
             if sig_idx < 0:
                 let concrete_params: Vec[i32] = Vec.new()
@@ -18504,6 +18506,12 @@ impl Sema:
     fn impl_decl_method_node(impl_node: i32, method_sym: i32) -> i32:
         let start = self.ast.get_start(impl_node)
         let end = self.ast.get_end(impl_node)
+        // Spans are per-file byte offsets. In a multi-module pool a decl from
+        // ANOTHER file can numerically nest inside this impl's span, so span
+        // containment alone is not membership — #734's FrameArena.drop
+        // (alloc.w bytes) "belonged" to Mutex's impl (sync.w bytes) and every
+        // Drop body specialized with the wrong Self. Require the same source.
+        let impl_path = self.decl_index_source_path(self.find_decl_index(impl_node))
         let method_name = self.pool_resolve(method_sym)
         for di in 0..self.ast.decl_count():
             let decl = self.ast.get_decl(di)
@@ -18512,6 +18520,9 @@ impl Sema:
             let decl_start = self.ast.get_start(decl)
             let decl_end = self.ast.get_end(decl)
             if decl_start < start or decl_end > end:
+                continue
+            let decl_path = self.decl_index_source_path(di)
+            if impl_path.len() > 0 and decl_path.len() > 0 and decl_path != impl_path:
                 continue
             let fn_sym = self.ast.get_data0(decl)
             let fn_name = self.pool_resolve(fn_sym)
