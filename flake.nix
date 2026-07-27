@@ -34,6 +34,7 @@
           ninja = final.withlang-ninja;
           stdenv = prev.llvmPackages.stdenv;
         };
+        withlang-seed = final.callPackage ./nix/withlang-seed { };
       };
 
       perSystem =
@@ -54,6 +55,7 @@
               withlang-cmake
               withlang-llvm
               withlang-ninja
+              withlang-seed
               ;
           };
 

@@ -1,0 +1,109 @@
+--- a/src/with_compiler.c
++++ b/src/with_compiler.c
+@@ -707688,9 +707688,12 @@ int32_t create_gnu_indexed_archive__7967(with_str _1, with_vec _2, with_vec _3,
+ bb18:
+     { int64_t __with_len = (int64_t)(((_40).len)); _41 = (uint64_t)__with_len; }
+     goto bb19;
+ bb19:
+-    _42 = ar_member_size__13290(_38, _41);
++    _42 = 60 + ar_bsd_name_pad_len__13272(_38.len) + _41;
++    if ((_42 % 2) != 0) {
++        _42 += 1;
++    }
+     goto bb20;
+ bb20:
+ #line 323 "out/gen/main.w"
+     _43 = __with_checked_add_i64((int64_t)(_26), (int64_t)(_42));
+@@ -707856,13 +707859,13 @@ int32_t create_gnu_indexed_archive__7967(with_str _1, with_vec _2, with_vec _3,
+     { int64_t __with_len = (int64_t)(((_57).len)); _84 = (uint64_t)__with_len; }
+     goto bb49;
+ bb47:
+-    _87 = str_from_byte(0);
++    _87 = str_from_byte(10);
+     goto bb50;
+ bb48:
+     goto bb37;
+ bb49:
+ #line 357 "out/gen/main.w"
+-    _85 = __with_checked_mod_u64((uint64_t)(_84), (uint64_t)(8));
++    _85 = __with_checked_mod_u64((uint64_t)(_84), (uint64_t)(2));
+     _86 = (_85 != 0);
+     if (_86 == 1) {
+         goto bb47;
+@@ -710689,8 +710689,14 @@
+     with_str _0 __attribute__((unused)) = {0};
+     bool _1 __attribute__((unused)) = {0};
+     bool _2 __attribute__((unused)) = {0};
++    with_str _3 __attribute__((unused)) = {0};
+     goto bb0;
+ bb0:
++    _3 = WITH_STR_LIT("@WITH_LINUX_DYNAMIC_LINKER@");
++    if (_3.len > 0) {
++        if (link_stage_file_exists__9494(_3)) return _3;
++        return WITH_STR_LIT("");
++    }
+     _1 = link_stage_file_exists__9494(WITH_STR_LIT("/lib64/ld-linux-x86-64.so.2"));
+     goto bb1;
+ bb1:
+@@ -710740,8 +710746,17 @@
+     with_str _5 __attribute__((unused)) = {0};
+     with_str _6 __attribute__((unused)) = {0};
+     bool _7 __attribute__((unused)) = {0};
++    with_str _8 __attribute__((unused)) = {0};
+     goto bb0;
+ bb0:
++    _8 = WITH_STR_LIT("@WITH_LINUX_CRT_DIR@");
++    if (_8.len > 0) {
++        _2 = with_str_concat(_8, WITH_STR_LIT("/"));
++        _3 = with_str_concat(_2, _1);
++        _4 = link_stage_file_exists__9494(_3);
++        if (_4 == 1) return _3;
++        return WITH_STR_LIT("");
++    }
+     /* StorageLive(_1); */
+ #line 304 "out/gen/main.w"
+     /* StorageLive(_2); */
+@@ -710815,8 +710830,22 @@
+     with_str _18 __attribute__((unused)) = {0};
+     with_str _19 __attribute__((unused)) = {0};
+     bool _20 __attribute__((unused)) = {0};
++    with_str _21 __attribute__((unused)) = {0};
++    with_str _22 __attribute__((unused)) = {0};
++    with_str _23 __attribute__((unused)) = {0};
++    bool _24 __attribute__((unused)) = {0};
++    bool _25 __attribute__((unused)) = {0};
+     goto bb0;
+ bb0:
++    _21 = WITH_STR_LIT("@WITH_LINUX_GCC_DIR@");
++    if (_21.len > 0) {
++        _22 = with_str_concat(_21, WITH_STR_LIT("/crtbegin.o"));
++        _23 = with_str_concat(_21, WITH_STR_LIT("/crtend.o"));
++        _24 = link_stage_file_exists__9494(_22);
++        _25 = link_stage_file_exists__9494(_23);
++        if (_24 == 1 && _25 == 1) return _21;
++        return WITH_STR_LIT("");
++    }
+ #line 310 "out/gen/main.w"
+     /* StorageLive(_1); */
+     _2 = (with_vec){ .ptr = NULL, .len = 0, .cap = 0, .elem_size = sizeof(with_str) };
+@@ -710926,8 +710955,11 @@
+     bool _8 __attribute__((unused)) = {0};
+     bool _9 __attribute__((unused)) = {0};
+     bool _10 __attribute__((unused)) = {0};
++    with_str _11 __attribute__((unused)) = {0};
+     goto bb0;
+ bb0:
++    _11 = WITH_STR_LIT("@WITH_LINUX_SYSLIB_DIR@");
++    if (_11.len > 0) return WITH_STR_LIT("");
+ #line 320 "out/gen/main.w"
+     /* StorageLive(_1); */
+ #line 321 "out/gen/main.w"
+--- a/src/linux_platform.c
++++ b/src/linux_platform.c
+@@ -149,6 +149,5 @@ int32_t rt_stat(const uint8_t *path, uint8_t *out) {
+     fields[0] = (int64_t)st.st_size;
+     fields[1] = S_ISDIR(st.st_mode) ? 1 : 0;
+     fields[2] = S_ISREG(st.st_mode) ? 1 : 0;
+-    fields[3] = (int64_t)st.st_mtim.tv_sec * 1000000000LL + (int64_t)st.st_mtim.tv_nsec;
+     return 0;
+ }
