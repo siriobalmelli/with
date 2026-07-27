@@ -41,8 +41,6 @@ extern fn GlobalMemoryStatusEx(info: *mut u8) -> i32
 extern fn GetComputerNameW(buf: *mut u16, size: *mut u32) -> i32
 extern fn SystemFunction036(buf: *mut u8, len: u32) -> i32
 extern fn GetCurrentThreadId() -> u32
-extern fn GetTempPathA(size: u32, buf: *mut u8) -> u32
-extern fn GetTempFileNameA(path: *const u8, prefix: *const u8, unique: u32, buf: *mut u8) -> u32
 extern fn GetFullPathNameA(path: *const u8, size: u32, buf: *mut u8, file_part: *mut *mut u8) -> u32
 extern fn with_str_from_cstr(s: *const u8) -> str
 extern fn with_str_concat(a: str, b: str) -> str
@@ -58,6 +56,7 @@ let GENERIC_READ: u32 = 0x80000000 as u32
 let GENERIC_WRITE: u32 = 0x40000000 as u32
 let FILE_SHARE_ALL: u32 = 7 as u32
 let CREATE_ALWAYS: u32 = 2 as u32
+let CREATE_NEW: u32 = 1 as u32
 let OPEN_EXISTING: u32 = 3 as u32
 let OPEN_ALWAYS: u32 = 4 as u32
 let FILE_ATTRIBUTE_READONLY: u32 = 1 as u32
@@ -75,6 +74,10 @@ let PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000 as u32
 let SYNCHRONIZE: u32 = 0x00100000 as u32
 let MOVEFILE_REPLACE_EXISTING: u32 = 1 as u32
 let CAPTURE_TIMEOUT_RC: i32 = 124
+let ERROR_FILE_EXISTS: i32 = 80
+let ERROR_ALREADY_EXISTS: i32 = 183
+let MKSTEMP_PATH_CAP: i64 = 4096
+let MKSTEMP_RETRIES: i32 = 128
 
 type RtStatBuf:
     size: i64
@@ -673,26 +676,113 @@ pub unsafe fn gethostname(name: *mut u8, len: u64) -> i32:
 pub unsafe fn pthread_self() -> i64:
     GetCurrentThreadId() as i64
 
+unsafe fn win_mkstemp_utf8_to_utf16(src: *const u8, len: i64, dst: *mut u16, cap: i64) -> i32:
+    var src_pos: i64 = 0
+    var dst_pos: i64 = 0
+    while src_pos < len:
+        let first = unsafe *((src as i64 + src_pos) as *const u8) as u32
+        var codepoint: u32 = 0
+        var width: i64 = 0
+        if first < 128:
+            codepoint = first
+            width = 1
+        else if first >= 0xc2 and first <= 0xdf and src_pos + 1 < len:
+            let second = unsafe *((src as i64 + src_pos + 1) as *const u8) as u32
+            if second < 0x80 or second > 0xbf:
+                return -1
+            codepoint = ((first & 0x1f) << 6) | (second & 0x3f)
+            width = 2
+        else if first >= 0xe0 and first <= 0xef and src_pos + 2 < len:
+            let second = unsafe *((src as i64 + src_pos + 1) as *const u8) as u32
+            let third = unsafe *((src as i64 + src_pos + 2) as *const u8) as u32
+            if second < 0x80 or second > 0xbf or third < 0x80 or third > 0xbf:
+                return -1
+            if first == 0xe0 and second < 0xa0:
+                return -1
+            if first == 0xed and second > 0x9f:
+                return -1
+            codepoint = ((first & 0x0f) << 12) | ((second & 0x3f) << 6) | (third & 0x3f)
+            width = 3
+        else if first >= 0xf0 and first <= 0xf4 and src_pos + 3 < len:
+            let second = unsafe *((src as i64 + src_pos + 1) as *const u8) as u32
+            let third = unsafe *((src as i64 + src_pos + 2) as *const u8) as u32
+            let fourth = unsafe *((src as i64 + src_pos + 3) as *const u8) as u32
+            if second < 0x80 or second > 0xbf or third < 0x80 or third > 0xbf or fourth < 0x80 or fourth > 0xbf:
+                return -1
+            if first == 0xf0 and second < 0x90:
+                return -1
+            if first == 0xf4 and second > 0x8f:
+                return -1
+            codepoint = ((first & 0x07) << 18) | ((second & 0x3f) << 12) | ((third & 0x3f) << 6) | (fourth & 0x3f)
+            width = 4
+        else:
+            return -1
+        if codepoint <= 0xffff:
+            if dst_pos >= cap - 1:
+                return -1
+            unsafe *((dst as i64 + dst_pos * 2) as *mut u16) = codepoint as u16
+            dst_pos = dst_pos + 1
+        else:
+            if dst_pos >= cap - 2:
+                return -1
+            let surrogate = codepoint - 0x10000
+            unsafe *((dst as i64 + dst_pos * 2) as *mut u16) = (0xd800 + (surrogate >> 10)) as u16
+            unsafe *((dst as i64 + (dst_pos + 1) * 2) as *mut u16) = (0xdc00 + (surrogate & 0x3ff)) as u16
+            dst_pos = dst_pos + 2
+        src_pos = src_pos + width
+    unsafe *((dst as i64 + dst_pos * 2) as *mut u16) = 0 as u16
+    0
+
 pub unsafe fn mkstemp(template_path: *mut u8) -> i32:
     if template_path as i64 == 0:
         return -1
-    var dir: [1024]u8 = [0 as u8; 1024]
-    var name: [1024]u8 = [0 as u8; 1024]
-    let prefix: [5]u8 = [119 as u8, 105 as u8, 116 as u8, 104 as u8, 0 as u8]
-    let n = GetTempPathA(1024 as u32, &raw mut dir as *mut [1024]u8 as *mut u8)
-    if n == 0 or n >= 1024:
-        return -1
-    if GetTempFileNameA(&dir as *const [1024]u8 as *const u8, &prefix as *const [5]u8 as *const u8, 0 as u32, &raw mut name as *mut [1024]u8 as *mut u8) == 0:
-        return -1
-    var i: i64 = 0
-    while i < 1023:
-        let ch = name[i]
-        unsafe *((template_path as i64 + i) as *mut u8) = ch
-        if ch == 0:
+    var path_len: i64 = 0
+    while path_len < MKSTEMP_PATH_CAP:
+        if unsafe *((template_path as i64 + path_len) as *const u8) == 0:
             break
-        i = i + 1
-    unsafe *((template_path as i64 + i) as *mut u8) = 0
-    rt_open(&name as *const [1024]u8 as *const u8, 2, 384)
+        path_len = path_len + 1
+    if path_len == MKSTEMP_PATH_CAP or path_len < 6:
+        return -1
+    for i in 0..6:
+        if unsafe *((template_path as i64 + path_len - 6 + i) as *const u8) != 88:
+            return -1
+    var path: [4096]u8 = [0 as u8; 4096]
+    for i in 0..path_len:
+        path[i] = unsafe *((template_path as i64 + i) as *const u8)
+    path[path_len] = 0
+    var random: [6]u8 = [0 as u8; 6]
+    var wpath: [4096]u16 = [0 as u16; 4096]
+    for _ in 0..MKSTEMP_RETRIES:
+        if SystemFunction036(&raw mut random as *mut [6]u8 as *mut u8, 6) == 0:
+            return -1
+        for i in 0..6:
+            let value = random[i] & 63
+            path[path_len - 6 + i] = if value < 26:
+                65 + value
+            else if value < 52:
+                97 + value - 26
+            else if value < 62:
+                48 + value - 52
+            else if value == 62:
+                45
+            else:
+                95
+        if win_mkstemp_utf8_to_utf16(&path as *const [4096]u8 as *const u8, path_len, &raw mut wpath as *mut [4096]u16 as *mut u16, 4096) != 0:
+            return -1
+        let handle = CreateFileW(&wpath as *const [4096]u16 as *const u16, GENERIC_READ | GENERIC_WRITE, 0, 0 as *mut u8, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, 0)
+        if handle != INVALID_HANDLE_VALUE:
+            let fd = win_alloc_fd(handle)
+            if fd < 0:
+                let _ = DeleteFileW(&wpath as *const [4096]u16 as *const u16)
+                return fd
+            for i in 0..path_len:
+                unsafe *((template_path as i64 + i) as *mut u8) = path[i]
+            unsafe *((template_path as i64 + path_len) as *mut u8) = 0
+            return fd
+        let err = win_error()
+        if err != ERROR_FILE_EXISTS and err != ERROR_ALREADY_EXISTS:
+            return -err
+    -ERROR_FILE_EXISTS
 
 pub unsafe fn realpath(path: *const u8, resolved_path: *mut u8) -> *mut u8:
     if path as i64 == 0 or resolved_path as i64 == 0:
