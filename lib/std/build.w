@@ -6,7 +6,7 @@
 use std.crypto.sha256
 
 extern fn with_eprint(s: str) -> Unit
-extern fn exit(code: i32) -> Unit
+extern fn exit(code: i32) -> Never
 extern fn with_getenv_str(name: str) -> str
 extern fn with_setenv_str(name: str, value: str) -> i32
 extern fn with_sysinfo_os() -> str
@@ -525,31 +525,26 @@ pub fn BuildCtx.create_workspace(self: &Self, name: str) -> Workspace:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: BuildCtx.create_workspace requires compiler driver comptime evaluation\n")
     exit(1)
-    Workspace { self.token, -1 }
 
 pub fn BuildCtx.current_workspace(self: &Self) -> Workspace:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: BuildCtx.current_workspace requires compiler driver comptime evaluation\n")
     exit(1)
-    Workspace { self.token, -1 }
 
 pub fn ActionCtx.create_workspace(self: &Self, name: str) -> Workspace:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: ActionCtx.create_workspace requires compiler driver comptime evaluation\n")
     exit(1)
-    Workspace { self.token, -1 }
 
 pub fn ActionCtx.current_workspace(self: &Self) -> Workspace:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: ActionCtx.current_workspace requires compiler driver comptime evaluation\n")
     exit(1)
-    Workspace { self.token, -1 }
 
 pub fn Workspace.name(self: &Self) -> str:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: Workspace.name requires compiler driver comptime evaluation\n")
     exit(1)
-    ""
 
 pub fn Workspace.add_file(self: &Self, path: str) -> Unit:
     tool_capability_require(self.token, "Workspace")
@@ -565,23 +560,6 @@ pub fn Workspace.options(self: &Self) -> BuildOptions:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: Workspace.options requires compiler driver comptime evaluation\n")
     exit(1)
-    BuildOptions {
-        source_path: "",
-        output_path: "",
-        output_kind: BuildOutputKind.Binary,
-        opt_level: 1,
-        debug_info: true,
-        no_std: false,
-        alloc_mode: false,
-        prelude_mode: PreludeMode.Full,
-        overflow_mode: OverflowMode.Default,
-        deterministic: false,
-        target: BuildTarget.native,
-        include_paths: Vec.new(),
-        defines: Vec.new(),
-        link_libs: Vec.new(),
-        compiler_hooks_enabled: true,
-    }
 
 pub fn Workspace.set_options(self: &Self, options: BuildOptions) -> Unit:
     tool_capability_require(self.token, "Workspace")
@@ -597,13 +575,6 @@ pub fn Workspace.compile(self: &Self) -> BuildResult:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: Workspace.compile requires compiler driver comptime evaluation\n")
     exit(1)
-    BuildResult {
-        status: BuildStatus.failed,
-        rc: 1,
-        workspace_name: "",
-        artifacts: Vec.new(),
-        diagnostics: Vec.new(),
-    }
 
 pub fn Workspace.begin_intercept(self: &Self) -> Unit:
     tool_capability_require(self.token, "Workspace")
@@ -614,11 +585,6 @@ pub fn Workspace.wait_for_message(self: &Self) -> CompilerMessageEnvelope:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: Workspace.wait_for_message requires compiler driver comptime evaluation\n")
     exit(1)
-    CompilerMessageEnvelope {
-        workspace_name: "",
-        generation: 0,
-        message: CompilerMessage.Error(1, "Workspace.wait_for_message requires compiler driver comptime evaluation", SourceSpan { file: "", start: -1, end: -1, line: -1, column: -1 }),
-    }
 
 pub fn Workspace.end_intercept(self: &Self) -> Unit:
     tool_capability_require(self.token, "Workspace")
@@ -633,7 +599,6 @@ pub fn Workspace.set_link_command(self: &Self, command: LinkCommand) -> Unit:
 pub fn parallel(workspaces: Vec[Workspace]) -> Vec[BuildResult]:
     with_eprint("error: parallel requires compiler driver comptime evaluation\n")
     exit(1)
-    Vec.new()
 
 pub fn process_env() -> ProcessEnv:
     ProcessEnv { vars: Vec.new() }
