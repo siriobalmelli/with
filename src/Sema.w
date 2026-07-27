@@ -3046,6 +3046,8 @@ impl Sema:
         if self.types_frozen != 0:
             sema_phase_bug("BUG: Sema.add_type called after freeze_types")
         let id = self.type_kinds.len() as i32
+        if kind == TypeKind.TY_GENERIC_INST and with_getenv_str("WITH_TRACE_INST").len() > 0:
+            with_eprint(f"[inst] add tid={id} base={self.pool_resolve_symbol(d0)} frozen={self.types_frozen}")
         self.type_kinds.push(kind)
         self.type_d0.push(d0)
         self.type_d1.push(d1)
@@ -3346,11 +3348,15 @@ impl Sema:
     // Must be called after check_module() and before freeze_types().
     mut fn preregister_generic_struct_fields(tid: i32):
         let field_count = self.type_reflection_field_count(tid)
+        if with_getenv_str("WITH_TRACE_INST").len() > 0:
+            with_eprint(f"[prereg-enter] tid={tid} base={self.pool_resolve_symbol(self.get_type_d0(tid as TypeId))} count={field_count}")
         for fi in 0..field_count:
             let field_sym = self.type_reflection_field_name(tid, fi)
             let field_ty = self.type_reflection_field_type(tid, fi)
             self.generic_struct_field_index_type_cache.insert(sema_pair_key(tid, fi), field_ty)
             if field_sym != 0:
+                if with_getenv_str("WITH_TRACE_INST").len() > 0:
+                    with_eprint(f"[prereg] tid={tid} fsym={field_sym} text={self.pool_resolve_symbol(field_sym)} fty={field_ty}")
                 self.generic_struct_field_type_cache.insert(sema_pair_key(tid, field_sym), field_ty)
                 let canonical = self.canonical_symbol_by_text(field_sym)
                 if canonical != 0:
@@ -3440,7 +3446,18 @@ impl Sema:
 
         // D7 eager layout tables: compute size/align for every type now (types_frozen is
         // still 0, so a layout that needs a dependent type may create it), then the frozen
-        // consumers read them via &Self twins. Loop until stable in case layout adds a type.
+        // consumers read them via &Self twins.
+        self.eager_type_caches_pass()
+
+    // Populate layout + generic field/payload caches for every type that does
+    // not have them yet. Loops until stable in case layout adds a type. Runs
+    // in the D7 eager pass and again from freeze_types as a catch-up: generic
+    // insts created between the two (e.g. by specialization re-checks) must be
+    // cached too, or frozen consumers phase-bug on the first drop/reflection
+    // query (VecIter[i32] through iter_sum was the repro).
+    mut fn eager_type_caches_pass():
+        if with_getenv_str("WITH_TRACE_INST").len() > 0:
+            with_eprint(f"[eager] pass types={self.type_kinds.len() as i32}")
         var layout_pass_done = false
         while not layout_pass_done:
             let lt_n = self.type_kinds.len() as i32
@@ -3466,6 +3483,7 @@ impl Sema:
                         self.layout_field_offset_cache.insert(sema_pair_key(lti, fi), self.type_layout_struct_field_offset(lti, fi))
             if self.type_kinds.len() as i32 == lt_n:
                 layout_pass_done = true
+
 
     // TypeKind.TY_GENERIC_INST: d0=base_sym, d1=extra_start, d2=arg_count
     // Type args stored in type_extra[extra_start..extra_start+arg_count] as TypeIds.

@@ -10281,6 +10281,17 @@ impl Sema:
 
         0
 
+    // Mutable rescue for the frozen field-type query: a generic template
+    // that only registered during codegen-era re-checks (after every eager
+    // pass) computes and backfills its field cache here. Codegen owns the
+    // sema during emission, so this mutable window is the sanctioned one.
+    mut fn struct_field_type_frozen_or_compute(struct_type: i32, field: i32) -> i32:
+        let resolved = self.resolve_alias(struct_type as TypeId)
+        if self.get_type_kind(resolved) == TypeKind.TY_GENERIC_INST and
+           not self.generic_struct_field_type_cache.contains(sema_pair_key(resolved as i32, field)):
+            self.preregister_generic_struct_fields(resolved as i32)
+        self.struct_field_type_frozen(struct_type, field)
+
     fn struct_field_type_frozen(struct_type: i32, field: i32) -> i32:
         if struct_type == 0:
             return 0
@@ -10314,7 +10325,19 @@ impl Sema:
                     field_exists = true
             if not field_exists:
                 return 0
-            sema_phase_bug("BUG: struct_field_type_frozen generic-inst field type miss")
+            // A generic inst can exist twice when its base symbol was interned
+            // per-module (same text, different sym → different inst hash); the
+            // eager caches were filled for the twin created before the layout
+            // pass. Answer from the twin's cache rather than phase-bugging.
+            let twin = self.frozen_generic_inst_twin(resolved)
+            if twin >= 0:
+                let twin_key = sema_pair_key(twin, field)
+                if self.generic_struct_field_type_cache.contains(twin_key):
+                    return self.generic_struct_field_type_cache.get(twin_key).unwrap()
+                let twin_ckey = sema_pair_key(twin, canonical)
+                if self.generic_struct_field_type_cache.contains(twin_ckey):
+                    return self.generic_struct_field_type_cache.get(twin_ckey).unwrap()
+            sema_phase_bug(f"BUG: struct_field_type_frozen generic-inst field type miss tid={resolved as i32} base={self.pool_resolve_symbol(self.get_type_d0(resolved))} field={self.pool_resolve_symbol(field)}")
             return 0
 
         0
@@ -20286,6 +20309,34 @@ impl Sema:
             return self.type_layout_generic_struct_field_type(resolved as i32, field_index)
         0
 
+    // Find another TY_GENERIC_INST with the same canonical base text and
+    // identical argument types — the dedup twin of an inst whose base symbol
+    // was re-interned per-module. Read-only and frozen-safe.
+    fn frozen_generic_inst_twin(resolved: TypeId) -> i32:
+        let base = self.get_type_d0(resolved)
+        let base_text = self.pool_resolve_symbol(base)
+        if base_text.len() == 0:
+            return -1
+        let te = self.get_type_d1(resolved)
+        let argc = self.get_type_d2(resolved)
+        for ti in 0..self.type_kinds.len() as i32:
+            if ti == resolved as i32:
+                continue
+            if self.type_kinds.get(ti as i64) != TypeKind.TY_GENERIC_INST:
+                continue
+            if self.get_type_d2(ti as TypeId) != argc:
+                continue
+            if self.pool_resolve_symbol(self.get_type_d0(ti as TypeId)) != base_text:
+                continue
+            let ote = self.get_type_d1(ti as TypeId)
+            var same = true
+            for ai in 0..argc:
+                if self.type_extra.get((te + ai) as i64) != self.type_extra.get((ote + ai) as i64):
+                    same = false
+            if same:
+                return ti
+        -1
+
     fn type_reflection_field_type_frozen(tid: i32, field_index: i32) -> i32:
         let resolved = self.resolve_alias(tid)
         let tk = self.get_type_kind(resolved)
@@ -20302,6 +20353,11 @@ impl Sema:
             let key = sema_pair_key(resolved as i32, field_index)
             if self.generic_struct_field_index_type_cache.contains(key):
                 return self.generic_struct_field_index_type_cache.get(key).unwrap()
+            let twin = self.frozen_generic_inst_twin(resolved as TypeId)
+            if twin >= 0:
+                let twin_key = sema_pair_key(twin, field_index)
+                if self.generic_struct_field_index_type_cache.contains(twin_key):
+                    return self.generic_struct_field_index_type_cache.get(twin_key).unwrap()
             sema_phase_bug("BUG: type_reflection_field_type_frozen generic-inst field type miss")
             return 0
         0
