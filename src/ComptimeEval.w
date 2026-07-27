@@ -1919,7 +1919,9 @@ impl ComptimeEvaluator:
             pending_link_command: link_stage_empty_command(),
         }
 
-    fn store_workspace_record(workspace_id: i32, record: &ComptimeWorkspaceRecord):
+    // Consumes: the record moves into the registry slot (a view here
+    // bit-copies through #730 and the caller's drop guts the stored vecs).
+    fn store_workspace_record(workspace_id: i32, record: ComptimeWorkspaceRecord):
         let slot_index = workspace_id as i64
         with self.workspace_records.slot(slot_index) as mut slot:
             slot.set(record)
