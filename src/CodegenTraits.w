@@ -1157,6 +1157,15 @@ impl Codegen:
 
     mut fn sync_decl_context(decl_index: i32):
         self.current_decl_source_file = self.decl_source_path(decl_index)
+        // Frozen name resolution (resolve_type_expr_frozen and friends) judges
+        // module visibility from sema.current_module_path. Point it at the
+        // DECLARING module, not the compilation root: a tool root does not
+        // share src/'s internal-implementation boundary, so a non-pub distinct
+        // alias like Mir.BlockId in MirLower's structs resolved for the
+        // compiler root but not for tool-mode roots (#705). Same save/set
+        // pattern as ComptimeEval.eval_decl and MirLower's module switch.
+        if self.current_decl_source_file.len() > 0:
+            self.sema.current_module_path = self.current_decl_source_file
 
     fn find_module_fn_decl_index(sym: i32) -> i32:
         for di in 0..self.pool.decl_count():
