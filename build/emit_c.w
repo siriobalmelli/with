@@ -415,11 +415,11 @@ fn emitc_collect_public_abi(ctx: &ActionCtx, sources: Vec[str], runtime: i32) ->
         if text.len() == 0:
             let _ = emitc_fail(ctx, "could not read source for ABI scan: " ++ source_path)
             return Vec.new()
-        let exports = emitc_collect_public_abi_from_text(ctx, text, source_path, runtime)
+        var exports = emitc_collect_public_abi_from_text(ctx, text, source_path, runtime)
         if exports.len() == 0:
             return Vec.new()
-        for ei in 0..exports.len() as i32:
-            all.push(exports.get(ei as i64))
+        while exports.len() > 0:
+            all.push(exports.remove(0))
     all
 
 fn emitc_collect_exports(ctx: &ActionCtx, sources: Vec[str]) -> Vec[EmitCFunction]:
@@ -431,11 +431,11 @@ fn emitc_collect_exports(ctx: &ActionCtx, sources: Vec[str]) -> Vec[EmitCFunctio
         if text.len() == 0:
             let _ = emitc_fail(ctx, "could not read source for export scan: " ++ source_path)
             return Vec.new()
-        let exports = emitc_collect_exports_from_text(ctx, text, source_path)
+        var exports = emitc_collect_exports_from_text(ctx, text, source_path)
         if exports.len() == 0:
             return Vec.new()
-        for ei in 0..exports.len() as i32:
-            all.push(exports.get(ei as i64))
+        while exports.len() > 0:
+            all.push(exports.remove(0))
     all
 
 fn emitc_function_proto(fn_sig: &EmitCFunction) -> str:
