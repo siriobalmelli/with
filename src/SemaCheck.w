@@ -14646,7 +14646,17 @@ impl Sema:
         // For unknown functions (no signature), conservatively mark all non-Copy args as moved.
         // For known functions, consuming-effect args are marked moved in the per-param loop below.
         if sig_idx < 0:
+            // #737: a generic callee also has no sig yet, but its DECLARED
+            // param types are authoritative (§3.8) — an `&T` param borrows,
+            // so a plain argument bound to it is not consumed. Everything
+            // else keeps the conservative marking.
+            let ucm_fn_node = self.generic_fn_node_for_symbol(fn_sym)
+            let ucm_meta = if ucm_fn_node != 0: self.ast.find_fn_meta(ucm_fn_node) else: -1
             for ai in 0..resolved_arg_count:
+                if ucm_meta >= 0 and ai < self.ast.fn_meta_param_count(ucm_meta):
+                    let ucm_ptype = self.ast.fn_param_type(self.ast.fn_meta_param_start(ucm_meta), ai)
+                    if ucm_ptype != 0 and self.ast.kind(ucm_ptype) == NodeKind.NK_TYPE_REF:
+                        continue
                 let arg_node = if has_resolved != 0: self.get_resolved_call_arg(node, ai) else: self.ast.get_extra(resolved_extra_start + ai)
                 if arg_node > 0:
                     self.mark_moved_if_consumed(arg_node)
@@ -15759,6 +15769,11 @@ impl Sema:
             let resolved = self.resolve_alias(arg_tid)
             if self.get_type_kind(resolved) == TypeKind.TY_REF:
                 self.bind_type_params_from_type_expr(inner_node, self.get_type_d0(resolved), tp_start, tp_count, err_node)
+            else:
+                // Auto-ref (§3.8, #737): `peek(x)` is the ordinary spelling
+                // for a `&T` parameter, so a non-ref argument infers the
+                // pointee from the place type itself.
+                self.bind_type_params_from_type_expr(inner_node, arg_tid, tp_start, tp_count, err_node)
             return
 
         if kind == NodeKind.NK_TYPE_PTR:
