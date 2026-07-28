@@ -232,6 +232,8 @@ type ComptimeEvaluator {
     step_budget: i32,
     string_bytes_allocated: i64,
     string_byte_budget: i64,
+    source_text_cache_path: str,
+    source_text_cache: str,
     recursion_limit: i32,
     require_success: i32,
     allow_runtime_calls: i32,
@@ -319,6 +321,8 @@ fn ComptimeEvaluator.init(sema: Sema, ast: AstPool, pool: InternPool, require_su
         step_budget: COMPTIME_STEP_LIMIT,
         string_bytes_allocated: 0,
         string_byte_budget: comptime_configured_string_budget(COMPTIME_STRING_BYTE_BUDGET),
+        source_text_cache_path: "",
+        source_text_cache: "",
         recursion_limit: COMPTIME_RECURSION_LIMIT,
         require_success,
         allow_runtime_calls: 0,
@@ -2284,11 +2288,20 @@ impl ComptimeEvaluator:
             return self.sema.current_module_path
         "<unknown>"
 
-    fn current_source_text() -> str:
+    // Memoized by path: eval_fn_symbol_call_values_with_type_args captures
+    // the caller's text on EVERY interpreted call (the capture must be eager
+    // — module context switches to the callee before defaults evaluate), and
+    // the uncached read re-hit the disk per call: ~35 GB of never-freed str
+    // and most of an action's wall clock in open/read (#741).
+    mut fn current_source_text() -> str:
         let path = self.current_source_path()
         if path != "<unknown>":
+            if path == self.source_text_cache_path:
+                return self.source_text_cache
             let text = with_fs_read_file(path)
             if text.len() > 0 or with_fs_file_exists(path) != 0:
+                self.source_text_cache_path = path
+                self.source_text_cache = text
                 return text
         self.sema.source_text
 

@@ -670,27 +670,36 @@ impl Compilation:
         if not self.config.compiler_hooks_enabled:
             return true
         let root = if self.zcu.project_config.root_dir.len() > 0: self.zcu.project_config.root_dir else: frontend_dirname(source_path)
-        let tmp_dir = root ++ "/out/tmp"
+        // Hook scratch lives in the system temp dir, never beside the source:
+        // rooting it at frontend_dirname scattered pid-stamped runners and
+        // dSYM bundles into source test directories (#741). The stamped dir
+        // is removed as one tree on every exit path. Only the runner SOURCE
+        // stays in root — its generated `use` imports resolve from there.
+        let stamp = f"{runtime_getpid()}.{runtime_clock_nanos()}"
+        let tmp_base_env = runtime_getenv("TMPDIR")
+        var tmp_base = if tmp_base_env.len() > 0: tmp_base_env else: "/tmp"
+        if tmp_base.ends_with("/"):
+            tmp_base = tmp_base.slice(0, tmp_base.len() - 1)
+        let tmp_dir = tmp_base ++ "/with-compiler-hook." ++ stamp
         if runtime_mkdir_p(tmp_dir) != 0:
             runtime_eprint("error: could not create compiler hook temp directory: " ++ tmp_dir)
             return false
-        let stamp = f"{runtime_getpid()}.{runtime_clock_nanos()}"
         let runner_path = root ++ "/__with_compiler_hook_runner." ++ stamp ++ ".w"
         let runner_bin = tmp_dir ++ "/compiler-hook-runner." ++ stamp
         let diag_path = tmp_dir ++ "/compiler-hook-diags." ++ stamp ++ ".txt"
         let emitted_source_path = tmp_dir ++ "/compiler-hook-source." ++ stamp ++ ".w"
         let capability_token = "with-compiler-hook:" ++ stamp
         if runtime_write_file(diag_path, "") != 0:
+            let _cleanup_diag_fail = runtime_remove_tree(tmp_dir)
             runtime_eprint("error: could not initialize compiler hook diagnostics")
             return false
         if runtime_write_file(emitted_source_path, "") != 0:
-            let _remove_diag_init = runtime_remove_file(diag_path)
+            let _cleanup_emitted_fail = runtime_remove_tree(tmp_dir)
             runtime_eprint("error: could not initialize compiler hook emitted source")
             return false
         let runner_source = self.compiler_hook_runner_source(pool, source_path, diag_path, emitted_source_path, capability_token)
         if runtime_write_file(runner_path, runner_source) != 0:
-            let _ = runtime_remove_file(diag_path)
-            let _remove_emitted_init = runtime_remove_file(emitted_source_path)
+            let _cleanup_runner_fail = runtime_remove_tree(tmp_dir)
             runtime_eprint("error: could not write compiler hook runner")
             return false
         var runner_comp = Compilation.init()
@@ -702,8 +711,7 @@ impl Compilation:
         let built_runner = runner_comp.build_binary_to_path(runner_path, runner_bin)
         let _remove_runner_source = runtime_remove_file(runner_path)
         if built_runner == "":
-            let _remove_diag = runtime_remove_file(diag_path)
-            let _remove_emitted = runtime_remove_file(emitted_source_path)
+            let _cleanup_build_fail = runtime_remove_tree(tmp_dir)
             runtime_eprint("error: compiler hook runner compilation failed")
             return false
         let old_capability_token = runtime_getenv("WITH_TOOL_CAPABILITY_TOKEN")
@@ -712,11 +720,11 @@ impl Compilation:
         let _restore_capability_token = runtime_setenv("WITH_TOOL_CAPABILITY_TOKEN", old_capability_token)
         let diag_text = runtime_read_file(diag_path)
         let emitted_source = runtime_read_file(emitted_source_path)
-        let _remove_diag_after = runtime_remove_file(diag_path)
-        let _remove_emitted_after = runtime_remove_file(emitted_source_path)
-        let _remove_runner_bin = runtime_remove_file(built_runner)
-        let _remove_runner_obj = runtime_remove_file(built_runner ++ ".o")
-        let _remove_runner_dsym = runtime_remove_dir(built_runner ++ ".dSYM")
+        // One tree removal covers runner binary, object, dSYM bundle, and
+        // both capability files. The old per-file removals used plain rmdir
+        // on the dSYM BUNDLE, which silently failed on the non-empty tree —
+        // thousands of bundles accumulated per test-suite run (#741).
+        let _cleanup_tmp = runtime_remove_tree(tmp_dir)
         let emitted = self.emit_compiler_hook_diagnostics(diag_text)
         if emitted > 0:
             return false
