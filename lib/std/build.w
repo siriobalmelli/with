@@ -2341,7 +2341,7 @@ fn build_action_ctx(ctx: &BuildCtx, target: &Target) -> ActionCtx:
 pub fn Build.__driver_run_action(self: &Self, ctx: BuildCtx, action_name: str) -> i32:
     tool_capability_require(ctx.token, "ActionCtx")
     for i in 0..self.targets.len() as i32:
-        let target = self.targets.get(i as i64)
+        let target = &self.targets[i as i64]
         if target.name == action_name:
             if target.kind != .Action:
                 with_eprint("error: build action target '" ++ action_name ++ "' is not an Action target\n")
@@ -2388,7 +2388,7 @@ pub fn Build.emit_graph(self: &Self) -> str:
         out.push_str(build_graph_escape(generated.contents))
         out.push_str("\n")
     for ti in 0..self.targets.len() as i32:
-        let target = self.targets.get(ti as i64)
+        let target = &self.targets[ti as i64]
         out.push_str("target\t")
         out.push_str(f"{target.kind as i32}\t")
         out.push_str(build_graph_escape(target.name))

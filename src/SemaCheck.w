@@ -808,6 +808,7 @@ impl Sema:
             // non-Copy field reached through a view cannot satisfy it. The
             // auto-ref path above already returned for &T parameters.
             self.reject_owned_demand_from_view_projection(arg_node, expected, "call argument")
+            self.reject_owned_demand_from_element_copy(arg_node, expected, "call argument")
             let _ = self.record_contextual_copy_adjustment(arg_node, expected, actual)
 
     mut fn check_builtin_method_call_arg(call_name: str, arg_index: i32, expected: i32, actual: i32, arg_node: i32) -> i32:
@@ -8728,6 +8729,10 @@ impl Sema:
             base_node = self.ast.get_data0(callee)
         else:
             return 0
+        // `Vec[i32][1, 2]` spells a collection literal: the base is the type,
+        // the result is a fresh owned Vec, and consuming it is legal.
+        if self.index_expr_is_type_level(base_node):
+            return 0
         let base_ty_opt = self.typed_expr_types.get(base_node)
         if not base_ty_opt.is_some():
             return 0
@@ -8753,19 +8758,24 @@ impl Sema:
             return 0
         result_ty
 
+    // A let binding of a get/index result is NOT an owned demand: D22 rules a
+    // view "materializes an independent T only when an owned-value demand has
+    // already been established", and issue-64 pins the binding-then-mutate
+    // chain as in-place. Only assignment/call-arg/struct-field sites call this.
+    mut fn reject_owned_demand_from_element_copy(value_node: i32, demanded: i32, context: str):
+        let elem_ty = self.owned_demand_element_copy_type(value_node)
+        if elem_ty == 0:
+            return
+        if demanded != 0:
+            let dk = self.get_type_kind(self.resolve_alias(demanded as TypeId))
+            if dk == TypeKind.TY_REF or dk == TypeKind.TY_PTR:
+                return
+        self.emit_error("cannot take ownership of a non-Copy element copied out of a Vec (" ++ self.type_name(elem_ty) ++ " is not Copy); borrow the element with `&vec[i]`, clone it, or remove it from the vec (D22 §13.6, #715) — " ++ context, value_node)
+
     mut fn reject_owned_demand_from_view_projection(value_node: i32, demanded: i32, context: str):
         if value_node <= 0:
             return
         if not self.view_projection_exprs.contains(value_node):
-            let elem_ty = self.owned_demand_element_copy_type(value_node)
-            if elem_ty != 0:
-                var demanded_is_ref = false
-                if demanded != 0:
-                    let dk = self.get_type_kind(self.resolve_alias(demanded as TypeId))
-                    if dk == TypeKind.TY_REF or dk == TypeKind.TY_PTR:
-                        demanded_is_ref = true
-                if not demanded_is_ref:
-                    self.emit_error("cannot take ownership of a non-Copy element copied out of a Vec (" ++ self.type_name(elem_ty) ++ " is not Copy); borrow the element with `&vec[i]`, clone it, or remove it from the vec (D22 §13.6, #715) — " ++ context, value_node)
             return
         if demanded != 0:
             let demanded_resolved = self.resolve_alias(demanded as TypeId)
@@ -9848,6 +9858,7 @@ impl Sema:
 
             let value_type = if expected_value_type != 0: self.check_expr_with_owned_demand(value, expected_value_type as TypeId) else: self.check_expr(value)
             self.reject_owned_demand_from_view_projection(value, expected_value_type, "assignment")
+            self.reject_owned_demand_from_element_copy(value, expected_value_type, "assignment")
             self.note_place_effect(base_expr, EFF_WRITE)
             self.record_global_place_write(base_expr, node)
 
@@ -9889,6 +9900,8 @@ impl Sema:
         self.union_in_assign_target = self.union_in_assign_target - 1
         self.assign_target_revive_sym = assign_revive_saved
         let value_type = if target_type != 0: self.check_expr_with_owned_demand(value, target_type) else: self.check_expr(value)
+        self.reject_owned_demand_from_view_projection(value, target_type as i32, "assignment")
+        self.reject_owned_demand_from_element_copy(value, target_type as i32, "assignment")
         // §16.4 union last-written tracking.
         if self.ast.kind(target) == NodeKind.NK_FIELD_ACCESS:
             let u_recv = self.ast.get_data0(target)
@@ -11495,6 +11508,7 @@ impl Sema:
                     // demand; a non-Copy field reached through a view cannot
                     // fill it.
                     self.reject_owned_demand_from_view_projection(f_value, field_expected, "struct literal field")
+                    self.reject_owned_demand_from_element_copy(f_value, field_expected, "struct literal field")
                     if not self.ephemeral_types.contains(name):
                         self.check_ephemeral_task_storage(f_value, "non-ephemeral struct")
                     // #605: a whole non-Copy local moved into a struct field is
