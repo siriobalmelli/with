@@ -4299,6 +4299,8 @@ impl Codegen:
         if not self.mir_sema_type_is_std_vec(sema_ty):
             return false
         let elem_sema = self.mir_vec_elem_sema_type_from_sema_type(sema_ty)
+        if with_getenv_str("WITH_TRACE_VECDROP").len() > 0:
+            with_eprint(f"[vecdrop] sema_ty={sema_ty} elem_sema={elem_sema} needs_drop={if elem_sema > 0: self.sema.type_needs_drop_frozen(elem_sema) else: -1}")
         if elem_sema > 0 and self.sema.type_needs_drop_frozen(elem_sema) != 0:
             self.mir_emit_vec_element_drops_ptr(ptr, sema_ty)
         self.mir_emit_vec_free_ptr(ptr)

@@ -17,6 +17,8 @@ pub enum BuildOutputKind: i32:
     LlvmIr = 3
     Archive = 4
 
+impl Copy for BuildOutputKind
+
 pub enum DriverPreludeMode: i32:
     Full = 0
     Core = 1

@@ -804,6 +804,10 @@ impl Sema:
             self.check_borrow_create(arg_node, BorrowKind.SHARED, if err_node > 0: err_node else: arg_node)
             return
         if arg_node > 0:
+            // D22 §13.6 (#735): a by-value parameter is an owned demand; a
+            // non-Copy field reached through a view cannot satisfy it. The
+            // auto-ref path above already returned for &T parameters.
+            self.reject_owned_demand_from_view_projection(arg_node, expected, "call argument")
             let _ = self.record_contextual_copy_adjustment(arg_node, expected, actual)
 
     mut fn check_builtin_method_call_arg(call_name: str, arg_index: i32, expected: i32, actual: i32, arg_node: i32) -> i32:
@@ -11432,6 +11436,10 @@ impl Sema:
                         else:
                             field_expected = self.struct_field_type(expected_struct_ty as i32, f_name)
                     let val_ty = if field_expected != 0: self.check_expr_with_owned_demand(f_value, field_expected as TypeId) else: self.check_expr(f_value)
+                    // D22 §13.6 (#735): a struct-literal field is an owned
+                    // demand; a non-Copy field reached through a view cannot
+                    // fill it.
+                    self.reject_owned_demand_from_view_projection(f_value, field_expected, "struct literal field")
                     if not self.ephemeral_types.contains(name):
                         self.check_ephemeral_task_storage(f_value, "non-ephemeral struct")
                     // #605: a whole non-Copy local moved into a struct field is
