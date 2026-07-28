@@ -256,15 +256,18 @@ pub type Package {
     name: str,
     version: str,
 }
+impl Copy for Package
 
 pub type ProjectInfo {
     package: Package,
     root: str,
 }
+impl Copy for ProjectInfo
 
 pub type Diagnostics {
     token: str,
 }
+impl Copy for Diagnostics
 
 pub type SourceEmitter {
     token: str,
@@ -2308,6 +2311,12 @@ fn build_action_write_scope(target: &Target) -> Vec[str]:
     scopes.push(tool_action_scratch_dir(target.name))
     scopes
 
+fn tool_clone_str_vec(values: &Vec[str]) -> Vec[str]:
+    let out: Vec[str] = Vec.new()
+    for i in 0..values.len() as i32:
+        out.push(values.get(i as i64))
+    out
+
 fn build_action_ctx(ctx: &BuildCtx, target: &Target) -> ActionCtx:
     let fs_outputs = build_action_write_scope(target)
     let process_outputs = build_action_write_scope(target)
@@ -2320,12 +2329,12 @@ fn build_action_ctx(ctx: &BuildCtx, target: &Target) -> ActionCtx:
         diagnostics_value: ctx.diagnostics,
         fs_value: ToolFs { token: ctx.token, root: ctx.fs.root, write_scope: fs_outputs, write_scoped: true, scratch_path },
         process_runner_value: ProcessRunner { token: ctx.token, root: ctx.fs.root, target_name: target.name, write_scope: process_outputs, write_scoped: true, network: target.network },
-        inputs_value: target.inputs,
+        inputs_value: tool_clone_str_vec(&target.inputs),
         outputs_value: ctx_outputs,
-        args_value: target.args,
+        args_value: tool_clone_str_vec(&target.args),
         timeout_ms_value: target.timeout_ms,
         cwd_value: target.cwd,
-        env_value: target.env,
+        env_value: tool_clone_str_vec(&target.env),
         network_value: target.network,
     }
 
