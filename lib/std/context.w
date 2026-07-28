@@ -16,6 +16,7 @@ pub trait Logger:
     fn error(self: &Self, message: str) -> Unit
 
 pub type NoopLogger {}
+impl Copy for NoopLogger
 
 impl Logger for NoopLogger:
     fn info(self: &Self, message: str) -> Unit:
