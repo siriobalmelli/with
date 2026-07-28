@@ -8839,6 +8839,10 @@ impl Sema:
         let val_type = if ann_type != 0: self.check_expr_with_owned_demand(value, ann_type) else: self.check_expr_value_context(value)
         self.match_in_stmt_pos = saved_match_stmt
         self.reject_owned_demand_from_view_projection(value, ann_type as i32, "let binding")
+        // D27: a binding names what's there; an annotation demands what it
+        // says. Only a TYPED binding is an owned demand for element copies.
+        if ann_type != 0:
+            self.reject_owned_demand_from_element_copy(value, ann_type as i32, "typed let binding")
         var bind_type: TypeId = val_type
         if ann_type != 0:
             bind_type = ann_type
