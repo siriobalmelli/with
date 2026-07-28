@@ -13330,6 +13330,8 @@ type CiStackEmitFrame {
     label_sym: i32 = 0,
 }
 
+impl Copy for CiStackEmitFrame
+
 type CiStackEmitContext {
     cfg: CiGotoCfg,
     frames: Vec[CiStackEmitFrame],

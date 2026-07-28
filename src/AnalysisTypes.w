@@ -383,7 +383,7 @@ impl AnalysisReport:
         lines.push("analysis-facts\tv2\tstage\tkind\tid\tparent\tnode\tbody\tsymbol\towner\tindex\ttype\teffects\tflags\tsource-file\tstart\tend\tline\tcolumn\tpath\tname\tdetail\n")
         for i in 0..self.facts.len() as i32:
             let fact = self.facts.get(i as i64)
-            if analysis_fact_matches(&fact, query):
+            if analysis_fact_matches(fact, query):
                 lines.push(fact.render_tsv())
                 lines.push("\n")
         lines.join("")
@@ -392,7 +392,7 @@ impl AnalysisReport:
         var count = 0
         for i in 0..self.facts.len() as i32:
             let fact = self.facts.get(i as i64)
-            if analysis_fact_matches(&fact, query):
+            if analysis_fact_matches(fact, query):
                 count = count + 1
         count
 
@@ -418,7 +418,7 @@ impl AnalysisReport:
         var total = 0
         for i in 0..self.facts.len() as i32:
             let fact = self.facts.get(i as i64)
-            if not analysis_fact_matches(&fact, query): continue
+            if not analysis_fact_matches(fact, query): continue
             total = total + 1
             stage_counts.set_i32(fact.stage as i64, stage_counts.get(fact.stage as i64) + 1)
             kind_counts.set_i32(fact.kind as i64, kind_counts.get(fact.kind as i64) + 1)
@@ -444,7 +444,7 @@ impl AnalysisReport:
         lines.push("analysis-matrix\tv2\tstage\tkind\tname\towner\tindex\ttype\teffects\tflags\tsource-file\tstart\tend\tdetail\n")
         for i in 0..self.facts.len() as i32:
             let fact = self.facts.get(i as i64)
-            if not analysis_fact_matches(&fact, query):
+            if not analysis_fact_matches(fact, query):
                 continue
             lines.push("row\t")
             lines.push(analysis_stage_name(fact.stage))

@@ -381,7 +381,8 @@ pub fn build_graph_filter_target(graph: &BuildGraph, target_name: str) -> BuildG
     out.package_version = graph.package_version
     out.default_target = graph.default_target
     for gi in 0..graph.generated_sources.len() as i32:
-        out.generated_sources.push(graph.generated_sources.get(gi as i64))
+        let bgm_gen = &graph.generated_sources[gi as i64]
+        out.generated_sources.push(BuildGraphGeneratedSource { path: bgm_gen.path, contents: bgm_gen.contents })
     if target_name.len() == 0:
         for ti_all in 0..graph.targets.len() as i32:
             out.targets.push(build_graph_target_deep_copy(&graph.targets[ti_all as i64]))
@@ -406,7 +407,8 @@ pub fn build_graph_filter_single_target(graph: &BuildGraph, target_name: str) ->
     out.package_version = graph.package_version
     out.default_target = graph.default_target
     for gi in 0..graph.generated_sources.len() as i32:
-        out.generated_sources.push(graph.generated_sources.get(gi as i64))
+        let bgm_gen = &graph.generated_sources[gi as i64]
+        out.generated_sources.push(BuildGraphGeneratedSource { path: bgm_gen.path, contents: bgm_gen.contents })
     if target_name.len() == 0:
         out.ok = false
         out.error_msg = "--no-deps requires an explicit build.w target"

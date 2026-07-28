@@ -1779,7 +1779,7 @@ fn analysis_lldb_recipe(report: &AnalysisReport, query: str) -> str:
     var hits = 0
     for i in 0..report.facts.len() as i32:
         let fact = report.facts.get(i as i64)
-        if not analysis_fact_matches(&fact, query):
+        if not analysis_fact_matches(fact, query):
             continue
         if fact.kind == AnalysisFactKind.Diagnostic and fact.path.len() > 0 and fact.line > 0:
             lines.push("breakpoint set --file '")

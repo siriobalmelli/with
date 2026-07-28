@@ -192,12 +192,10 @@ impl StackifyGraph:
     pub mut fn add_param(block: i32, value: i32) -> Unit:
         if block < 0 or block >= self.blocks.len() as i32:
             return
-        var b = self.blocks.get(block as i64)
-        if b.params_count == 0:
-            b.params_start = self.block_params.len() as i32
+        if self.blocks[block as i64].params_count == 0:
+            self.blocks[block as i64].params_start = self.block_params.len() as i32
         self.block_params.push(value)
-        b.params_count = b.params_count + 1
-        self.update_block(block, move b)
+        self.blocks[block as i64].params_count = self.blocks[block as i64].params_count + 1
 
     mut fn add_target(block: i32, args: &Vec[i32]) -> i32:
         let start = self.target_args.len() as i32
@@ -216,31 +214,21 @@ impl StackifyGraph:
     pub mut fn add_branch_target(block: i32, args: &Vec[i32]) -> i32:
         self.add_target(block, args)
 
-    mut fn update_block(block: i32, replacement: StackifyBlock):
-        if block < 0 or block >= self.blocks.len() as i32:
-            return
-        unsafe:
-            *((self.blocks.ptr as *mut StackifyBlock) + (block as usize)) = replacement
-
     mut fn set_succs(block: i32, succs: &Vec[i32]):
-        var b = self.blocks.get(block as i64)
-        b.succs_start = self.succs.len() as i32
-        b.succs_count = succs.len() as i32
+        self.blocks[block as i64].succs_start = self.succs.len() as i32
+        self.blocks[block as i64].succs_count = succs.len() as i32
         var i: i64 = 0
         while i < succs.len():
             self.succs.push(succs.get(i))
             i = i + 1
-        self.update_block(block, move b)
 
     pub mut fn set_br(block: i32, target_block: i32, args: &Vec[i32]) -> Unit:
         if block < 0 or block >= self.blocks.len() as i32:
             return
         let target = self.add_target(target_block, args)
-        var b = self.blocks.get(block as i64)
-        b.term_kind = StackifyTermKind.Br
-        b.targets_start = target
-        b.targets_count = 1
-        self.update_block(block, move b)
+        self.blocks[block as i64].term_kind = StackifyTermKind.Br
+        self.blocks[block as i64].targets_start = target
+        self.blocks[block as i64].targets_count = 1
         let succs: Vec[i32] = Vec.new()
         succs.push(target_block)
         self.set_succs(block, succs)
@@ -251,12 +239,10 @@ impl StackifyGraph:
         let first_target = self.targets.len() as i32
         let _ = self.add_target(true_block, true_args)
         let _ = self.add_target(false_block, false_args)
-        var b = self.blocks.get(block as i64)
-        b.term_kind = StackifyTermKind.CondBr
-        b.cond_value = cond
-        b.targets_start = first_target
-        b.targets_count = 2
-        self.update_block(block, move b)
+        self.blocks[block as i64].term_kind = StackifyTermKind.CondBr
+        self.blocks[block as i64].cond_value = cond
+        self.blocks[block as i64].targets_start = first_target
+        self.blocks[block as i64].targets_count = 2
         let succs: Vec[i32] = Vec.new()
         succs.push(true_block)
         succs.push(false_block)
@@ -273,13 +259,11 @@ impl StackifyGraph:
             i = i + 1
         let default_empty: Vec[i32] = Vec.new()
         let default_target = self.add_target(default_block, default_empty)
-        var b = self.blocks.get(block as i64)
-        b.term_kind = StackifyTermKind.Select
-        b.selector_value = selector
-        b.targets_start = first_target
-        b.targets_count = target_blocks.len() as i32
-        b.default_target = default_target
-        self.update_block(block, move b)
+        self.blocks[block as i64].term_kind = StackifyTermKind.Select
+        self.blocks[block as i64].selector_value = selector
+        self.blocks[block as i64].targets_start = first_target
+        self.blocks[block as i64].targets_count = target_blocks.len() as i32
+        self.blocks[block as i64].default_target = default_target
         let succs: Vec[i32] = Vec.new()
         var si: i64 = 0
         while si < target_blocks.len():
@@ -291,13 +275,11 @@ impl StackifyGraph:
     pub mut fn set_select_targets(block: i32, selector: i32, targets_start: i32, targets_count: i32, default_target: i32) -> Unit:
         if block < 0 or block >= self.blocks.len() as i32:
             return
-        var b = self.blocks.get(block as i64)
-        b.term_kind = StackifyTermKind.Select
-        b.selector_value = selector
-        b.targets_start = targets_start
-        b.targets_count = targets_count
-        b.default_target = default_target
-        self.update_block(block, move b)
+        self.blocks[block as i64].term_kind = StackifyTermKind.Select
+        self.blocks[block as i64].selector_value = selector
+        self.blocks[block as i64].targets_start = targets_start
+        self.blocks[block as i64].targets_count = targets_count
+        self.blocks[block as i64].default_target = default_target
         let succs: Vec[i32] = Vec.new()
         var i = 0
         while i < targets_count:
@@ -311,24 +293,20 @@ impl StackifyGraph:
     pub mut fn set_return(block: i32, values: &Vec[i32]) -> Unit:
         if block < 0 or block >= self.blocks.len() as i32:
             return
-        var b = self.blocks.get(block as i64)
-        b.term_kind = StackifyTermKind.Return
-        b.return_values_start = self.return_values.len() as i32
-        b.return_values_count = values.len() as i32
+        self.blocks[block as i64].term_kind = StackifyTermKind.Return
+        self.blocks[block as i64].return_values_start = self.return_values.len() as i32
+        self.blocks[block as i64].return_values_count = values.len() as i32
         var i: i64 = 0
         while i < values.len():
             self.return_values.push(values.get(i))
             i = i + 1
-        self.update_block(block, move b)
         let no_succs: Vec[i32] = Vec.new()
         self.set_succs(block, no_succs)
 
     pub mut fn set_unreachable(block: i32) -> Unit:
         if block < 0 or block >= self.blocks.len() as i32:
             return
-        var b = self.blocks.get(block as i64)
-        b.term_kind = StackifyTermKind.Unreachable
-        self.update_block(block, move b)
+        self.blocks[block as i64].term_kind = StackifyTermKind.Unreachable
         let no_succs: Vec[i32] = Vec.new()
         self.set_succs(block, no_succs)
 

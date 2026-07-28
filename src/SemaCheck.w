@@ -8763,7 +8763,20 @@ impl Sema:
     // already been established", and issue-64 pins the binding-then-mutate
     // chain as in-place. Only assignment/call-arg/struct-field sites call this.
     mut fn reject_owned_demand_from_element_copy(value_node: i32, demanded: i32, context: str):
-        let elem_ty = self.owned_demand_element_copy_type(value_node)
+        var elem_ty = self.owned_demand_element_copy_type(value_node)
+        if elem_ty == 0 and demanded != 0:
+            // D27 E1: element reads are ref-typed now, so the pre-flip helper
+            // sees TY_REF and returns 0 — but a non-Copy Drop-bearing view
+            // still cannot satisfy an owned demand (§13.6). The struct-field
+            // path has no general mismatch check for this shape, so the gate
+            // keeps covering it until E3 retires it into general machinery.
+            let d27_vt_opt = self.typed_expr_types.get(value_node)
+            if d27_vt_opt.is_some():
+                let d27_vt = self.resolve_alias(d27_vt_opt.unwrap() as TypeId)
+                if self.get_type_kind(d27_vt) == TypeKind.TY_REF:
+                    let d27_pointee = self.get_type_d0(d27_vt)
+                    if d27_pointee != 0 and self.is_copy(d27_pointee as TypeId) == 0 and self.type_needs_drop(d27_pointee) != 0 and self.types_compatible(demanded as TypeId, d27_pointee as TypeId) != 0:
+                        elem_ty = d27_pointee
         if elem_ty == 0:
             return
         if demanded != 0:
@@ -11512,7 +11525,11 @@ impl Sema:
                     // demand; a non-Copy field reached through a view cannot
                     // fill it.
                     self.reject_owned_demand_from_view_projection(f_value, field_expected, "struct literal field")
-                    self.reject_owned_demand_from_element_copy(f_value, field_expected, "struct literal field")
+                    // Ephemeral structs legally hold borrowed values in
+                    // owned-typed fields (origin-tracked, #625) — the element
+                    // gate must not fire for them.
+                    if not self.ephemeral_types.contains(name):
+                        self.reject_owned_demand_from_element_copy(f_value, field_expected, "struct literal field")
                     if not self.ephemeral_types.contains(name):
                         self.check_ephemeral_task_storage(f_value, "non-ephemeral struct")
                     // #605: a whole non-Copy local moved into a struct field is
@@ -19345,6 +19362,12 @@ impl Sema:
                 if self.is_shared_ref_like_receiver(obj_type as i32) != 0:
                     self.emit_builtin_mutable_receiver_error(type_name_sym, field, node)
                     return 0
+                // D27 (§2.3): projections through a shared view type bare, so
+                // the ref-ness only shows at the chain root — same walk as the
+                // user mut-method path.
+                if self.place_base_is_read_only_ref(expr) != 0:
+                    self.emit_builtin_mutable_receiver_error(type_name_sym, field, node)
+                    return 0
                 var deref_expr = expr
                 if self.ast.kind(deref_expr) == NodeKind.NK_GROUPED:
                     deref_expr = self.ast.get_data0(deref_expr)
@@ -19809,7 +19832,12 @@ impl Sema:
                     return self.ty_void as i32
                 if field == self.syms.set_i32 or field == self.syms.clear:
                     return self.ty_void as i32
-                if field == self.syms.get or field == self.syms.remove:
+                if field == self.syms.get:
+                    // D27 (docs/d27-implementation-plan.md E1): element access
+                    // observes — get returns a view of vec-owned storage.
+                    // remove below stays owned: removal transfers.
+                    return self.ensure_exact_type(TypeKind.TY_REF, self.get_generic_inst_arg(recv_type, 0), 0, 0) as i32
+                if field == self.syms.remove:
                     return self.get_generic_inst_arg(recv_type, 0)
                 if field == self.syms.pop:
                     return self.ensure_option_type_for(self.get_generic_inst_arg(recv_type, 0))
@@ -21782,6 +21810,18 @@ impl Sema:
             if self.get_type_d1(resolved) == 0:
                 return 1
             return 0
+        // D27 (§2.3): a projection chain rooted at a view-producing CALL
+        // (vec.get) is read-only. Fields project through &T with a bare type,
+        // so the ref-ness only shows at the producer — walk down through
+        // projections to it. Ident roots stop here: binding-rooted chains are
+        // classified by classify_place (share-place receivers are mutable by
+        // receiver mode, D12, and must not read as views).
+        let bk = self.ast.kind(base_node)
+        if bk == NodeKind.NK_FIELD_ACCESS or bk == NodeKind.NK_INDEX or bk == NodeKind.NK_GROUPED:
+            let d27_inner = self.ast.get_data0(base_node)
+            let d27_ik = self.ast.kind(d27_inner)
+            if d27_ik == NodeKind.NK_CALL or d27_ik == NodeKind.NK_FIELD_ACCESS or d27_ik == NodeKind.NK_INDEX or d27_ik == NodeKind.NK_GROUPED:
+                return self.place_base_is_read_only_ref(d27_inner)
         0
 
     // Classify the operand of a UOP_DEREF expression. Returns the packed

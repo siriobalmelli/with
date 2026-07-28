@@ -1,3 +1,8 @@
+// D27 respell (#740): element access observes; mutation goes through the
+// `[i]` element place. The issue-64 receiver shapes are preserved — direct,
+// grouped, alias-typedef, nested-context, helper-fn, if-else, and match
+// bindings — with mutations spelled at the place and reads through views.
+
 type Inner {
     tags: Vec[i32],
     label: str,
@@ -28,42 +33,42 @@ fn make_context() -> Context:
 
 fn main:
     var direct = make_items()
-    direct.get(0).tags.push(11)
+    direct[0].tags.push(11)
     assert(direct.get(0).tags.len() == 1)
     assert(direct.get(0).tags.get(0) == 11)
 
     var grouped = make_items()
-    (grouped.get(0)).tags.push(22)
+    (grouped[0]).tags.push(22)
     assert(grouped.get(0).tags.len() == 1)
     assert(grouped.get(0).tags.get(0) == 22)
 
     var alias_items: InnerList = make_items()
-    alias_items.get(0).tags.push(33)
+    alias_items[0].tags.push(33)
     assert(alias_items.get(0).tags.len() == 1)
     assert(alias_items.get(0).tags.get(0) == 33)
 
     var ctx = make_context()
-    ctx.outer.items.get(0).tags.push(44)
+    ctx.outer.items[0].tags.push(44)
     assert(ctx.outer.items.get(0).tags.len() == 1)
     assert(ctx.outer.items.get(0).tags.get(0) == 44)
 
     var helper_items = make_items()
+    helper_items[0].tags.push(55)
     let item1 = helper_items.get(0)
-    item1.tags.push(55)
     assert(item1.tags.len() == 1)
     assert(item1.tags.get(0) == 55)
     assert(item1.label == "left")
 
     var if_items = make_items()
+    if_items[0].tags.push(66)
     let item2 = if true: if_items.get(0) else: if_items.get(1)
-    item2.tags.push(66)
     assert(item2.tags.len() == 1)
     assert(item2.tags.get(0) == 66)
 
     var match_items = make_items()
+    match_items[0].tags.push(77)
     let item3 = match 0:
         0 => match_items.get(0)
         _ => match_items.get(1)
-    item3.tags.push(77)
     assert(item3.tags.len() == 1)
     assert(item3.tags.get(0) == 77)

@@ -931,19 +931,13 @@ impl CiProject:
             i = i - 1
         -1
 
-    fn ensure_symbol(kind: i32, name: str) -> i32:
+    mut fn ensure_symbol(kind: i32, name: str) -> i32:
         let existing = self.find_symbol(kind, name)
         if existing >= 0:
             return existing
         let id = self.symbols.len() as i32
         self.symbols.push(CiProjectSymbol.new(name, kind))
         id
-
-    fn update_symbol(symbol_id: i32, symbol: CiProjectSymbol):
-        if symbol_id < 0 or symbol_id >= self.symbols.len() as i32:
-            return
-        let dst = self.symbols.ptr as *mut CiProjectSymbol
-        unsafe *(dst + ((symbol_id as isize) as usize)) = symbol.owned_copy()
 
     fn owner_module_path(symbol_id: i32) -> str:
         if symbol_id < 0 or symbol_id >= self.symbols.len() as i32:

@@ -75,6 +75,11 @@ site is either a matrix cell working as ruled or a bug in E1.
 
 ### E2 — MIR lowering: reads are borrows, demands are copies
 
+**Execution note (learned in E1):** E1 and E2 land in ONE batch. A Sema-only
+flip miscompiles — stage1 built from flipped source materializes views the
+old MIR still lowers as owned loads (four matrix cells SIGSEGVed) — and
+stage2 is compiled BY flipped stage1, so no battery can bless E1 alone.
+
 Element reads lower to element-address borrows; materialization points
 (from Sema's adjustment facts) lower to explicit element loads. No
 element-copy drops are scheduled for view reads — `--dump-drop-plan`

@@ -9,6 +9,7 @@ use Sema
 
 type BlockId = distinct i32
 impl Copy for BlockId
+impl Copy for TermKind
 
 extern fn with_i64_to_str(n: i64) -> str
 extern fn with_getenv_str(name: str) -> str

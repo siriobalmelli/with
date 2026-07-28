@@ -1300,7 +1300,7 @@ impl MirBuilder:
 
     mut fn define_goto_label(label: i32) -> i32:
         let idx = self.ensure_goto_label(label, self.drop_scope_starts.len() as i32)
-        let bb = self.goto_label_bbs.get(idx as i64)
+        let bb: i32 = self.goto_label_bbs.get(idx as i64)
         self.goto_label_drop_depths.set_i32(idx as i64, self.drop_local_ids.len() as i32)
         self.goto_label_defer_depths.set_i32(idx as i64, self.defer_nodes.len() as i32)
         self.goto_label_scope_depths.set_i32(idx as i64, self.drop_scope_starts.len() as i32)
@@ -4683,32 +4683,14 @@ impl MirBuilder:
         self.body.new_index_place(base, idx_local, elem_ty)
 
     mut fn lower_call_place(node: i32) -> i32:
-        if node == 0 or self.ast.kind(node) != NodeKind.NK_CALL:
-            return -1
-        let callee = self.ast.get_data0(node)
-        if self.ast.kind(callee) != NodeKind.NK_FIELD_ACCESS:
-            return -1
-        let recv_expr = self.ast.get_data0(callee)
-        let method_sym = self.ast.get_data1(callee)
-        var recv_type = self.expr_type(recv_expr)
-        if recv_type == 0 or recv_type == self.sema.ty_void:
-            recv_type = self.type_receiver_type(recv_expr)
-        if recv_type == 0 or recv_type == self.sema.ty_void:
-            return -1
-        var method_name = self.pool.resolve_symbol(method_sym)
-        if method_name.len() == 0:
-            method_name = self.sema.pool_resolve(method_sym)
-        let intrinsic = self.classify_intrinsic(recv_type, method_name)
-        // Preserve lvalue identity for vec element projections used as a place
-        // (for example `items.get(0).tags.push(...)`).
-        if intrinsic != MirIntrinsic.VEC_GET:
-            return -1
-        let arg_count = self.ast.get_data2(node)
-        if arg_count != 1:
-            return -1
-        let arg_start = self.ast.get_data1(node)
-        let index_expr = self.ast.get_extra(arg_start)
-        self.lower_index(recv_expr, index_expr)
+        // D27 E2: `xs.get(i)` is no longer a place-former — it observes,
+        // returning &T through VEC_GET_REF, and the ref-deref walk in field
+        // lowering handles projections off the result. The element-place
+        // treatment below was the issue-64 aliasing accident: with the get
+        // node now ref-typed, it double-dereferenced (`_v[_i].*.field`).
+        // `[i]` remains the place spelling.
+        let _ = node
+        -1
 
     mut fn lower_binding_alias_place(node: i32) -> i32:
         if node == 0:
@@ -9351,6 +9333,14 @@ impl MirBuilder:
                         intrinsic = MirIntrinsic.OPT_IS_NONE
                     else:
                         intrinsic = MirIntrinsic.OPT_IS_SOME
+
+        // D27 E2: Sema types vec.get(i) as &T — element access observes. Lower
+        // the borrow intrinsic so the result place holds the element address;
+        // VEC_GET stays the owned-load form for iteration and materialization.
+        if intrinsic == MirIntrinsic.VEC_GET:
+            let d27_get_ret = self.expr_type(node)
+            if d27_get_ret != 0 and self.sema.get_type_kind(self.sema.resolve_alias(d27_get_ret as TypeId)) == TypeKind.TY_REF:
+                intrinsic = MirIntrinsic.VEC_GET_REF
 
         // For intrinsic calls (Vec/HashMap/Option), bypass lower_call entirely.
         // lower_call → lower_var would mark_unsupported on the bare method sym.

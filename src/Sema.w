@@ -379,6 +379,8 @@ type ContextualCopyAdjustment {
     post_copy_type: i32,
 }
 
+impl Copy for ContextualCopyAdjustment
+
 // D22 Stage 3: one order-independent semantic decision for a multi-expression
 // join. Arm details live in the parallel contextual_join_arm_* vectors so MIR
 // and diagnostics consume the same classification instead of re-running type
@@ -400,6 +402,8 @@ type ContextualJoinDecision {
     origin_start: i32,
     origin_count: i32,
 }
+
+impl Copy for ContextualJoinDecision
 
 type Sema {
     pool: InternPool,

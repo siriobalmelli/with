@@ -79,6 +79,8 @@ type ResolvedDef {
     span_end: i32,
 }
 
+impl Copy for ResolvedDef
+
 type ResolvedScope {
     scope_id: i32,
     module_id: i32,
@@ -87,11 +89,15 @@ type ResolvedScope {
     kind: i32,
 }
 
+impl Copy for ResolvedScope
+
 type ResolvedBinding {
     scope_id: i32,
     symbol: i32,
     def_id: i32,
 }
+
+impl Copy for ResolvedBinding
 
 type ResolvedUse {
     module_id: i32,
@@ -101,6 +107,8 @@ type ResolvedUse {
     span_start: i32,
     span_end: i32,
 }
+
+impl Copy for ResolvedUse
 
 type ResolveResult {
     modules: Vec[ResolvedModule],

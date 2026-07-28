@@ -767,7 +767,7 @@ impl CiProject:
             ty_id = self.types.type_from_translated_text(owner_type)
         ty_id
 
-    fn migrate_scan_file(input_path: str) -> i32:
+    mut fn migrate_scan_file(input_path: str) -> i32:
         ci_migrate_prepare_include_path(input_path)
         ci_prepare_clang_resource_dir()
         let source = ci_migrate_wrapped_source(input_path)
@@ -801,9 +801,7 @@ impl CiProject:
                     i = i + 1
                     continue
                 let symbol_id = self.ensure_symbol(CiProjectSymbolKind.CIPS_VAR, name)
-                var symbol = self.symbols.get(symbol_id as i64)
-                symbol.add_consumer(module_id)
-                self.update_symbol(symbol_id, symbol)
+                self.symbols[symbol_id as i64].add_consumer(module_id)
 
                 let owner_kind = ci_migrate_var_definition_kind(session, i)
                 if cursor < 0 or owner_kind == CI_VAR_DECL_ONLY:
@@ -817,33 +815,31 @@ impl CiProject:
                     return 1
 
                 let owner_rank = ci_migrate_project_var_owner_rank(owner_kind)
-                if symbol.owner_module < 0:
-                    symbol.owner_module = module_id
-                    symbol.owner_rank = owner_rank
-                    symbol.owner_definition_kind = owner_kind
-                    symbol.resolved_ty_text = owner_type
-                    symbol.resolved_ty = self.migrate_var_type_id(session, i, owner_type)
-                    self.update_symbol(symbol_id, symbol)
+                if self.symbols[symbol_id as i64].owner_module < 0:
+                    self.symbols[symbol_id as i64].owner_module = module_id
+                    self.symbols[symbol_id as i64].owner_rank = owner_rank
+                    self.symbols[symbol_id as i64].owner_definition_kind = owner_kind
+                    self.symbols[symbol_id as i64].resolved_ty_text = owner_type
+                    self.symbols[symbol_id as i64].resolved_ty = self.migrate_var_type_id(session, i, owner_type)
                     i = i + 1
                     continue
 
                 let existing_path = self.owner_module_path(symbol_id)
-                if symbol.owner_rank == owner_rank:
-                    if symbol.owner_definition_kind == CI_VAR_FULL_DEF and owner_kind == CI_VAR_FULL_DEF and existing_path != input_path:
+                if self.symbols[symbol_id as i64].owner_rank == owner_rank:
+                    if self.symbols[symbol_id as i64].owner_definition_kind == CI_VAR_FULL_DEF and owner_kind == CI_VAR_FULL_DEF and existing_path != input_path:
                         eprint("migrate: duplicate full global definition for " ++ name ++ " in " ++ existing_path ++ " and " ++ input_path)
                         with_cimport_dispose(session)
                         return 1
-                    if symbol.resolved_ty_text.len() > 0 and symbol.resolved_ty_text != owner_type:
+                    if self.symbols[symbol_id as i64].resolved_ty_text.len() > 0 and self.symbols[symbol_id as i64].resolved_ty_text != owner_type:
                         eprint("migrate: conflicting global owner type for " ++ name ++ " in " ++ existing_path ++ " and " ++ input_path)
                         with_cimport_dispose(session)
                         return 1
-                if owner_rank > symbol.owner_rank or (owner_rank == symbol.owner_rank and ci_str_compare(input_path, existing_path) < 0):
-                    symbol.owner_module = module_id
-                    symbol.owner_rank = owner_rank
-                    symbol.owner_definition_kind = owner_kind
-                    symbol.resolved_ty_text = owner_type
-                    symbol.resolved_ty = self.migrate_var_type_id(session, i, owner_type)
-                    self.update_symbol(symbol_id, symbol)
+                if owner_rank > self.symbols[symbol_id as i64].owner_rank or (owner_rank == self.symbols[symbol_id as i64].owner_rank and ci_str_compare(input_path, existing_path) < 0):
+                    self.symbols[symbol_id as i64].owner_module = module_id
+                    self.symbols[symbol_id as i64].owner_rank = owner_rank
+                    self.symbols[symbol_id as i64].owner_definition_kind = owner_kind
+                    self.symbols[symbol_id as i64].resolved_ty_text = owner_type
+                    self.symbols[symbol_id as i64].resolved_ty = self.migrate_var_type_id(session, i, owner_type)
             else if with_cimport_decl_kind(session, i) == CK_FUNCTION:
                 let name = with_cimport_decl_name(session, i)
                 let cursor = with_cimport_decl_cursor(session, i)
@@ -855,21 +851,18 @@ impl CiProject:
                     i = i + 1
                     continue
                 let symbol_id = self.ensure_symbol(CiProjectSymbolKind.CIPS_FN, name)
-                var symbol = self.symbols.get(symbol_id as i64)
-                symbol.add_consumer(module_id)
-                self.update_symbol(symbol_id, symbol)
+                self.symbols[symbol_id as i64].add_consumer(module_id)
                 if cursor < 0 or with_ci_cursor_is_definition(session, cursor) == 0:
                     i = i + 1
                     continue
                 let existing_path = self.owner_module_path(symbol_id)
-                if symbol.owner_module >= 0 and existing_path != input_path:
+                if self.symbols[symbol_id as i64].owner_module >= 0 and existing_path != input_path:
                     eprint("migrate: duplicate function definition for " ++ name ++ " in " ++ existing_path ++ " and " ++ input_path)
                     with_cimport_dispose(session)
                     return 1
-                symbol.owner_module = module_id
-                symbol.owner_rank = 1
-                symbol.owner_definition_kind = 1
-                self.update_symbol(symbol_id, symbol)
+                self.symbols[symbol_id as i64].owner_module = module_id
+                self.symbols[symbol_id as i64].owner_rank = 1
+                self.symbols[symbol_id as i64].owner_definition_kind = 1
             i = i + 1
 
         with_cimport_dispose(session)

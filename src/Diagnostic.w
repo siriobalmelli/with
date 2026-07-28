@@ -136,7 +136,7 @@ impl Diagnostic:
         with_eprint(render_diag_marker_line(loc.col, span_underline_len(pstart, pend)))
 
         for i in 0..self.labels.len() as i32:
-            let lab: DiagnosticLabel = self.labels.get(i as i64)
+            let lab = &self.labels[i as i64]
             let label_message: str = lab.message
             var label_path = ""
             if i < label_paths.len() as i32:

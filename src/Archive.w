@@ -119,23 +119,21 @@ fn ar_str_compare(a: str, b: str) -> i32:
         return 1
     0
 
-fn ar_sort_symbols(items: &Vec[ArSymbol]) -> Vec[ArSymbol]:
+fn ar_sort_symbols(items: Vec[ArSymbol]) -> Vec[ArSymbol]:
     let result: Vec[ArSymbol] = Vec.new()
-    for i in 0..items.len() as i32:
-        let item = items.get(i as i64)
+    while items.len() > 0:
+        let item = items.remove(0)
         var pos = result.len() as i32
         for j in 0..result.len() as i32:
             if ar_str_compare(item.name, result.get(j as i64).name) < 0:
                 pos = j
                 break
         let tail: Vec[ArSymbol] = Vec.new()
-        for j in pos..result.len() as i32:
-            tail.push(result.get(j as i64))
         while result.len() as i32 > pos:
-            result.pop()
+            tail.push(result.remove(pos as i64))
         result.push(move item)
-        for j in 0..tail.len() as i32:
-            result.push(tail.get(j as i64))
+        while tail.len() > 0:
+            result.push(tail.remove(0))
     result
 
 fn extract_macho_symbols(data: str) -> Vec[str]:
