@@ -16,7 +16,10 @@ pub type JsonWriter {
 pub trait Serialize:    fn serialize(self: &Self, out:
     JsonWriter) -> JsonWriter
 
-pub type JsonView {
+// A JsonView is a view token (str header + token pointer + index): owned
+// passing is a cheap copy, so Deserialize keeps its by-value input (D27
+// ruling 1, the D25 Copy-token pattern).
+pub type JsonView: Copy {
     source: str,
     tokens: *const JsonToken,
     index: i32,

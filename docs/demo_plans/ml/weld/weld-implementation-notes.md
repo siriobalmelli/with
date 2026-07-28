@@ -1,5 +1,12 @@
 # Weld — Implementation Notes (v3)
 
+> **Conformance note (D27, 2026-07-30):** this document predates the
+> removal of `&mut T` from safe With (specification §15.1). Its `&mut`
+> signatures are non-conforming and must be respelled (mut receivers,
+> `[]mut T` slices, or threaded owned values) before implementation.
+> Tracked in #739.
+
+
 **Companion to:** weld-design.md (v5)
 **Audience:** The agent implementing Weld in With.
 
@@ -665,10 +672,10 @@ type GradNode = {
 ### attach_grad_node
 
 ```
-fn attach_grad_node(out: &mut Tensor, backward_fn: i32,
+fn attach_grad_node(out: Tensor, backward_fn: i32,
                      input_metas: Vec[*mut GradMeta],
                      input_shapes: Vec[Shape],
-                     saved: SavedState, layer_idx: i32):
+                     saved: SavedState, layer_idx: i32) -> Tensor:
     debug_assert(input_metas.len() == input_shapes.len())
     debug_assert(backward_fn > 0 and backward_fn < BACKWARD_MAX)
 

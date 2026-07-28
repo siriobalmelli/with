@@ -601,7 +601,7 @@ extend Rectangle:
     fn area(self: &Rectangle) -> f64:
         self.width * self.height
 
-    fn scale(self: &mut Rectangle, factor: f64):
+    mut fn scale(factor: f64):
         self.width *= factor
         self.height *= factor
 
@@ -613,7 +613,7 @@ extend Rectangle:
 ```
 
 **Mutability inference:** If any method assigns to `self.field`, that
-method gets `self: &mut Self`. Otherwise `self: &Self`.
+method becomes `mut fn` (in-place receiver). Otherwise `self: &Self`.
 
 **Field discovery:** If `__init__` assigns `self.field = value`, that
 field is added to the struct with the type of `value`. Annotated fields
@@ -636,7 +636,7 @@ in the class body take precedence.
 | `__contains__` | `fn contains(self: &Self, item: T) -> bool` |
 | `__iter__` | `fn iter(self: &Self) -> ...` (flag if complex) |
 | `__getitem__` | `fn get(self: &Self, idx: T) -> V` |
-| `__setitem__` | `fn set(self: &mut Self, idx: T, val: V)` |
+| `__setitem__` | `mut fn set(idx: T, val: V)` |
 | `__bool__` | `fn is_truthy(self: &Self) -> bool` |
 | `__enter__`/`__exit__` | `// @migrate: context manager — implement WithBlock trait` |
 
@@ -722,10 +722,10 @@ extend Stack[T]:
     fn new() -> Stack[T]:
         Stack { items: Vec.new() }
 
-    fn push(self: &mut Stack[T], item: T):
+    mut fn push(item: T):
         self.items.push(item)
 
-    fn pop(self: &mut Stack[T]) -> Option[T]:
+    mut fn pop() -> Option[T]:
         if self.items.is_empty():
             return Option.None
         Option.Some(self.items.pop())
@@ -1030,7 +1030,7 @@ def outer():
 // @migrate: nonlocal — closures cannot capture &mut; hoist to shared state or return value
 fn outer() -> i64:
     var x: i64 = 0
-    // inner() captured nonlocal x — refactor to pass x as &mut or return new value
+    // inner() captured nonlocal x — refactor to return the new value
     x
 ```
 
@@ -1062,7 +1062,7 @@ type LoggedList[T] = {
 }
 
 extend LoggedList[T]:
-    fn append(self: &mut LoggedList[T], x: T):
+    mut fn append(x: T):
         print(f"appending {x}")
         self.inner.push(x)  // @migrate: super().append → inner.push
 ```
@@ -1570,13 +1570,14 @@ def fill(items: list[int], value: int) -> None:
         items[i] = value
 ```
 ```
-fn fill(items: &mut Vec[i64], value: i64):
+fn fill(mut items: Vec[i64], value: i64) -> Vec[i64]:
     for i in 0..items.len():
         items.set(i, value)
+    items
 ```
 
 The migrator detects mutation of list/dict arguments and promotes them
-to `&mut` parameters automatically.
+to threaded owned parameters (taken and returned) automatically.
 
 ### Dict insertion order
 

@@ -196,8 +196,8 @@ semicolons (Rust's "discard value" semantics) are handled:
 fn foo() { ... }           →  fn foo: ...
 fn foo() -> i32 { ... }   →  fn foo -> i32: ...
 fn foo(&self) -> i32       →  fn foo(self: &Self) -> i32
-fn foo(&mut self)          →  fn foo(self: &mut Self)
-fn foo(self)               →  fn foo(self: Self)   // @migrate: by-value self
+fn foo(&mut self)          →  mut fn foo()         // in-place receiver (§15.1: no &mut in With)
+fn foo(self)               →  move fn foo()        // consuming receiver
 ```
 
 #### Visibility
@@ -369,8 +369,9 @@ extend Point:
     fn distance(self: &Point, other: &Point) -> f64: ...
 ```
 
-`&self` → `self: &Self`. `&mut self` → `self: &mut Self`.
-`self` (by value) → `self: Self` with flag.
+`&self` → `self: &Self`. `&mut self` → `mut fn` (in-place receiver —
+With has no `&mut`, §15.1). `self` (by value) → `move fn` (consuming
+receiver).
 
 #### Trait impl
 
@@ -381,10 +382,11 @@ impl Display for Point {
 
 // With
 impl Display for Point:
-    fn fmt(self: &Self, f: &mut Formatter) -> fmt.Result: ...
+    fn fmt(self: &Self, f: Formatter) -> fmt.Result: ...
 ```
 
-Direct translation. `fmt::Result` → `fmt.Result`.
+Translation maps Rust's `&mut` sink to With's threaded owned sink
+(§15.1: no `&mut` in With; D27 ruling 1). `fmt::Result` → `fmt.Result`.
 
 #### `async` / `.await`
 

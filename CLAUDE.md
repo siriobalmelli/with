@@ -188,6 +188,18 @@ not implement D22 from isolated TODOs: follow
 `docs/d22-implementation-plan.md` and the full NON-COMPLIANT acceptance matrix
 so every equivalent spelling shares one semantic rule.
 
+**D27 (decisions.md) extends the doctrine to positional collections: element
+access observes; `remove` transfers.** `xs[i]` denotes the element place;
+`xs.get(i)` returns `&T` (read-only, panics out-of-range — `Option` is for
+keyed maps, where absence is normal); a binding names what's there, an
+annotation demands what it says. The compiler is NON-COMPLIANT on the
+element-view semantics until that campaign lands: the interim #715 element
+gate and the deliberately over-broad #730 unannotated-let field gate are
+stand-ins that the campaign retires — do not layer on them, extend them, or
+treat today's element-copy behavior as precedent. Serialize/Deserialize
+signatures are ruled correct as declared (`JsonView` is a Copy view token);
+do not "fix" the threaded sink into a borrow.
+
 **`FnAbi` is the single ABI source of truth — never re-derive call ABI
 per-path.** Every function signature has ONE ABI descriptor (`FnAbi`
 with a per-parameter `PassMode` — `Direct`/`Indirect`/`IndirectPlace`/

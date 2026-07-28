@@ -74,7 +74,7 @@ With makes a different trade-off: we pay a small runtime cost (fiber stacks) to 
 In With, a fiber has a real stack. A reference created before `.await` lives on that stack and stays valid after `.await`. The stack doesn't move. There is nothing to pin.
 
 ```
-async fn process(data: &mut Vec[i32]):
+async fn process(data: &Vec[i32]):
     let first = &data[0]
     some_io().await              // fiber suspends; stack stays put
     println(first)               // reference still valid

@@ -1,5 +1,12 @@
 # std.math — Design Specification
 
+> **Conformance note (D27, 2026-07-30):** this document predates the
+> removal of `&mut T` from safe With (specification §15.1). Its `&mut`
+> signatures are non-conforming and must be respelled (mut receivers,
+> `[]mut T` slices, or threaded owned values) before implementation.
+> Tracked in #739.
+
+
 **The standard numerical computing library for With.**
 
 Pure CPU. No external dependencies. Part of the standard library.
@@ -912,7 +919,7 @@ For non-contiguous inputs (strided views), the inner loop uses
 stride arithmetic. The general pattern:
 
 ```
-fn add_kernel(a: &Array, b: &Array, out: &mut Array):
+fn add_kernel(a: &Array, b: &Array, out: Array) -> Array:
     let n = numel(a)
     let a_ptr = data_ptr(a)
     let b_ptr = data_ptr(b)

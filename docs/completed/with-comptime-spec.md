@@ -194,7 +194,7 @@ Selects code paths at compile time. Dead branches are not compiled —
 they are discarded entirely, not just unreachable.
 
 ```
-fn serialize_value[T](val: &T, out: &mut Writer):
+fn serialize_value[T](val: &T, out: Writer) -> Writer:
     comptime if T.is_copy():
         // Fast path for small Copy types
         out.write_bytes(val as *const u8, T.size())
@@ -313,7 +313,7 @@ string via `self.{field_name}`:
 ```
 comptime fn derive_debug[T: type] -> impl Debug for T:
     impl Debug for T:
-        fn debug(&self, out: &mut Formatter):
+        fn debug(&self, out: Formatter) -> Formatter:
             out.write(T.name())
             out.write(" { ")
             for field in T.fields():
@@ -360,7 +360,7 @@ and returns an `impl` block.
 comptime fn derive_serialize[T: type] -> impl Serialize for T:
     let fields = T.fields()
     impl Serialize for T:
-        fn serialize(self: &T, out: &mut JsonWriter):
+        fn serialize(self: &T, out: JsonWriter) -> JsonWriter:
             out.begin_object()
             for field in fields:
                 out.key(field.name)

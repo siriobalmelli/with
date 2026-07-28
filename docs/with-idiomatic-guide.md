@@ -1018,7 +1018,7 @@ let profiles = async scope s =>
 Scoped borrows — tasks can borrow local data without lifetimes:
 
 ```
-async fn process_all(data: &mut Vec[i32]):
+async fn process_all(data: &Vec[i32]):
     async scope s =>
         s.track(transform(&data[0..100]))
         s.track(transform(&data[100..200]))
@@ -1167,7 +1167,7 @@ are erased entirely — no runtime cost, no dead code warnings.
 
 ```
 // ✓ specialize based on type capabilities
-fn serialize[T](val: &T, out: &mut Writer):
+fn serialize[T](val: &T, out: Writer) -> Writer:
     comptime if T.is_copy():
         out.write_bytes(val as *const u8, T.size())
     else if T.implements(Serialize):
@@ -1231,7 +1231,7 @@ impl Drop for Database:
 extend Database:
     fn open(path: str) -> Result[Database, SqliteError]:
         var handle: *mut sqlite3 = null
-        let rc = unsafe { sqlite3_open(path.as_ptr(), &mut handle) }
+        let rc = unsafe { sqlite3_open(path.as_ptr(), &raw mut handle) }
         if rc != SQLITE_OK then
             return Err(.OpenFailed(path, code: rc))
         Database { handle, path }
@@ -1405,18 +1405,19 @@ intent about **who is at fault** when the condition fails:
   wrong — I have a bug." Raises `IllegalStateError`.
 
 ```
-fn withdraw(account: &mut Account, amount: i64):
-    // require: caller must satisfy the contract
-    require(amount > 0)
-    require(amount <= account.balance)
+extend Account:
+    mut fn withdraw(amount: i64):
+        // require: caller must satisfy the contract
+        require(amount > 0)
+        require(amount <= self.balance)
 
-    // check: internal invariant — balance should never go negative
-    account.balance -= amount
-    check(account.balance >= 0)
+        // check: internal invariant — balance should never go negative
+        self.balance -= amount
+        check(self.balance >= 0)
 
 fn test_withdraw:
     var acct = Account { balance: 100 }
-    withdraw(&mut acct, 50)
+    acct.withdraw(50)
 
     // assert: test expectation
     assert(acct.balance == 50)

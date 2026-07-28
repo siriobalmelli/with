@@ -90,10 +90,10 @@ func (p *Point) Scale(f float64) { p.X *= f; p.Y *= f }
 fn add(a: i32, b: i32) -> i32: a + b
 fn greet: print("hi")
 fn swap(a: i32, b: i32) -> (i32, i32): (b, a)
-fn Point.scale(self: &mut Point, f: f64): self.x = self.x * f; self.y = self.y * f
+mut fn Point.scale(f: f64): self.x = self.x * f; self.y = self.y * f
 ```
 
-`func` → `fn`. Receiver `(p *Point)` → method `Point.scale(self: &mut Point)`.
+`func` → `fn`. Receiver `(p *Point)` → in-place method `mut fn Point.scale(...)`.
 Value receiver `(p Point)` → `self: Point`.
 Multi-return `(int, int)` → tuple `(i32, i32)`.
 Named returns → flag (With doesn't have naked return).
@@ -666,12 +666,12 @@ func (p *Point) Scale(f float64) { ... }     // pointer receiver
 
 // With
 fn Point.distance(self: &Self) -> f64: ...   // borrow
-fn Point.scale(self: &mut Self, f: f64): ... // mutable borrow
+mut fn Point.scale(f: f64): ...          // in-place receiver
 ```
 
 Value receiver → `self: &Self` (borrow, since Go copies anyway
 and most value receivers just read).
-Pointer receiver → `self: &mut Self` (mutable borrow).
+Pointer receiver → `mut fn` (in-place receiver; §15.1 — no `&mut`).
 Flag value receivers that mutate (rare but legal in Go — the
 mutation is lost).
 
@@ -801,7 +801,7 @@ type Reader interface {
 
 // With
 trait Reader:
-    fn read(self: &mut Self, buf: &mut [u8]) -> Result[i32, Error]
+    mut fn read(buf: []mut u8) -> Result[i32, Error]
 
 // Types must explicitly impl Reader
 // @migrate: Go interfaces are implicit. With traits are explicit.

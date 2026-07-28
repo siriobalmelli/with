@@ -1,5 +1,12 @@
 # lib/std — Standard Library Specification
 
+> **Conformance note (D27, 2026-07-30):** this document predates the
+> removal of `&mut T` from safe With (specification §15.1). Its `&mut`
+> signatures are non-conforming and must be respelled (mut receivers,
+> `[]mut T` slices, or threaded owned values) before implementation.
+> Tracked in #739.
+
+
 **The standard library for With.**
 
 Small, correct, fast. Not a framework. Every module earns its place

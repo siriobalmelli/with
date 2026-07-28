@@ -1,4 +1,11 @@
 ## Critical (Weld cannot function without these)
+
+> **Conformance note (D27, 2026-07-30):** this document predates the
+> removal of `&mut T` from safe With (specification §15.1). Its `&mut`
+> signatures are non-conforming and must be respelled (mut receivers,
+> `[]mut T` slices, or threaded owned values) before implementation.
+> Tracked in #739.
+
 *These form the core memory and data models. Cannot start Crux/Weld without these.*
 
 ### C1. `@[drop]` — Automatic resource cleanup (RAII)

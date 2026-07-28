@@ -330,7 +330,7 @@ type Counter = { count: u32 }
 
 extend Counter
     fn new -> Counter: Counter { count: 0 }
-    fn increment(self: &mut Counter): self.count += 1
+    mut fn increment(): self.count += 1
     fn value(self: &Counter) -> u32: self.count
 ```
 
@@ -967,7 +967,7 @@ let arr = [1_u8, 2, 3]
 let sub = slice[1..3]
 ```
 
-`[]const T` → `&[T]`. `[]T` → `&mut [T]`. Owned arrays → `Vec[T]`.
+`[]const T` → `[]T`. `[]T` → `[]mut T`. Owned arrays → `Vec[T]`.
 
 ## Ownership (New Concept for Zig Programmers)
 
@@ -1533,15 +1533,16 @@ int& ref = val;
 
 ```with
 // With
-fn process(user: Option[&mut User]):
+fn process(user: Option[&User]) -> bool:
     if let Some(u) = user:
-        u.active = true
+        return u.active
+    false
 
 var val = 5
-let ptr: &mut i32 = &mut val    // Safe exclusive borrow
+let r: &i32 = &val    // safe shared borrow
 ```
 
-In C/C++, a pointer can be null, uninitialized, or dangling. In With, a reference (`&T` or `&mut T`) is guaranteed to point to valid memory and **cannot be null**. If a value is optional, use `Option[&T]`. 
+In C/C++, a pointer can be null, uninitialized, or dangling. In With, a reference (`&T`) is guaranteed to point to valid memory and **cannot be null**. If a value is optional, use `Option[&T]`. 
 
 Raw pointers (`*mut T`, `*const T`) exist in With, but they are strictly for C-interop and require `unsafe` blocks to dereference.
 
@@ -1619,7 +1620,7 @@ sqlite3_open(":memory:", &db);
 use c_import("sqlite3.h", link: "sqlite3")
 
 var db: *mut sqlite3 = null
-sqlite3_open(c":memory:".ptr, &mut db)
+sqlite3_open(c":memory:".ptr, &raw mut db)
 ```
 
 `c_import` parses C headers at compile time and makes all `struct`s, `enum`s, `#define` macros, and functions instantly available as With symbols. 
@@ -1649,7 +1650,7 @@ extend Entity
     // Note the explicit 'self' parameter
     fn get_id(self: &Entity) -> i32: self.id
 
-    fn set_id(self: &mut Entity, new_id: i32):
+    mut fn set_id(new_id: i32):
         self.id = new_id
 ```
 
@@ -1715,8 +1716,8 @@ With has no token-level macros. Instead, `comptime` allows you to execute normal
 | `size_t` | `usize` |
 | `struct` / `class` | `type` |
 | `void foo()` | `fn foo:` (or `fn foo -> Unit:`) |
-| `T* ptr` (optional) | `Option[&mut T]` |
-| `T& ref` | `&mut T` or `&T` |
+| `T* ptr` (optional) | `Option[&T]` |
+| `T& ref` | `&T` (or `mut fn` receiver for mutation) |
 | `auto x = 5;` | `let x = 5` |
 | `const int x = 5;` | `let x: i32 = 5` (variables are immutable by default) |
 | `std::vector<T>` | `Vec[T]` |
@@ -2274,16 +2275,17 @@ fun testWithdraw() {
 
 ```with
 // With
-fn withdraw(account: &mut Account, amount: i64):
-    require(amount > 0, "amount must be positive")
-    require(amount <= account.balance)
+extend Account
+    mut fn withdraw(amount: i64):
+        require(amount > 0, "amount must be positive")
+        require(amount <= self.balance)
 
-    account.balance -= amount
-    check(account.balance >= 0, "balance invariant violated")
+        self.balance -= amount
+        check(self.balance >= 0, "balance invariant violated")
 
 fn test_withdraw:
     var acct = Account { balance: 100 }
-    withdraw(&mut acct, 50)
+    acct.withdraw(50)
     assert(acct.balance == 50)
 ```
 

@@ -968,6 +968,11 @@ parameter and the `&T` fix.
 binding, an inferred return, pattern projection, and closure capture. `Copy`
 does not silently erase reference identity.
 
+A binding names what's there; an annotation demands what it says: an
+unannotated `let` binds the view unchanged, while a typed binding is an
+owned-value demand (D22 §6.2, D27). This is uniform across field
+projections and collection element access.
+
 When `T: Copy`, an expression of type `&T` may satisfy an independently
 established owned-value demand. The compiler copies the pointee, then applies
 ordinary value coercions. Thus an `&i32` may satisfy an owned `i32` or `i64`
@@ -5258,6 +5263,24 @@ need to name them.
 | `MultiIndexMut[V]` | Generalized subscript write | `expr[i, j] = val`, `expr[:, 0] = val` |
 | `Try[T, E]` | `?` operator | `expr?` |
 | `Drop` | Destructor | automatic at scope exit |
+
+**Element access observes; `remove` transfers (D27).** A subscript read
+`xs[i]` on a collection denotes the element *place*: reading it yields a
+view (`&T`) of collection-owned storage, and writing through it (when the
+base place is mutable) mutates the element via `IndexPlace`, including
+receiver chains such as `xs[i].tags.push(v)`. Positional lookup
+`xs.get(i)` is the observing accessor: it returns `&T`, a read-only view
+of the element. Out-of-range positional access panics — for positional
+access, absence is a bug, not a value, so no `Option` appears. (Keyed
+maps differ: absence is normal there, so `get` returns `Option[&V]` per
+D22.) The ownership-transfer operation is `remove(i) -> T`.
+
+An element view follows the contextual rules of §3.8 and D22: when
+`T: Copy`, an owned-value demand materializes an independent copy; when
+`T` is not `Copy`, an owned demand is rejected (D22 §13.6) — borrow the
+element, clone it, or remove it from the collection. These semantics are
+uniform across `Vec`, fixed arrays, slices, and user types implementing
+`IndexGet`/`IndexPlace`.
 
 **Examples:**
 
@@ -9957,7 +9980,7 @@ structure.
 comptime fn derive_serialize[T: type] -> impl Serialize for T:
     let fields = T.fields()
     impl Serialize for T:
-        fn serialize(self: &T, mut out: JsonWriter) -> JsonWriter:
+        fn serialize(self: &T, out: JsonWriter) -> JsonWriter:
             out.begin_object()
             for field in fields:       // cascade: inside comptime fn
                 out.key(field.name)
@@ -9971,7 +9994,7 @@ type User { name: String, age: i32, email: String }
 
 // The compiler generates (conceptually):
 // impl Serialize for User:
-//     fn serialize(self: &User, mut out: JsonWriter) -> JsonWriter:
+//     fn serialize(self: &User, out: JsonWriter) -> JsonWriter:
 //         out.begin_object()
 //         out.key("name"); out = self.name.serialize(out)
 //         out.key("age"); out = self.age.serialize(out)
@@ -10027,7 +10050,7 @@ inside is already compile-time by context.
 not compiled:
 
 ```
-fn serialize_value[T](val: &T, mut out: Writer) -> Writer:
+fn serialize_value[T](val: &T, out: Writer) -> Writer:
     comptime if T.is_copy():
         // Fast path for small Copy types
         out.write_bytes(val as *const u8, T.size())

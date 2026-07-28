@@ -477,7 +477,7 @@ type Circle = {
 impl Circle:
     fn area(self: &Self) -> f64: PI * self.radius * self.radius
     fn diameter(self: &Self) -> f64: self.radius * 2
-    fn set_diameter(self: &mut Self, value: f64): self.radius = value / 2
+    mut fn set_diameter(value: f64): self.radius = value / 2
 ```
 
 Read-only computed property → getter method.
@@ -496,7 +496,7 @@ var score: Int {
 // @migrate: property observers (willSet/didSet) — no direct equivalent.
 // Use explicit setter method that performs the side effect.
 var score: i64
-fn set_score(self: &mut Self, value: i64):
+mut fn set_score(value: i64):
     print(f"will change to {value}")
     let old = self.score
     self.score = value
@@ -511,7 +511,7 @@ struct Stack<Element> { ... }
 func largest<T: Comparable>(in array: [T]) -> T { ... }
 
 // With
-fn swap[T](a: &mut T, b: &mut T): ...
+fn swap[T](a: T, b: T) -> (T, T): ...
 type Stack[T] = { ... }
 fn largest[T: Ord](array: &Vec[T]) -> T: ...
 ```

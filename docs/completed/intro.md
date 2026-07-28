@@ -103,7 +103,7 @@ With's async model is fibers — lightweight threads with real stacks. When you 
 Because fibers have real stacks, references across `await` points just work. No `Pin`. No `Unpin`. No `Future`. No `Poll`. These concepts don't exist in With.
 
 ```
-async fn process(data: &mut Vec[i32]):
+async fn process(data: &Vec[i32]):
     let first = &data[0]
     some_io().await           // fiber suspends; reference is fine
     println(first)            // safe to use
@@ -132,7 +132,7 @@ use c_import("sqlite3.h", link: "sqlite3")
 
 fn main:
     var db: *mut sqlite3 = null
-    sqlite3_open(c":memory:".ptr, &mut db)
+    sqlite3_open(c":memory:".ptr, &raw mut db)
     defer sqlite3_close(db)
 ```
 
@@ -182,7 +182,7 @@ let report = transactions.iter()
 comptime fn derive_serialize[T: type] -> impl Serialize for T:
     let fields = T.fields()
     impl Serialize for T {
-        fn serialize(self: &T, out: &mut JsonWriter):
+        fn serialize(self: &T, out: JsonWriter) -> JsonWriter:
             out.begin_object()
             for field in fields:
                 out.key(field.name)
