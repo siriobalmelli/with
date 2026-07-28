@@ -2789,6 +2789,16 @@ impl Sema:
             let bound_count = self.ast.get_extra(pos + 1)
             if self.lookup_generic_subst(tp_name) == 0:
                 if self.type_param_mentions_any_param_type(tp_name, param_start, param_count) != 0:
+                    // #738: a mentioned-but-unbound param means inference
+                    // FAILED (mismatched argument shape) — say so instead of
+                    // silently substituting i32, which manufactures
+                    // diagnostics about types the user never wrote. The i32
+                    // default survives only as cascade suppression when the
+                    // arguments already errored.
+                    if self.diags.count_by_severity(DiagSeverity.Error) == 0:
+                        let mb_name = self.pool_resolve(tp_name)
+                        self.emit_error(f"cannot infer type parameter '{mb_name}' for this call; the argument's shape does not match the parameter type that mentions '{mb_name}'", call_node)
+                        return
                     self.put_generic_subst(tp_name, self.ty_i32, call_node)
                 else:
                     // #598 (ruled: no turbofish): teach the restructure instead of
