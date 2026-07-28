@@ -1019,7 +1019,7 @@ fn dump_mir_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema) -> str:
     for i in 0..mir_mod.bodies.len() as i32:
         if i > 0:
             out = out ++ "\n"
-        let body: MirBody = mir_mod.bodies.get(i as i64)
+        let body = &mir_mod.bodies[i as i64]
         out = out ++ dump_mir_body(body, pool, sema)
     out
 
@@ -1030,7 +1030,7 @@ fn print_mir_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema):
     for i in 0..mir_mod.bodies.len() as i32:
         if i > 0:
             with_write("\n")
-        let body: MirBody = mir_mod.bodies.get(i as i64)
+        let body = &mir_mod.bodies[i as i64]
         with_write(dump_mir_body(body, pool, sema))
 
 fn mir_clip_text(s: str, max_len: i32) -> str:
@@ -1863,7 +1863,7 @@ fn dump_drop_state_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema) -
     for i in 0..mir_mod.bodies.len() as i32:
         if i > 0:
             out = out ++ "\n"
-        let body: MirBody = mir_mod.bodies.get(i as i64)
+        let body = &mir_mod.bodies[i as i64]
         out = out ++ dump_drop_state_body(body, pool)
     out
 
@@ -2039,10 +2039,10 @@ fn trace_ownership_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, s
     var out = "trace-ownership " ++ spec ++ "\n"
     var hits = 0
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body: MirBody = mir_mod.bodies.get(bi as i64)
-        if not mir_debug_body_matches(&body, pool, wanted_fn):
+        let body = &mir_mod.bodies[bi as i64]
+        if not mir_debug_body_matches(body, pool, wanted_fn):
             continue
-        out = out ++ trace_ownership_body(&body, pool, sema, spec, target)
+        out = out ++ trace_ownership_body(body, pool, sema, spec, target)
         hits = hits + 1
     if hits == 0:
         out = out ++ "  <no matching function>\n"
@@ -2096,8 +2096,8 @@ fn dump_drop_plan_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema) ->
     for i in 0..mir_mod.bodies.len() as i32:
         if i > 0:
             out = out ++ "\n"
-        let body: MirBody = mir_mod.bodies.get(i as i64)
-        out = out ++ dump_drop_plan_body(&body, pool, sema)
+        let body = &mir_mod.bodies[i as i64]
+        out = out ++ dump_drop_plan_body(body, pool, sema)
     out
 
 // Drop elaboration — the "Dead" arm (#614, docs/drop-elaboration-soundness.md).
@@ -2208,8 +2208,8 @@ fn dump_place_map_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema) ->
     for i in 0..mir_mod.bodies.len() as i32:
         if i > 0:
             out = out ++ "\n"
-        let body: MirBody = mir_mod.bodies.get(i as i64)
-        out = out ++ dump_place_map_body(mir_mod, &body, pool)
+        let body = &mir_mod.bodies[i as i64]
+        out = out ++ dump_place_map_body(mir_mod, body, pool)
     out
 
 fn mir_parse_positive_i32(text: str) -> i32:
@@ -2250,23 +2250,23 @@ fn trace_cleanup_edge_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema
         return out ++ "  <invalid edge spec; expected fn:from->to>\n"
     var hits = 0
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body: MirBody = mir_mod.bodies.get(bi as i64)
-        if not mir_debug_body_matches(&body, pool, wanted_fn):
+        let body = &mir_mod.bodies[bi as i64]
+        if not mir_debug_body_matches(body, pool, wanted_fn):
             continue
         if from_bb >= body.block_count() or to_bb >= body.block_count():
             continue
-        if not mir_drop_state_block_has_successor(&body, from_bb, to_bb):
+        if not mir_drop_state_block_has_successor(body, from_bb, to_bb):
             continue
-        let blocks = mir_drop_state_compute_blocks(&body)
+        let blocks = mir_drop_state_compute_blocks(body)
         let from_out = mir_drop_state_load_block(blocks, from_bb)
-        let to_in = mir_drop_state_block_input(&body, blocks, to_bb)
-        out = out ++ "fn " ++ mir_debug_body_label(&body, pool) ++ f" edge=bb{from_bb}->bb{to_bb}\n"
+        let to_in = mir_drop_state_block_input(body, blocks, to_bb)
+        out = out ++ "fn " ++ mir_debug_body_label(body, pool) ++ f" edge=bb{from_bb}->bb{to_bb}\n"
         out = out ++ "  from_out: " ++ mir_drop_state_format(from_out) ++ "\n"
         out = out ++ "  to_in: " ++ mir_drop_state_format(to_in) ++ "\n"
-        out = out ++ "  term: " ++ mir_term_text(&body, from_bb, pool, sema) ++ "\n"
+        out = out ++ "  term: " ++ mir_term_text(body, from_bb, pool, sema) ++ "\n"
         if body.term_kind(from_bb) == TermKind.TK_DROP_AND_GOTO and body.term_data1(from_bb) == to_bb:
             let place_id = body.term_data0(from_bb)
-            out = out ++ "  edge_drop: " ++ mir_drop_plan_place_line(&body, pool, sema, place_id, mir_drop_state_get_place(from_out, &body, place_id), f"bb{from_bb}.term", mir_term_text(&body, from_bb, pool, sema))
+            out = out ++ "  edge_drop: " ++ mir_drop_plan_place_line(body, pool, sema, place_id, mir_drop_state_get_place(from_out, body, place_id), f"bb{from_bb}.term", mir_term_text(body, from_bb, pool, sema))
         hits = hits + 1
     if hits == 0:
         out = out ++ "  <no matching cleanup edge>\n"
@@ -2315,10 +2315,10 @@ fn validate_ownership_mir_module(mir_mod: &MirModule) -> str:
     if shape.len() > 0:
         return "MIR shape: " ++ shape
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body = mir_mod.bodies.get(bi as i64)
+        let body = &mir_mod.bodies[bi as i64]
         if body.lowering_failed != 0:
             continue
-        let err = validate_ownership_body(mir_mod, &body)
+        let err = validate_ownership_body(mir_mod, body)
         if err.len() > 0:
             return err
     ""
@@ -2364,8 +2364,8 @@ fn trace_place_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec:
     var out = "trace-place " ++ spec ++ "\n"
     var hits = 0
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body: MirBody = mir_mod.bodies.get(bi as i64)
-        if not mir_debug_body_matches(&body, pool, wanted_fn):
+        let body = &mir_mod.bodies[bi as i64]
+        if not mir_debug_body_matches(body, pool, wanted_fn):
             continue
         var body_header_emitted = false
         for bb in 0..body.block_count():
@@ -2373,17 +2373,17 @@ fn trace_place_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec:
             let stmt_count = body.bb_stmt_counts.get(bb as i64)
             for si in 0..stmt_count:
                 let stmt_id = stmt_start + si
-                let text = mir_stmt_text(&body, stmt_id, pool, sema)
+                let text = mir_stmt_text(body, stmt_id, pool, sema)
                 if mir_debug_mentions(text, target):
                     if not body_header_emitted:
-                        out = out ++ "fn " ++ mir_debug_body_label(&body, pool) ++ "\n"
+                        out = out ++ "fn " ++ mir_debug_body_label(body, pool) ++ "\n"
                         body_header_emitted = true
                     out = out ++ f"  bb{bb}.stmt{stmt_id}: " ++ text ++ "\n"
                     hits = hits + 1
-            let term_text = mir_term_text(&body, bb, pool, sema)
+            let term_text = mir_term_text(body, bb, pool, sema)
             if mir_debug_mentions(term_text, target):
                 if not body_header_emitted:
-                    out = out ++ "fn " ++ mir_debug_body_label(&body, pool) ++ "\n"
+                    out = out ++ "fn " ++ mir_debug_body_label(body, pool) ++ "\n"
                     body_header_emitted = true
                 out = out ++ f"  bb{bb}.term: " ++ term_text ++ "\n"
                 hits = hits + 1
@@ -2397,13 +2397,13 @@ fn explain_mir_origin_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema
     var out = "mir-origin " ++ spec ++ "\n"
     var hits = 0
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body: MirBody = mir_mod.bodies.get(bi as i64)
-        if not mir_debug_body_matches(&body, pool, wanted_fn):
+        let body = &mir_mod.bodies[bi as i64]
+        if not mir_debug_body_matches(body, pool, wanted_fn):
             continue
         for li in 0..body.local_count():
             let local_label = f"_{li}"
             if mir_debug_mentions(local_label, target):
-                out = out ++ "fn " ++ mir_debug_body_label(&body, pool) ++ f" local _{li}"
+                out = out ++ "fn " ++ mir_debug_body_label(body, pool) ++ f" local _{li}"
                 let info = body.get_local(li)
                 out = out ++ f" type=ty{info.type_id}"
                 if info.name_sym != 0:
@@ -2415,15 +2415,15 @@ fn explain_mir_origin_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema
             let stmt_count = body.bb_stmt_counts.get(bb as i64)
             for si in 0..stmt_count:
                 let stmt_id = stmt_start + si
-                let text = mir_stmt_text(&body, stmt_id, pool, sema)
+                let text = mir_stmt_text(body, stmt_id, pool, sema)
                 let span = body.stmt_spans.get(stmt_id as i64)
                 if mir_debug_mentions(text, target) or target == f"stmt{stmt_id}":
-                    out = out ++ "fn " ++ mir_debug_body_label(&body, pool) ++ f" bb{bb}.stmt{stmt_id} span={span}: " ++ text ++ "\n"
+                    out = out ++ "fn " ++ mir_debug_body_label(body, pool) ++ f" bb{bb}.stmt{stmt_id} span={span}: " ++ text ++ "\n"
                     hits = hits + 1
-            let term_text = mir_term_text(&body, bb, pool, sema)
+            let term_text = mir_term_text(body, bb, pool, sema)
             let term_span = body.bb_term_spans.get(bb as i64)
             if mir_debug_mentions(term_text, target) or target == f"term{bb}":
-                out = out ++ "fn " ++ mir_debug_body_label(&body, pool) ++ f" bb{bb}.term span={term_span}: " ++ term_text ++ "\n"
+                out = out ++ "fn " ++ mir_debug_body_label(body, pool) ++ f" bb{bb}.term span={term_span}: " ++ term_text ++ "\n"
                 hits = hits + 1
     if hits == 0:
         out = out ++ "  <no matching MIR origin>\n"
@@ -2618,7 +2618,7 @@ fn validate_mir_module(mir_mod: &MirModule) -> str:
 
     let seen_fn_syms: HashMap[i32, i32] = HashMap.new()
     for bi in 0..body_count:
-        let body: MirBody = mir_mod.bodies.get(bi as i64)
+        let body = &mir_mod.bodies[bi as i64]
         let fn_sym = mir_mod.body_fn_syms.get(bi as i64)
         if body.fn_sym != fn_sym:
             return f"body_fn_syms mismatch at body index {bi}"
@@ -3407,7 +3407,7 @@ fn validate_typed_mir_module(mir_mod: &MirModule) -> MirValidationError:
     if shape_err.len() > 0:
         return mir_validation_fail(0, 0, shape_err)
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body = mir_mod.bodies.get(bi as i64)
+        let body = &mir_mod.bodies[bi as i64]
         if body.lowering_failed != 0:
             continue
         let err = validate_typed_mir_body(mir_mod, body)

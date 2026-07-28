@@ -121,7 +121,7 @@ pub fn codegen_units_assign_from_mir(mir_ptr: i64, unit_count: i32) -> CodegenUn
         let m = mir_ptr as *const MirModule
         for i in 0..(*m).bodies.len() as i32:
             let sym = (*m).body_fn_syms.get(i as i64)
-            let body = (*m).bodies.get(i as i64)
+            let body = &(*m).bodies[i as i64]
             var cost: i64 = 1
             for b in 0..body.block_count():
                 cost = cost + body.bb_stmt_counts.get(b as i64) as i64

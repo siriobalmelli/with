@@ -296,7 +296,7 @@ fn suspend_term_directly_yields(body: &MirBody, bb: i32) -> i32:
 fn suspend_build_body_index(mir_mod: &MirModule) -> HashMap[i32, i32]:
     let body_by_fn: HashMap[i32, i32] = HashMap.new()
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body = mir_mod.bodies.get(bi as i64)
+        let body = &mir_mod.bodies[bi as i64]
         if body.fn_sym != 0:
             body_by_fn.insert(body.fn_sym, bi)
     body_by_fn
@@ -330,8 +330,8 @@ fn suspend_compute_may_suspend(mir_mod: &MirModule, body_by_fn: &HashMap[i32, i3
     let body_count = mir_mod.bodies.len() as i32
     let body_may_suspend = suspend_bits_fill(body_count, 0)
     for bi in 0..body_count:
-        let body = mir_mod.bodies.get(bi as i64)
-        if suspend_body_has_direct_yield(&body) != 0:
+        let body = &mir_mod.bodies[bi as i64]
+        if suspend_body_has_direct_yield(body) != 0:
             body_may_suspend.vset(bi, 1)
 
     var changed = 1
@@ -340,8 +340,8 @@ fn suspend_compute_may_suspend(mir_mod: &MirModule, body_by_fn: &HashMap[i32, i3
         for bi2 in 0..body_count:
             if body_may_suspend.vget(bi2 as i64) != 0:
                 continue
-            let body = mir_mod.bodies.get(bi2 as i64)
-            if suspend_body_calls_may_suspend(&body, body_by_fn, body_may_suspend) != 0:
+            let body = &mir_mod.bodies[bi2 as i64]
+            if suspend_body_calls_may_suspend(body, body_by_fn, body_may_suspend) != 0:
                 body_may_suspend.vset(bi2, 1)
                 changed = 1
     body_may_suspend
@@ -866,7 +866,7 @@ fn check_no_await_guard_suspends(mir_mod: &MirModule, ast: AstPool, sema: &Sema,
     let body_by_fn = suspend_build_body_index(mir_mod)
     let body_may_suspend = suspend_compute_may_suspend(mir_mod, body_by_fn)
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body = mir_mod.bodies.get(bi as i64)
-        out = suspend_check_no_suspend_body(ast, sema, body_by_fn, body_may_suspend, &body, move out)
-        out = suspend_check_body(ast, sema, body_by_fn, body_may_suspend, &body, move out)
+        let body = &mir_mod.bodies[bi as i64]
+        out = suspend_check_no_suspend_body(ast, sema, body_by_fn, body_may_suspend, body, move out)
+        out = suspend_check_body(ast, sema, body_by_fn, body_may_suspend, body, move out)
     out

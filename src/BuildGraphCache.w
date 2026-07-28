@@ -734,7 +734,7 @@ pub fn build_cache_print_effects(root: str, graph: &BuildGraph, target_filter: s
             else:
                 build_graph_rt_write(build_effects)
     for ti in 0..graph.targets.len() as i32:
-        let target = graph.targets.get(ti as i64)
+        let target = &graph.targets[ti as i64]
         if target_filter.len() > 0 and target.name != target_filter:
             continue
         build_graph_rt_write("target " ++ target.name ++ "\n")
@@ -792,7 +792,7 @@ pub fn build_cache_graph_write(root: str, key: str, graph: &BuildGraph) -> Unit:
     out = bcg_put_str(out, graph.raw_text)
     out = out ++ f"t{graph.targets.len()}\n"
     for i in 0..graph.targets.len() as i32:
-        let t = graph.targets.get(i as i64)
+        let t = &graph.targets[i as i64]
         out = out ++ f"i {t.kind} {t.target_kind} {t.optimize_mode} {t.action_fn} {t.timeout_ms} {t.network} {t.parallel}\n"
         out = bcg_put_str(out, t.name)
         out = bcg_put_str(out, t.entry)

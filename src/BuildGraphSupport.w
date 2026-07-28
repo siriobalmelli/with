@@ -304,7 +304,7 @@ pub fn build_graph_audit_edges(graph: &BuildGraph) -> i32:
     let out_paths: Vec[str] = Vec.new()
     let out_owners: Vec[str] = Vec.new()
     for i in 0..graph.targets.len() as i32:
-        let t = graph.targets.get(i as i64)
+        let t = &graph.targets[i as i64]
         if t.output.len() > 0:
             out_paths.push(t.output)
             out_owners.push(t.name)
@@ -313,7 +313,7 @@ pub fn build_graph_audit_edges(graph: &BuildGraph) -> i32:
             out_owners.push(t.name)
     var missing = 0
     for i in 0..graph.targets.len() as i32:
-        let t = graph.targets.get(i as i64)
+        let t = &graph.targets[i as i64]
         let consumed: Vec[str] = Vec.new()
         if t.entry.len() > 0:
             consumed.push(t.entry)

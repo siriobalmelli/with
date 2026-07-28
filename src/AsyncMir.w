@@ -108,7 +108,7 @@ impl AsyncMirModule:
 
     fn requires_async_runtime() -> bool:
         for i in 0..self.bodies.len() as i32:
-            let body = self.bodies.get(i as i64)
+            let body = &self.bodies[i as i64]
             if body.flavor == AsyncBodyKind.Async:
                 return true
             if body.has_kind(AsyncSuspendKind.Await) or body.has_kind(AsyncSuspendKind.SelectAwait):
@@ -137,7 +137,7 @@ fn dump_async_mir_module(mod: &AsyncMirModule, pool: InternPool) -> str:
     out = out ++ f" suspend_points={mod.total_suspend_points()}\n"
 
     for bi in 0..mod.bodies.len() as i32:
-        let body = mod.bodies.get(bi as i64)
+        let body = &mod.bodies[bi as i64]
         if bi > 0:
             out = out ++ "\n"
 

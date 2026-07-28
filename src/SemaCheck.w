@@ -8707,10 +8707,65 @@ impl Sema:
             return
         self.view_projection_exprs.insert(expr, field_ty)
 
+    // D22 plan line 334 / #715: array/collection elements are contextual-Copy
+    // positions — an owned demand on a non-Copy Drop ELEMENT copy (`v[i]` or
+    // `v.get(i)` on a Vec) is the same latent double-free as a view-field
+    // steal: the copy's drop frees the element the vec still owns. Detect the
+    // shape at the demand site from the node and its recorded type.
+    mut fn owned_demand_element_copy_type(value_node: i32) -> i32:
+        if value_node <= 0:
+            return 0
+        let kind = self.ast.kind(value_node)
+        var base_node = 0
+        if kind == NodeKind.NK_INDEX:
+            base_node = self.ast.get_data0(value_node)
+        else if kind == NodeKind.NK_CALL:
+            let callee = self.ast.get_data0(value_node)
+            if self.ast.kind(callee) != NodeKind.NK_FIELD_ACCESS:
+                return 0
+            if self.ast.get_data1(callee) != self.syms.get:
+                return 0
+            base_node = self.ast.get_data0(callee)
+        else:
+            return 0
+        let base_ty_opt = self.typed_expr_types.get(base_node)
+        if not base_ty_opt.is_some():
+            return 0
+        var base_ty: i32 = base_ty_opt.unwrap()
+        var base_resolved = self.resolve_alias(base_ty as TypeId)
+        if self.get_type_kind(base_resolved) == TypeKind.TY_REF:
+            base_resolved = self.resolve_alias(self.get_type_d0(base_resolved) as TypeId)
+        if self.get_type_kind(base_resolved) != TypeKind.TY_GENERIC_INST:
+            return 0
+        if self.get_generic_inst_base(base_resolved as i32) != self.syms.vec:
+            return 0
+        let result_ty_opt = self.typed_expr_types.get(value_node)
+        if not result_ty_opt.is_some():
+            return 0
+        let result_ty: i32 = result_ty_opt.unwrap()
+        let result_resolved = self.resolve_alias(result_ty as TypeId)
+        let rk = self.get_type_kind(result_resolved)
+        if rk == TypeKind.TY_REF or rk == TypeKind.TY_PTR:
+            return 0
+        if self.is_copy(result_ty as TypeId) != 0:
+            return 0
+        if self.type_needs_drop(result_ty) == 0:
+            return 0
+        result_ty
+
     mut fn reject_owned_demand_from_view_projection(value_node: i32, demanded: i32, context: str):
         if value_node <= 0:
             return
         if not self.view_projection_exprs.contains(value_node):
+            let elem_ty = self.owned_demand_element_copy_type(value_node)
+            if elem_ty != 0:
+                var demanded_is_ref = false
+                if demanded != 0:
+                    let dk = self.get_type_kind(self.resolve_alias(demanded as TypeId))
+                    if dk == TypeKind.TY_REF or dk == TypeKind.TY_PTR:
+                        demanded_is_ref = true
+                if not demanded_is_ref:
+                    self.emit_error("cannot take ownership of a non-Copy element copied out of a Vec (" ++ self.type_name(elem_ty) ++ " is not Copy); borrow the element with `&vec[i]`, clone it, or remove it from the vec (D22 §13.6, #715) — " ++ context, value_node)
             return
         if demanded != 0:
             let demanded_resolved = self.resolve_alias(demanded as TypeId)

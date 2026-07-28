@@ -392,6 +392,19 @@ impl CCodegen:
         self.fail("interrupted by signal")
         1
 
+    // C emission observes bodies owned by the frozen MirModule while
+    // mutating unrelated self state (field cache, interrupt flag, emission
+    // buffers). A checked `&self.mir_mod.bodies[i]` view pins all of
+    // `self`; nothing mutates `mir_mod` during emission, so a raw element
+    // handle is sound (same shape as Codegen.mir_body_at). The raw pointer
+    // must be copied into a local first: deriving the reference straight
+    // from `self.mir_mod.bodies.ptr` still reads a self-rooted place and
+    // the view checker pins `self` through it.
+    fn mir_body_at(i: i64) -> &MirBody:
+        assert(i >= 0 and i < self.mir_mod.bodies.len())
+        let base = self.mir_mod.bodies.ptr
+        unsafe { (base + (i as usize)) as &MirBody }
+
 fn cc_is_ident_start(ch: i32) -> i32:
     if ch == 95:
         return 1
@@ -2873,7 +2886,7 @@ impl CCodegen:
         for bi in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return texts
-            let body: MirBody = self.mir_mod.bodies.get(bi as i64)
+            let body = &self.mir_mod.bodies[bi as i64]
             for ci in 0..body.const_kinds.len() as i32:
                 if body.const_kinds.get(ci as i64) != ConstKind.CK_C_STR:
                     continue
@@ -7297,7 +7310,7 @@ impl CCodegen:
             if self.check_interrupted() != 0:
                 self.in_field_cache_build = 0
                 return
-            let body: MirBody = self.mir_mod.bodies.get(bi as i64)
+            let body = self.mir_body_at(bi as i64)
             for bb in 0..body.block_count():
                 if self.check_interrupted() != 0:
                     self.in_field_cache_build = 0
@@ -7360,7 +7373,7 @@ impl CCodegen:
         for bi in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return 0
-            let body: MirBody = self.mir_mod.bodies.get(bi as i64)
+            let body = self.mir_body_at(bi as i64)
 
             for bb in 0..body.block_count():
                 if self.check_interrupted() != 0:
@@ -7973,7 +7986,7 @@ impl CCodegen:
         for bi in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return acc.out
-            let body: MirBody = self.mir_mod.bodies.get(bi as i64)
+            let body = self.mir_body_at(bi as i64)
             for li in 0..body.local_type_ids.len() as i32:
                 acc = self.collect_fn_types_from_tid(move acc, body.local_type_ids.get(li as i64))
             let sig_idx = self.body_sig_index(body.fn_sym)
@@ -7992,7 +8005,7 @@ impl CCodegen:
         for bi in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return acc.out
-            let body: MirBody = self.mir_mod.bodies.get(bi as i64)
+            let body = self.mir_body_at(bi as i64)
             for bb in 0..body.block_count():
                 if self.check_interrupted() != 0:
                     return acc.out
@@ -8314,7 +8327,7 @@ impl CCodegen:
         for bi in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return used
-            let body: MirBody = self.mir_mod.bodies.get(bi as i64)
+            let body = &self.mir_mod.bodies[bi as i64]
             for li in 0..body.local_names.len() as i32:
                 let sym = self.local_global_sym(body, li)
                 if sym != 0:
@@ -8326,7 +8339,7 @@ impl CCodegen:
         for bi in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return used
-            let body: MirBody = self.mir_mod.bodies.get(bi as i64)
+            let body = &self.mir_mod.bodies[bi as i64]
             for oi in 0..body.operand_kinds.len() as i32:
                 if body.operand_kinds.get(oi as i64) != OperandKind.OK_CONSTANT:
                     continue
@@ -8486,7 +8499,7 @@ impl CCodegen:
         for i in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return
-            let body: MirBody = self.mir_mod.bodies.get(i as i64)
+            let body = self.mir_body_at(i as i64)
             for bb in 0..body.block_count():
                 if body.term_kind(bb) != TermKind.TK_CALL:
                     continue
@@ -9135,7 +9148,7 @@ impl CCodegen:
         for i in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return ""
-            let body: MirBody = self.mir_mod.bodies.get(i as i64)
+            let body = self.mir_body_at(i as i64)
             if self.body_sig_index(body.fn_sym) < 0:
                 continue
             out.write(self.emit_fn_decl(body))
@@ -9147,7 +9160,7 @@ impl CCodegen:
         for i in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return ""
-            let body: MirBody = self.mir_mod.bodies.get(i as i64)
+            let body = self.mir_body_at(i as i64)
             out.write(self.emit_fn_body(body))
             out.write("\n")
 

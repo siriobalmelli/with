@@ -414,7 +414,7 @@ fn analysis_node_subject(sema: &Sema, node: i32, fallback_path: str, fallback_so
     var path = fallback_path
     var source = fallback_source
     for i in 0..sema.diags.items.len() as i32:
-        let diag = sema.diags.items.get(i as i64)
+        let diag = &sema.diags.items[i as i64]
         if diag.origin_node != node:
             continue
         let exact_source = sema.source_text_for_file_id(diag.primary.file)
@@ -660,7 +660,7 @@ fn analysis_collect_method_resolutions(report: &AnalysisReport, sema: &Sema, sou
 
 fn analysis_collect_diagnostics(report: &AnalysisReport, sema: &Sema):
     for i in 0..sema.diags.items.len() as i32:
-        let diag = sema.diags.items.get(i as i64)
+        let diag = &sema.diags.items[i as i64]
         var fact = AnalysisFact.new(AnalysisStage.Diagnostic, AnalysisFactKind.Diagnostic)
         fact.id = i
         fact.node = diag.origin_node
@@ -785,7 +785,7 @@ fn analysis_collect_mir_call(report: &AnalysisReport, mir_mod: &MirModule, body:
 
 fn analysis_collect_mir(report: &AnalysisReport, mir_mod: &MirModule, sema: &Sema, pool: &InternPool, source_path: str, source_text: str):
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body = mir_mod.bodies.get(bi as i64)
+        let body = &mir_mod.bodies[bi as i64]
         var body_fact = AnalysisFact.new(AnalysisStage.Mir, AnalysisFactKind.Body)
         body_fact.id = bi
         body_fact.body_sym = body.fn_sym
@@ -814,14 +814,14 @@ fn analysis_collect_mir(report: &AnalysisReport, mir_mod: &MirModule, sema: &Sem
             place.index = body.place_proj_counts.get(pi as i64)
             place.type_id = body.place_sema_types.get(pi as i64)
             place.name = body_fact.name
-            place.detail = mir_place_text(&body, pi)
+            place.detail = mir_place_text(body, pi)
             report.add(move place)
         for ci in 0..body.call_arg_starts.len() as i32:
-            analysis_collect_mir_call(report, mir_mod, &body, sema, pool, ci, source_path, source_text)
+            analysis_collect_mir_call(report, mir_mod, body, sema, pool, ci, source_path, source_text)
 
 fn analysis_audit_call_contracts(report: &AnalysisReport, sema: &Sema, mir_mod: &MirModule):
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body = mir_mod.bodies.get(bi as i64)
+        let body = &mir_mod.bodies[bi as i64]
         let calls = body.call_arg_starts.len() as i32
         if body.call_arg_counts.len() as i32 != calls or body.call_intrinsic_kinds.len() as i32 != calls or body.call_ast_nodes.len() as i32 != calls or body.call_sig_indices.len() as i32 != calls or body.call_mono_syms.len() as i32 != calls or body.call_contract_required.len() as i32 != calls or body.call_pipeline_receiver_places.len() as i32 != calls:
             report.fail(f"body {body.fn_sym}: MIR call tables are not parallel")
@@ -847,7 +847,7 @@ fn analysis_audit_call_contracts(report: &AnalysisReport, sema: &Sema, mir_mod: 
             let start = body.call_arg_starts.get(ci as i64)
             for ai in 0..argc:
                 let operand = body.call_arg_operands.get((start + ai) as i64)
-                let ty = mir_validate_operand_type(mir_mod, &body, operand)
+                let ty = mir_validate_operand_type(mir_mod, body, operand)
                 if ty == 0:
                     report.fail(f"body {body.fn_sym} call {ci} arg {ai}: operand has no concrete MIR type")
         
@@ -1087,7 +1087,7 @@ fn analysis_is_frozen_consumer(path: str) -> bool:
 
 fn analysis_audit_frozen_calls(report: &AnalysisReport, sema: &Sema, mir_mod: &MirModule):
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body = mir_mod.bodies.get(bi as i64)
+        let body = &mir_mod.bodies[bi as i64]
         let caller_path = analysis_sig_path(sema, body.fn_sym, "")
         if not analysis_is_frozen_consumer(caller_path):
             continue
@@ -1143,12 +1143,12 @@ fn analysis_audit_return_consistency(report: &AnalysisReport, sema: &Sema, mir_m
     var checked = 0
     var unit_switches = 0
     for bi in 0..mir_mod.bodies.len() as i32:
-        let body = mir_mod.bodies.get(bi as i64)
+        let body = &mir_mod.bodies[bi as i64]
         if body.lowering_failed != 0:
             continue
         for bb in 0..body.block_count():
             if body.term_kind(bb) == TermKind.TK_SWITCH_INT:
-                let subject_ty = mir_validate_operand_type(mir_mod, &body, body.term_data0(bb))
+                let subject_ty = mir_validate_operand_type(mir_mod, body, body.term_data0(bb))
                 if subject_ty > 0 and sema.get_type_kind(sema.resolve_alias(subject_ty as TypeId)) == TypeKind.TY_VOID:
                     unit_switches = unit_switches + 1
                     report.fail(f"return-consistency: fn sym{body.fn_sym} bb{bb}: switchInt subject is Unit-typed — branch on a value that cannot exist")
@@ -1169,7 +1169,7 @@ fn analysis_audit_return_consistency(report: &AnalysisReport, sema: &Sema, mir_m
             if sema.get_type_kind(sema.resolve_alias(sig_ret as TypeId)) != TypeKind.TY_VOID:
                 continue
             checked = checked + 1
-            let dest_ty = mir_validate_place_type(mir_mod, &body, body.term_data2(bb))
+            let dest_ty = mir_validate_place_type(mir_mod, body, body.term_data2(bb))
             if dest_ty <= 0:
                 continue
             let dest_kind = sema.get_type_kind(sema.resolve_alias(dest_ty as TypeId))

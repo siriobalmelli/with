@@ -44,7 +44,7 @@ pub fn build_graph_validate_outputs(root: str, graph: &BuildGraph, output_path: 
             return 1
         outputs = build_graph_record_output(move outputs, generated_path)
     for ti in 0..graph.targets.len() as i32:
-        let target = graph.targets.get(ti as i64)
+        let target = &graph.targets[ti as i64]
         var path = ""
         if target.kind == 0:
             path = build_graph_output_path(root, target, output_path, graph.targets.len() as i32)

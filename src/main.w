@@ -1687,7 +1687,7 @@ unsafe fn run_build_graph(root: str, cfg: &ProjectConfig, graph: &BuildGraph, ac
     var pool_failed_rc = 0
     let pool_width = build_pool_width()
     for ti in 0..graph.targets.len() as i32:
-        let target = graph.targets.get(ti as i64)
+        let target = &graph.targets[ti as i64]
         if timing_name.len() > 0:
             let spent = with_clock_nanos() - timing_t0
             timed_names.push(timing_name)
@@ -1840,7 +1840,7 @@ unsafe fn run_build_graph(root: str, cfg: &ProjectConfig, graph: &BuildGraph, ac
                 with_eprint("survey: skipping evidence target '" ++ target.name ++ "' (earlier failures)")
                 continue
             if not build_action_worker_env_enabled():
-                let worker_rc = run_build_action_worker_process(&target, options)
+                let worker_rc = run_build_action_worker_process(target, options)
                 if worker_rc != 0:
                     if survey:
                         survey_failed.push(target.name)
@@ -1859,7 +1859,7 @@ unsafe fn run_build_graph(root: str, cfg: &ProjectConfig, graph: &BuildGraph, ac
             completed_targets.push(target.name)
             continue
         let source_path = resolve_join(root, target.entry)
-        let target_options = build_options_for_graph_target(root, options, &target)
+        let target_options = build_options_for_graph_target(root, options, target)
         if target.kind == 2:
             if options.output_path.len() > 0:
                 with_eprint("error: -o cannot be used with build.w test target '" ++ target.name ++ "'")
@@ -1879,7 +1879,7 @@ unsafe fn run_build_graph(root: str, cfg: &ProjectConfig, graph: &BuildGraph, ac
                     survey_target_failed = true
             else:
                 if not build_test_worker_env_enabled():
-                    let test_worker_rc = run_build_test_worker_process(&target, options)
+                    let test_worker_rc = run_build_test_worker_process(target, options)
                     if test_worker_rc != 0:
                         if not survey:
                             return test_worker_rc
@@ -2027,7 +2027,7 @@ fn explain_kind_name(kind: i32) -> str:
 fn explain_build_target(root: str, graph: &BuildGraph, name: str) -> i32:
     var found = false
     for i in 0..graph.targets.len() as i32:
-        let target = graph.targets.get(i as i64)
+        let target = &graph.targets[i as i64]
         if target.name == name:
             found = true
             with_write("target: " ++ target.name ++ "\n")
@@ -2062,13 +2062,13 @@ fn explain_build_target(root: str, graph: &BuildGraph, name: str) -> i32:
                     with_write("    - " ++ target.env.get(j as i64) ++ "\n")
             if target.network != 0:
                 with_write("  network: true\n")
-            with_write("  freshness: " ++ build_cache_freshness_reason(root, &target, false) ++ "\n")
+            with_write("  freshness: " ++ build_cache_freshness_reason(root, target, false) ++ "\n")
             break
     if not found:
         with_eprint("error: target '" ++ name ++ "' not found in build graph\n")
         with_eprint("available targets:\n")
         for i in 0..graph.targets.len() as i32:
-            let target = graph.targets.get(i as i64)
+            let target = &graph.targets[i as i64]
             with_eprint("  " ++ target.name ++ " (" ++ explain_kind_name(target.kind) ++ ")\n")
         return 1
     0

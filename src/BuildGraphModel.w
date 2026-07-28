@@ -161,7 +161,7 @@ pub fn build_graph_emit(graph: &BuildGraph) -> str:
         let generated = graph.generated_sources.get(gi as i64)
         out = out ++ "generated_source\t" ++ build_graph_escape(generated.path) ++ "\t" ++ build_graph_escape(generated.contents) ++ "\n"
     for ti in 0..graph.targets.len() as i32:
-        let target = graph.targets.get(ti as i64)
+        let target = &graph.targets[ti as i64]
         out = out ++ "target\t"
         out = out ++ f"{target.kind}\t"
         out = out ++ build_graph_escape(target.name) ++ "\t"
@@ -445,7 +445,7 @@ fn build_graph_find_output_producer_index(graph: &BuildGraph, path: str, consume
     if path.len() == 0:
         return -1
     for i in 0..graph.targets.len() as i32:
-        let target = graph.targets.get(i as i64)
+        let target = &graph.targets[i as i64]
         if target.name != consumer_name and target.output.len() > 0 and target.output == path:
             return i
     -1

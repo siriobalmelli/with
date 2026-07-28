@@ -13652,7 +13652,7 @@ type ConcreteSpecializationLowerResult {
 impl MirModule:
     fn validate_generic_call_contracts(sema: &Sema):
         for bi in 0..self.bodies.len() as i32:
-            let body = self.bodies.get(bi as i64)
+            let body = &self.bodies[bi as i64]
             let call_count = body.call_arg_starts.len() as i32
             if body.call_sig_indices.len() as i32 != call_count or body.call_mono_syms.len() as i32 != call_count or body.call_contract_required.len() as i32 != call_count or body.call_pipeline_receiver_places.len() as i32 != call_count:
                 sema_phase_bug(f"BUG: MIR call-contract tables are not parallel in body {body.fn_sym}")
@@ -14220,7 +14220,7 @@ impl MirModule:
             if visited.get(idx as i64) != 0:
                 continue
             visited.set_i32(idx as i64, 1)
-            let body = self.bodies.get(idx as i64)
+            let body = &self.bodies[idx as i64]
             for bb in 0..body.block_count():
                 if body.term_kind(bb) != TermKind.TK_CALL:
                     continue
@@ -14259,7 +14259,7 @@ impl MirModule:
                     continue
                 for ti in 0..scc.len() as i32:
                     let dst_idx = scc.get(ti as i64)
-                    let dst_body = self.bodies.get(dst_idx as i64)
+                    let dst_body = &self.bodies[dst_idx as i64]
                     if dst_body.fn_sym == callee_sym and mir_is_tail_call_to(body, bb, callee_sym):
                         // Mutate the place directly: passing the vector by
                         // value handed the helper a COPY of the handle, so its
@@ -14344,10 +14344,10 @@ impl MirModule:
             var bad_edge = 0
             for si in 0..scc.len() as i32:
                 let src_idx = scc.get(si as i64)
-                let src_body = self.bodies.get(src_idx as i64)
+                let src_body = &self.bodies[src_idx as i64]
                 for ti2 in 0..scc_syms.len() as i32:
                     let dst_sym = scc_syms.get(ti2 as i64)
-                    if mir_body_has_non_tail_call_to(&src_body, dst_sym):
+                    if mir_body_has_non_tail_call_to(src_body, dst_sym):
                         bad_edge = 1
                         break
                 if bad_edge != 0:
