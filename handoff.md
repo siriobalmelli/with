@@ -1,5 +1,117 @@
 # Active Handoff — D22 implementation, Stage 6 (2026-07-24)
 
+## 2026-07-31 session tail: D27 enshrined; E1+E2 landed; stage2 miscompile blocks the battery
+
+**Read first:** `docs/decisions.md` D27 (Eric's ruling, three parts),
+`docs/d27-implementation-plan.md` (E0–E4 stages), then this section.
+Working tree is CLEAN — everything is committed. What is red is the BUILD
+STATE: commit 95d53a10 makes stage1 emit a broken stage2.
+
+### What landed (all committed, all battery-blessed except 95d53a10)
+
+Closed this session: #715 (element-copy gate + 45-site migration), #737
+(generic `&C` auto-ref), #741 (battery flake: hook scratch scattered 35k
+dSYM bundles into source test dirs + comptime re-read source per call —
+worker RSS 70 GB → 2.4 GB), #738 (silent i32 type-param default).
+Filed: #739 (plan-doc `&mut` respelling, banners in place), #740 (the
+element-view campaign). Seed + installed = **v0.15.1-gc7dc28ce6** (do NOT
+reseed from the current out/ — stage2 there is poisoned).
+
+D27 doctrine (0f98491f, 70b67ad5): spec gained the normative
+element-access text beside the operator-trait table and the
+binding/annotation sentence in §3.8; CLAUDE.md carries the NON-COMPLIANT
+status; every live doc spelling a `&mut` parameter was repaired.
+Discovery worth keeping: the spec's own `mut out:` parameter modifier
+**does not exist in the language** ("parameters are already rebindable"),
+so the threaded-sink examples dropped it rather than the trait gaining it.
+
+D27 campaign: 80702157 (plan), 5eb66950 (E0 — 19-cell acceptance matrix
+in `test/non_compliant/d27/`, quarantined like d22, README carries the
+baseline survey), **95d53a10 (E1+E2 — the blocker)**.
+
+### The blocker: stage2 built by flipped stage1 is broadly miscompiled
+
+`out/stage/bin/with-stage2` segfaults on *everything*, including a trivial
+`print` (rc=139). Before this, under stage1 itself: selfcheck rc=0, matrix
+18/19 at D27 verdicts, all issue64 + derive pins green, debug-alloc clean.
+
+Causal chain, each link watchpoint-proven (**addresses below are for the
+CURRENT out/stage/bin/with-stage2 — they shift on every rebuild; re-derive
+after rebuilding**):
+
+1. Crash: `rt_alloc_unlocked` rt_core.w:1071 pops a freelist head equal to
+   ASCII source bytes (`0x6e6972705f687469` = "ith_prin").
+2. `freelists_7` (0x1055038e0 in this binary) is poisoned by a *legitimate*
+   `rt_free` of a corrupt pointer: `rt_free_unlocked_with_drop_origin` ←
+   `vec_grow` (rt_core.w:2344) ← `with_vec_push` ← `TokenList.append` ←
+   `Lexer.tokenize`.
+3. Watchpoint on the `tokens` local (base 0x16fdc8cf8, field +0x18) fires
+   with frame #0 = `Lexer.next_token` @0x1000013a4. Disassembly shows that
+   store is `str w2, [x21, #0x18]` with x21 = x0 = self — i.e. the
+   **legitimate** `self.token_start = self.pos`.
+4. ⇒ The Lexer receiver pointer passed to `next_token` **overlaps the
+   caller's TokenList local**. In tokenize: `add x22, sp, #0x10` is the
+   TokenList local; `mov x0, x20; bl next_token` passes x20 as self.
+
+But: **`Lexer.tokenize`'s MIR is byte-identical between seed and flipped
+stage1** (85 lines, zero diff — verified both from `check src/Lexer.w
+--dump-mir` and from the whole-program `check src/main.w --dump-mir`). So
+the divergence is below MIR, or in type/ABI state, not in tokenize's
+lowering. `Captures.get`'s MIR *does* differ (locals ty3→ty194, `.*`
+derefs inserted at demands) — that is the flip working correctly, not a bug.
+
+### Eliminated — do not re-chase
+
+- **Codegen-unit global duplication.** Misread of nearest-symbol
+  annotations on a stale binary. `WITH_CODEGEN_UNITS=1` rebuild still
+  crashes (env propagation through the action sandbox unconfirmed).
+- **"Bad free in `with_str_concat_n_move_first` ← `link_stage_sanitize_relative_dir`."**
+  False positive: the trap's address filter overlapped legitimate heap (the
+  106 MB binary ends ~0x1066xxxxx and heap mmaps just above it).
+- **Stray store to a freelist slot.** All nine slots watched; the poison
+  arrives via a legit free of an already-corrupt pointer.
+- **Small-shape D27 probes** (`scratchpad/p740*.w`): Copy i32/str/POD, a
+  140-byte struct with Drop fields, typed-let / call-arg / struct-field
+  demands, receiver chains, concat accumulators — all correct under flipped
+  stage1, debug-alloc clean.
+- **Standalone lexer repro** (`scratchpad/repro_lex2.w`, 4401 tokens):
+  clean. The miscompile needs the Zcu caller chain's context.
+
+### Next steps, in order
+
+1. **Frozen-phase type creation — the prime suspect.** The Sema flip calls
+   `ensure_exact_type(TY_REF, elem, 0, 0)` in `Vec.get`'s return path
+   (SemaCheck.w ~19812). If that runs during a frozen phase it mutates the
+   type table after codegen contracted it — exactly the class
+   `audit:all` covers ("frozen-phase mutable-Sema re-entry"). Run:
+   `./out/bootstrap/bin/with-stage1 analyze scratchpad/p740w.w audit:all`
+   and the same on a Lexer-shaped repro. If it fires, the fix is to
+   pre-intern the ref type (or use the frozen finder) instead of creating
+   it on demand.
+2. **Runtime discriminator, cheap and decisive:** break at tokenize's
+   `bl next_token`, print x20 (self) and sp+0x10 (tokens local) — confirm
+   or refute pointer equality.
+3. **`--dump-abi` diff** for `Lexer.tokenize` and `Lexer.next_token`, seed
+   vs flipped. A receiver `PassMode`/`value_ref_abi` divergence would be a
+   D6 FnAbi violation and would explain a correct-MIR/wrong-code split.
+4. **`next_token` MIR diff** seed vs flip from the whole-program dump (I was
+   mid-command when the session ended; tokenize's was identical).
+5. If MIR and ABI are both identical, compare emitted LLVM IR for the two
+   functions — the difference is then inside the backend.
+
+### Discipline reminders for whoever picks this up
+
+- E1 and E2 must stay ONE batch (plan note explains: a Sema-only flip
+  miscompiles, and stage2 is compiled *by* flipped stage1).
+- The battery is `scratchpad/chain_d5.sh` (recreate if missing: build,
+  :fixpoint, :test, :move-audit, :drop-audit, :test-green, :last-green,
+  each `|| { echo CHAIN-FAIL <step>; exit 1; }`), launched as ONE tracked
+  background command. This batch is ownership+MIR, so it stays isolated.
+- Do not reseed until the battery is green; the current stage2 is poisoned.
+- The one non-conforming matrix cell
+  (`view_liveness_get_after_push_error`) is E3's by design — do not
+  "fix" it by weakening the lane.
+
 ## 2026-07-26 session tail v5: #729 residue = unguarded inline partial drop
 
 Read the last #729 comment first — it has the exact asm coordinates. The
