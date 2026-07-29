@@ -1,5 +1,5 @@
 //! args: --dump-typed
-//! expect-check-stdout: typed contextual-copy-adjustments=36
+//! expect-check-stdout: typed contextual-copy-adjustments=37
 //! expect-check-stdout: bind view: &i32
 //! expect-check-stdout: bind forwarded: Option[&i32]
 //! expect-check-stdout: bind forwarded_view: &i32
