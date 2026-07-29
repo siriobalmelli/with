@@ -3135,6 +3135,37 @@ fn bs_check_emit_c_array_fill_rvalue(ctx: &ActionCtx, compiler_path: str, case_d
     if run_result.rc != 0: return run_result.rc
     bs_edge_assert_exact(ctx, run_result.stdout, "ok", "emit_c_array_fill_rvalue", "stdout")
 
+fn bs_check_emit_c_array_ref(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
+    let root = ctx.project_info().project_root()
+    let src = bs_join(case_dir, "array_ref.w")
+    let c_path = bs_join(case_dir, "array_ref.c")
+    let bin = bs_join(case_dir, "array_ref")
+    let source = "fn identity(items: &[2]i32) -> &[2]i32: items\n" ++
+        "fn second(items: &[2]i32): items[1]\n\n" ++
+        "fn main:\n" ++
+        "    let items = [17, 25]\n" ++
+        "    let f = identity\n" ++
+        "    let whole = f(items)\n" ++
+        "    let view = second(whole)\n" ++
+        "    if view != 25: return 9\n" ++
+        "    0\n"
+    var rc = bs_write_fixture(ctx, src, source, "emit-c array reference source")
+    if rc != 0: return rc
+    var emit_args: Vec[str] = Vec.new()
+    emit_args |> push("build")
+    emit_args |> push(bs_abs(root, src))
+    emit_args |> push("--emit-c")
+    emit_args |> push("--no-prelude")
+    emit_args |> push("-o")
+    emit_args |> push(bs_abs(root, c_path))
+    let emit_result = bs_edge_expect_success(ctx, compiler_path, case_dir, "emit-c-array-ref", emit_args)
+    if emit_result.rc != 0: return emit_result.rc
+    rc = bs_compile_emit_c_output(ctx, root, case_dir, c_path, bin, "emit-c-array-ref")
+    if rc != 0: return rc
+    let run_result = bs_run_binary_capture(ctx, bin, "emit-c-array-ref-run", 120000)
+    if run_result.rc != 0: return run_result.rc
+    bs_edge_assert_exact(ctx, run_result.stdout, "", "emit_c_array_ref", "stdout")
+
 fn bs_check_darwin_arm64_c_abi_direct_aggregates(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
     if not (os() == "Macos" and (arch() == "armv8" or arch() == "aarch64")):
         return 0
@@ -3416,6 +3447,8 @@ pub fn run_cli_selfhost_edge_action(ctx: ActionCtx) -> i32:
     rc = bs_check_emit_c_receiver_abi(ctx, compiler_path, bs_join(output_dir, "emit_c_receiver_abi_case"))
     if rc != 0: return rc
     rc = bs_check_emit_c_array_fill_rvalue(ctx, compiler_path, bs_join(output_dir, "emit_c_array_fill_rvalue_case"))
+    if rc != 0: return rc
+    rc = bs_check_emit_c_array_ref(ctx, compiler_path, bs_join(output_dir, "emit_c_array_ref_case"))
     if rc != 0: return rc
     bs_check_darwin_arm64_c_abi_direct_aggregates(ctx, compiler_path, bs_join(output_dir, "darwin_arm64_c_abi_direct_aggregates_case"))
 

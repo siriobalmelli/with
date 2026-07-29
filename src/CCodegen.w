@@ -1770,6 +1770,11 @@ impl CCodegen:
             let inner_tid = self.sema.get_type_d0(resolved)
             let inner_resolved = self.sema.resolve_alias(inner_tid)
             let inner_kind = self.sema.get_type_kind(inner_resolved)
+            if inner_kind == TypeKind.TY_ARRAY:
+                let array_pointer = self.c_decl(inner_tid, "(*)")
+                if self.sema.get_type_d1(resolved) == 0:
+                    return "const " ++ array_pointer
+                return array_pointer
             if inner_kind == TypeKind.TY_FN or inner_kind == TypeKind.TY_EXTERN_FN:
                 return self.fn_type_c_name(inner_resolved as i32)
             if inner_kind == TypeKind.TY_VOID:
@@ -1861,7 +1866,25 @@ impl CCodegen:
             let elem_tid = self.sema.get_type_d0(resolved)
             let size = self.sema.get_type_d1(resolved)
             return self.c_decl(elem_tid, name ++ f"[{size}]")
+        if resolved != 0:
+            let kind = self.sema.get_type_kind(resolved)
+            if kind == TypeKind.TY_PTR or kind == TypeKind.TY_REF:
+                let inner_tid = self.sema.get_type_d0(resolved)
+                let inner = self.sema.resolve_alias(inner_tid)
+                if self.sema.get_type_kind(inner) == TypeKind.TY_ARRAY:
+                    let decl = self.c_decl(inner_tid, "(*" ++ name ++ ")")
+                    if self.sema.get_type_d1(resolved) == 0:
+                        return "const " ++ decl
+                    return decl
         self.c_type(tid, 0) ++ " " ++ name
+
+    fn type_is_pointer_to_array(tid: i32) -> bool:
+        let resolved = self.sema.resolve_alias(tid)
+        let kind = self.sema.get_type_kind(resolved)
+        if kind != TypeKind.TY_PTR and kind != TypeKind.TY_REF:
+            return false
+        let inner = self.sema.resolve_alias(self.sema.get_type_d0(resolved) as TypeId)
+        self.sema.get_type_kind(inner) == TypeKind.TY_ARRAY
 
     fn vec_element_tid(tid: i32) -> i32:
         let resolved = self.sema.resolve_alias(tid)
@@ -7679,12 +7702,13 @@ impl CCodegen:
                 if d1 >= 0 and d1 < body.rval_kinds.len() as i32 and body.rval_kinds.get(d1 as i64) == RvalueKind.RK_AGGREGATE:
                     return "    /* dead aggregate temp */"
             let dst_place = self.place_text(body, d0)
-            if self.is_unit_rvalue(body, d1) != 0:
-                let dst_tid_for_zero = self.place_tid(body, d0)
-                return "    " ++ dst_place ++ " = " ++ self.zero_value_text(dst_tid_for_zero) ++ ";"
             let dst_tid = self.place_tid(body, d0)
             let dst_resolved = self.sema.resolve_alias(dst_tid)
             let dst_tk = self.sema.get_type_kind(dst_resolved)
+            if self.is_unit_rvalue(body, d1) != 0:
+                if dst_tk == TypeKind.TY_ARRAY:
+                    return "    memset(" ++ dst_place ++ ", 0, sizeof(" ++ dst_place ++ "));"
+                return "    " ++ dst_place ++ " = " ++ self.zero_value_text(dst_tid) ++ ";"
             if dst_tk == TypeKind.TY_ARRAY and d1 >= 0 and d1 < body.rval_kinds.len() as i32 and body.rval_kinds.get(d1 as i64) == RvalueKind.RK_ARRAY_FILL:
                 let fill_op = body.rval_d0.get(d1 as i64)
                 let fill_count = body.rval_d1.get(d1 as i64)
@@ -8125,15 +8149,19 @@ impl CCodegen:
             let ret_tid = self.sema.get_type_d2(tid)
             let start = self.sema.get_type_d0(tid)
             let count = self.sema.get_type_d1(tid)
-            out = out ++ "typedef " ++ self.c_type(ret_tid, 1) ++ " (*" ++ self.fn_type_c_name(tid as i32) ++ ")("
+            var params = ""
             if count == 0:
-                out = out ++ "void"
+                params = "void"
             else:
                 for pi in 0..count:
                     if pi > 0:
-                        out = out ++ ", "
-                    out = out ++ self.c_type(self.sema.type_extra.get((start + pi) as i64), 0)
-            out = out ++ ");\n"
+                        params = params ++ ", "
+                    params = params ++ self.c_type(self.sema.type_extra.get((start + pi) as i64), 0)
+            let fn_name = "(*" ++ self.fn_type_c_name(tid as i32) ++ ")(" ++ params ++ ")"
+            if self.type_is_pointer_to_array(ret_tid):
+                out = out ++ "typedef " ++ self.c_decl(ret_tid, fn_name) ++ ";\n"
+            else:
+                out = out ++ "typedef " ++ self.c_type(ret_tid, 1) ++ " " ++ fn_name ++ ";\n"
         if out.len() > 0:
             out = out ++ "\n"
         out
@@ -8143,7 +8171,7 @@ impl CCodegen:
         if self.had_error != 0:
             return ""
         if struct_tids.len() as i32 == 0:
-            return ""
+            return self.emit_fn_type_defs()
 
         let ordered: Vec[i32] = Vec.new()
         let emitted_names: HashMap[i32, i32] = HashMap.new()
@@ -8416,25 +8444,29 @@ impl CCodegen:
         if sig_idx < 0:
             self.fail(f"emit-c: missing signature for extern fn {cc_intern_resolve(self.intern, fn_sym)}")
             return ""
-        var out = "extern " ++ self.c_type(self.sema.sig_return_type(sig_idx), 1) ++ " " ++ self.extern_sym_c_name(fn_sym) ++ "("
+        var params = ""
         let param_count = self.sema.sig_get_param_count(sig_idx)
         for i in 0..param_count:
             if i > 0:
-                out = out ++ ", "
+                params = params ++ ", "
             let p_tid = self.sema.sig_param_type(sig_idx, i)
             if self.fn_param_is_c_pointer(fn_sym, i) != 0:
-                out = out ++ self.c_type(p_tid, 0) ++ f"* _{i + 1}"
+                params = params ++ self.c_type(p_tid, 0) ++ f"* _{i + 1}"
             else:
-                out = out ++ self.c_type(p_tid, 0) ++ f" _{i + 1}"
+                params = params ++ self.c_decl(p_tid, f"_{i + 1}")
         if self.sema.sig_is_variadic(sig_idx) != 0:
             if param_count > 0:
-                out = out ++ ", ..."
+                params = params ++ ", ..."
             else:
-                out = out ++ "..."
+                params = "..."
         else:
             if param_count == 0:
-                out = out ++ "void"
-        out ++ ");\n"
+                params = "void"
+        let ret_tid = self.sema.sig_return_type(sig_idx)
+        let name = self.extern_sym_c_name(fn_sym) ++ "(" ++ params ++ ")"
+        if self.type_is_pointer_to_array(ret_tid):
+            return "extern " ++ self.c_decl(ret_tid, name) ++ ";\n"
+        "extern " ++ self.c_type(ret_tid, 1) ++ " " ++ name ++ ";\n"
 
     fn should_emit_extern_fn_decl(fn_sym: i32, referenced: &HashMap[i32, i32]) -> i32:
         if not referenced.contains(fn_sym):
@@ -8512,18 +8544,20 @@ impl CCodegen:
         let sig_idx = self.body_sig_index(fn_sym)
         let ret_tid = if sig_idx >= 0: self.sema.sig_return_type(sig_idx) else:
             if body.local_type_ids.len() > 0: body.local_type_ids.get(0) else: self.sema.ty_void
-        var out = self.c_type(ret_tid, 1) ++ " " ++ fn_name ++ "("
+        var params = ""
         let param_count = if sig_idx >= 0: self.sema.sig_get_param_count(sig_idx) else: 0
         for i in 0..param_count:
             if i > 0:
-                out = out ++ ", "
+                params = params ++ ", "
             let p_tid = self.sema.sig_param_type(sig_idx, i)
             if self.fn_param_is_c_pointer(fn_sym, i) != 0:
-                out = out ++ self.c_type(p_tid, 0) ++ f"* _{i + 1}"
+                params = params ++ self.c_type(p_tid, 0) ++ f"* _{i + 1}"
             else:
-                out = out ++ self.c_type(p_tid, 0) ++ f" _{i + 1}"
-        out = out ++ ")"
-        out
+                params = params ++ self.c_decl(p_tid, f"_{i + 1}")
+        let name = fn_name ++ "(" ++ params ++ ")"
+        if self.type_is_pointer_to_array(ret_tid):
+            return self.c_decl(ret_tid, name)
+        self.c_type(ret_tid, 1) ++ " " ++ name
 
     mut fn prepare_c_type_instantiations():
         for i in 0..self.mir_mod.bodies.len() as i32:
@@ -8965,6 +8999,8 @@ impl CCodegen:
                 local_ty = "int64_t"
             // Array types need C's declarator syntax, including nested dimensions.
             if use_kind == TypeKind.TY_ARRAY:
+                out.write("    " ++ self.c_decl(use_tid, f"_{li}") ++ " __attribute__((unused)) = " ++ cc_lbrace() ++ "0" ++ cc_rbrace() ++ ";\n")
+            else if self.type_is_pointer_to_array(use_tid):
                 out.write("    " ++ self.c_decl(use_tid, f"_{li}") ++ " __attribute__((unused)) = " ++ cc_lbrace() ++ "0" ++ cc_rbrace() ++ ";\n")
             else:
                 out.write("    " ++ local_ty ++ f" _{li} __attribute__((unused)) = " ++ cc_lbrace() ++ "0" ++ cc_rbrace() ++ ";\n")
