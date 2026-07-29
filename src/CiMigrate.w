@@ -819,7 +819,9 @@ impl CiProject:
                     self.symbols[symbol_id as i64].owner_module = module_id
                     self.symbols[symbol_id as i64].owner_rank = owner_rank
                     self.symbols[symbol_id as i64].owner_definition_kind = owner_kind
-                    self.symbols[symbol_id as i64].resolved_ty_text = owner_type
+                    // owner_type's bytes live in THIS FILE's cimport session,
+                    // which is disposed before emission — store an owned copy.
+                    self.symbols[symbol_id as i64].resolved_ty_text = ci_ir_owned_text(owner_type)
                     self.symbols[symbol_id as i64].resolved_ty = self.migrate_var_type_id(session, i, owner_type)
                     i = i + 1
                     continue
@@ -838,7 +840,7 @@ impl CiProject:
                     self.symbols[symbol_id as i64].owner_module = module_id
                     self.symbols[symbol_id as i64].owner_rank = owner_rank
                     self.symbols[symbol_id as i64].owner_definition_kind = owner_kind
-                    self.symbols[symbol_id as i64].resolved_ty_text = owner_type
+                    self.symbols[symbol_id as i64].resolved_ty_text = ci_ir_owned_text(owner_type)
                     self.symbols[symbol_id as i64].resolved_ty = self.migrate_var_type_id(session, i, owner_type)
             else if with_cimport_decl_kind(session, i) == CK_FUNCTION:
                 let name = with_cimport_decl_name(session, i)
