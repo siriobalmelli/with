@@ -1957,6 +1957,21 @@ impl MirBuilder:
                 return self.sema.get_generic_inst_arg(resolved, 0)
         0
 
+    mut fn assignment_place_value_type(node: i32) -> i32:
+        if node == 0:
+            return 0
+        let exact = self.expr_type(node)
+        let kind = self.ast.kind(node)
+        if kind == NodeKind.NK_GROUPED or kind == NodeKind.NK_NO_SUSPEND:
+            return self.assignment_place_value_type(self.ast.get_data0(node))
+        // D27's subscript read is &T, but the corresponding IndexPlace slot
+        // stores T. Keep assignment/codegen expectations on the physical slot.
+        if kind == NodeKind.NK_INDEX and self.index_expr_is_type_level(self.ast.get_data0(node)) == 0:
+            let resolved = self.sema.resolve_alias(exact as TypeId)
+            if self.sema.get_type_kind(resolved) == TypeKind.TY_REF:
+                return self.sema.get_type_d0(resolved)
+        exact
+
     fn is_user_index_place(base_ty: i32) -> i32:
         if base_ty == 0:
             return 0
@@ -4489,6 +4504,17 @@ impl MirBuilder:
             return self.body.new_operand(OperandKind.OK_COPY, temp_place)
 
         if op == UnaryOp.UOP_DEREF:
+            let expr_ty = self.expr_type(expr)
+            let resolved = self.sema.resolve_alias(expr_ty as TypeId)
+            if self.sema.get_type_kind(resolved) == TypeKind.TY_REF:
+                // Dereference the exact reference value. D27 index expressions
+                // have a physical T place underneath their exact &T result;
+                // lowering that place directly would dereference T itself when
+                // T is a raw pointer (`*slots[0]`), selecting a different
+                // operation than sema resolved under D22 §6.6.
+                let ref_op = self.lower_expr(expr)
+                let ref_place = self.materialize_operand(ref_op, expr_ty, self.ast.get_start(expr))
+                return self.body.new_operand(OperandKind.OK_COPY, self.new_deref_place(ref_place))
             let place = self.lower_expr_place(expr)
             let deref_place = self.new_deref_place(place)
             return self.body.new_operand(OperandKind.OK_COPY, deref_place)
@@ -4646,6 +4672,9 @@ impl MirBuilder:
             return self.lower_recorded_autoderef_place(base_expr)
         var base = self.lower_expr_place(base_expr)
         var base_ty = self.expr_type(base_expr)
+        let physical_ty = self.place_local_type(base)
+        if physical_ty != 0 and physical_ty != self.sema.ty_void as i32:
+            base_ty = physical_ty
         while base_ty > 0:
             let resolved = self.sema.resolve_alias(base_ty)
             let tk = self.sema.get_type_kind(resolved)
@@ -4661,8 +4690,20 @@ impl MirBuilder:
         if not self.sema.autoderef_step_counts.contains(expr):
             return place
         let start: i32 = self.sema.autoderef_step_starts.get(expr).unwrap()
-        let count = self.sema.autoderef_step_counts.get(expr).unwrap()
-        for i in 0..count:
+        let count: i32 = self.sema.autoderef_step_counts.get(expr).unwrap()
+        var first_step = 0
+        // A D27 index has semantic type &T but lower_expr_place already lands
+        // directly on its physical T slot. Sema's first builtin ref-deref step
+        // is therefore already represented by the place; replaying it would
+        // generate `_xs[_i].*` and dereference the element value as a pointer.
+        let physical_ty = self.place_local_type(place)
+        if count > 0 and physical_ty != 0 and physical_ty != self.sema.ty_void as i32:
+            let step_fn0 = self.sema.autoderef_step_fns.get(start as i64)
+            let step_ty0 = self.sema.autoderef_step_tys.get(start as i64)
+            if step_fn0 == 0 and self.sema.resolve_alias(physical_ty as TypeId) == self.sema.resolve_alias(step_ty0 as TypeId):
+                current_ty = step_ty0
+                first_step = 1
+        for i in first_step..count:
             let step_fn = self.sema.autoderef_step_fns.get((start + i) as i64)
             let step_ty = self.sema.autoderef_step_tys.get((start + i) as i64)
             if step_fn == 0:
@@ -4675,8 +4716,15 @@ impl MirBuilder:
     mut fn lower_index(base_expr: i32, index_expr: i32) -> i32:
         var base = self.lower_expr_place(base_expr)
         // Indexing through `&Vec[T]` / `&mut Vec[T]` should index the container,
-        // not treat the reference itself like a raw pointer.
+        // not treat the reference itself like a raw pointer. A D27 index has
+        // semantic type &T while its place already denotes the physical T
+        // slot, so prefer the place type before deciding whether a dereference
+        // is still required. Otherwise nested array indexing grows bogus
+        // `_a[_i].*[_j]` projections and codegen loses the LLVM element type.
         var base_ty = self.expr_type(base_expr)
+        let physical_ty = self.place_local_type(base)
+        if physical_ty != 0 and physical_ty != self.sema.ty_void as i32:
+            base_ty = physical_ty
         while base_ty > 0:
             let resolved = self.sema.resolve_alias(base_ty)
             if self.sema.get_type_kind(resolved) != TypeKind.TY_REF:
@@ -4685,7 +4733,10 @@ impl MirBuilder:
             base_ty = self.sema.get_type_d0(resolved)
         let elem_ty = self.indexed_element_type(base_ty)
         let idx_op = self.lower_expr(index_expr)
-        let idx_ty = self.expr_type(index_expr)
+        let idx_ty = if self.has_contextual_copy_adjustment(index_expr) != 0:
+            self.contextual_copy_adjustment(index_expr).target_type
+        else:
+            self.expr_type(index_expr)
         let idx_local = self.new_temp(idx_ty)
         let idx_place = self.place_for_local(idx_local)
         self.assign_operand_to_place(idx_place, idx_op, self.ast.get_start(index_expr))
@@ -4711,14 +4762,19 @@ impl MirBuilder:
             return self.lower_call_place(node)
         if kind == NodeKind.NK_FIELD_ACCESS:
             let base_expr = self.ast.get_data0(node)
-            let base_place = self.lower_binding_alias_place(base_expr)
-            if base_place < 0:
-                return -1
             let field_sym = self.ast.get_data1(node)
+            // A field projected through a recorded ref/user-Deref view already
+            // has an authoritative place walk. Consult it before recursively
+            // asking whether the syntactic base is itself an alias place:
+            // `(&owner).field` bottoms out at UOP_REF, but the field is still a
+            // pure alias and must never acquire an owning drop local.
             if self.sema.autoderef_step_counts.contains(base_expr):
                 let autoderef_place = self.lower_recorded_autoderef_place(base_expr)
                 let field_ty = self.expr_type(node)
                 return self.new_projected_field_place(autoderef_place, field_sym, field_ty)
+            let base_place = self.lower_binding_alias_place(base_expr)
+            if base_place < 0:
+                return -1
             var field_base = base_place
             var base_ty = self.expr_type(base_expr)
             while base_ty > 0:
@@ -5135,7 +5191,7 @@ impl MirBuilder:
             let ca_op = self.ast.get_data0(rhs_expr)
             let ca_inc_expr = self.ast.get_data2(rhs_expr)
             let ca_place = self.lower_expr_place(place_expr)
-            let ca_elem_ty = self.expr_type(place_expr)
+            let ca_elem_ty = self.assignment_place_value_type(place_expr)
             let ca_cur = self.body.new_operand(OperandKind.OK_COPY, ca_place)
             let ca_inc = self.lower_expr(ca_inc_expr)
             let ca_result = self.lower_bin_op_operand(ca_op, ca_cur, ca_inc, ca_elem_ty, self.ast.get_start(place_expr))
@@ -5144,7 +5200,7 @@ impl MirBuilder:
 
         let place = self.lower_expr_place(place_expr)
         let saved_expected = self.expected_type
-        let dest_ty = self.expr_type(place_expr)
+        let dest_ty = self.assignment_place_value_type(place_expr)
         let rhs_reset_start = self.pending_reset_locals.len() as i32
         let rhs_field_reset_start = self.pending_reset_field_places.len() as i32
         let rhs_move_temp_start = self.pending_move_temp_locals.len() as i32
@@ -9535,10 +9591,16 @@ impl MirBuilder:
                 let recv_resolved = if recv_ty != 0: self.sema.resolve_alias(recv_ty as TypeId) else: 0
                 let recv_kind = self.sema.get_type_kind(recv_resolved)
                 let raw_pointer_option_receiver = recv_kind == TypeKind.TY_PTR and (intrinsic == MirIntrinsic.OPT_UNWRAP or intrinsic == MirIntrinsic.OPT_EXPECT or intrinsic == MirIntrinsic.OPT_IS_SOME or intrinsic == MirIntrinsic.OPT_IS_NONE or intrinsic == MirIntrinsic.OPT_FILTER)
+                let borrowed_payload_eliminator = recv_kind == TypeKind.TY_REF and self.sema.get_type_d1(recv_resolved) == 0 and (intrinsic == MirIntrinsic.OPT_UNWRAP or intrinsic == MirIntrinsic.OPT_EXPECT)
                 var recv_op = 0
                 let recv_owner = self.sema.method_owner_symbol_for_type(recv_type_for_args)
                 if self.has_contextual_copy_adjustment(self_expr) != 0:
                     recv_op = self.lower_contextual_copy_adjustment(self_expr)
+                else if borrowed_payload_eliminator:
+                    // D22 exact-payload elimination observes a borrowed carrier
+                    // in place. Keep the &Option/&Result operand; codegen extracts
+                    // a payload address instead of moving the carrier value.
+                    recv_op = self.lower_expr(self_expr)
                 else if recv_owner != 0 and self.sema.builtin_method_requires_move_receiver(recv_owner, method_sym) != 0:
                     let recv_place = self.lower_expr_place(self_expr)
                     recv_op = self.body.new_operand(OperandKind.OK_MOVE, recv_place)
@@ -11948,6 +12010,13 @@ impl MirBuilder:
                     self.switch_to(ip_rd_next)
                     return self.body.new_operand(OperandKind.OK_COPY, ip_rd_place)
             let place = self.lower_index(self.ast.get_data0(node), self.ast.get_data1(node))
+            let idx_exact_ty = self.expr_type(node)
+            if idx_exact_ty != 0 and self.sema.get_type_kind(self.sema.resolve_alias(idx_exact_ty as TypeId)) == TypeKind.TY_REF:
+                let idx_ref_rv = self.body.new_rvalue(RvalueKind.RK_REF, BorrowKind.SHARED, place, 0)
+                let idx_ref_tmp = self.new_temp(idx_exact_ty)
+                let idx_ref_place = self.place_for_local(idx_ref_tmp)
+                self.body.push_stmt(self.cur_bb, StmtKind.Assign, idx_ref_place, idx_ref_rv, self.ast.get_start(node))
+                return self.body.new_operand(OperandKind.OK_COPY, idx_ref_place)
             // A8 (#606): extracting a non-Copy element out of an ARRAY by index moves
             // it out of the slot. Blank the slot at the statement boundary
             // (reset-on-move, §2.5.1) and KEEP the array's scheduled drop with its
@@ -12035,7 +12104,7 @@ impl MirBuilder:
             // dereference, propagating "lengthptr is non-null" out of the guarded
             // block and constant-folding the surrounding null check.
             let saved_expected = self.expected_type
-            let target_ty = self.expr_type(target)
+            let target_ty = self.assignment_place_value_type(target)
             let rhs_reset_start = self.pending_reset_locals.len() as i32
             let rhs_field_reset_start = self.pending_reset_field_places.len() as i32
             let rhs_move_temp_start = self.pending_move_temp_locals.len() as i32

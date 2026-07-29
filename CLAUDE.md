@@ -192,11 +192,10 @@ so every equivalent spelling shares one semantic rule.
 access observes; `remove` transfers.** `xs[i]` denotes the element place;
 `xs.get(i)` returns `&T` (read-only, panics out-of-range — `Option` is for
 keyed maps, where absence is normal); a binding names what's there, an
-annotation demands what it says. The compiler is NON-COMPLIANT on the
-element-view semantics until that campaign lands: the interim #715 element
-gate and the deliberately over-broad #730 unannotated-let field gate are
-stand-ins that the campaign retires — do not layer on them, extend them, or
-treat today's element-copy behavior as precedent. Serialize/Deserialize
+annotation demands what it says. The element-view campaign is done; see
+`docs/d27-implementation-plan.md`. The interim #715 element gate and the
+deliberately over-broad #730 unannotated-let field gate are retired.
+Serialize/Deserialize
 signatures are ruled correct as declared (`JsonView` is a Copy view token);
 do not "fix" the threaded sink into a borrow.
 

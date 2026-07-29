@@ -804,6 +804,17 @@ impl Sema:
                     if lhs_ok != 0 and rhs_ok != 0:
                         lhs = target
                         rhs = target
+            else if lhs_pointee != 0:
+                // The builtin operator itself establishes the owned demand
+                // even when the other operand has a different role, such as
+                // pointer + integer. Exact operator lookup already declined
+                // above; materialize the Copy pointee and let the selected
+                // builtin validate the resulting value types.
+                if self.record_contextual_copy_adjustment(lhs_node, lhs_pointee, lhs) != 0:
+                    lhs = lhs_pointee
+            else if rhs_pointee != 0:
+                if self.record_contextual_copy_adjustment(rhs_node, rhs_pointee, rhs) != 0:
+                    rhs = rhs_pointee
         (lhs as i64) | ((rhs as i64) << 32)
 
     mut fn call_arg_type_compatible_base(expected: i32, actual: i32) -> i32:
@@ -827,7 +838,6 @@ impl Sema:
             // non-Copy field reached through a view cannot satisfy it. The
             // auto-ref path above already returned for &T parameters.
             self.reject_owned_demand_from_view_projection(arg_node, expected, "call argument")
-            self.reject_owned_demand_from_element_copy(arg_node, expected, "call argument")
             let _ = self.record_contextual_copy_adjustment(arg_node, expected, actual)
 
     mut fn check_builtin_method_call_arg(call_name: str, arg_index: i32, expected: i32, actual: i32, arg_node: i32) -> i32:
@@ -6471,6 +6481,12 @@ impl Sema:
             // Explicitly mark the inner binding as moved, even for Copy types.
             let sym = self.ast.get_data0(inner)
             if self.scope_has(sym) != 0:
+                let move_resolved = self.resolve_alias(ty as TypeId)
+                let move_kind = self.get_type_kind(move_resolved)
+                if self.scope_is_view_bound(sym) != 0 and move_kind != TypeKind.TY_REF and move_kind != TypeKind.TY_PTR:
+                    self.emit_error("cannot consume read-only view binding `" ++ self.pool_resolve(sym) ++ "`; clone it or transfer from the owner", node)
+                    self.typed_expr_types.insert(node, ty as i32)
+                    return ty
                 if self.type_needs_drop(ty as i32) != 0 and self.outer_binding_has_unsupported_move_context(sym) != 0:
                     self.emit_error("conditional move of Drop value requires drop-state tracking", node)
                     self.typed_expr_types.insert(node, ty as i32)
@@ -8409,7 +8425,25 @@ impl Sema:
                         let raw_p_kind = self.get_type_kind(self.resolve_alias(raw_p_tid as TypeId))
                         if raw_p_kind != TypeKind.TY_REF and raw_p_kind != TypeKind.TY_PTR and self.is_copy(raw_p_tid as TypeId) == 0:
                             self.note_param_effect(raw_root, EFF_ESCAPE_VALUE)
-                return self.add_type(TypeKind.TY_PTR, operand as i32, raw_mut, 0) as i32
+                var raw_pointee = operand as i32
+                // D27: a runtime subscript already has exact type &T in value
+                // context, but it still denotes the physical T place. Raw
+                // address-taking targets that place, not the temporary &T view.
+                if self.ast.kind(operand_node) == NodeKind.NK_INDEX and self.index_expr_is_type_level(self.ast.get_data0(operand_node)) == 0:
+                    let indexed_exact = self.resolve_alias(operand)
+                    if self.get_type_kind(indexed_exact) == TypeKind.TY_REF:
+                        raw_pointee = self.get_type_d0(indexed_exact)
+                return self.add_type(TypeKind.TY_PTR, raw_pointee, raw_mut, 0) as i32
+            // D27: `&xs[i]` explicitly spells the same element view that the
+            // observing subscript read already produces. The index place is
+            // borrowed once; do not manufacture &&T.
+            if self.ast.kind(operand_node) == NodeKind.NK_INDEX and self.index_expr_is_type_level(self.ast.get_data0(operand_node)) == 0:
+                let indexed_exact2 = self.resolve_alias(operand)
+                if self.get_type_kind(indexed_exact2) == TypeKind.TY_REF:
+                    self.check_borrow_create(operand_node, BorrowKind.SHARED, node)
+                    self.record_transparent_view_origins(node, operand_node)
+                    self.typed_expr_types.insert(node, operand as i32)
+                    return operand as i32
             self.check_borrow_create(operand_node, BorrowKind.SHARED, node)
             return self.add_type(TypeKind.TY_REF, operand as i32, 0, 0) as i32
         if op == UnaryOp.UOP_DEREF:
@@ -8742,83 +8776,6 @@ impl Sema:
             return
         self.view_projection_exprs.insert(expr, field_ty)
 
-    // D22 plan line 334 / #715: array/collection elements are contextual-Copy
-    // positions — an owned demand on a non-Copy Drop ELEMENT copy (`v[i]` or
-    // `v.get(i)` on a Vec) is the same latent double-free as a view-field
-    // steal: the copy's drop frees the element the vec still owns. Detect the
-    // shape at the demand site from the node and its recorded type.
-    mut fn owned_demand_element_copy_type(value_node: i32) -> i32:
-        if value_node <= 0:
-            return 0
-        let kind = self.ast.kind(value_node)
-        var base_node = 0
-        if kind == NodeKind.NK_INDEX:
-            base_node = self.ast.get_data0(value_node)
-        else if kind == NodeKind.NK_CALL:
-            let callee = self.ast.get_data0(value_node)
-            if self.ast.kind(callee) != NodeKind.NK_FIELD_ACCESS:
-                return 0
-            if self.ast.get_data1(callee) != self.syms.get:
-                return 0
-            base_node = self.ast.get_data0(callee)
-        else:
-            return 0
-        // `Vec[i32][1, 2]` spells a collection literal: the base is the type,
-        // the result is a fresh owned Vec, and consuming it is legal.
-        if self.index_expr_is_type_level(base_node):
-            return 0
-        let base_ty_opt = self.typed_expr_types.get(base_node)
-        if not base_ty_opt.is_some():
-            return 0
-        var base_ty: i32 = base_ty_opt.unwrap()
-        var base_resolved = self.resolve_alias(base_ty as TypeId)
-        if self.get_type_kind(base_resolved) == TypeKind.TY_REF:
-            base_resolved = self.resolve_alias(self.get_type_d0(base_resolved) as TypeId)
-        if self.get_type_kind(base_resolved) != TypeKind.TY_GENERIC_INST:
-            return 0
-        if self.get_generic_inst_base(base_resolved as i32) != self.syms.vec:
-            return 0
-        let result_ty_opt = self.typed_expr_types.get(value_node)
-        if not result_ty_opt.is_some():
-            return 0
-        let result_ty: i32 = result_ty_opt.unwrap()
-        let result_resolved = self.resolve_alias(result_ty as TypeId)
-        let rk = self.get_type_kind(result_resolved)
-        if rk == TypeKind.TY_REF or rk == TypeKind.TY_PTR:
-            return 0
-        if self.is_copy(result_ty as TypeId) != 0:
-            return 0
-        if self.type_needs_drop(result_ty) == 0:
-            return 0
-        result_ty
-
-    // A let binding of a get/index result is NOT an owned demand: D22 rules a
-    // view "materializes an independent T only when an owned-value demand has
-    // already been established", and issue-64 pins the binding-then-mutate
-    // chain as in-place. Only assignment/call-arg/struct-field sites call this.
-    mut fn reject_owned_demand_from_element_copy(value_node: i32, demanded: i32, context: str):
-        var elem_ty = self.owned_demand_element_copy_type(value_node)
-        if elem_ty == 0 and demanded != 0:
-            // D27 E1: element reads are ref-typed now, so the pre-flip helper
-            // sees TY_REF and returns 0 — but a non-Copy Drop-bearing view
-            // still cannot satisfy an owned demand (§13.6). The struct-field
-            // path has no general mismatch check for this shape, so the gate
-            // keeps covering it until E3 retires it into general machinery.
-            let d27_vt_opt = self.typed_expr_types.get(value_node)
-            if d27_vt_opt.is_some():
-                let d27_vt = self.resolve_alias(d27_vt_opt.unwrap() as TypeId)
-                if self.get_type_kind(d27_vt) == TypeKind.TY_REF:
-                    let d27_pointee = self.get_type_d0(d27_vt)
-                    if d27_pointee != 0 and self.is_copy(d27_pointee as TypeId) == 0 and self.type_needs_drop(d27_pointee) != 0 and self.types_compatible(demanded as TypeId, d27_pointee as TypeId) != 0:
-                        elem_ty = d27_pointee
-        if elem_ty == 0:
-            return
-        if demanded != 0:
-            let dk = self.get_type_kind(self.resolve_alias(demanded as TypeId))
-            if dk == TypeKind.TY_REF or dk == TypeKind.TY_PTR:
-                return
-        self.emit_error("cannot take ownership of a non-Copy element copied out of a Vec (" ++ self.type_name(elem_ty) ++ " is not Copy); borrow the element with `&vec[i]`, clone it, or remove it from the vec (D22 §13.6, #715) — " ++ context, value_node)
-
     mut fn reject_owned_demand_from_view_projection(value_node: i32, demanded: i32, context: str):
         if value_node <= 0:
             return
@@ -8885,11 +8842,8 @@ impl Sema:
         self.match_in_stmt_pos = 0
         let val_type = if ann_type != 0: self.check_expr_with_owned_demand(value, ann_type) else: self.check_expr_value_context(value)
         self.match_in_stmt_pos = saved_match_stmt
-        self.reject_owned_demand_from_view_projection(value, ann_type as i32, "let binding")
-        // D27: a binding names what's there; an annotation demands what it
-        // says. Only a TYPED binding is an owned demand for element copies.
         if ann_type != 0:
-            self.reject_owned_demand_from_element_copy(value, ann_type as i32, "typed let binding")
+            self.reject_owned_demand_from_view_projection(value, ann_type as i32, "typed let binding")
         var bind_type: TypeId = val_type
         if ann_type != 0:
             bind_type = ann_type
@@ -8904,7 +8858,7 @@ impl Sema:
         // (as in Rust) — `x` is untouched, so it must not be marked consumed. This
         // keeps `let _ = param` a non-consuming acknowledgement: the param stays
         // share-place (borrowed) instead of being forced to owned.
-        if self.pool_resolve(name) != "_":
+        if self.pool_resolve(name) != "_" and not self.view_projection_exprs.contains(value):
             self.mark_moved_if_consumed(value)
 
         if ann_type_node != 0 and self.type_expr_is_collection_with_ref(ann_type_node) != 0:
@@ -8945,7 +8899,9 @@ impl Sema:
         else:
             self.binding_closure_nodes.remove(name)
         let bind_kind = self.get_type_kind(self.resolve_alias(bind_type))
-        if bind_kind == TypeKind.TY_REF or self.type_has_drop_impl(bind_type as i32) != 0 or self.type_is_ephemeral_value(bind_type as i32) != 0:
+        if bind_kind == TypeKind.TY_REF or self.view_projection_exprs.contains(value):
+            self.scope_set_is_view_bound(name)
+        if self.scope_is_view_bound(name) != 0 or self.type_has_drop_impl(bind_type as i32) != 0 or self.type_is_ephemeral_value(bind_type as i32) != 0:
             self.record_view_binding_from_expr(name, value)
         else:
             self.clear_binding_view_deps(name)
@@ -9884,6 +9840,21 @@ impl Sema:
             return
         self.emit_warning("string concatenation with ++ inside a loop repeatedly copies the accumulator; use StringBuilder or collect pieces and concatenate once", node)
 
+    fn assignment_target_value_type(node: i32, exact_type: i32) -> TypeId:
+        if node == 0 or exact_type == 0:
+            return exact_type as TypeId
+        let kind = self.ast.kind(node)
+        if kind == NodeKind.NK_GROUPED or kind == NodeKind.NK_NO_SUSPEND:
+            return self.assignment_target_value_type(self.ast.get_data0(node), exact_type)
+        // D27 gives a runtime subscript exact expression type &T while its
+        // write-place still stores T. Assignment establishes an owned demand
+        // for that physical element type, never for the observing reference.
+        if kind == NodeKind.NK_INDEX and self.index_expr_is_type_level(self.ast.get_data0(node)) == 0:
+            let resolved = self.resolve_alias(exact_type as TypeId)
+            if self.get_type_kind(resolved) == TypeKind.TY_REF:
+                return self.get_type_d0(resolved) as TypeId
+        exact_type as TypeId
+
     mut fn check_assign(node: i32) -> i32:
         let target = self.ast.get_data0(node)
         let value = self.ast.get_data1(node)
@@ -9909,7 +9880,6 @@ impl Sema:
 
             let value_type = if expected_value_type != 0: self.check_expr_with_owned_demand(value, expected_value_type as TypeId) else: self.check_expr(value)
             self.reject_owned_demand_from_view_projection(value, expected_value_type, "assignment")
-            self.reject_owned_demand_from_element_copy(value, expected_value_type, "assignment")
             self.note_place_effect(base_expr, EFF_WRITE)
             self.record_global_place_write(base_expr, node)
 
@@ -9947,12 +9917,12 @@ impl Sema:
         // Writing a union field is always safe — suppress the union read-check
         // while checking the assignment target.
         self.union_in_assign_target = self.union_in_assign_target + 1
-        let target_type = self.check_expr(target)
+        let target_exact_type = self.check_expr(target)
         self.union_in_assign_target = self.union_in_assign_target - 1
         self.assign_target_revive_sym = assign_revive_saved
+        let target_type = self.assignment_target_value_type(target, target_exact_type as i32)
         let value_type = if target_type != 0: self.check_expr_with_owned_demand(value, target_type) else: self.check_expr(value)
         self.reject_owned_demand_from_view_projection(value, target_type as i32, "assignment")
-        self.reject_owned_demand_from_element_copy(value, target_type as i32, "assignment")
         // §16.4 union last-written tracking.
         if self.ast.kind(target) == NodeKind.NK_FIELD_ACCESS:
             let u_recv = self.ast.get_data0(target)
@@ -10985,7 +10955,13 @@ impl Sema:
         if index_ty == 0:
             return 0
         let index_unwrapped = self.unwrap_builtin_arg_distinct(index_ty)
-        let numeric_index_ty = self.numeric_operand_type(index_unwrapped)
+        var numeric_index_ty = self.numeric_operand_type(index_unwrapped)
+        let index_pointee = self.shared_copy_pointee(index_unwrapped)
+        if index_pointee != 0:
+            let pointee_numeric = self.numeric_operand_type(index_pointee)
+            if self.get_type_kind(pointee_numeric) == TypeKind.TY_INT:
+                let _ = self.record_contextual_copy_adjustment(index_node, index_pointee, index_ty as i32)
+                numeric_index_ty = pointee_numeric
         if self.get_type_kind(numeric_index_ty) != TypeKind.TY_INT:
             self.emit_error("index expression must be an integer", index_node)
         return index_ty as i32
@@ -11031,13 +11007,17 @@ impl Sema:
         if container_tk == TypeKind.TY_ARRAY:
             self.check_runtime_index_operand(index)
             let elem_ty = self.get_type_d0(container_tid)
-            self.typed_expr_types.insert(node, elem_ty)
-            return elem_ty
+            let elem_view = self.ensure_exact_type(TypeKind.TY_REF, elem_ty, 0, 0) as i32
+            self.typed_expr_types.insert(node, elem_view)
+            self.record_view_producer_origins(node, expr)
+            return elem_view
         if container_tk == TypeKind.TY_SLICE:
             self.check_runtime_index_operand(index)
             let elem_ty = self.get_type_d0(container_tid)
-            self.typed_expr_types.insert(node, elem_ty)
-            return elem_ty
+            let elem_view = self.ensure_exact_type(TypeKind.TY_REF, elem_ty, 0, 0) as i32
+            self.typed_expr_types.insert(node, elem_view)
+            self.record_view_producer_origins(node, expr)
+            return elem_view
         if container_tk == TypeKind.TY_GENERIC_INST:
             let base_name = self.pool_resolve(self.get_type_d0(container_tid))
             let is_type_level_index = self.index_expr_is_type_level(expr)
@@ -11051,8 +11031,10 @@ impl Sema:
             if not is_type_level_index and base_name == "Vec" and self.get_generic_inst_arg_count(container_tid) > 0:
                 self.check_runtime_index_operand(index)
                 let elem_ty = self.get_generic_inst_arg(container_tid, 0)
-                self.typed_expr_types.insert(node, elem_ty)
-                return elem_ty
+                let elem_view = self.ensure_exact_type(TypeKind.TY_REF, elem_ty, 0, 0) as i32
+                self.typed_expr_types.insert(node, elem_view)
+                self.record_view_producer_origins(node, expr)
+                return elem_view
 
         // Type-level NodeKind.NK_INDEX: Vec[i32], HashMap[str, i32], etc.
         // Create TypeKind.TY_GENERIC_INST so MirLower can find it in the sema snapshot.
@@ -11584,15 +11566,18 @@ impl Sema:
                         else:
                             field_expected = self.struct_field_type(expected_struct_ty as i32, f_name)
                     let val_ty = if field_expected != 0: self.check_expr_with_owned_demand(f_value, field_expected as TypeId) else: self.check_expr(f_value)
-                    // D22 §13.6 (#735): a struct-literal field is an owned
-                    // demand; a non-Copy field reached through a view cannot
-                    // fill it.
+                    // A known field type is an owned demand. Contextual Copy is
+                    // recorded while checking the initializer; every other
+                    // incompatible exact type is rejected by the ordinary
+                    // structural check below.
                     self.reject_owned_demand_from_view_projection(f_value, field_expected, "struct literal field")
-                    // Ephemeral structs legally hold borrowed values in
-                    // owned-typed fields (origin-tracked, #625) — the element
-                    // gate must not fire for them.
-                    if not self.ephemeral_types.contains(name):
-                        self.reject_owned_demand_from_element_copy(f_value, field_expected, "struct literal field")
+                    if field_expected != 0 and val_ty != 0:
+                        let field_value_resolved = self.resolve_alias(val_ty)
+                        let field_expected_resolved = self.resolve_alias(field_expected as TypeId)
+                        let field_value_kind = self.get_type_kind(field_value_resolved)
+                        let field_expected_kind = self.get_type_kind(field_expected_resolved)
+                        if field_value_kind == TypeKind.TY_REF and field_expected_kind != TypeKind.TY_REF and field_expected_kind != TypeKind.TY_PTR and self.types_compatible(field_expected, val_ty as i32) == 0 and self.has_contextual_copy_adjustment(f_value) == 0:
+                            self.emit_error("type mismatch in struct literal field", f_value)
                     if not self.ephemeral_types.contains(name):
                         self.check_ephemeral_task_storage(f_value, "non-ephemeral struct")
                     // #605: a whole non-Copy local moved into a struct field is
@@ -19036,6 +19021,28 @@ impl Sema:
     fn builtin_method_requires_move_receiver(type_name_sym: i32, field: i32) -> i32:
         if self.builtin_method_receiver_mode(type_name_sym, field) == ReceiverMode.Move: 1 else: 0
 
+    // D22 §5.1: exact-payload eliminators are transparent when reached through
+    // a shared carrier view. They inspect the carrier in place and return the
+    // payload view; the owned Option/Result spelling remains a consuming call.
+    fn builtin_borrowed_payload_eliminator(obj_type: i32, type_name_sym: i32, field: i32) -> i32:
+        if type_name_sym != self.syms.option and type_name_sym != self.syms.result:
+            return 0
+        if field != self.syms.unwrap and field != self.syms.expect:
+            return 0
+        let resolved = self.resolve_alias(obj_type as TypeId)
+        if self.get_type_kind(resolved) != TypeKind.TY_REF or self.get_type_d1(resolved) != 0:
+            return 0
+        1
+
+    mut fn exact_eliminated_payload_type(obj_type: i32, payload_type: i32) -> i32:
+        let resolved = self.resolve_alias(obj_type as TypeId)
+        if self.get_type_kind(resolved) != TypeKind.TY_REF or self.get_type_d1(resolved) != 0:
+            return payload_type
+        let payload_resolved = self.resolve_alias(payload_type as TypeId)
+        if self.get_type_kind(payload_resolved) == TypeKind.TY_REF:
+            return payload_type
+        self.ensure_exact_type(TypeKind.TY_REF, payload_type, 0, 0) as i32
+
     fn is_shared_ref_like_receiver(recv_ty: i32) -> i32:
         if recv_ty == 0:
             return 0
@@ -19426,7 +19433,8 @@ impl Sema:
 
         let type_name_sym = self.method_owner_symbol_for_type(recv_type as i32)
         if type_name_sym != 0:
-            if self.builtin_method_requires_move_receiver(type_name_sym, field) != 0 and self.is_shared_ref_like_receiver(obj_type as i32) != 0:
+            let borrowed_payload_eliminator = self.builtin_borrowed_payload_eliminator(obj_type as i32, type_name_sym, field)
+            if self.builtin_method_requires_move_receiver(type_name_sym, field) != 0 and borrowed_payload_eliminator == 0 and self.is_shared_ref_like_receiver(obj_type as i32) != 0:
                 self.emit_error("consuming method requires an owned receiver", node)
                 return 0
             if self.builtin_method_requires_mutable_receiver(type_name_sym, field) != 0:
@@ -19488,7 +19496,7 @@ impl Sema:
                 let ms_root = self.place_root_sym(expr)
                 if ms_root != 0 and self.scope_is_view_bound(ms_root) != 0:
                     self.emit_error("cannot mutate through read-only view yielded by iterator (§15.17)", node)
-            else if self.method_has_move_self_flag(type_name_sym, field) != 0 or self.builtin_method_requires_move_receiver(type_name_sym, field) != 0:
+            else if self.method_has_move_self_flag(type_name_sym, field) != 0 or (self.builtin_method_requires_move_receiver(type_name_sym, field) != 0 and borrowed_payload_eliminator == 0):
                 // docs/mutability.md — move self receiver: the call consumes the
                 // receiver binding. Copy receivers satisfy the same contract by
                 // copying, so the caller remains live (mutability.md §7).
@@ -19907,6 +19915,7 @@ impl Sema:
                     // D27 (docs/d27-implementation-plan.md E1): element access
                     // observes — get returns a view of vec-owned storage.
                     // remove below stays owned: removal transfers.
+                    self.record_builtin_receiver_view_origins(node, expr)
                     return self.ensure_exact_type(TypeKind.TY_REF, self.get_generic_inst_arg(recv_type, 0), 0, 0) as i32
                 if field == self.syms.remove:
                     return self.get_generic_inst_arg(recv_type, 0)
@@ -20232,7 +20241,7 @@ impl Sema:
                         return 0
                     let option_unwrapped = self.get_generic_inst_arg(recv_type, 0)
                     self.record_transparent_view_origins(node, expr)
-                    return option_unwrapped
+                    return self.exact_eliminated_payload_type(obj_type as i32, option_unwrapped)
                 if field == self.syms.expect:
                     if mc_resolved_arg_count != 1:
                         self.emit_error("Option.expect() expects exactly one argument", node)
@@ -20242,7 +20251,7 @@ impl Sema:
                         return 0
                     let option_expected = self.get_generic_inst_arg(recv_type, 0)
                     self.record_transparent_view_origins(node, expr)
-                    return option_expected
+                    return self.exact_eliminated_payload_type(obj_type as i32, option_expected)
                 let option_default_node = if mc_resolved_arg_count > 0:
                     if mc_has_resolved_args != 0: self.get_resolved_call_arg(node, 0) else: self.ast.get_extra(extra_start)
                 else:
@@ -20275,7 +20284,7 @@ impl Sema:
                         return 0
                     let result_unwrapped = self.get_generic_inst_arg(recv_type, 0)
                     self.record_transparent_view_origins(node, expr)
-                    return result_unwrapped
+                    return self.exact_eliminated_payload_type(obj_type as i32, result_unwrapped)
                 if field == self.syms.expect:
                     if mc_resolved_arg_count != 1:
                         self.emit_error("Result.expect() expects exactly one argument", node)
@@ -20285,7 +20294,7 @@ impl Sema:
                         return 0
                     let result_expected = self.get_generic_inst_arg(recv_type, 0)
                     self.record_transparent_view_origins(node, expr)
-                    return result_expected
+                    return self.exact_eliminated_payload_type(obj_type as i32, result_expected)
                 let result_default_node = if mc_resolved_arg_count > 0:
                     if mc_has_resolved_args != 0: self.get_resolved_call_arg(node, 0) else: self.ast.get_extra(extra_start)
                 else:
@@ -21834,8 +21843,15 @@ impl Sema:
     fn type_is_index_place(tid: i32) -> i32:
         if tid == 0:
             return 0
-        let resolved = self.resolve_alias(tid as TypeId)
-        let tk = self.get_type_kind(resolved)
+        var resolved = self.resolve_alias(tid as TypeId)
+        var tk = self.get_type_kind(resolved)
+        // Nested D27 projections carry the inner subscript's exact &T type
+        // even though the place path has already landed on T. Follow that
+        // semantic view here; classify_place separately preserves read-only
+        // bases, so this does not make indexing through an ordinary &T mutable.
+        while tk == TypeKind.TY_REF:
+            resolved = self.resolve_alias(self.get_type_d0(resolved) as TypeId)
+            tk = self.get_type_kind(resolved)
         if tk == TypeKind.TY_ARRAY or tk == TypeKind.TY_SLICE:
             return 1
         if tk == TypeKind.TY_GENERIC_INST:
@@ -21863,6 +21879,18 @@ impl Sema:
     // — that distinction was already special-cased in earlier sema. After P12
     // lockdown TY_REF will only ever be `&T` (d1=0).
     mut fn place_base_is_read_only_ref(base_node: i32) -> i32:
+        let base_kind = self.ast.kind(base_node)
+        if base_kind == NodeKind.NK_GROUPED or base_kind == NodeKind.NK_NO_SUSPEND:
+            return self.place_base_is_read_only_ref(self.ast.get_data0(base_node))
+        // D27: the exact read type of xs[i] is &T, but the same syntax in a
+        // write/receiver chain is the IndexPlace projection. Its mutability is
+        // inherited from that physical place, not from the observing read type.
+        // A get-only or shared-base subscript is not a mutable place and keeps
+        // falling through to the ordinary reference check below.
+        if base_kind == NodeKind.NK_INDEX:
+            let index_place = self.classify_place(base_node)
+            if unpack_place_kind(index_place) != PlaceKind.PK_NotPlace and unpack_place_mut(index_place) != PlaceMut.PM_ReadOnly:
+                return 0
         let cached = self.typed_expr_types.get(base_node)
         var ty: i32 = 0
         if cached.is_some():
@@ -21888,7 +21916,7 @@ impl Sema:
         // classified by classify_place (share-place receivers are mutable by
         // receiver mode, D12, and must not read as views).
         let bk = self.ast.kind(base_node)
-        if bk == NodeKind.NK_FIELD_ACCESS or bk == NodeKind.NK_INDEX or bk == NodeKind.NK_GROUPED:
+        if bk == NodeKind.NK_FIELD_ACCESS or bk == NodeKind.NK_INDEX:
             let d27_inner = self.ast.get_data0(base_node)
             let d27_ik = self.ast.kind(d27_inner)
             if d27_ik == NodeKind.NK_CALL or d27_ik == NodeKind.NK_FIELD_ACCESS or d27_ik == NodeKind.NK_INDEX or d27_ik == NodeKind.NK_GROUPED:
@@ -22393,6 +22421,11 @@ impl Sema:
             if self.scope_has(sym) != 0:
                 let tid = self.scope_lookup(sym)
                 if not self.is_copy(tid as TypeId):
+                    let view_resolved = self.resolve_alias(tid as TypeId)
+                    let view_kind = self.get_type_kind(view_resolved)
+                    if self.scope_is_view_bound(sym) != 0 and view_kind != TypeKind.TY_REF and view_kind != TypeKind.TY_PTR:
+                        self.emit_error("cannot consume read-only view binding `" ++ self.pool_resolve(sym) ++ "`; clone it or transfer from the owner", node)
+                        return
                     if self.type_needs_drop(tid) != 0 and self.outer_binding_has_unsupported_move_context(sym) != 0:
                         self.emit_error("conditional move of Drop value requires drop-state tracking", node)
                         return

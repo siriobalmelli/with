@@ -459,6 +459,25 @@ it will be used later; a copied snapshot remains valid.
 NON-COMPLIANT. AI-generated code must target the rules, not work around their
 unfinished implementation.
 
+### Positional element access (D27)
+
+`xs[i]` and `xs.get(i)` observe the stored element and have exact type `&T`.
+`get` is read-only and panics when the index is out of range; indexed assignment
+and mutating receiver chains use the `xs[i]` place. `remove(i)` is the ownership
+transfer operation.
+
+```with
+let view = jobs.get(i)       // &Job
+let count: i32 = counts[i]   // independent Copy snapshot
+jobs[i].refresh()            // mutates the stored Job
+let owned = jobs.remove(i)   // transfers Job out
+```
+
+An unannotated binding keeps the view. A typed owned binding or another owned
+demand materializes a Copy pointee, rejects a non-Copy pointee, or requires an
+explicit clone/removal. A surviving element view prevents collection mutations
+that could invalidate it.
+
 ### Auto-ref and auto-deref
 
 ```with

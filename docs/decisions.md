@@ -16,8 +16,8 @@ decision supersedes an earlier one, say so in both.
 **Status:** Ruled by Eric ("My will be done. Enshrine the doctrine. Purge any
 dissent.") on the three-brief presentation of the parked questions from #715/
 #730/#737 close-outs. Three rulings, one doctrine. Extends D22 beyond its §2.2
-scope carve-out; partially supersedes D26 (see below). The compiler is
-NON-COMPLIANT on ruling 2 until the element-view campaign lands.
+scope carve-out; partially supersedes D26 (see below). Implemented by the E1–E4
+element-view campaign in `docs/d27-implementation-plan.md` (#740).
 
 **Ruling 1 — Serialize/Deserialize signatures stand; JsonView opts into Copy.**
 `fn serialize(self: &Self, out: JsonWriter) -> JsonWriter` and
@@ -76,8 +76,8 @@ doctrine unilaterally.
 ## D26 — #715 element-copy gate fires at owned demands only; a let binding is not an owned demand
 
 **Date:** 2026-07-28
-**Status:** Done (interim conforming projection of the D22 ruling; the uniform
-view semantics for Vec element access remain D22-implementation-plan work).
+**Status:** Done as an interim projection, then superseded in implementation by
+D27's uniform element-view campaign (#740).
 
 **Decision.** Sema rejects a non-Copy, Drop-bearing element reached via
 `vec.get(i)` / `vec[i]` when it must satisfy an owned demand: a by-value call

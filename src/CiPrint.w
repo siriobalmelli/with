@@ -615,6 +615,17 @@ fn ci_print_expr(exprs: CiExprPool, types: CiTypePool, id: CiExprId, parent_prec
         if ci_type_is_fn_ptr(types, operand_ty):
             return ci_print_expr(exprs, types, operand, 0, 1)
         let operand_text = ci_print_expr(exprs, types, operand, 0, 0)
+        if exprs.kind(operand) == CiExprKind.CIE_INDEX and exprs.get_d2(operand) == 0:
+            let base = (exprs.get_d0(operand)) as CiExprId
+            let base_ty = exprs.get_type(base)
+            if (base_ty as i32) != 0 and types.kind(base_ty) == CiTypeKind.CT_ARRAY:
+                let elem_ty = (types.get_d0(base_ty)) as CiTypeId
+                if (elem_ty as i32) != 0 and types.kind(elem_ty) == CiTypeKind.CT_POINTER:
+                    // C `*slots[i]` first loads the pointer stored in the
+                    // array, then dereferences it. D27 With gives safe array
+                    // indexing exact type &*T, so the cast is the owned
+                    // pointer demand before the raw memory access.
+                    return ci_wrap_unsafe("*(" ++ operand_text ++ " as " ++ ci_print_type(types, elem_ty) ++ ")")
         if exprs.kind(operand) == CiExprKind.CIE_FIELD or exprs.kind(operand) == CiExprKind.CIE_INDEX or exprs.kind(operand) == CiExprKind.CIE_CALL:
             return ci_wrap_unsafe("*(" ++ operand_text ++ ")")
         return ci_wrap_unsafe("*" ++ operand_text)
@@ -1080,6 +1091,8 @@ fn ci_roundtrip_exprs -> i32:
     let i32_ty = types.ty_int(32, 0)
     let u8_ty = types.ty_int(8, 1)
     let f32_ty = types.ty_float(32)
+    let const_ptr_i32 = types.ty_pointer(i32_ty, 1)
+    let ptr_slots_ty = types.ty_array(const_ptr_i32, 2)
     let lit_idx = exprs.add_string("42")
     let lit = exprs.int_lit(lit_idx, i32_ty)
     let a_idx = exprs.add_string("a")
@@ -1098,6 +1111,12 @@ fn ci_roundtrip_exprs -> i32:
     let char_lit = exprs.add(CiExprKind.CIE_CHAR_LIT, char_idx, 0, 0, i32_ty)
     let str_idx = exprs.add_string("\"hello\"")
     let str_lit = exprs.add(CiExprKind.CIE_STRING_LIT, str_idx, 0, 0, 0 as CiTypeId)
+    let slots_idx = exprs.add_string("slots")
+    let slots = exprs.ident(slots_idx, ptr_slots_ty)
+    let zero_idx = exprs.add_string("0")
+    let zero = exprs.int_lit(zero_idx, i32_ty)
+    let slot = exprs.add(CiExprKind.CIE_INDEX, slots as i32, zero as i32, 0, const_ptr_i32)
+    let slot_deref = exprs.add(CiExprKind.CIE_DEREF, slot as i32, 0, 0, i32_ty)
     var fails: i32 = 0
     fails = fails + ci_expect_eq("expr_int_lit", ci_print_expr(exprs, types, lit, 0, 0), "42")
     fails = fails + ci_expect_eq("expr_ident", ci_print_expr(exprs, types, a, 0, 0), "a")
@@ -1107,6 +1126,7 @@ fn ci_roundtrip_exprs -> i32:
     fails = fails + ci_expect_eq("expr_float_lit", ci_print_expr(exprs, types, float_lit, 0, 0), "3.14")
     fails = fails + ci_expect_eq("expr_char_lit", ci_print_expr(exprs, types, char_lit, 0, 0), "65")
     fails = fails + ci_expect_eq("expr_string_lit", ci_print_expr(exprs, types, str_lit, 0, 0), "\"hello\"")
+    fails = fails + ci_expect_eq("expr_array_pointer_deref", ci_print_expr(exprs, types, slot_deref, 0, 0), "(unsafe *(slots[0] as *const i32))")
     fails
 
 fn ci_roundtrip_fn_decl -> i32:

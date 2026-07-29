@@ -70,14 +70,14 @@ unsafe fn sha256_compress(ctx: *mut Sha256):
     for i in 16..64:
         w[i] = ssig1(w[i - 2]) +% w[i - 7] +% ssig0(w[i - 15]) +% w[i - 16]
 
-    var a = ctx.state[0]
-    var b = ctx.state[1]
-    var c = ctx.state[2]
-    var d = ctx.state[3]
-    var e = ctx.state[4]
-    var f = ctx.state[5]
-    var g = ctx.state[6]
-    var h = ctx.state[7]
+    var a: u32 = ctx.state[0]
+    var b: u32 = ctx.state[1]
+    var c: u32 = ctx.state[2]
+    var d: u32 = ctx.state[3]
+    var e: u32 = ctx.state[4]
+    var f: u32 = ctx.state[5]
+    var g: u32 = ctx.state[6]
+    var h: u32 = ctx.state[7]
 
     for i in 0..64:
         let t1 = h +% sigma1(e) +% ch(e, f, g) +% sha256_k(i) +% w[i]

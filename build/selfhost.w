@@ -3003,6 +3003,8 @@ fn bs_check_emit_c_receiver_abi(ctx: &ActionCtx, compiler_path: str, case_dir: s
 fn bs_check_emit_c_collections(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
     // #668: HashSet one-arg insert, receiver-canonical key sizes, and
     // tuple index/destructure projections through emit -> cc -> run.
+    // D27: Vec.get returns an element address and borrowed Option/Result
+    // eliminators return payload addresses rather than fabricated pointers.
     let root = ctx.project_info().project_root()
     let src = bs_join(case_dir, "collections.w")
     let c_path = bs_join(case_dir, "collections.c")
@@ -3017,11 +3019,18 @@ fn bs_check_emit_c_collections(ctx: &ActionCtx, compiler_path: str, case_dir: st
         "    names.insert(\"alpha\")\n" ++
         "    var m: HashMap[i32, str] = HashMap.new()\n" ++
         "    m.insert(5, \"five\")\n" ++
+        "    var opts: Vec[Option[i32]] = Vec.new()\n" ++
+        "    opts.push(Some(23))\n" ++
+        "    let opt_view = opts.get(0).unwrap()\n" ++
+        "    var results: Vec[Result[i32, str]] = Vec.new()\n" ++
+        "    results.push(Ok(29))\n" ++
+        "    let result_view = results.get(0).expect(\"present\")\n" ++
         "    let t = pair()\n" ++
         "    let (a, b) = t\n" ++
         "    var good = s.contains(7) and not s.contains(9)\n" ++
         "    good = good and names.contains(\"alpha\") and not names.contains(\"beta\")\n" ++
         "    good = good and m.get(5).unwrap() == \"five\"\n" ++
+        "    good = good and opt_view == 23 and result_view == 29\n" ++
         "    good = good and t.0 == 42 and t.1 == \"x\" and a == 42 and b == \"x\"\n" ++
         "    print(if good: \"ok\" else: \"bad\")\n"
     var rc = bs_write_fixture(ctx, src, source, "emit-c collections source")
@@ -4311,6 +4320,29 @@ fn bs_check_migrate_raw_pointer_index(ctx: &ActionCtx, compiler_path: str, case_
     if check.rc != 0: return check.rc
     0
 
+fn bs_check_migrate_array_pointer_deref(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
+    let root = ctx.project_info().project_root()
+    let src = bs_join(case_dir, "array_pointer_deref.c")
+    let out_w = bs_join(case_dir, "array_pointer_deref.w")
+    var rc = bs_write_fixture(ctx, src, "typedef struct holder { const unsigned char *slots[2]; } holder;\nint read_slot(holder *h, int i) { return *h->slots[i]; }\n", "array pointer deref")
+    if rc != 0: return rc
+    var args: Vec[str] = Vec.new()
+    args |> push("migrate")
+    args |> push(bs_abs(root, src))
+    args |> push("--no-c-export")
+    args |> push("-o")
+    args |> push(bs_abs(root, out_w))
+    let result = bs_migrate_expect_success(ctx, compiler_path, case_dir, "migrate-array-pointer-deref", args)
+    if result.rc != 0: return result.rc
+    rc = bs_file_contains(ctx, out_w, "as *const u8)", "array_pointer_deref")
+    if rc != 0: return rc
+    var check_args: Vec[str] = Vec.new()
+    check_args |> push("check")
+    check_args |> push(bs_abs(root, out_w))
+    let check = bs_migrate_expect_success(ctx, compiler_path, case_dir, "check-array-pointer-deref", check_args)
+    if check.rc != 0: return check.rc
+    0
+
 fn bs_check_migrate_prefer_brace_ws(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
     let root = ctx.project_info().project_root()
     let src = bs_join(case_dir, "prefer_brace_ws.c")
@@ -4482,6 +4514,8 @@ pub fn run_cli_selfhost_migrate_core_action(ctx: ActionCtx) -> i32:
     rc = bs_check_migrate_noop_pointer_casts(ctx, compiler_path, bs_join(output_dir, "noop_pointer_casts"))
     if rc != 0: return rc
     rc = bs_check_migrate_raw_pointer_index(ctx, compiler_path, bs_join(output_dir, "raw_pointer_index"))
+    if rc != 0: return rc
+    rc = bs_check_migrate_array_pointer_deref(ctx, compiler_path, bs_join(output_dir, "array_pointer_deref"))
     if rc != 0: return rc
     rc = bs_check_migrate_prefer_brace_ws(ctx, compiler_path, bs_join(output_dir, "prefer_brace_ws"))
     if rc != 0: return rc

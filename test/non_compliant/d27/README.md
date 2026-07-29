@@ -1,10 +1,13 @@
-# D27 element-view acceptance matrix (NON-COMPLIANT lane)
+# D27 element-view acceptance matrix (completed)
 
-Versioned per docs/d27-implementation-plan.md stage E0. Excluded from the
-green runner, like ../d22. Each fixture header records the REQUIRED D27
-verdict and its owner stage; promote a fixture to the active lanes only in
-the stage that implements its requirement, and never weaken one to make a
-stage green.
+Versioned per docs/d27-implementation-plan.md stage E0. The original fixtures
+were excluded from the green runner, like ../d22; every cell is now promoted to
+an active behavior or compile-error lane.
+
+E1/E2 cells were promoted to `test/behavior/behav_d27_*` and
+`test/compile_errors/err_d27_*` with the combined exact-type/MIR batch. E3's
+structural-origin and interim-gate cells were promoted with the gate-removal
+batch; no non-compliant fixture remains.
 
 Baseline survey against v0.15.1-gc7dc28ce6 (2026-07-31):
 

@@ -8981,15 +8981,88 @@ impl Codegen:
             let loc = if loc_arg_idx > 0: self.mir_intrinsic_arg(body, args_id, loc_arg_idx) else: self.gen_string_literal_raw("")
             let user_msg = if intrinsic == MirIntrinsic.OPT_EXPECT and arg_count >= 3: self.mir_intrinsic_arg(body, args_id, 1) else: self.gen_string_literal_raw("")
             let is_expect = intrinsic == MirIntrinsic.OPT_EXPECT
+            var carrier_sema = recv_resolved
+            var borrowed_carrier = false
+            if recv_resolved > 0 and self.mir_type_kind_at(recv_resolved) == TypeKind.TY_REF and self.mir_type_d1_at(recv_resolved) == 0:
+                let carrier_pointee = self.mir_resolve_alias_at(self.mir_type_d0_at(recv_resolved))
+                if carrier_pointee > 0 and self.mir_type_kind_at(carrier_pointee) == TypeKind.TY_GENERIC_INST:
+                    let carrier_base = self.sema_sym_to_codegen_sym(self.mir_type_d0_at(carrier_pointee))
+                    if carrier_base == self.sym_option or carrier_base == self.sym_result:
+                        carrier_sema = carrier_pointee
+                        borrowed_carrier = true
             var recv_is_result = false
-            if recv_resolved > 0 and self.mir_type_kind_at(recv_resolved) == TypeKind.TY_GENERIC_INST:
-                let recv_name_sym = self.mir_type_d0_at(recv_resolved)
+            if carrier_sema > 0 and self.mir_type_kind_at(carrier_sema) == TypeKind.TY_GENERIC_INST:
+                let recv_name_sym = self.sema_sym_to_codegen_sym(self.mir_type_d0_at(carrier_sema))
                 if recv_name_sym > 0:
                     recv_is_result = recv_name_sym == self.sym_result
             let recv = self.mir_intrinsic_arg(body, args_id, 0)
             let recv_ty = wl_type_of(recv)
             let recv_tk = wl_get_type_kind(recv_ty)
-            if recv_tk == wl_struct_type_kind():
+            if borrowed_carrier:
+                let carrier_ty = self.mir_sema_type_to_llvm(carrier_sema)
+                let carrier_tk = if carrier_ty != 0: wl_get_type_kind(carrier_ty) else: 0
+                let payload_sema = self.mir_builtin_variant_payload_sema_type(carrier_sema, 0)
+                let payload_resolved = if payload_sema > 0: self.mir_resolve_alias_at(payload_sema) else: 0
+                if carrier_tk == wl_pointer_type_kind():
+                    // Option[&T] and other pointer-shaped options use null as
+                    // None. The borrowed carrier operand is a pointer to that
+                    // stored pointer, so inspect it without moving the slot.
+                    let carrier_value = wl_build_load(self.builder, carrier_ty, recv)
+                    let non_null = wl_build_icmp(self.builder, wl_int_ne(), carrier_value, wl_const_null(carrier_ty))
+                    let borrowed_ptr_panic_bb = wl_append_bb(self.context, self.current_function, "unwrap.borrowed.ptr.panic")
+                    let borrowed_ptr_ok_bb = wl_append_bb(self.context, self.current_function, "unwrap.borrowed.ptr.ok")
+                    wl_build_cond_br(self.builder, non_null, borrowed_ptr_ok_bb, borrowed_ptr_panic_bb)
+                    wl_position_at_end(self.builder, borrowed_ptr_panic_bb)
+                    let borrowed_ptr_msg = if is_expect: self.mir_str_concat(user_msg, self.gen_string_literal_raw(": None")) else: self.gen_string_literal_raw("called unwrap on None")
+                    self.emit_runtime_panic_value(borrowed_ptr_msg, loc)
+                    wl_position_at_end(self.builder, borrowed_ptr_ok_bb)
+                    // A stored &T is already the exact payload reference. Other
+                    // pointer-shaped payloads remain viewed through their slot.
+                    if payload_resolved > 0 and self.mir_type_kind_at(payload_resolved) == TypeKind.TY_REF:
+                        result = carrier_value
+                    else:
+                        result = recv
+                else if carrier_tk == wl_struct_type_kind():
+                    let tag_ty = wl_struct_get_type_at(carrier_ty, 0)
+                    let tag_ptr = wl_build_struct_gep(self.builder, carrier_ty, recv, 0)
+                    let disc = wl_build_load(self.builder, tag_ty, tag_ptr)
+                    let is_ok = wl_build_icmp(self.builder, wl_int_eq(), disc, wl_const_int(tag_ty, 0, 0))
+                    let borrowed_panic_bb = wl_append_bb(self.context, self.current_function, "unwrap.borrowed.panic")
+                    let borrowed_ok_bb = wl_append_bb(self.context, self.current_function, "unwrap.borrowed.ok")
+                    wl_build_cond_br(self.builder, is_ok, borrowed_ok_bb, borrowed_panic_bb)
+                    wl_position_at_end(self.builder, borrowed_panic_bb)
+                    if recv_is_result:
+                        let err_sema = self.mir_builtin_variant_payload_sema_type(carrier_sema, 1)
+                        let err_ty = if err_sema > 0: self.mir_sema_type_to_llvm(err_sema) else: 0
+                        var err_val = if err_ty != 0: self.build_default_value(err_ty) else: wl_get_undef(wl_i32_type(self.context))
+                        if err_ty != 0 and wl_count_struct_elem_types(carrier_ty) > 1:
+                            let err_storage = wl_build_struct_gep(self.builder, carrier_ty, recv, 1)
+                            err_val = wl_build_load(self.builder, err_ty, wl_build_bitcast(self.builder, err_storage, wl_ptr_type(self.context)))
+                        let str_ty = self.resolve_named_type(self.intern.intern("str"))
+                        let err_dbg = self.gen_debug_format(err_val, err_sema, str_ty)
+                        let prefix = if is_expect: user_msg else: self.gen_string_literal_raw("called unwrap on Err")
+                        let sep = self.gen_string_literal_raw(": ")
+                        let prefix_with_sep = self.mir_str_concat(prefix, sep)
+                        let msg = self.mir_str_concat(prefix_with_sep, err_dbg)
+                        self.emit_runtime_panic_value(msg, loc)
+                    else:
+                        let msg = if is_expect: self.mir_str_concat(user_msg, self.gen_string_literal_raw(": None")) else: self.gen_string_literal_raw("called unwrap on None")
+                        self.emit_runtime_panic_value(msg, loc)
+                    wl_position_at_end(self.builder, borrowed_ok_bb)
+                    if wl_count_struct_elem_types(carrier_ty) > 1:
+                        let payload_storage = wl_build_struct_gep(self.builder, carrier_ty, recv, 1)
+                        if payload_resolved > 0 and self.mir_type_kind_at(payload_resolved) == TypeKind.TY_REF:
+                            let payload_ty = self.mir_sema_type_to_llvm(payload_sema)
+                            result = wl_build_load(self.builder, payload_ty, wl_build_bitcast(self.builder, payload_storage, wl_ptr_type(self.context)))
+                        else:
+                            result = wl_build_bitcast(self.builder, payload_storage, wl_ptr_type(self.context))
+                    else:
+                        // A zero-sized success payload has no storage field; any
+                        // stable address inside the borrowed carrier denotes it.
+                        result = recv
+                else:
+                    result = recv
+            else if recv_tk == wl_struct_type_kind():
                 let disc = wl_build_extract_value(self.builder, recv, 0)
                 let is_ok = wl_build_icmp(self.builder, wl_int_eq(), disc, wl_const_int(wl_type_of(disc), 0, 0))
                 let panic_bb = wl_append_bb(self.context, self.current_function, "unwrap.panic")

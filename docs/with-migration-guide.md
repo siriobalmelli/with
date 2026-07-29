@@ -1380,6 +1380,24 @@ m.remove("b")
 Go slices → `Vec[T]`. Go maps → `HashMap[K, V]`. Append →
 `.push()`. `delete` → `.remove()`.
 
+Positional access observes the stored element. An inferred binding from either
+`items.get(i)` or `items[i]` is a read-only `&T` view; use an owned annotation
+when a Copy snapshot is intended, and use `remove(i)` to transfer a non-Copy
+element out of the collection:
+
+```with
+let item = items.get(i)      // &T, tied to items
+let count: i32 = counts[i]   // independent Copy snapshot
+let owned = jobs.remove(i)   // Job, removed from jobs
+items[i].update()            // mutation uses the indexed place
+```
+
+When migrating an old `let x = v.get(i)` that later mutates `v`, decide whether
+`x` is an observer or a snapshot. Keep the inferred binding for observation;
+add an owned type for Copy data, clone deliberately, or use `remove` for an
+owned non-Copy value. Mutation through `v.get(i)` is intentionally read-only;
+spell mutation through `v[i]`.
+
 The inferred `val` retains the view type. When an independent scalar snapshot
 is intended, say so at the ownership boundary:
 

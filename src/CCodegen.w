@@ -5668,6 +5668,7 @@ fn cc_builtin_from_mir_intrinsic(intrinsic: MirIntrinsic) -> CcBuiltin:
     if intrinsic == MirIntrinsic.VEC_NEW: return CcBuiltin.VEC_NEW
     if intrinsic == MirIntrinsic.VEC_PUSH: return CcBuiltin.VEC_PUSH
     if intrinsic == MirIntrinsic.VEC_GET: return CcBuiltin.VEC_GET
+    if intrinsic == MirIntrinsic.VEC_GET_REF: return CcBuiltin.VEC_GET
     if intrinsic == MirIntrinsic.VEC_LEN: return CcBuiltin.VEC_LEN
     if intrinsic == MirIntrinsic.VEC_IS_EMPTY: return CcBuiltin.VEC_IS_EMPTY
     if intrinsic == MirIntrinsic.VEC_LEN32: return CcBuiltin.VEC_LEN32
@@ -5908,6 +5909,15 @@ impl CCodegen:
             let recv_ptr = self.vec_recv_ptr_text(body, args_id)
             let idx = self.operand_text(body, self.call_arg_operand(body, args_id, 1))
             let dst = self.place_text(body, dest_place)
+            let get_ret_resolved = self.sema.resolve_alias(ret_tid as TypeId)
+            if self.sema.get_type_kind(get_ret_resolved) == TypeKind.TY_REF:
+                // D27 E2: VEC_GET_REF returns the address of vec-owned storage.
+                // Copying sizeof(&T) bytes from the element fabricated a pointer
+                // from the element's leading bytes (Option.Some's zero tag became
+                // null) and lost the view entirely.
+                var ref_out = "    " ++ dst ++ " = (" ++ self.c_type(ret_tid, 0) ++ ")with_vec_get_ptr(" ++ recv_ptr ++ ", (int64_t)(" ++ idx ++ "));\n"
+                ref_out = ref_out ++ f"    goto bb{next_bb};"
+                return ref_out
             var out = "    memset(&(" ++ dst ++ "), 0, sizeof(" ++ dst ++ "));\n"
             out = out ++ "    if ((int64_t)(" ++ idx ++ ") >= 0 && (int64_t)(" ++ idx ++ ") < with_vec_len(" ++ recv_ptr ++ ")) " ++ cc_lbrace() ++ " memcpy(&(" ++ dst ++ "), with_vec_get_ptr(" ++ recv_ptr ++ ", (int64_t)(" ++ idx ++ ")), sizeof(" ++ dst ++ ")); " ++ cc_rbrace() ++ "\n"
             out = out ++ f"    goto bb{next_bb};"
@@ -6179,35 +6189,55 @@ impl CCodegen:
             let loc_text = self.operand_text(body, self.call_arg_operand(body, args_id, argc - 1))
             let user_msg = if is_expect: self.operand_text(body, self.call_arg_operand(body, args_id, 1)) else: "WITH_STR_LIT(\"\")"
             let dst = self.place_text(body, dest_place)
-            if self.type_is_payload_enum(opt_tid) != 0:
-                let opt_resolved = self.sema.resolve_alias(opt_tid as TypeId)
-                let is_result = self.sema.get_type_kind(opt_resolved) == TypeKind.TY_GENERIC_INST and self.sema.get_generic_inst_base(opt_resolved as i32) == self.sema.syms.result
-                let ok_variant = if is_result: self.payload_enum_named_variant(opt_tid, self.sema.syms.ok) else: self.payload_enum_named_variant(opt_tid, self.sema.syms.some)
-                let payload_variant = if ok_variant >= 0: ok_variant else: self.payload_enum_single_payload_variant(opt_tid)
+            let opt_resolved = self.sema.resolve_alias(opt_tid as TypeId)
+            var carrier_tid = opt_tid
+            var borrowed_carrier = false
+            if self.sema.get_type_kind(opt_resolved) == TypeKind.TY_REF and self.sema.get_type_d1(opt_resolved) == 0:
+                let carrier_candidate = self.sema.resolve_alias(self.sema.get_type_d0(opt_resolved) as TypeId)
+                if self.sema.get_type_kind(carrier_candidate) == TypeKind.TY_GENERIC_INST:
+                    let carrier_base = self.sema.get_generic_inst_base(carrier_candidate as i32)
+                    if carrier_base == self.sema.syms.option or carrier_base == self.sema.syms.result:
+                        carrier_tid = carrier_candidate as i32
+                        borrowed_carrier = true
+            if self.type_is_payload_enum(carrier_tid) != 0:
+                let carrier_resolved = self.sema.resolve_alias(carrier_tid as TypeId)
+                let carrier_text = if borrowed_carrier: "(*(" ++ opt_text ++ "))" else: opt_text
+                let is_result = self.sema.get_type_kind(carrier_resolved) == TypeKind.TY_GENERIC_INST and self.sema.get_generic_inst_base(carrier_resolved as i32) == self.sema.syms.result
+                let ok_variant = if is_result: self.payload_enum_named_variant(carrier_tid, self.sema.syms.ok) else: self.payload_enum_named_variant(carrier_tid, self.sema.syms.some)
+                let payload_variant = if ok_variant >= 0: ok_variant else: self.payload_enum_single_payload_variant(carrier_tid)
                 if payload_variant < 0:
                     self.fail("Option.unwrap/expect expects an enum with a payload-bearing success variant")
                     return "    abort();"
-                let ok_tag = self.sema.type_reflection_variant_discriminant(opt_tid, payload_variant)
+                let ok_tag = self.sema.type_reflection_variant_discriminant(carrier_tid, payload_variant)
                 var panic_msg = if is_expect: "with_str_concat(" ++ user_msg ++ ", WITH_STR_LIT(\": None\"))" else: "WITH_STR_LIT(\"called unwrap on None\")"
                 if is_result:
-                    let err_variant = self.payload_enum_named_variant(opt_tid, self.sema.syms.err)
+                    let err_variant = self.payload_enum_named_variant(carrier_tid, self.sema.syms.err)
                     if err_variant < 0:
                         self.fail("Result.unwrap/expect expects an Err variant")
                         return "    abort();"
-                    let err_payload_count = self.sema.type_reflection_variant_payload_count(opt_tid, err_variant)
+                    let err_payload_count = self.sema.type_reflection_variant_payload_count(carrier_tid, err_variant)
                     if err_payload_count > 0:
                         let err_field = self.payload_enum_variant_field(err_variant)
-                        let err_tid = self.sema.type_reflection_variant_payload_type_frozen(opt_tid, err_variant, 0)
-                        let err_debug = self.debug_format_expr(err_tid, opt_text ++ "." ++ err_field, "Result.unwrap/expect")
+                        let err_tid = self.sema.type_reflection_variant_payload_type_frozen(carrier_tid, err_variant, 0)
+                        let err_debug = self.debug_format_expr(err_tid, carrier_text ++ "." ++ err_field, "Result.unwrap/expect")
                         let prefix = if is_expect: user_msg else: "WITH_STR_LIT(\"called unwrap on Err\")"
                         panic_msg = "with_str_concat(with_str_concat(" ++ prefix ++ ", WITH_STR_LIT(\": \")), " ++ err_debug ++ ")"
                     else:
                         panic_msg = if is_expect: user_msg else: "WITH_STR_LIT(\"called unwrap on Err\")"
-                var out = "    if ((" ++ opt_text ++ ").tag != " ++ f"{ok_tag}" ++ ") with_panic(" ++ panic_msg ++ ", " ++ loc_text ++ ", 0);\n"
+                var out = "    if ((" ++ carrier_text ++ ").tag != " ++ f"{ok_tag}" ++ ") with_panic(" ++ panic_msg ++ ", " ++ loc_text ++ ", 0);\n"
+                let payload_text = carrier_text ++ "." ++ self.payload_enum_variant_field(payload_variant)
                 if has_ret != 0:
-                    out = out ++ "    " ++ dst ++ " = " ++ opt_text ++ "." ++ self.payload_enum_variant_field(payload_variant) ++ ";\n"
+                    if borrowed_carrier:
+                        let payload_tid = self.sema.type_reflection_variant_payload_type_frozen(carrier_tid, payload_variant, 0)
+                        let payload_resolved = self.sema.resolve_alias(payload_tid as TypeId)
+                        if self.sema.get_type_kind(payload_resolved) == TypeKind.TY_REF:
+                            out = out ++ "    " ++ dst ++ " = " ++ payload_text ++ ";\n"
+                        else:
+                            out = out ++ "    " ++ dst ++ " = &(" ++ payload_text ++ ");\n"
+                    else:
+                        out = out ++ "    " ++ dst ++ " = " ++ payload_text ++ ";\n"
                 else:
-                    out = out ++ "    (void)" ++ opt_text ++ "." ++ self.payload_enum_variant_field(payload_variant) ++ ";\n"
+                    out = out ++ "    (void)" ++ payload_text ++ ";\n"
                 out = out ++ f"    goto bb{next_bb};"
                 return out
             if self.type_is_raw_pointer_tid(opt_tid):

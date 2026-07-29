@@ -42189,7 +42189,7 @@ fn match_(__param_start_eptr: *const u8, __param_start_ecode: *const u8, __param
     }
 
     '__ci_bb_6350 {
-        if ((if (unsafe *__local_F__goto_692_12.temp_sptr[0]) == OP_ALT: 1 else: 0) != 0) {
+        if ((if (unsafe *(__local_F__goto_692_12.temp_sptr[0] as *const u8)) == OP_ALT: 1 else: 0) != 0) {
             goto '__ci_bb_6349
         } else {
             goto '__ci_bb_6351
@@ -42212,7 +42212,7 @@ fn match_(__param_start_eptr: *const u8, __param_start_ecode: *const u8, __param
     }
 
     '__ci_bb_6354 {
-        if ((if (unsafe *__local_F__goto_692_12.temp_sptr[0]) == OP_ALT: 1 else: 0) != 0) {
+        if ((if (unsafe *(__local_F__goto_692_12.temp_sptr[0] as *const u8)) == OP_ALT: 1 else: 0) != 0) {
             goto '__ci_bb_6353
         } else {
             goto '__ci_bb_6355
@@ -42543,7 +42543,7 @@ fn match_(__param_start_eptr: *const u8, __param_start_ecode: *const u8, __param
 
     '__ci_bb_6413 {
         ((unsafe *__local_F__goto_692_12).temp_sptr[0] = __local_F__goto_692_12.ecode + ((((((unsafe __local_F__goto_692_12.ecode[1]) as c_int) << (8 as c_uint)) | ((unsafe __local_F__goto_692_12.ecode[(1 + 1)]) as c_int)) as c_uint) as usize))
-        if ((if (unsafe *__local_F__goto_692_12.temp_sptr[0]) != OP_ALT: 1 else: 0) != 0) {
+        if ((if (unsafe *(__local_F__goto_692_12.temp_sptr[0] as *const u8)) != OP_ALT: 1 else: 0) != 0) {
             goto '__ci_bb_6416
         } else {
             goto '__ci_bb_6417
@@ -42819,7 +42819,7 @@ fn match_(__param_start_eptr: *const u8, __param_start_ecode: *const u8, __param
     }
 
     '__ci_bb_6465 {
-        (__local_start_ecode = __local_F__goto_692_12.temp_sptr[0] + ((_pcre2_OP_lengths_8[(unsafe *__local_F__goto_692_12.temp_sptr[0])] as c_uint) as usize))
+        (__local_start_ecode = __local_F__goto_692_12.temp_sptr[0] + ((_pcre2_OP_lengths_8[(unsafe *(__local_F__goto_692_12.temp_sptr[0] as *const u8))] as c_uint) as usize))
         ((unsafe *__local_F__goto_692_12).return_id = 11)
         goto '__ci_bb_2
     }
@@ -42862,7 +42862,7 @@ fn match_(__param_start_eptr: *const u8, __param_start_ecode: *const u8, __param
         if (__ci_expr_logic_796 != 0) {
             var __ci_expr_logic_797: c_int
 
-            if ((if (unsafe *__local_F__goto_692_12.temp_sptr[0]) == OP_ALT: 1 else: 0) != 0) {
+            if ((if (unsafe *(__local_F__goto_692_12.temp_sptr[0] as *const u8)) == OP_ALT: 1 else: 0) != 0) {
                 (__ci_expr_logic_797 = (if true: 1 else: 0))
             } else {
                 (__ci_expr_logic_797 = (if (if (unsafe *__local_next_ecode__goto_5721_18) == OP_ALT: 1 else: 0) != 0: 1 else: 0))
@@ -42910,7 +42910,7 @@ fn match_(__param_start_eptr: *const u8, __param_start_ecode: *const u8, __param
 
     '__ci_bb_6478 {
         ((unsafe *__local_F__goto_692_12).temp_sptr[0] = __local_next_ecode__goto_5721_18)
-        if ((if (unsafe *__local_F__goto_692_12.temp_sptr[0]) != OP_ALT: 1 else: 0) != 0) {
+        if ((if (unsafe *(__local_F__goto_692_12.temp_sptr[0] as *const u8)) != OP_ALT: 1 else: 0) != 0) {
             goto '__ci_bb_6482
         } else {
             goto '__ci_bb_6483
@@ -43813,7 +43813,7 @@ fn match_(__param_start_eptr: *const u8, __param_start_ecode: *const u8, __param
     }
 
     '__ci_bb_6650 {
-        (__local_start_ecode = __local_F__goto_692_12.temp_sptr[0] + ((_pcre2_OP_lengths_8[(unsafe *__local_F__goto_692_12.temp_sptr[0])] as c_uint) as usize))
+        (__local_start_ecode = __local_F__goto_692_12.temp_sptr[0] + ((_pcre2_OP_lengths_8[(unsafe *(__local_F__goto_692_12.temp_sptr[0] as *const u8))] as c_uint) as usize))
         ((unsafe *__local_F__goto_692_12).return_id = 5)
         goto '__ci_bb_2
     }
@@ -43859,7 +43859,7 @@ fn match_(__param_start_eptr: *const u8, __param_start_ecode: *const u8, __param
 
     '__ci_bb_6658 {
         ((unsafe *__local_F__goto_692_12).temp_sptr[0] = __local_F__goto_692_12.temp_sptr[0] + ((((((unsafe __local_F__goto_692_12.temp_sptr[0][1]) as c_int) << (8 as c_uint)) | ((unsafe __local_F__goto_692_12.temp_sptr[0][(1 + 1)]) as c_int)) as c_uint) as usize))
-        if ((if (unsafe *__local_F__goto_692_12.temp_sptr[0]) == OP_ALT: 1 else: 0) != 0) {
+        if ((if (unsafe *(__local_F__goto_692_12.temp_sptr[0] as *const u8)) == OP_ALT: 1 else: 0) != 0) {
             goto '__ci_bb_6659
         } else {
             goto '__ci_bb_6660

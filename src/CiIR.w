@@ -82,7 +82,7 @@ type CiTypePool {
 impl Copy for CiTypePool
 
 fn CiTypePool.new -> CiTypePool:
-    let ptr = with_alloc(256) as *mut CiTypePoolState
+    let ptr = with_alloc(sizeof[CiTypePoolState]()) as *mut CiTypePoolState
     unsafe *ptr = CiTypePoolState {
         kinds: Vec.new(),
         data0: Vec.new(),
@@ -303,7 +303,7 @@ type CiExprPool {
 impl Copy for CiExprPool
 
 fn CiExprPool.new -> CiExprPool:
-    let ptr = with_alloc(256) as *mut CiExprPoolState
+    let ptr = with_alloc(sizeof[CiExprPoolState]()) as *mut CiExprPoolState
     unsafe *ptr = CiExprPoolState {
         kinds: Vec.new(),
         data0: Vec.new(),
@@ -479,7 +479,7 @@ type CiStmtPool {
 impl Copy for CiStmtPool
 
 fn CiStmtPool.new -> CiStmtPool:
-    let ptr = with_alloc(256) as *mut CiStmtPoolState
+    let ptr = with_alloc(sizeof[CiStmtPoolState]()) as *mut CiStmtPoolState
     unsafe:
         *ptr = CiStmtPoolState {
             kinds: Vec.new(),
@@ -687,7 +687,7 @@ type CiDeclPool {
 impl Copy for CiDeclPool
 
 fn CiDeclPool.new -> CiDeclPool:
-    let ptr = with_alloc(256) as *mut CiDeclPoolState
+    let ptr = with_alloc(sizeof[CiDeclPoolState]()) as *mut CiDeclPoolState
     unsafe:
         *ptr = CiDeclPoolState {
             kinds: Vec.new(),
