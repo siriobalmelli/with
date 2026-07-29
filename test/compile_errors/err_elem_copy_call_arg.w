@@ -1,7 +1,10 @@
-//! expect-error: cannot take ownership of a non-Copy element copied out of a Vec
+//! expect-error: wrong argument type in call to 'consume'
 
 // D22 §13.6 / #715: a by-value parameter is an owned demand and cannot be
-// satisfied by copying a Drop-bearing element out of a Vec.
+// satisfied by copying a Drop-bearing element out of a Vec. Under D27 E1 the
+// element read types as &Thing, so the general call-arg check rejects it
+// structurally before the interim #715 gate — the E3-target diagnostic,
+// reached early.
 
 type Thing { vals: Vec[i32] }
 
