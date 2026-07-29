@@ -4068,6 +4068,28 @@ fn bs_check_migrate_longjmp_rejected(ctx: &ActionCtx, compiler_path: str, case_d
     if rc != 0: return rc
     bs_expect_absent(ctx, out_w, "longjmp rejected output")
 
+fn bs_check_migrate_unsupported_statement_rejected(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
+    let root = ctx.project_info().project_root()
+    let src = bs_join(case_dir, "unsupported_statement.c")
+    let out_w = bs_join(case_dir, "unsupported_statement.w")
+    let c_text = "int translated_first(int x) { return x + 1; }\n\nint unsupported_asm(int x) {\n  __asm__(\"nop\");\n  return x;\n}\n"
+    var rc = bs_write_fixture(ctx, src, c_text, "unsupported statement definition")
+    if rc != 0: return rc
+    var args: Vec[str] = Vec.new()
+    args |> push("migrate")
+    args |> push(bs_abs(root, src))
+    args |> push("--no-c-export")
+    args |> push("-o")
+    args |> push(bs_abs(root, out_w))
+    let result = bs_run_cli_capture_cwd(ctx, compiler_path, "migrate-unsupported-statement-rejected", args, 180000, case_dir)
+    if result.rc == 0:
+        return bs_fail(ctx, "unsupported statement migration unexpectedly succeeded")
+    rc = bs_assert_contains(ctx, result.stderr, "migrate: untranslatable function 'unsupported_asm': bailed at GCCAsmStmt", "unsupported_statement_rejected")
+    if rc != 0: return rc
+    rc = bs_assert_contains(ctx, result.stderr, "unsupported_statement.c:", "unsupported_statement_rejected")
+    if rc != 0: return rc
+    bs_expect_absent(ctx, out_w, "unsupported statement rejected output")
+
 fn bs_check_migrate_macro_body_string_literal(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
     let root = ctx.project_info().project_root()
     let src = bs_join(case_dir, "macro_body_string_literal.c")
@@ -4145,7 +4167,9 @@ pub fn run_cli_selfhost_migrate_basic_action(ctx: ActionCtx) -> i32:
     if rc != 0: return rc
     rc = bs_check_migrate_setjmp_rejected(ctx, compiler_path, bs_join(output_dir, "setjmp_rejected"))
     if rc != 0: return rc
-    bs_check_migrate_longjmp_rejected(ctx, compiler_path, bs_join(output_dir, "longjmp_rejected"))
+    rc = bs_check_migrate_longjmp_rejected(ctx, compiler_path, bs_join(output_dir, "longjmp_rejected"))
+    if rc != 0: return rc
+    bs_check_migrate_unsupported_statement_rejected(ctx, compiler_path, bs_join(output_dir, "unsupported_statement_rejected"))
 
 fn bs_check_migrate_libc_ctype(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
     let root = ctx.project_info().project_root()
