@@ -10149,6 +10149,24 @@ impl Sema:
                 return (f_name as i64) | ((f_type as i64) * 4294967296)
         0
 
+    // Literal-checking twin of struct_field_info_by_index that also resolves
+    // positional fields on an expected GENERIC INSTANCE (index -> base decl
+    // field name -> substituted type). Mutable because substitution may
+    // intern types; only the literal checker needs it.
+    mut fn struct_literal_field_expected_by_index(struct_type: i32, index: i32) -> i64:
+        let direct = self.struct_field_info_by_index(struct_type, index)
+        if direct != 0:
+            return direct
+        if struct_type == 0:
+            return 0
+        let resolved = self.resolve_alias(struct_type)
+        if self.get_type_kind(resolved) == TypeKind.TY_GENERIC_INST:
+            let f_name = self.type_reflection_field_name(resolved as i32, index)
+            if f_name != 0:
+                let f_type = self.struct_field_type(resolved as i32, f_name)
+                return (f_name as i64) | ((f_type as i64) * 4294967296)
+        0
+
     // Result type of `base?.member` (field access form). `base` may be
     // `Option[T]` or `Result[T, E]`; payload `T` carries the field. Per §10.3
     // type-aware desugaring: an already-carried field (`Option[U]` for Option,
@@ -11555,7 +11573,7 @@ impl Sema:
                     var field_expected = 0
                     if expected_struct_ty != 0:
                         if f_name == 0:
-                            let info = self.struct_field_info_by_index(expected_struct_ty as i32, fi)
+                            let info = self.struct_literal_field_expected_by_index(expected_struct_ty as i32, fi)
                             field_expected = (info / 4294967296) as i32
                         else:
                             field_expected = self.struct_field_type(expected_struct_ty as i32, f_name)
@@ -11581,6 +11599,15 @@ impl Sema:
                     // the actual drop suppression for all forms.
                     if self.ast.kind(f_value) == NodeKind.NK_IDENT and self.type_needs_drop(val_ty as i32) != 0:
                         self.mark_moved_if_consumed(f_value)
+                    // A field whose owned demand recorded a contextual-Copy
+                    // materialization contributes the DEMANDED type to the
+                    // literal's type-arg inference — the exact view type would
+                    // bind the instance at &T (Box2[&i32] instead of
+                    // Box2[i32], the derive-SoA get miscompile).
+                    if field_expected != 0 and self.has_contextual_copy_adjustment(f_value) != 0:
+                        val_types.push(field_expected)
+                    else:
+                        val_types.push(val_ty as i32)
                     // #626: an owned value coerced into a `&T` field (field is a
                     // reference, value is not) makes the struct borrow the value's
                     // origin. Record it; the ephemeral-escape check filters params
@@ -11592,7 +11619,6 @@ impl Sema:
                             let coerce_origin = self.place_root_sym(f_value)
                             if coerce_origin != 0:
                                 coerce_borrow_origins.push(coerce_origin)
-                    val_types.push(val_ty as i32)
                 // #626: record the coerced-borrow origins on the struct-literal node
                 // so collect_expr_view_deps surfaces them for the escape check.
                 if coerce_borrow_origins.len() > 0:
@@ -11656,7 +11682,7 @@ impl Sema:
                                 else:
                                     var default_expected = 0
                                     if expected_struct_ty != 0:
-                                        let info = self.struct_field_info_by_index(expected_struct_ty as i32, dfi)
+                                        let info = self.struct_literal_field_expected_by_index(expected_struct_ty as i32, dfi)
                                         default_expected = (info / 4294967296) as i32
                                     let default_ty = if default_expected != 0: self.check_expr_with_owned_demand(decl_default, default_expected as TypeId) else: self.check_expr(decl_default)
                                     if not self.ephemeral_types.contains(name):

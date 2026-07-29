@@ -8,7 +8,7 @@ fn singleton(value: i32):
     out.push(value)
     out
 
-fn consume(values: Vec[i32]):
+fn consume(values: Vec[i32]) -> i32:
     values.get(0)
 
 fn main:

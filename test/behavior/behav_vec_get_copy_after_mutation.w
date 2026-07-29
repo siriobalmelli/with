@@ -3,7 +3,7 @@ fn main:
     xs.push(1)
 
     let last = xs.len() - 1
-    let copied = xs.get(last)
+    let copied: i32 = xs.get(last)
 
     xs.pop()
     xs.push(2)

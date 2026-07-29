@@ -6617,6 +6617,13 @@ impl Sema:
                 if sema_debug_move_enabled() != 0:
                     with_eprint("[noncopy] type=" ++ self.pool_resolve(name) ++ " reason=drop")
                 return 0
+            // A distinct wrapper's Copy-ness follows its inner type — the
+            // compiler knows the payload; requiring an explicit impl would be
+            // ceremony (type NodeId = distinct i32 is Copy because i32 is).
+            if name > 0 and self.distinct_type_names.contains(name):
+                let distinct_inner = self.unwrap_builtin_arg_distinct(resolved as i32)
+                if distinct_inner != resolved as i32:
+                    return self.is_copy(distinct_inner as TypeId)
             if name > 0:
                 return self.select_trait_impl(name, self.syms.copy_trait)
             return 0

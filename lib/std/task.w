@@ -139,7 +139,9 @@ pub fn await_first[T](tasks: impl IntoIter[Task[T]]) -> T:
 
     var cleanup_i = 0
     defer:
-        while cleanup_i < total:
+        // The winner was removed from BOTH vecs, so indices stay aligned and
+        // the bound must be the live length, not the captured total.
+        while cleanup_i < pending.len() as i32:
             if finished.get(cleanup_i) == 0:
                 pending.get(cleanup_i).join_cleanup()
             cleanup_i = cleanup_i + 1
@@ -147,9 +149,9 @@ pub fn await_first[T](tasks: impl IntoIter[Task[T]]) -> T:
     while true:
         let ready = task_first_completed(&pending, &finished)
         if ready >= 0:
-            with finished.slot(ready) as mut slot:
-                slot.set(1)
-            return pending.get(ready).await
+            // D27: remove transfers the element — await needs the owned Task.
+            finished.remove(ready)
+            return pending.remove(ready).await
         task_wait_for_progress()
         if with_fiber_is_cancelled() != 0:
             task_cancel_point().await

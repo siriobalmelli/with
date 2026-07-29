@@ -49,10 +49,10 @@ fn main:
 
     let errs: Vec[E] = Vec.new()
     errs.push(E.Bad("vec"))
-    assert(f"{errs.get(0)}" == "Bad(vec)")
+    assert(f"{errs.remove(0)}" == "Bad(vec)")
 
     let toks: Vec[Token] = Vec.new()
     toks.push(Token.Text("bag"))
-    assert(f"{toks.get(0)}" == "Text(bag)")
+    assert(f"{toks.remove(0)}" == "Text(bag)")
 
     print("ok")

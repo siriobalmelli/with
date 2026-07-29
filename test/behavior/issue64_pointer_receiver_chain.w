@@ -5,7 +5,7 @@ type Inner {
 }
 
 unsafe fn push_via_vec_ptr(items: *mut Vec[Inner]):
-    (*items).get(0).tags.push(9)
+    (*items)[0].tags.push(9)
 
 unsafe fn push_via_inner_ptr(item: *mut Inner):
     (*item).tags.push(10)

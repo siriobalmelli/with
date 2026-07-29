@@ -10,7 +10,7 @@ fn generic_slot_set[T](x: T) -> T:
     values.push(empty)
     with values.slot(0) as mut slot:
         slot.set(Some(x))
-    values.get(0).unwrap()
+    values.remove(0).unwrap()
 
 fn main:
     // generic body, VecSlot.set
@@ -22,7 +22,7 @@ fn main:
     vs.push(e1)
     with vs.slot(0) as mut s1:
         s1.set(Some(11))
-    assert(vs.get(0).unwrap() == 11)
+    assert(vs.remove(0).unwrap() == 11)
 
     // VecRange.set value argument
     let vr: Vec[Option[i32]] = Vec.new()
@@ -32,7 +32,7 @@ fn main:
     vr.push(e3)
     with vr.range(0..2) as mut r:
         r.set(0, Some(12))
-    assert(vr.get(0).unwrap() == 12)
+    assert(vr.remove(0).unwrap() == 12)
 
     // SlotMap.insert and SlotMapSlot.set
     var sm: SlotMap[Option[i32]] = SlotMap.new()
