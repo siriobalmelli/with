@@ -96,7 +96,7 @@ pub fn InternPool.intern_str(self: &Self, s: str) -> Symbol:
 
     var raw = 1
     while raw < st.symbol_texts.len() as i32:
-        let existing_text = st.symbol_texts.get(raw as i64)
+        let existing_text: str = st.symbol_texts.get(raw as i64)
         if foundation_intern_text_eq(existing_text, s):
             st.symbol_map.insert(existing_text, raw)
             return symbol_from_raw(raw)
