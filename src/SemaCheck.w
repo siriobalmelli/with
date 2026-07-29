@@ -11316,7 +11316,10 @@ impl Sema:
         let result: TypeId = if target_ty != 0:
             target_ty as TypeId
         else:
-            self.add_type(TypeKind.TY_ARRAY, elem_type, elem_count, 0)
+            // Array types have no side-table payload: reuse the canonical type
+            // so frozen MIR lowering sees the same pointee identity as a
+            // spelled `&[N]T` parameter.
+            self.ensure_exact_type(TypeKind.TY_ARRAY, elem_type, elem_count, 0)
         self.typed_expr_types.insert(node, result as i32)
         if target_base == self.syms.btreeset:
             let ord_trait = self.pool_lookup_symbol("Ord")
