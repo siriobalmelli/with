@@ -7147,7 +7147,13 @@ impl Sema:
                 if self.expr_tree_contains_fstring(expr_node) != 0:
                     self.emit_error("nested f-strings are not allowed; bind the inner f-string to a name first", expr_node)
                 // Type-check the expression
-                let expr_ty = self.check_expr_value_context(expr_node)
+                var expr_ty = self.check_expr_value_context(expr_node)
+                // A view interpolant formats its pointee (formatting
+                // observes); validate the spec against the pointee type.
+                if expr_ty != 0:
+                    let view_resolved = self.resolve_alias(expr_ty)
+                    if self.get_type_kind(view_resolved) == TypeKind.TY_REF:
+                        expr_ty = self.get_type_d0(view_resolved) as TypeId
                 // Validate format spec against expression type
                 if spec_node != 0:
                     self.validate_fstring_spec(spec_node, expr_ty as i32, expr_node)

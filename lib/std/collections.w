@@ -204,8 +204,11 @@ impl[T: Ord] BTreeSet[T]:
                 self.values.push(value)
                 var j = self.values.len() - 1
                 while j > i:
-                    let left = self.values.get(j - 1)
-                    let right = self.values.get(j)
+                    // Typed lets snapshot the elements: a view of slot j-1
+                    // would observe the first set() and duplicate it (the
+                    // §3.2 view-liveness hazard E3 will reject).
+                    let left: T = self.values.get(j - 1)
+                    let right: T = self.values.get(j)
                     with self.values.slot(j - 1) as mut left_slot:
                         left_slot.set(right)
                     with self.values.slot(j) as mut right_slot:
@@ -242,12 +245,12 @@ impl[T: Ord] BTreeSet[T]:
         let out: BTreeSet[T] = BTreeSet[T].new()
         var self_i = 0
         while self_i < self.values.len():
-            let value = self.values.get(self_i)
+            let value: T = self.values.get(self_i)
             out.insert(value)
             self_i = self_i + 1
         var other_i = 0
         while other_i < other.values.len():
-            let value2 = other.values.get(other_i)
+            let value2: T = other.values.get(other_i)
             out.insert(value2)
             other_i = other_i + 1
         out
@@ -257,7 +260,7 @@ impl[T: Ord] BTreeSet[T]:
         let out: BTreeSet[T] = BTreeSet[T].new()
         var self_i = 0
         while self_i < self.values.len():
-            let value = self.values.get(self_i)
+            let value: T = self.values.get(self_i)
             if other.contains(value):
                 out.insert(value)
             self_i = self_i + 1
@@ -267,7 +270,7 @@ impl[T: Ord] BTreeSet[T]:
         let out: BTreeSet[T] = BTreeSet[T].new()
         var self_i = 0
         while self_i < self.values.len():
-            let value = self.values.get(self_i)
+            let value: T = self.values.get(self_i)
             if not other.contains(value):
                 out.insert(value)
             self_i = self_i + 1

@@ -3005,9 +3005,18 @@ impl MirBuilder:
             else if seg_kind == FStringSegmentKind.EXPR:
                 let expr_node = self.ast.get_extra(pos + 1)
                 let spec_node = self.ast.get_extra(pos + 2)
-                let expr_op = self.lower_expr(expr_node)
-                let expr_ty = self.expr_type(expr_node)
-                let resolved_ty = if expr_ty > 0: self.sema.resolve_alias(expr_ty) else: 0
+                var expr_op = self.lower_expr(expr_node)
+                var resolved_ty = if self.expr_type(expr_node) > 0: self.sema.resolve_alias(self.expr_type(expr_node)) else: 0
+                // A view interpolant formats its POINTEE — formatting observes
+                // (D22 transparency); reference bits must never reach the
+                // formatter (#728: stage2's own MIR dump printed sym garbage).
+                // Skip when lower_expr consumed a recorded adjustment: the
+                // operand is already the owned pointee.
+                if resolved_ty != 0 and self.sema.get_type_kind(resolved_ty) == TypeKind.TY_REF and self.has_contextual_copy_adjustment(expr_node) == 0:
+                    let fmt_pointee = self.sema.get_type_d0(resolved_ty)
+                    let fmt_ref_place = self.materialize_operand(expr_op, resolved_ty as i32, self.ast.get_start(expr_node))
+                    expr_op = self.body.new_operand(OperandKind.OK_COPY, self.new_deref_place(fmt_ref_place))
+                    resolved_ty = self.sema.resolve_alias(fmt_pointee as TypeId)
 
                 var handled = false
                 if spec_node != 0:
@@ -13020,7 +13029,10 @@ fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody
 
     // Set expected_type to the function's return type so that intrinsic calls
     // (Vec.new, HashMap.new) in tail position can resolve their generic inst type.
-    let ret_ty = builder.body.local_type_ids.get(0)
+    // Typed let: body lowering GROWS local_type_ids (every new_temp pushes),
+    // so an element view here dangles by the time the implicit-Ok wrap
+    // decision reads it — stage2's build() returned unwrapped Config bits.
+    let ret_ty: i32 = builder.body.local_type_ids.get(0)
     builder.expected_type = ret_ty
 
     let ret_is_void = ret_ty == builder.sema.ty_void
