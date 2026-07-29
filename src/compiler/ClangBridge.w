@@ -1431,6 +1431,12 @@ pub fn with_cimport_fn_is_noreturn(session: i64, idx: i32) -> i32:
         let s = session as *mut CImportSession
         if s as i64 == 0 or idx < 0 or idx >= (*s).decl_count: return 0
         let cursor = *(((*s).decls as i64 + idx as i64 * 32) as *const CXCursor)
+        let fn_type = clang_getCursorType(cursor)
+        let type_spelling = clang_getTypeSpelling(fn_type)
+        let type_cstr = clang_getCString(type_spelling)
+        let type_is_noreturn = c_strstr(type_cstr, "noreturn\0" as *const u8) as i64 != 0
+        clang_disposeString(type_spelling)
+        if type_is_noreturn: return 1
         // Check for __attribute__((noreturn)) via tokenization
         if clang_Cursor_hasAttrs(cursor) == 0: return 0
         let extent = clang_getCursorExtent(cursor)

@@ -60,6 +60,7 @@ pub extern fn strtod(nptr: *const i8, endptr: *mut *mut i8) -> f64
 pub extern fn setlocale(category: i32, locale: *const i8) -> *mut i8
 
 // process / time / POSIX
+pub extern fn abort() -> Never
 pub extern fn exit(code: i32) -> Never
 pub extern fn clock() -> u64
 pub extern fn time(tloc: *mut i64) -> i64

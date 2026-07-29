@@ -13321,6 +13321,7 @@ type CiGotoCfg {
     graph: StackifyGraph,
     stmt_blocks: Vec[i32],
     stmt_ids: Vec[i32],
+    noreturn_blocks: Vec[i32],
 }
 
 type CiGotoCfgContextState {
@@ -13385,6 +13386,7 @@ fn ci_goto_cfg_new(entry_desc: str) -> CiGotoCfgContext:
                 graph,
                 stmt_blocks: Vec.new(),
                 stmt_ids: Vec.new(),
+                noreturn_blocks: Vec.new(),
             },
             current: entry,
             ok: true,
@@ -13545,6 +13547,24 @@ fn ci_goto_cfg_top_target(stack: &Vec[i32]) -> i32:
         return -1
     stack.get(stack.len() - 1)
 
+fn ci_goto_cursor_is_noreturn_call(session: i64, cursor: i32) -> bool:
+    var call_cursor = cursor
+    var depth = 0
+    while depth < 16:
+        let kind = with_ci_cursor_kind(session, call_cursor)
+        if kind == CXK_CALL_EXPR:
+            var name = ci_call_name_from_source_text(with_ci_cursor_source_text(session, call_cursor))
+            if name.len() == 0 and with_ci_num_children(session, call_cursor) > 0:
+                name = ci_call_callee_name(session, with_ci_child(session, call_cursor, 0))
+            return ci_lookup_c_function_return_type(session, name) == "Never"
+        if kind != CXK_UNEXPOSED_STMT and kind != CXK_PAREN_EXPR and kind != CXK_IMPLICIT_CAST and kind != 100 and kind != 122:
+            return false
+        if with_ci_num_children(session, call_cursor) != 1:
+            return false
+        call_cursor = with_ci_child(session, call_cursor, 0)
+        depth = depth + 1
+    false
+
 impl CiGotoCfgContext:
     mut fn append_lowered_leaf(session: i64, cursor: i32, stmts: CiStmtPool, exprs: CiExprPool, types: CiTypePool, scope: CiScope):
         if not self.state.ok or self.state.current < 0:
@@ -13552,6 +13572,9 @@ impl CiGotoCfgContext:
         let stmt_id = stmts.lower_stmt_ir(session, cursor, exprs, types, 0, scope)
         if (stmt_id as i32) != 0:
             self.append_stmt(stmts, stmt_id)
+            if ci_goto_cursor_is_noreturn_call(session, cursor):
+                self.state.cfg.noreturn_blocks.push(self.state.current)
+                self.unreachable_current()
             return
         if not ci_is_null_like_stmt(session, cursor):
             if g_ci_bail_message.len() > 0:
@@ -14261,6 +14284,14 @@ fn ci_goto_cfg_reachable_blocks(cfg: &CiGotoCfg) -> Vec[i32]:
         wi = wi + 1
     reachable
 
+fn ci_goto_cfg_block_ends_noreturn(cfg: &CiGotoCfg, block: i32) -> bool:
+    var i: i64 = 0
+    while i < cfg.noreturn_blocks.len():
+        if cfg.noreturn_blocks.get(i) == block:
+            return true
+        i = i + 1
+    false
+
 impl CiStmtPool:
     fn native_goto_unreachable_stmt(exprs: CiExprPool) -> CiStmtId:
         let name = exprs.add_string("unreachable")
@@ -14389,10 +14420,11 @@ impl CiStmtPool:
                     else if self.kind(cfg.stmt_ids.get(li) as CiStmtId) != CiStmtKind.CIS_VAR_DECL:
                         block_ids.push(cfg.stmt_ids.get(li))
                 li = li + 1
-            let term = self.native_goto_emit_terminator(cfg, block, &labels, exprs)
-            if (term as i32) == 0:
-                return 0 as CiStmtId
-            block_ids.push(term as i32)
+            if not ci_goto_cfg_block_ends_noreturn(cfg, block):
+                let term = self.native_goto_emit_terminator(cfg, block, &labels, exprs)
+                if (term as i32) == 0:
+                    return 0 as CiStmtId
+                block_ids.push(term as i32)
 
             let start = self.extra_len()
             var bi: i64 = 0
@@ -14448,7 +14480,7 @@ impl CiStmtPool:
                 ctx.unreachable_current()
             else:
                 let ret_ty = ci_scope_get_return_type(scope)
-                if ret_ty == "void" or ret_ty.len() == 0:
+                if ret_ty == "void" or ret_ty == "Unit" or ret_ty.len() == 0:
                     let values: Vec[i32] = Vec.new()
                     ctx.return_current(values)
                 else:
@@ -14804,7 +14836,7 @@ fn ci_libc_symbol_kind_mask(name: str) -> i32:
     if name == "isgraph" or name == "ispunct" or name == "iscntrl": return CI_LIBC_KIND_FN
     if name == "tolower" or name == "toupper": return CI_LIBC_KIND_FN
     if ci_is_libm_fn(name): return CI_LIBC_KIND_FN
-    if name == "exit" or name == "clock" or name == "time" or name == "isatty": return CI_LIBC_KIND_FN
+    if name == "abort" or name == "exit" or name == "clock" or name == "time" or name == "isatty": return CI_LIBC_KIND_FN
     if name == "open" or name == "read" or name == "write" or name == "close": return CI_LIBC_KIND_FN
     if name == "lseek" or name == "unlink": return CI_LIBC_KIND_FN
     if name == "fcntl": return CI_LIBC_KIND_FN
