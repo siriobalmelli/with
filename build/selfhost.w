@@ -3975,7 +3975,7 @@ fn bs_check_migrate_variadic_stdarg(ctx: &ActionCtx, compiler_path: str, case_di
     let root = ctx.project_info().project_root()
     let src = bs_join(case_dir, "variadic_stdarg.c")
     let out_w = bs_join(case_dir, "variadic_stdarg.w")
-    let c_text = "#include <stdarg.h>\n\nint touch(int count, ...) {\n  va_list ap;\n  va_start(ap, count);\n  va_end(ap);\n  return count;\n}\n"
+    let c_text = "#include <stdarg.h>\n\nint touch(int count, ...) {\n  va_list ap;\n  va_start(ap, count);\n  va_end(ap);\n  return count;\n}\n\nconst char *mentions_va_arg(void) {\n  return \"va_arg(\";\n}\n"
     var rc = bs_write_fixture(ctx, src, c_text, "variadic stdarg definition")
     if rc != 0: return rc
     var args: Vec[str] = Vec.new()
@@ -3992,6 +3992,10 @@ fn bs_check_migrate_variadic_stdarg(ctx: &ActionCtx, compiler_path: str, case_di
     rc = bs_assert_contains(ctx, out_text, "with_va_start", "variadic_stdarg")
     if rc != 0: return rc
     rc = bs_assert_contains(ctx, out_text, "with_va_end", "variadic_stdarg")
+    if rc != 0: return rc
+    rc = bs_assert_contains(ctx, out_text, "fn mentions_va_arg()", "variadic_stdarg")
+    if rc != 0: return rc
+    rc = bs_assert_contains(ctx, out_text, "\"va_arg(\"", "variadic_stdarg")
     if rc != 0: return rc
     var check_args: Vec[str] = Vec.new()
     check_args |> push("check")

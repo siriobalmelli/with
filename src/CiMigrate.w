@@ -1363,13 +1363,6 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
             let loc_suffix = if sj_loc.len() > 0: " at " ++ sj_loc else: ""
             let msg = f"migrate: untranslatable function '{name}': setjmp/longjmp (call to '{sj_name}') is not supported{loc_suffix}"
             return ci_migrate_fail_function(msg)
-        let fn_source = with_ci_cursor_source_text(session, fn_cursor)
-        if ci_str_contains(fn_source, "va_arg(") or ci_str_contains(fn_source, "__builtin_va_arg"):
-            let va_loc = with_ci_cursor_location(session, fn_cursor)
-            let loc_suffix = if va_loc.len() > 0: " at " ++ va_loc else: ""
-            let msg = f"migrate: untranslatable function '{name}': va_arg is not supported{loc_suffix}"
-            return ci_migrate_fail_function(msg)
-
     var params = ""
     var has_unsupported = false
     var unsupported_reason = ""

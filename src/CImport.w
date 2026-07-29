@@ -6825,6 +6825,9 @@ impl CiExprPool:
         // to ci_lower_implicit_cast, falling back to plain peel-and-recurse
         // if the cast handler bails.
         if kind == 100:
+            if ci_unexposed_expr_is_va_arg(session, cursor):
+                ci_note_unsupported_va_arg(session, cursor)
+                return 0 as CiExprId
             let nc = with_ci_num_children(session, cursor)
             if with_ci_eval_int_valid(session, cursor) != 0 and not ci_expr_children_need_rvalue_lowering(session, cursor):
                 let ival = with_ci_eval_int_value(session, cursor)
@@ -7824,6 +7827,18 @@ fn ci_call_name_from_source_text(src: str) -> str:
     if s.byte_at(i as i64) != 40:
         return ""
     s.slice(0, i as i64)
+
+fn ci_unexposed_expr_is_va_arg(session: i64, cursor: i32) -> bool:
+    if with_ci_cursor_kind(session, cursor) != 100:
+        return false
+    let name = ci_call_name_from_source_text(with_ci_cursor_source_text(session, cursor))
+    name == "va_arg" or name == "__builtin_va_arg"
+
+fn ci_note_unsupported_va_arg(session: i64, cursor: i32):
+    if g_ci_bail_message.len() == 0:
+        g_ci_bail_message = "va_arg is not supported"
+        g_ci_bail_location = with_ci_cursor_location(session, cursor)
+        g_ci_bail_kind = with_ci_cursor_kind(session, cursor)
 
 impl CiExprPool:
     fn coerce_value_expr_for_target(session: i64, target_ty_id: CiTypeId, value_cursor: i32, value_id: CiExprId, types: CiTypePool) -> CiExprId:
@@ -8923,6 +8938,9 @@ impl CiStmtPool:
             return ci_value_ir_invalid()
 
         if kind == 100:
+            if ci_unexposed_expr_is_va_arg(session, cursor):
+                ci_note_unsupported_va_arg(session, cursor)
+                return ci_value_ir_invalid()
             if with_ci_eval_int_valid(session, cursor) != 0 and not ci_expr_children_need_rvalue_lowering(session, cursor):
                 let text_idx = exprs.add_string(ci_eval_int_text(session, cursor))
                 return ci_value_ir_plain(exprs.int_lit(text_idx, 0 as CiTypeId))
