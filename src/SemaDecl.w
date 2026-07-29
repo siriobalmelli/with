@@ -204,7 +204,7 @@ impl Sema:
         0
 
     mut fn resolve_deferred_value_type_slot(slot: i32, type_node: i32, opaque_message: str):
-        let current = self.type_extra.get(slot as i64)
+        let current: i32 = self.type_extra.get(slot as i64)
         if current != 0 and self.type_has_unresolved_parts(current) == 0:
             return
         let resolved = self.resolve_type_expr(type_node)
@@ -699,7 +699,7 @@ impl Sema:
             let plain_type_name_str = self.pool_resolve(name)
             var vpos = te_start
             for vi in 0..variant_count:
-                let v_name = self.type_extra.get(vpos as i64)
+                let v_name: i32 = self.type_extra.get(vpos as i64)
                 self.variant_lookup.insert(v_name, vi)
                 self.variant_type_ids.insert(v_name, tid as i32)
                 let v_name_str = self.pool_resolve(v_name)
@@ -777,7 +777,7 @@ impl Sema:
             let type_name_str = self.pool_resolve(name)
             var vpos = te_start
             for vi in 0..variant_count:
-                let v_name = self.type_extra.get(vpos as i64)
+                let v_name: i32 = self.type_extra.get(vpos as i64)
                 let disc_val = disc_vals.get(vi as i64)
                 self.variant_lookup.insert(v_name, vi)
                 self.variant_type_ids.insert(v_name, tid as i32)
@@ -1383,7 +1383,7 @@ impl Sema:
             let bi_impl: i32 = self.method_impl_nodes.get(fn_name).unwrap()
             let bi_tp_meta = self.ast.find_impl_type_params(bi_impl)
             if bi_tp_meta >= 0:
-                let bi_tp_count = self.ast.state.impl_type_params.get((bi_tp_meta + 2) as i64)
+                let bi_tp_count: i32 = self.ast.state.impl_type_params.get((bi_tp_meta + 2) as i64)
                 if bi_tp_count > 0:
                     self.register_generic_fn_node(fn_name, node)
                     self.fn_decl_source_paths.insert(fn_name, self.current_module_path)
@@ -1852,7 +1852,7 @@ impl Sema:
         let tp_start = self.trait_tp_starts.get(trait_idx as i64)
         var ti = 0
         while ti < tp_count and ti < arg_count:
-            let tp_sym = self.trait_tp_syms.get((tp_start + ti) as i64)
+            let tp_sym: i32 = self.trait_tp_syms.get((tp_start + ti) as i64)
             let arg_node = self.ast.get_extra(arg_start + ti)
             let arg_tid = self.resolve_type_expr(arg_node)
             if arg_tid != 0:
@@ -1895,7 +1895,7 @@ impl Sema:
             let default_body = self.trait_method_default_bodies.get(mt_idx as i64)
             if default_body == 0:
                 continue
-            let method_sym = self.trait_method_names.get(mt_idx as i64)
+            let method_sym: i32 = self.trait_method_names.get(mt_idx as i64)
             if self.impl_decl_has_method(impl_node, method_sym) != 0:
                 continue
             if self.trait_default_method_sig_exists(impl_type_sym, method_sym) != 0:
@@ -1911,7 +1911,7 @@ impl Sema:
                 let p_type_node = self.ast.fn_param_type(param_start, pi)
                 let p_tid = self.resolve_trait_default_method_type(p_type_node, impl_type_sym, impl_type_tid, trait_sym, impl_node)
                 self.sig_params.push(p_tid)
-            let ret_node = self.trait_method_ret_nodes.get(mt_idx as i64)
+            let ret_node: i32 = self.trait_method_ret_nodes.get(mt_idx as i64)
             let ret_tid = self.resolve_trait_default_method_type(ret_node, impl_type_sym, impl_type_tid, trait_sym, impl_node)
             let fn_extra_start = self.type_extra.len() as i32
             for pi in 0..param_count:
@@ -2197,9 +2197,9 @@ impl Sema:
                     let te_start = self.get_type_d1(resolved)
                     let field_count = self.get_type_d2(resolved)
                     for fi in 0..field_count:
-                        let ft = self.type_extra.get((te_start + fi * 3 + 1) as i64)
+                        let ft: i32 = self.type_extra.get((te_start + fi * 3 + 1) as i64)
                         if self.is_copy(ft) == 0:
-                            let field_name = self.type_extra.get((te_start + fi * 3) as i64)
+                            let field_name: i32 = self.type_extra.get((te_start + fi * 3) as i64)
                             self.emit_error("type '" ++ self.pool_resolve(type_name) ++ "' cannot implement Copy: field '" ++ self.pool_resolve(field_name) ++ "' is not Copy", node)
                             return
                     self.warn_large_copy_type(type_name, type_tid, node)
@@ -2219,7 +2219,7 @@ impl Sema:
                 let impl_extra_start = self.ast.get_data1(node)
                 let impl_at_count = self.ast.get_extra(impl_extra_start)
                 for ati in 0..at_count:
-                    let required_name = self.trait_assoc_names.get((at_start + ati) as i64)
+                    let required_name: i32 = self.trait_assoc_names.get((at_start + ati) as i64)
                     let default_type = self.trait_assoc_defaults.get((at_start + ati) as i64)
                     if default_type != 0:
                         continue
@@ -2236,10 +2236,10 @@ impl Sema:
                 for ati in 0..at_count:
                     let at_global_idx = at_start + ati
                     if at_global_idx < self.trait_assoc_bound_starts.len() as i32:
-                        let ab_start = self.trait_assoc_bound_starts.get(at_global_idx as i64)
-                        let ab_count = self.trait_assoc_bound_counts.get(at_global_idx as i64)
+                        let ab_start: i32 = self.trait_assoc_bound_starts.get(at_global_idx as i64)
+                        let ab_count: i32 = self.trait_assoc_bound_counts.get(at_global_idx as i64)
                         if ab_count > 0:
-                            let at_name_sym = self.trait_assoc_names.get(at_global_idx as i64)
+                            let at_name_sym: i32 = self.trait_assoc_names.get(at_global_idx as i64)
                             // Find the concrete type from impl's associated type bindings
                             var impl_at_type_node = 0
                             for iai in 0..impl_at_count:
@@ -2648,7 +2648,7 @@ impl Sema:
             let field_count = self.get_type_d2(resolved)
             var has_noncopy_field = 0
             for fi in 0..field_count:
-                let field_tid = self.type_extra.get((te_start + fi * 3 + 1) as i64)
+                let field_tid: i32 = self.type_extra.get((te_start + fi * 3 + 1) as i64)
                 if field_tid == 0 or self.is_copy(field_tid) == 0:
                     has_noncopy_field = 1
                     break

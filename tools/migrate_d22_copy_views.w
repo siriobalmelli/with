@@ -31,6 +31,12 @@ fn line_end(text: str, start: i64) -> i64:
 
 fn line_text(text: str, start: i64): text.slice(start, line_end(text, start))
 
+fn diagnostic_source_path(path: str) -> str:
+    let embedded_std = "<embedded-std>/"
+    if path.starts_with(embedded_std):
+        return "lib/" ++ path.slice(embedded_std.len(), path.len())
+    path
+
 fn parse_i32_text(text: str) -> i32:
     var out = 0
     for i in 0..text.len() as i32:
@@ -97,7 +103,7 @@ fn parse_diagnostics(text: str) -> Edits:
         if first_colon < 0:
             pos = block_end
             continue
-        let path = location.slice(0, first_colon)
+        let path = diagnostic_source_path(location.slice(0, first_colon))
 
         let label_prefix = "= label @"
         var label_at = find_from(block, label_prefix, 0)

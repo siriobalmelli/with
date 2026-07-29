@@ -574,7 +574,7 @@ impl MirBlockStack:
     fn pop_top() -> i32:
         let st = self.state
         unsafe {
-            let top = st.xs.get(st.xs.len() - 1)
+            let top: i32 = st.xs.get(st.xs.len() - 1)
             let _ = st.xs.pop()
             top
         }
@@ -3838,18 +3838,18 @@ impl Codegen:
             return
         if self.is_union_struct_index(struct_idx) or self.is_bitpacked_struct(ty):
             return
-        let field_start = self.struct_field_starts.get(struct_idx as i64)
-        let field_count = self.struct_field_counts.get(struct_idx as i64)
+        let field_start: i32 = self.struct_field_starts.get(struct_idx as i64)
+        let field_count: i32 = self.struct_field_counts.get(struct_idx as i64)
         // #697: field drops are member drops — always sentinel-guarded.
         self.member_drop_depth = self.member_drop_depth + 1
         var fi = field_count - 1
         while fi >= 0:
             let field_slot = field_start + fi
-            let field_sym = self.struct_field_names.get(field_slot as i64)
+            let field_sym: i32 = self.struct_field_names.get(field_slot as i64)
             if owner_sym != 0 and self.sema.drop_consumed_field(owner_sym, field_sym) != 0:
                 fi = fi - 1
                 continue
-            let field_ty = self.struct_field_types.get(field_slot as i64)
+            let field_ty: i64 = self.struct_field_types.get(field_slot as i64)
             let llvm_fi = self.get_llvm_field_index(ty, fi)
             let field_ptr = wl_build_struct_gep(self.builder, ty, ptr, llvm_fi)
             var field_sema_ty = 0
@@ -16734,7 +16734,7 @@ impl Codegen:
     mut fn gen_enum_variant_call_val(enum_owner_sym: i32, variant_sym: i32, args: &Vec[i64], arg_count: i32) -> i64:
         let variant_name = self.intern.resolve(variant_sym)
         for ei in 0..self.enum_llvm_types.len() as i32:
-            let enum_ty = self.enum_llvm_types.get(ei as i64)
+            let enum_ty: i64 = self.enum_llvm_types.get(ei as i64)
             let enum_sym_opt = self.enum_by_llvm.get(enum_ty)
             if enum_owner_sym > 0:
                 if not enum_sym_opt.is_some() or enum_sym_opt.unwrap() != enum_owner_sym:
@@ -16765,7 +16765,7 @@ impl Codegen:
                     tag_val = wl_const_int(wl_i32_type(self.context), vi as i64, 0)
                 wl_build_store(self.builder, tag_val, tag_ptr)
                 if arg_count > 0:
-                    let payload_ty = self.enum_variant_payloads.get((v_start + vi) as i64)
+                    let payload_ty: i64 = self.enum_variant_payloads.get((v_start + vi) as i64)
                     let elem_count = wl_count_struct_elem_types(enum_ty)
                     if payload_ty != 0 and elem_count > 1:
                         let payload = self.build_variant_payload_val(payload_ty, args, arg_count)
@@ -17875,8 +17875,8 @@ impl Codegen:
             let start = self.sema.concrete_specialization_subst_starts.get(si as i64)
             let count = self.sema.concrete_specialization_subst_counts.get(si as i64)
             for ti in 0..count:
-                let p_sym = self.sema.concrete_specialization_subst_syms.get((start + ti) as i64)
-                let p_ty = self.sema.concrete_specialization_subst_types.get((start + ti) as i64)
+                let p_sym: i32 = self.sema.concrete_specialization_subst_syms.get((start + ti) as i64)
+                let p_ty: i32 = self.sema.concrete_specialization_subst_types.get((start + ti) as i64)
                 let llvm_ty = if p_ty > 0: self.sema_type_to_llvm(p_ty) else: 0
                 if llvm_ty != 0:
                     self.type_binding_syms.push(p_sym)

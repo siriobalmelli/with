@@ -1783,7 +1783,7 @@ impl Sema:
         let te_start = self.get_type_d1(resolved)
         let field_count = self.get_type_d2(resolved)
         for fi in 0..field_count:
-            let field_tid = self.type_extra.get((te_start + fi * 3 + 1) as i64)
+            let field_tid: i32 = self.type_extra.get((te_start + fi * 3 + 1) as i64)
             if self.ct_type_can_supply_derive_trait(out, intern, field_tid, trait_sym, all_sym) == 0:
                 return 0
         1
@@ -1946,8 +1946,8 @@ impl Sema:
         let tp_start = ct_type_decl_tp_start(out, decl)
         let tp_count = ct_type_decl_tp_count(out, decl)
         for fi in 0..field_count:
-            let field_sym = self.type_extra.get((te_start + fi * 3) as i64)
-            let field_tid = self.type_extra.get((te_start + fi * 3 + 1) as i64)
+            let field_sym: i32 = self.type_extra.get((te_start + fi * 3) as i64)
+            let field_tid: i32 = self.type_extra.get((te_start + fi * 3 + 1) as i64)
             let field_type_node = out.get_extra(type_extra_start + 1 + fi * 3 + 1)
             if ct_type_node_mentions_type_param(out, field_type_node, tp_start, tp_count) != 0:
                 continue
@@ -2538,8 +2538,8 @@ impl Sema:
         let field_syms: Vec[i32] = Vec.new()
         let field_values: Vec[i32] = Vec.new()
         for fi in 0..field_count:
-            let field_sym = self.type_extra.get((te_start + fi * 3) as i64)
-            let field_tid = self.type_extra.get((te_start + fi * 3 + 1) as i64)
+            let field_sym: i32 = self.type_extra.get((te_start + fi * 3) as i64)
+            let field_tid: i32 = self.type_extra.get((te_start + fi * 3 + 1) as i64)
             let field_expr = ct_build_self_field(out, decl, self_sym, field_sym)
             let field_value =
                 if self.is_copy(field_tid as TypeId) != 0:

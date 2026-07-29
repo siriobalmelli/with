@@ -466,7 +466,7 @@ impl Codegen:
                     let arg_count = self.pool.state.impl_trait_type_args.get((tta_idx + 2) as i64)
                     var ti = 0
                     while ti < tp_count and ti < arg_count:
-                        let tp_sym = self.trait_tp_flat_syms.get((tp_start + ti) as i64)
+                        let tp_sym: i32 = self.trait_tp_flat_syms.get((tp_start + ti) as i64)
                         let arg_node = self.pool.get_extra(arg_start + ti)
                         let arg_ty = self.resolve_type(arg_node)
                         if arg_ty != 0:
@@ -505,7 +505,7 @@ impl Codegen:
                     let arg_count = self.pool.state.impl_trait_type_args.get((tta_idx + 2) as i64)
                     var ti = 0
                     while ti < tp_count and ti < arg_count:
-                        let tp_sym = self.trait_tp_flat_syms.get((tp_start + ti) as i64)
+                        let tp_sym: i32 = self.trait_tp_flat_syms.get((tp_start + ti) as i64)
                         let arg_node = self.pool.get_extra(arg_start + ti)
                         let arg_ty = self.resolve_type(arg_node)
                         if arg_ty != 0:
@@ -812,7 +812,7 @@ impl Codegen:
         for dtm_bb in 0..dtm_body.block_count():
             if dtm_bb < 0 or dtm_bb >= self.mir_bb_values.len() as i32:
                 continue
-            let dtm_llbb = self.mir_bb_values.get(dtm_bb as i64)
+            let dtm_llbb: i64 = self.mir_bb_values.get(dtm_bb as i64)
             wl_position_at_end(self.builder, dtm_llbb)
             let dtm_stmt_start = dtm_body.bb_stmt_starts.get(dtm_bb as i64)
             let dtm_stmt_count = dtm_body.bb_stmt_counts.get(dtm_bb as i64)
@@ -882,7 +882,7 @@ impl Codegen:
         if not trait_idx_opt.is_some():
             return
         let trait_idx = trait_idx_opt.unwrap()
-        let method_start = self.trait_method_starts.get(trait_idx as i64)
+        let method_start: i32 = self.trait_method_starts.get(trait_idx as i64)
         let method_count = self.trait_method_counts.get(trait_idx as i64)
         for mi in 0..method_count:
             self.generate_default_trait_method_for_impl_ext(impl_type_sym, method_start + mi, trait_sym, impl_node)
@@ -909,7 +909,7 @@ impl Codegen:
 
         let entries: Vec[i64] = Vec.new()
         for mi in 0..method_count:
-            let method_sym = self.trait_method_names.get((method_start + mi) as i64)
+            let method_sym: i32 = self.trait_method_names.get((method_start + mi) as i64)
             let method_flags = self.trait_method_flags.get((method_start + mi) as i64)
             let trait_method_idx = method_start + mi
             let param_start = self.trait_method_param_starts.get(trait_method_idx as i64)
@@ -1904,7 +1904,7 @@ impl Codegen:
         if self.is_union_struct_index(struct_idx):
             for fi in 0..source_field_count:
                 let field_name = self.sema.type_extra.get((te_start + fi * 3) as i64)
-                let field_tid = self.sema.type_extra.get((te_start + fi * 3 + 1) as i64)
+                let field_tid: i32 = self.sema.type_extra.get((te_start + fi * 3 + 1) as i64)
                 let value_node = self.struct_literal_field_value_node(cur, field_name, fi)
                 if value_node == 0:
                     continue
@@ -1921,7 +1921,7 @@ impl Codegen:
             return wl_const_named_struct(struct_ty, vec_data_i64(&fields), llvm_field_count)
         for fi in 0..source_field_count:
             let field_name = self.sema.type_extra.get((te_start + fi * 3) as i64)
-            let field_tid = self.sema.type_extra.get((te_start + fi * 3 + 1) as i64)
+            let field_tid: i32 = self.sema.type_extra.get((te_start + fi * 3 + 1) as i64)
             let default_node = self.sema.type_extra.get((te_start + fi * 3 + 2) as i64)
             let llvm_idx = self.get_llvm_field_index(struct_ty, fi)
             if llvm_idx < 0 or llvm_idx >= llvm_field_count:

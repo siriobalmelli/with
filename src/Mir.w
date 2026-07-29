@@ -724,7 +724,7 @@ impl MirBody:
         self.stmt_spans.push(span)
 
         if bb >= 0 and bb < self.bb_stmt_counts.len() as i32:
-            let old_count = self.bb_stmt_counts.get(bb as i64)
+            let old_count: i32 = self.bb_stmt_counts.get(bb as i64)
             if old_count == 0:
                 self.bb_stmt_starts.set_i32(bb, stmt_id)
             self.bb_stmt_counts.set_i32(bb, old_count + 1)
@@ -778,7 +778,7 @@ impl MirBody:
             return self.new_place(0)
 
         let base_local = self.place_locals.get(base as i64)
-        let base_proj_start = self.place_proj_starts.get(base as i64)
+        let base_proj_start: i32 = self.place_proj_starts.get(base as i64)
         let base_proj_count = self.place_proj_counts.get(base as i64)
 
         let new_proj_start = self.proj_kinds.len() as i32

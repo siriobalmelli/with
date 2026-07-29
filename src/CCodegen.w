@@ -372,7 +372,7 @@ fn c_emit_module(mir_mod: MirModule, ast: AstPool, intern: InternPool, sema: Sem
         callee_hint_cache: HashMap.new(),
     }
     for i in 0..cg.mir_mod.body_fn_syms.len() as i32:
-        let sym = cg.mir_mod.body_fn_syms.get(i as i64)
+        let sym: i32 = cg.mir_mod.body_fn_syms.get(i as i64)
         cg.body_fn_map.insert(sym, 1)
     let src = cg.emit_module()
     if cg.had_error != 0:
@@ -4426,7 +4426,7 @@ impl CCodegen:
         var match_sym = 0
         var match_score = -1
         for si in 0..self.sema.sig_names.len() as i32:
-            let sym = self.sema.sig_names.get(si as i64)
+            let sym: i32 = self.sema.sig_names.get(si as i64)
             if only_local_defs != 0 and self.has_body_for_sym(sym) == 0:
                 continue
             if self.sema.sig_get_param_count(si) != arg_count:
@@ -4501,7 +4501,7 @@ impl CCodegen:
         var match_sym = 0
         var match_score = -1
         for si in 0..self.sema.sig_names.len() as i32:
-            let sym = self.sema.sig_names.get(si as i64)
+            let sym: i32 = self.sema.sig_names.get(si as i64)
             if only_local_defs != 0 and self.has_body_for_sym(sym) == 0:
                 continue
             if self.sema.sig_get_param_count(si) != argc:
@@ -7993,7 +7993,7 @@ impl CCodegen:
             let start = self.sema.get_type_d1(resolved)
             let count = self.sema.get_type_d2(resolved)
             for fi in 0..count:
-                let raw_field_tid = self.sema.type_extra.get((start + fi * 3 + 1) as i64)
+                let raw_field_tid: i32 = self.sema.type_extra.get((start + fi * 3 + 1) as i64)
                 cur = self.collect_fn_types_from_tid(move cur, raw_field_tid)
             return cur
         if tk == TypeKind.TY_TUPLE:
@@ -8072,7 +8072,7 @@ impl CCodegen:
         while i < acc.out.len() as i32:
             if self.check_interrupted() != 0:
                 return acc.out
-            let tid = acc.out.get(i as i64)
+            let tid: i32 = acc.out.get(i as i64)
             i = i + 1
             let resolved = self.sema.resolve_alias(tid as TypeId) as i32
             let tk = self.sema.get_type_kind(resolved as TypeId)
@@ -8107,7 +8107,7 @@ impl CCodegen:
             for fi in 0..count:
                 if self.check_interrupted() != 0:
                     return acc.out
-                let raw_field_tid = self.sema.type_extra.get((start + fi * 3 + 1) as i64)
+                let raw_field_tid: i32 = self.sema.type_extra.get((start + fi * 3 + 1) as i64)
                 acc = self.collect_struct_types_from_tid(move acc, raw_field_tid)
 
         acc.out
@@ -8200,8 +8200,8 @@ impl CCodegen:
                     for fi in 0..count:
                         if self.check_interrupted() != 0:
                             return ""
-                        let field_sym = self.sema.type_extra.get((start + fi * 3) as i64)
-                        let raw_field_tid = self.sema.type_extra.get((start + fi * 3 + 1) as i64)
+                        let field_sym: i32 = self.sema.type_extra.get((start + fi * 3) as i64)
+                        let raw_field_tid: i32 = self.sema.type_extra.get((start + fi * 3 + 1) as i64)
                         let field_tid = self.sema.resolve_alias(self.effective_field_tid(resolved, field_sym, raw_field_tid) as TypeId)
                         if self.sema.get_type_kind(field_tid) != TypeKind.TY_STRUCT and self.sema.get_type_kind(field_tid) != TypeKind.TY_TUPLE and self.type_is_payload_enum(field_tid as i32) == 0:
                             continue
@@ -8266,7 +8266,7 @@ impl CCodegen:
                 for ti in 0..count:
                     if self.check_interrupted() != 0:
                         return ""
-                    let elem_tid = self.sema.type_extra.get((start + ti) as i64)
+                    let elem_tid: i32 = self.sema.type_extra.get((start + ti) as i64)
                     out = out ++ "    " ++ self.c_decl(elem_tid, f"field{ti}") ++ ";\n"
                 out = out ++ cc_rbrace() ++ ";\n\n"
                 continue
@@ -8326,8 +8326,8 @@ impl CCodegen:
             // Distinct types (single-field wrapper) → emit as typedef to underlying C type
             let name_sym = self.sema.get_type_d0(resolved)
             if count == 1 and self.sema.distinct_type_names.contains(name_sym):
-                let raw_field_tid = self.sema.type_extra.get((start + 1) as i64)
-                let field_sym = self.sema.type_extra.get(start as i64)
+                let raw_field_tid: i32 = self.sema.type_extra.get((start + 1) as i64)
+                let field_sym: i32 = self.sema.type_extra.get(start as i64)
                 let field_tid = self.effective_field_tid(resolved, field_sym, raw_field_tid)
                 out = out ++ "typedef " ++ self.c_decl(field_tid, name) ++ ";\n\n"
                 continue
@@ -8335,8 +8335,8 @@ impl CCodegen:
             for fi in 0..count:
                 if self.check_interrupted() != 0:
                     return ""
-                let field_sym = self.sema.type_extra.get((start + fi * 3) as i64)
-                let raw_field_tid = self.sema.type_extra.get((start + fi * 3 + 1) as i64)
+                let field_sym: i32 = self.sema.type_extra.get((start + fi * 3) as i64)
+                let raw_field_tid: i32 = self.sema.type_extra.get((start + fi * 3 + 1) as i64)
                 let field_tid = self.effective_field_tid(resolved, field_sym, raw_field_tid)
                 let field_name = cc_intern_resolve(self.intern, field_sym)
                 out = out ++ "    " ++ self.c_decl(field_tid, field_name) ++ ";\n"

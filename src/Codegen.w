@@ -2983,8 +2983,8 @@ impl Codegen:
         var max_payload_size: i64 = 0
         var invalid_layout = 0
         for vi in 0..variant_count:
-            let variant_name = self.sema.type_extra.get(pos as i64)
-            let payload_count = self.sema.type_extra.get((pos + 1) as i64)
+            let variant_name: i32 = self.sema.type_extra.get(pos as i64)
+            let payload_count: i32 = self.sema.type_extra.get((pos + 1) as i64)
             var payload_ty: i64 = 0
             if payload_count > 0:
                 let payload_tys = self.sema.resolve_generic_enum_payload_frozen(resolved, base_sym, variant_name, payload_count)
@@ -3213,7 +3213,7 @@ impl Codegen:
             let sym = self.sema.get_type_d0(resolved_tid)
             // Distinct types are transparent: same LLVM type as inner type
             if self.sema.distinct_type_names.contains(sym):
-                let inner_tid = self.sema.type_extra.get((self.sema.get_type_d1(resolved_tid) + 1) as i64)
+                let inner_tid: i32 = self.sema.type_extra.get((self.sema.get_type_d1(resolved_tid) + 1) as i64)
                 return self.sema_type_to_llvm(inner_tid)
             let cg_sym = self.sema_sym_to_codegen_sym(sym)
             if cg_sym != 0:
@@ -3224,7 +3224,7 @@ impl Codegen:
             let elem_count = self.sema.get_type_d1(resolved_tid)
             let elem_types: Vec[i64] = Vec.new()
             for i in 0..elem_count:
-                let elem_tid = self.sema.type_extra.get((elem_start + i) as i64)
+                let elem_tid: i32 = self.sema.type_extra.get((elem_start + i) as i64)
                 var elem_ty = self.sema_type_to_llvm(elem_tid)
                 if elem_ty == 0:
                     elem_ty = self.type_fallback()
@@ -3489,7 +3489,7 @@ impl Codegen:
         let existing_count = self.struct_field_counts.get(idx as i64)
         if existing_count > 0:
             return
-        let st_type = self.struct_llvm_types.get(idx as i64)
+        let st_type: i64 = self.struct_llvm_types.get(idx as i64)
         let extra_start = self.codegen_get_type_d1(resolved)
         let field_count = self.codegen_generator_state_field_count(resolved)
         self.struct_field_starts.set_i32(idx as i64, self.struct_field_names.len() as i32)
@@ -3512,7 +3512,7 @@ impl Codegen:
 
     mut fn declare_generator_state_types():
         for si in 0..self.sema.sig_names.len() as i32:
-            let fn_sym = self.sema.sig_names.get(si as i64)
+            let fn_sym: i32 = self.sema.sig_names.get(si as i64)
             if self.sema.generator_fn_state_types.contains(fn_sym):
                 self.declare_generator_state_type(self.sema.generator_fn_state_types.get(fn_sym).unwrap())
 
@@ -3608,7 +3608,7 @@ impl Codegen:
         if not self.struct_type_map.get(name_sym).is_some():
             self.predeclare_struct_type(name_sym)
         let idx: i32 = self.struct_type_map.get(name_sym).unwrap()
-        let st_type = self.struct_llvm_types.get(idx as i64)
+        let st_type: i64 = self.struct_llvm_types.get(idx as i64)
         self.struct_field_starts.set_i32(idx as i64, self.struct_field_names.len() as i32)
         self.struct_field_counts.set_i32(idx as i64, field_count)
 
@@ -3759,7 +3759,7 @@ impl Codegen:
         if not self.struct_type_map.get(name_sym).is_some():
             self.predeclare_struct_type(name_sym)
         let idx: i32 = self.struct_type_map.get(name_sym).unwrap()
-        let st_type = self.struct_llvm_types.get(idx as i64)
+        let st_type: i64 = self.struct_llvm_types.get(idx as i64)
         self.struct_field_starts.set_i32(idx as i64, self.struct_field_names.len() as i32)
         self.struct_field_counts.set_i32(idx as i64, field_count)
 
@@ -4575,7 +4575,7 @@ impl Codegen:
 
     mut fn declare_generator_next_functions():
         for si in 0..self.sema.sig_names.len() as i32:
-            let fn_sym = self.sema.sig_names.get(si as i64)
+            let fn_sym: i32 = self.sema.sig_names.get(si as i64)
             if not self.sema.generator_next_fn_syms.contains(fn_sym):
                 continue
             self.declare_function_from_sig(fn_sym, si, 1)
@@ -5534,7 +5534,7 @@ impl Codegen:
         self.mono_struct_tp_starts.insert(mono_sym, tp_flat_start)
         self.mono_struct_tp_counts.insert(mono_sym, tp_count)
         let mono_idx: i32 = self.struct_type_map.get(mono_sym).unwrap()
-        let mono_ty = self.struct_llvm_types.get(mono_idx as i64)
+        let mono_ty: i64 = self.struct_llvm_types.get(mono_idx as i64)
 
         let saved_bind_syms = self.type_binding_syms
         let saved_bind_tys = self.type_binding_types

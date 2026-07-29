@@ -246,7 +246,7 @@ fn format_source_styled(source: str, style: i32) -> str:
             // prefer-brace: close blocks when indent drops
             if style == 2:
                 while close_stack.len() > 0:
-                    let top = close_stack.get(close_stack.len() - 1)
+                    let top: i32 = close_stack.get(close_stack.len() - 1)
                     if line_indent > top:
                         break
                     let _ = close_stack.pop()

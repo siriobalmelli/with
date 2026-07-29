@@ -16,6 +16,7 @@ use CiMigrate
 use Overflow
 
 extern fn with_eprint(s: str) -> Unit
+extern fn with_str_clone(s: str) -> str
 extern fn with_fs_read_file(path: str) -> str
 extern fn with_fs_file_exists(path: str) -> i32
 extern fn with_fs_is_dir(path: str) -> i32
@@ -1762,7 +1763,7 @@ impl ComptimeEvaluator:
             let elem_count = self.sema.get_type_d1(resolved)
             let start = self.extra_values.len() as i32
             for i in 0..elem_count:
-                let elem_type = self.sema.type_extra.get((elem_start + i) as i64)
+                let elem_type: i32 = self.sema.type_extra.get((elem_start + i) as i64)
                 let elem_value = self.default_value_for_type(elem_type, node)
                 if elem_value.kind == ComptimeValueKind.CV_INVALID:
                     return elem_value
@@ -2216,7 +2217,7 @@ impl ComptimeEvaluator:
             return self.fail(node, "comptime field assignment target is not available")
         if self.slot_muts.get(idx as i64) == 0:
             return self.fail(node, "cannot assign to field of immutable value")
-        let base_value = self.slot_values.get(idx as i64)
+        let base_value: ComptimeValue = self.slot_values.get(idx as i64)
         if base_value.kind != ComptimeValueKind.CV_STRUCT:
             return self.fail(node, "comptime field assignment requires a struct value")
         let field_index = self.struct_field_index(base_value.type_id, field_sym)
@@ -4759,7 +4760,7 @@ impl ComptimeEvaluator:
             for si in 0..out.string_names.len() as i32:
                 source_paths.push(self.workspace_path(capability.project_root, out.string_names.get(si as i64)))
                 source_texts.push(out.string_sources.get(si as i64))
-            source_name = source_paths.get(0)
+            source_name = with_str_clone(source_paths.get(0))
             pool = comp.compile_entry_source_texts(source_paths, source_texts)
         else:
             let absolute_source = self.workspace_path(capability.project_root, source_path)
@@ -6030,7 +6031,7 @@ impl ComptimeEvaluator:
                 self.store_workspace_record(workspace_id, record)
                 record = ce_clone_workspace_record(&self.workspace_records[workspace_id as i64])
             if record.message_cursor < record.messages.len() as i32:
-                let message = record.messages.get(record.message_cursor as i64)
+                let message: ComptimeValue = record.messages.get(record.message_cursor as i64)
                 let phase = self.compiler_message_phase_id(message)
                 if phase >= 0:
                     record.intercept_phase = phase
@@ -7175,7 +7176,7 @@ impl ComptimeEvaluator:
             return comptime_control_value(self.empty_string_builder_value(result_type2))
         let callee_slot = self.lookup_slot_index(fn_sym)
         if callee_slot >= 0:
-            let callee_value = self.slot_values.get(callee_slot as i64)
+            let callee_value: ComptimeValue = self.slot_values.get(callee_slot as i64)
             if callee_value.kind == ComptimeValueKind.CV_FN:
                 return self.eval_fn_value_call(callee_value, self.ast.get_data1(node), arg_count, node)
             return self.fail(node, "callee is not a comptime function value")
@@ -7465,7 +7466,7 @@ impl ComptimeEvaluator:
                     let param_name = self.ast.fn_param_name(param_start, i)
                     let param_idx = self.lookup_slot_index(param_name)
                     if param_idx >= 0:
-                        let param_value = self.slot_values.get(param_idx as i64)
+                        let param_value: ComptimeValue = self.slot_values.get(param_idx as i64)
                         if self.match_pattern(ppat, param_value, ppat) == 0:
                             self.pop_scope()
                             self.active_fn_syms.pop()

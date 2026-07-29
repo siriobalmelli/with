@@ -397,7 +397,7 @@ impl StackifyDfsState:
         while stack_block.len() > 0:
             let top = stack_block.len() - 1
             let blk = stack_block.get(top)
-            let idx = stack_idx.get(top)
+            let idx: i32 = stack_idx.get(top)
             let b = graph.blocks.get(blk as i64)
             if idx < b.succs_count:
                 // #183: succ must be computed before set_i32 — codegen re-reads idx after mutation
@@ -532,7 +532,7 @@ fn stackify_compute_analysis(graph: &StackifyGraph) -> StackifyAnalysis:
     var rpo_pos = stackify_bool_vec(n, stackify_invalid())
     var ri = post_ord.len() as i32 - 1
     while ri >= 0:
-        let block = post_ord.get(ri as i64)
+        let block: i32 = post_ord.get(ri as i64)
         rpo_pos.set_i32(block as i64, post_ord.len() as i32 - 1 - ri)
         ri = ri - 1
     let preds = stackify_compute_preds(graph)
@@ -547,12 +547,12 @@ fn stackify_compute_analysis(graph: &StackifyGraph) -> StackifyAnalysis:
     var merge_nodes = stackify_bool_vec(n, 0)
     var bi = 0
     while bi < rpo.len() as i32:
-        let block = rpo.get(bi as i64)
+        let block: i32 = rpo.get(bi as i64)
         let b = graph.blocks.get(block as i64)
         var si = 0
         while si < b.succs_count:
             let succ = graph.succs.get((b.succs_start + si) as i64)
-            let succ_rpo = rpo_pos.get(succ as i64)
+            let succ_rpo: i32 = rpo_pos.get(succ as i64)
             if succ_rpo <= bi:
                 if not stackify_dominates(idom, succ, block):
                     return StackifyAnalysis {
@@ -574,7 +574,7 @@ fn stackify_compute_analysis(graph: &StackifyGraph) -> StackifyAnalysis:
         bi = bi + 1
     var sr = 0
     while sr < rpo.len() as i32:
-        let block = rpo.get(sr as i64)
+        let block: i32 = rpo.get(sr as i64)
         let b = graph.blocks.get(block as i64)
         if b.term_kind == StackifyTermKind.Select:
             var ti = 0
@@ -612,7 +612,7 @@ impl StackifyContext:
         if self.result_starts.len() == 0:
             return 0
         let idx = self.result_starts.len() as i32 - 1
-        let start = self.result_starts.get(idx as i64)
+        let start: i32 = self.result_starts.get(idx as i64)
         let _ = self.result_starts.pop()
         let _ = self.result_counts.pop()
         start
@@ -659,10 +659,12 @@ impl StackifyContext:
 
     mut fn tree_add_block_params(block: i32) -> i32:
         let b = self.graph.blocks.get(block as i64)
+        let params_start: i32 = b.params_start
+        let params_count: i32 = b.params_count
         let start = self.tree.values.len() as i32
         var i = 0
-        while i < b.params_count:
-            self.tree.values.push(self.graph.block_params.get((b.params_start + i) as i64))
+        while i < params_count:
+            self.tree.values.push(self.graph.block_params.get((params_start + i) as i64))
             i = i + 1
         start
 
@@ -734,7 +736,7 @@ impl StackifyContext:
         let start = self.merge_items.len() as i32
         var ri = self.analysis.rpo.len() as i32 - 1
         while ri >= 0:
-            let child = self.analysis.rpo.get(ri as i64)
+            let child: i32 = self.analysis.rpo.get(ri as i64)
             if self.analysis.idom.get(child as i64) == block and self.analysis.merge_nodes.get(child as i64) != 0:
                 self.merge_items.push(child)
             ri = ri - 1
@@ -776,25 +778,29 @@ impl StackifyContext:
 
     mut fn do_select(block: i32):
         let b = self.graph.blocks.get(block as i64)
+        let selector_value: i32 = b.selector_value
+        let targets_start: i32 = b.targets_start
+        let targets_count: i32 = b.targets_count
+        let default_target: i32 = b.default_target
         let labels_start = self.tree.labels.len() as i32
         var ti = 0
-        while ti < b.targets_count:
+        while ti < targets_count:
             self.tree.labels.push(ti)
             ti = ti + 1
         var select_node = stackify_empty_node(StackifyNodeKind.Select)
-        select_node.value = b.selector_value
+        select_node.value = selector_value
         select_node.labels_start = labels_start
-        select_node.labels_count = b.targets_count
-        select_node.default_label = b.targets_count
+        select_node.labels_count = targets_count
+        select_node.default_label = targets_count
         let select_id = self.tree_add_node(move select_node)
 
         var body: Vec[i32] = Vec.new()
         body.push(select_id)
-        var extra = b.targets_count + 1
+        var extra = targets_count + 1
         var idx = 0
-        while idx < b.targets_count + 1:
+        while idx < targets_count + 1:
             extra = extra - 1
-            let target_index = if idx < b.targets_count: b.targets_start + idx else: b.default_target
+            let target_index = if idx < targets_count: targets_start + idx else: default_target
             let target = self.graph.targets.get(target_index as i64)
             let resolved = self.resolve_target(target.block)
             if resolved < 0:
@@ -884,7 +890,7 @@ impl StackifyContext:
         let count = self.merge_counts.get(frame_idx as i64)
         let rel = merge_start
         if rel < count:
-            let first = self.merge_items.get((start + rel) as i64)
+            let first: i32 = self.merge_items.get((start + rel) as i64)
             self.push_process(StackifyProcessKind.DomSubtree, first, 0, 0, 0)
             self.push_ctrl(StackifyCtrlKind.Block, first)
             self.result_push_frame()
@@ -897,31 +903,36 @@ impl StackifyContext:
         let leaf_id = self.tree_add_node(move leaf)
         self.result_push(leaf_id)
         let b = self.graph.blocks.get(block as i64)
-        if b.term_kind == StackifyTermKind.Br:
-            self.push_process(StackifyProcessKind.DoBranch, block, 0, 0, b.targets_start)
+        let term_kind: i32 = b.term_kind
+        let targets_start: i32 = b.targets_start
+        let cond_value: i32 = b.cond_value
+        let return_values_start: i32 = b.return_values_start
+        let return_values_count: i32 = b.return_values_count
+        if term_kind == StackifyTermKind.Br:
+            self.push_process(StackifyProcessKind.DoBranch, block, 0, 0, targets_start)
             return
-        if b.term_kind == StackifyTermKind.CondBr:
-            let true_target = b.targets_start
-            let false_target = b.targets_start + 1
+        if term_kind == StackifyTermKind.CondBr:
+            let true_target = targets_start
+            let false_target = targets_start + 1
             self.push_ctrl(StackifyCtrlKind.IfThenElse, stackify_invalid())
-            self.push_process(StackifyProcessKind.FinishIf, 0, 0, b.cond_value, 0)
+            self.push_process(StackifyProcessKind.FinishIf, 0, 0, cond_value, 0)
             self.push_process(StackifyProcessKind.DoBranch, block, 0, 0, false_target)
             self.push_process(StackifyProcessKind.Else, 0, 0, 0, 0)
             self.push_process(StackifyProcessKind.DoBranch, block, 0, 0, true_target)
             self.result_push_frame()
             return
-        if b.term_kind == StackifyTermKind.Select:
+        if term_kind == StackifyTermKind.Select:
             self.push_process(StackifyProcessKind.DoSelect, block, 0, 0, 0)
             return
-        if b.term_kind == StackifyTermKind.Return:
+        if term_kind == StackifyTermKind.Return:
             let vals: Vec[i32] = Vec.new()
             var i = 0
-            while i < b.return_values_count:
-                vals.push(self.graph.return_values.get((b.return_values_start + i) as i64))
+            while i < return_values_count:
+                vals.push(self.graph.return_values.get((return_values_start + i) as i64))
                 i = i + 1
             var ret = stackify_empty_node(StackifyNodeKind.Return)
             ret.values_start = self.tree_add_values_from_vec(vals)
-            ret.values_count = b.return_values_count
+            ret.values_count = return_values_count
             let id = self.tree_add_node(move ret)
             self.result_push(id)
             return

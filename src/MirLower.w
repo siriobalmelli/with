@@ -353,10 +353,10 @@ impl MirBuilder:
         let cleanup_idx = self.with_cleanup_index_for_guard(guard_local)
         if cleanup_idx < 0:
             return
-        let method_sym = self.with_cleanup_method_syms.get(cleanup_idx as i64)
-        let payload_local = self.with_cleanup_payload_locals.get(cleanup_idx as i64)
-        let sig_idx = self.with_cleanup_sigs.get(cleanup_idx as i64)
-        let mono_sym = self.with_cleanup_mono_syms.get(cleanup_idx as i64)
+        let method_sym: i32 = self.with_cleanup_method_syms.get(cleanup_idx as i64)
+        let payload_local: i32 = self.with_cleanup_payload_locals.get(cleanup_idx as i64)
+        let sig_idx: i32 = self.with_cleanup_sigs.get(cleanup_idx as i64)
+        let mono_sym: i32 = self.with_cleanup_mono_syms.get(cleanup_idx as i64)
         let guard_ty = self.local_type(guard_local)
         let guard_place = self.place_for_local(guard_local)
         let guard_expected = if sig_idx >= 0 and self.sema.sig_get_param_count(sig_idx) > 0: self.sema.sig_param_type(sig_idx, 0) else: 0
@@ -538,7 +538,7 @@ impl MirBuilder:
         let base_local = self.place_base_local(place)
         if base_local < 0:
             return
-        let path_start = self.body.place_proj_starts.get(place as i64)
+        let path_start: i32 = self.body.place_proj_starts.get(place as i64)
         for i in 0..self.moved_field_base_locals.len() as i32:
             if self.moved_field_path_matches(i, base_local, path_start, path_count) != 0:
                 return
@@ -756,7 +756,7 @@ impl MirBuilder:
     mut fn queue_field_move_reset(place: i32) -> Unit:
         let field_ty = self.place_local_type(place)
         if field_ty > 0 and self.sema.type_needs_drop_frozen(field_ty) != 0:
-            let base_local = self.body.place_locals.get(place as i64)
+            let base_local: i32 = self.body.place_locals.get(place as i64)
             if with_getenv_str("WITH_TRACE_RESETS").len() > 0:
                 with_eprint(f"[reset-q] field place={place} ty={field_ty} base={base_local} depth={self.pending_reset_field_places.len() as i32}")
             self.pending_reset_field_places.push(place)
@@ -773,7 +773,7 @@ impl MirBuilder:
         let start = self.stmt_temp_starts.get(frame_idx as i64)
         var i = self.stmt_temp_locals.len() as i32 - 1
         while i >= start:
-            let local_id = self.stmt_temp_locals.get(i as i64)
+            let local_id: i32 = self.stmt_temp_locals.get(i as i64)
             if local_id >= 0:
                 self.emit_drop_entry(local_id, DropKind.DK_VALUE)
             i = i - 1
@@ -809,7 +809,7 @@ impl MirBuilder:
         // land on the same path as the move — so they need no sentinel guard.
         var ti = temp_start
         while ti < self.pending_move_temp_locals.len() as i32:
-            let tl = self.pending_move_temp_locals.get(ti as i64)
+            let tl: i32 = self.pending_move_temp_locals.get(ti as i64)
             let tl_place = self.place_for_local(tl)
             self.emit_drop_stmt(tl_place, "move-arg-temp", 0)
             ti = ti + 1
@@ -817,7 +817,7 @@ impl MirBuilder:
             self.pending_move_temp_locals.pop()
         var ri = start
         while ri < self.pending_reset_locals.len() as i32:
-            let rl = self.pending_reset_locals.get(ri as i64)
+            let rl: i32 = self.pending_reset_locals.get(ri as i64)
             let zop = self.body.gen_zero_operand(self.local_type(rl))
             let rval = self.body.new_rvalue(RvalueKind.RK_USE, zop, 0, 0)
             self.body.push_stmt(self.cur_bb, StmtKind.Assign, self.place_for_local(rl), rval, 0)
@@ -830,8 +830,8 @@ impl MirBuilder:
         // existing guarded per-field drop then skips the blanked field.
         var fri = field_start
         while fri < self.pending_reset_field_places.len() as i32:
-            let fplace = self.pending_reset_field_places.get(fri as i64)
-            let fty = self.pending_reset_field_types.get(fri as i64)
+            let fplace: i32 = self.pending_reset_field_places.get(fri as i64)
+            let fty: i32 = self.pending_reset_field_types.get(fri as i64)
             if with_getenv_str("WITH_TRACE_RESETS").len() > 0:
                 with_eprint(f"[reset-f] field place={fplace} ty={fty} from={field_start}")
             let fzop = self.body.gen_zero_operand(fty)
@@ -1030,7 +1030,7 @@ impl MirBuilder:
     mut fn emit_defers_for_range(start: i32, end: i32):
         var i = end - 1
         while i >= start:
-            let defer_body = self.defer_nodes.get(i as i64)
+            let defer_body: i32 = self.defer_nodes.get(i as i64)
             let _ = self.lower_expr(defer_body)
             i = i - 1
 
@@ -1045,12 +1045,12 @@ impl MirBuilder:
         var lowest_drop_start = self.drop_local_ids.len() as i32
         var lowest_defer_start = self.defer_nodes.len() as i32
         while scope_idx >= target.break_scope_depth:
-            let defer_start = self.defer_scope_starts.get(scope_idx as i64)
+            let defer_start: i32 = self.defer_scope_starts.get(scope_idx as i64)
             let defer_end = if scope_idx + 1 < self.defer_scope_starts.len() as i32: self.defer_scope_starts.get((scope_idx + 1) as i64) else: self.defer_nodes.len() as i32
             lowest_defer_start = defer_start
             self.emit_defers_for_range(defer_start, defer_end)
 
-            let drop_start = self.drop_scope_starts.get(scope_idx as i64)
+            let drop_start: i32 = self.drop_scope_starts.get(scope_idx as i64)
             let drop_end = if scope_idx + 1 < self.drop_scope_starts.len() as i32: self.drop_scope_starts.get((scope_idx + 1) as i64) else: self.drop_local_ids.len() as i32
             lowest_drop_start = drop_start
             self.emit_drops_for_range(drop_start, drop_end)
@@ -1068,14 +1068,14 @@ impl MirBuilder:
     mut fn emit_defers_for_return():
         var i = self.defer_nodes.len() as i32 - 1
         while i >= 0:
-            let defer_body = self.defer_nodes.get(i as i64)
+            let defer_body: i32 = self.defer_nodes.get(i as i64)
             let _ = self.lower_expr(defer_body)
             i = i - 1
 
     mut fn emit_errdefers_for_return():
         var i = self.errdefer_nodes.len() as i32 - 1
         while i >= 0:
-            let errdefer_body = self.errdefer_nodes.get(i as i64)
+            let errdefer_body: i32 = self.errdefer_nodes.get(i as i64)
             let _ = self.lower_expr(errdefer_body)
             i = i - 1
 
@@ -2282,7 +2282,7 @@ impl MirBuilder:
 
         for pi in 0..proj_count:
             let proj_kind = self.body.proj_kinds.get((proj_start + pi) as i64)
-            let proj_d0 = self.body.proj_d0.get((proj_start + pi) as i64)
+            let proj_d0: i32 = self.body.proj_d0.get((proj_start + pi) as i64)
             let resolved = self.sema.resolve_alias(current_ty) as i32
             let tk = self.sema.get_type_kind(resolved)
 
@@ -2346,7 +2346,7 @@ impl MirBuilder:
         if operand_id < 0 or operand_id >= self.body.operand_kinds.len() as i32:
             return self.sema.ty_void as i32
         let kind = self.body.operand_kinds.get(operand_id as i64)
-        let data = self.body.operand_d0.get(operand_id as i64)
+        let data: i32 = self.body.operand_d0.get(operand_id as i64)
         if kind == OperandKind.OK_CONSTANT:
             if data >= 0 and data < self.body.const_types.len() as i32:
                 return self.body.const_types.get(data as i64)
@@ -2899,7 +2899,7 @@ impl MirBuilder:
         let name_start = if self.sema.regex_capture_name_starts.contains(regex_node): self.sema.regex_capture_name_starts.get(regex_node).unwrap() else: 0
         var ni = 0
         while ni < name_count:
-            let sym = self.sema.regex_capture_name_syms.get((name_start + ni) as i64)
+            let sym: i32 = self.sema.regex_capture_name_syms.get((name_start + ni) as i64)
             if sym != 0:
                 let value_op = self.lower_captures_text_call(captures_place, 0, sym)
                 self.bind_regex_capture_local(sym, value_op, self.ast.get_start(regex_node))
@@ -3510,7 +3510,7 @@ impl MirBuilder:
             self.string_field_alias_flags.set_i32(idx as i64, flags)
             return
         let path_start = self.string_field_alias_path_syms.len() as i32
-        let proj_start = self.body.place_proj_starts.get(place as i64)
+        let proj_start: i32 = self.body.place_proj_starts.get(place as i64)
         for i in 0..field_count:
             self.string_field_alias_path_kinds.push(self.body.proj_kinds.get((proj_start + i) as i64))
             self.string_field_alias_path_syms.push(self.body.proj_d0.get((proj_start + i) as i64))
@@ -3642,10 +3642,10 @@ impl MirBuilder:
         let start = self.body.agg_field_starts.get(fields_id as i64)
         let count = self.body.agg_field_counts.get(fields_id as i64)
         for i in 0..count:
-            let field_sym = self.body.agg_field_name_syms.get((start + i) as i64)
+            let field_sym: i32 = self.body.agg_field_name_syms.get((start + i) as i64)
             if field_sym == 0:
                 continue
-            let operand_id = self.body.agg_field_operands.get((start + i) as i64)
+            let operand_id: i32 = self.body.agg_field_operands.get((start + i) as i64)
             var field_ty = 0
             let aggregate_ty = if aggregate_place < self.body.place_sema_types.len() as i32: self.body.place_sema_types.get(aggregate_place as i64) else: 0
             if aggregate_ty != 0:
@@ -4346,7 +4346,7 @@ impl MirBuilder:
 
         self.switch_to(fail_bb)
         let ret_place = self.place_for_local(0)
-        let ret_ty = self.body.local_type_ids.get(0)
+        let ret_ty: i32 = self.body.local_type_ids.get(0)
         let break_downcast = self.body.new_downcast_place(branch_place, break_idx, branch_ty)
         let break_payload_place = self.body.new_field_place(break_downcast, 0, break_ty)
         let break_op = self.operand_for_place(break_payload_place, break_ty)
@@ -4705,7 +4705,7 @@ impl MirBuilder:
                 first_step = 1
         for i in first_step..count:
             let step_fn = self.sema.autoderef_step_fns.get((start + i) as i64)
-            let step_ty = self.sema.autoderef_step_tys.get((start + i) as i64)
+            let step_ty: i32 = self.sema.autoderef_step_tys.get((start + i) as i64)
             if step_fn == 0:
                 place = self.new_deref_place(place)
             else:
@@ -5630,7 +5630,7 @@ impl MirBuilder:
         if defer_end > defer_start:
             var di = defer_end - 1
             while di >= defer_start:
-                let defer_body = self.defer_nodes.get(di as i64)
+                let defer_body: i32 = self.defer_nodes.get(di as i64)
                 let _ = self.lower_expr(defer_body)
                 di = di - 1
             // Remove the block's defers from the stack
@@ -7276,7 +7276,7 @@ impl MirBuilder:
     mut fn lower_return(node: i32) -> i32:
         let value_expr = self.ast.get_data0(node)
         let saved_expected = self.expected_type
-        let ret_ty = self.body.local_type_ids.get(0)
+        let ret_ty: i32 = self.body.local_type_ids.get(0)
         if ret_ty > 0:
             self.expected_type = ret_ty
         if value_expr != 0:
@@ -7734,7 +7734,7 @@ impl MirBuilder:
                 let elem_pk = self.ast.kind(elem_pat)
                 if elem_pk == NodeKind.NK_PAT_WILDCARD or elem_pk == NodeKind.NK_PAT_IDENT:
                     continue
-                let elem_ty = self.sema.type_extra.get((elem_start + ti) as i64)
+                let elem_ty: i32 = self.sema.type_extra.get((elem_start + ti) as i64)
                 let elem_place = self.body.new_tuple_index_place(tuple_subject_place, ti, elem_ty)
                 let next_test = self.new_block()
                 self.switch_to(cur_test_bb)
@@ -7956,7 +7956,7 @@ impl MirBuilder:
 
             for ti in 0..t_count:
                 let elem_pat = self.ast.get_extra(t_start + ti)
-                let elem_ty = self.sema.type_extra.get((elem_start + ti) as i64)
+                let elem_ty: i32 = self.sema.type_extra.get((elem_start + ti) as i64)
                 let field_place = self.body.new_tuple_index_place(tuple_subject_place, ti, elem_ty)
                 let child_place = self.pattern_child_subject_place(scrutinee_place, field_place, self.ast.get_start(pat_node))
                 let inner = self.lower_pattern(elem_pat, child_place)
@@ -8190,7 +8190,7 @@ impl MirBuilder:
                 // the scope — that happens once on the guard-pass path below).
                 self.switch_to(guard_fail_bb)
                 let gscope_idx = self.drop_scope_starts.len() as i32 - 1
-                let gdrop_start = self.drop_scope_starts.get(gscope_idx as i64)
+                let gdrop_start: i32 = self.drop_scope_starts.get(gscope_idx as i64)
                 self.emit_drops_for_range(gdrop_start, self.drop_local_ids.len() as i32)
                 self.terminate(TermKind.TK_GOTO, fail_bb, 0, 0, 0)
                 self.switch_to(guard_pass_bb)
@@ -8669,8 +8669,8 @@ impl MirBuilder:
             self.mark_unsupported()
             return self.unit_operand()
         let decision = self.contextual_join_decision(join_node)
-        let exact_type = self.sema.contextual_join_arm_types.get(arm_index as i64)
-        let arm_kind = self.sema.contextual_join_arm_kinds.get(arm_index as i64)
+        let exact_type: i32 = self.sema.contextual_join_arm_types.get(arm_index as i64)
+        let arm_kind: i32 = self.sema.contextual_join_arm_kinds.get(arm_index as i64)
         var source_type: i32 = exact_type
         var op = self.operand_for_place(exact_place, exact_type)
         if arm_kind == D22_JOIN_ARM_MATERIALIZED_REF:
@@ -8764,7 +8764,7 @@ impl MirBuilder:
             return raw_op
         if self.body.operand_kinds.get(raw_op as i64) != OperandKind.OK_COPY:
             return raw_op
-        let place = self.body.operand_d0.get(raw_op as i64)
+        let place: i32 = self.body.operand_d0.get(raw_op as i64)
         self.operand_for_place_arg(place, actual, expected, self.ast.get_start(recv_node))
 
     mut fn lower_receiver_with_method_autoderef_for_method(recv_node: i32, method_sym: i32) -> i32:
@@ -10041,7 +10041,7 @@ impl MirBuilder:
         if carrier_arm < 0:
             self.mark_unsupported()
             return self.unit_operand()
-        let payload_ty = self.sema.contextual_join_arm_types.get(carrier_arm as i64)
+        let payload_ty: i32 = self.sema.contextual_join_arm_types.get(carrier_arm as i64)
 
         let some_bb = self.new_block()
         let none_bb = self.new_block()
@@ -10560,12 +10560,12 @@ impl MirBuilder:
             self.mark_unsupported()
             return self.unit_operand()
         let elem_start = self.sema.get_type_d0(tuple_resolved)
-        let left_elem_ty = self.sema.type_extra.get(elem_start as i64)
-        let right_elem_ty = self.sema.type_extra.get((elem_start + 1) as i64)
+        let left_elem_ty: i32 = self.sema.type_extra.get(elem_start as i64)
+        let right_elem_ty: i32 = self.sema.type_extra.get((elem_start + 1) as i64)
         let result_resolved = self.sema.resolve_alias(result_ty)
         let result_start = self.sema.get_type_d0(result_resolved)
-        let left_option_ty = self.sema.type_extra.get(result_start as i64)
-        let right_option_ty = self.sema.type_extra.get((result_start + 1) as i64)
+        let left_option_ty: i32 = self.sema.type_extra.get(result_start as i64)
+        let right_option_ty: i32 = self.sema.type_extra.get((result_start + 1) as i64)
         let value_place = self.lower_owned_receiver_place(self_expr, value_ty)
         let result_local = self.new_temp(result_ty)
         let result_place = self.place_for_local(result_local)
@@ -11027,7 +11027,7 @@ impl MirBuilder:
         if carrier_arm < 0:
             self.mark_unsupported()
             return self.unit_operand()
-        let payload_ty = self.sema.contextual_join_arm_types.get(carrier_arm as i64)
+        let payload_ty: i32 = self.sema.contextual_join_arm_types.get(carrier_arm as i64)
 
         let some_bb = self.new_block()
         let none_bb = self.new_block()
@@ -11101,8 +11101,8 @@ impl MirBuilder:
         if carrier_arm < 0 or lazy_arm < 0:
             self.mark_unsupported()
             return self.unit_operand()
-        let payload_ty = self.sema.contextual_join_arm_types.get(carrier_arm as i64)
-        let lazy_ty = self.sema.contextual_join_arm_types.get(lazy_arm as i64)
+        let payload_ty: i32 = self.sema.contextual_join_arm_types.get(carrier_arm as i64)
+        let lazy_ty: i32 = self.sema.contextual_join_arm_types.get(lazy_arm as i64)
 
         let success_bb = self.new_block()
         let failure_bb = self.new_block()
@@ -11324,7 +11324,7 @@ impl MirBuilder:
         let result_fields: Vec[i32] = Vec.new()
         let result_names: Vec[i32] = Vec.new()
         for fi in 0..struct_fc:
-            let f_name_sym = self.sema.type_extra.get((struct_extra + fi * 3) as i64)
+            let f_name_sym: i32 = self.sema.type_extra.get((struct_extra + fi * 3) as i64)
             let field_ty = self.struct_field_type(ty, f_name_sym)
             let src_field_place = self.body.new_field_place(base_place, f_name_sym, field_ty)
             var update_idx = -1
@@ -12512,7 +12512,7 @@ impl MirBuilder:
                 let elem_node = self.ast.get_extra(extra_start + i)
                 var elem_ty = self.expr_type(elem_node)
                 if expected_tuple != 0:
-                    let exp_elem = self.sema.type_extra.get((expected_elem_start + i) as i64)
+                    let exp_elem: i32 = self.sema.type_extra.get((expected_elem_start + i) as i64)
                     self.expected_type = exp_elem
                     if elem_ty == 0 or elem_ty == self.sema.ty_void as i32:
                         elem_ty = exp_elem
@@ -13333,13 +13333,13 @@ impl MirBody:
             let arg_start = self.call_arg_starts.get(args_id as i64)
             let arg_count = self.call_arg_counts.get(args_id as i64)
             let n_params = self.n_params
-            let span = self.bb_term_spans.get(bb as i64)
+            let span: i32 = self.bb_term_spans.get(bb as i64)
             // Copy args to temps
             for ai in 0..arg_count:
                 if ai >= n_params: break
-                let arg_op = self.call_arg_operands.get((arg_start + ai) as i64)
+                let arg_op: i32 = self.call_arg_operands.get((arg_start + ai) as i64)
                 let param_local = ai + 1  // params are locals 1..n_params
-                let param_ty = self.local_type_ids.get(param_local as i64)
+                let param_ty: i32 = self.local_type_ids.get(param_local as i64)
                 let tmp = self.new_temp(param_ty)
                 let tmp_place = self.new_place(tmp)
                 let rv = self.new_rvalue(RvalueKind.RK_USE, arg_op, 0, 0)
@@ -13769,12 +13769,12 @@ pub type MirLowerResult {
 }
 
 fn lower_concrete_specialization(sema: Sema, ast_pool: AstPool, pool: InternPool, specialization: i32) -> ConcreteSpecializationLowerResult:
-    let fn_node = sema.concrete_specialization_nodes.get(specialization as i64)
-    let mono_sym = sema.concrete_specialization_syms.get(specialization as i64)
-    let subst_start = sema.concrete_specialization_subst_starts.get(specialization as i64)
-    let subst_count = sema.concrete_specialization_subst_counts.get(specialization as i64)
-    let param_start = sema.concrete_specialization_param_starts.get(specialization as i64)
-    let param_count = sema.concrete_specialization_param_counts.get(specialization as i64)
+    let fn_node: i32 = sema.concrete_specialization_nodes.get(specialization as i64)
+    let mono_sym: i32 = sema.concrete_specialization_syms.get(specialization as i64)
+    let subst_start: i32 = sema.concrete_specialization_subst_starts.get(specialization as i64)
+    let subst_count: i32 = sema.concrete_specialization_subst_counts.get(specialization as i64)
+    let param_start: i32 = sema.concrete_specialization_param_starts.get(specialization as i64)
+    let param_count: i32 = sema.concrete_specialization_param_counts.get(specialization as i64)
     let subst_syms: Vec[i32] = Vec.new()
     let subst_types: Vec[i32] = Vec.new()
     let concrete_params: Vec[i32] = Vec.new()
@@ -13878,7 +13878,7 @@ fn lower_module(input_sema: Sema, ast_pool: AstPool, pool: InternPool) -> MirLow
     var specializations_stable = false
     while not specializations_stable:
         while specialization < sema.concrete_specialization_nodes.len() as i32:
-            let mono_sym = sema.concrete_specialization_syms.get(specialization as i64)
+            let mono_sym: i32 = sema.concrete_specialization_syms.get(specialization as i64)
             if mir_mod.find_body(mono_sym) < 0:
                 let lowered = lower_concrete_specialization(move sema, ast_pool, pool, specialization)
                 sema = lowered.sema
@@ -14315,13 +14315,14 @@ impl MirModule:
                 members.push(idx)
         members
 
-    fn mark_tailrec_scc_edges(scc: &Vec[i32]):
+    mut fn mark_tailrec_scc_edges(scc: &Vec[i32]):
         for si in 0..scc.len() as i32:
             let src_idx = scc.get(si as i64)
             // View: a bare element read copies the MirBody's Drop-bearing
             // tables and aliases the module's own (#715 class).
             let body = &self.bodies[src_idx as i64]
             let bb_count = body.block_count()
+            let tail_bbs: Vec[i32] = Vec.new()
             for bb in 0..bb_count:
                 if body.term_kind(bb) != TermKind.TK_CALL:
                     continue
@@ -14332,13 +14333,16 @@ impl MirModule:
                     let dst_idx = scc.get(ti as i64)
                     let dst_body = &self.bodies[dst_idx as i64]
                     if dst_body.fn_sym == callee_sym and mir_is_tail_call_to(body, bb, callee_sym):
-                        // Mutate the place directly: passing the vector by
-                        // value handed the helper a COPY of the handle, so its
-                        // push was written to a temporary that was then dropped
-                        // (and the source blanked by the move).
+                        // Keep the shared body view live only while inspecting
+                        // the SCC; mutate the owning body after that view ends.
                         if not mir_vec_contains_i32(&body.mutual_tail_bbs, bb):
-                            body.mutual_tail_bbs.push(bb)
+                            tail_bbs.push(bb)
                         break
+            for ti in 0..tail_bbs.len() as i32:
+                let tail_bb: i32 = tail_bbs.get(ti as i64)
+                // The direct place is load-bearing: copying the Vec handle
+                // would update a temporary and leave the owning body unchanged.
+                self.bodies[src_idx as i64].mutual_tail_bbs.push(tail_bb)
 
     fn tailrec_scc_syms(scc: &Vec[i32]) -> Vec[i32]:
         var syms: Vec[i32] = Vec.new()
@@ -14349,7 +14353,7 @@ impl MirModule:
             syms.push(self.bodies.get(body_idx as i64).fn_sym)
         syms
 
-    fn verify_tailrec_contracts(sema: &Sema, ast_pool: AstPool, tailrec_syms: &Vec[i32]) -> Vec[TailrecViolation]:
+    mut fn verify_tailrec_contracts(sema: &Sema, ast_pool: AstPool, tailrec_syms: &Vec[i32]) -> Vec[TailrecViolation]:
         let violations: Vec[TailrecViolation] = Vec.new()
         let body_count = self.body_count()
         var processed: Vec[i32] = Vec.new()

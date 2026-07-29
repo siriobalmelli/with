@@ -231,7 +231,7 @@ impl Sema:
             let seen_global: HashMap[i32, i32] = HashMap.new()
             while global_frontier.len() as i32 > 0:
                 let last = global_frontier.len() as i32 - 1
-                let mid = global_frontier.get(last as i64)
+                let mid: i32 = global_frontier.get(last as i64)
                 global_frontier.pop()
                 if seen_global.contains(mid):
                     continue
@@ -1491,7 +1491,7 @@ impl Zcu:
             self.diagnostics = parser.diags
             self.seed_decl_source_paths(pool, name, file_id)
         for extra_i in 0..self.extra_source_names.len() as i32:
-            let extra_name = self.extra_source_names.get(extra_i as i64)
+            let extra_name: str = self.extra_source_names.get(extra_i as i64)
             let extra_text = frontend_normalize_source_text(self.extra_source_texts.get(extra_i as i64))
             let extra_file_id = self.next_file_id
             self.next_file_id = self.next_file_id + 1

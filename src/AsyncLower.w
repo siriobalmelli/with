@@ -24,7 +24,7 @@ type AsyncLowerResult {
 }
 
 type AsyncLower = ephemeral {
-    mir_mod: MirModule,
+    mir_mod: &MirModule,
     ast: AstPool,
     pool: InternPool,
     sema: &Sema,

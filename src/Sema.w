@@ -1188,7 +1188,7 @@ impl Sema:
 
         var i = 1
         while i < self.pool.state.symbol_texts.len() as i32:
-            let existing_text = self.pool.state.symbol_texts.get(i as i64)
+            let existing_text: str = self.pool.state.symbol_texts.get(i as i64)
             if sema_str_eq(existing_text, name) != 0:
                 self.pool.state.symbol_map.insert(existing_text, i)
                 return i
@@ -2506,7 +2506,7 @@ impl Sema:
         stack.push(start_idx)
         while stack.len() as i32 > 0:
             let last = stack.len() as i32 - 1
-            let current = stack.get(last as i64)
+            let current: i32 = stack.get(last as i64)
             stack.pop()
             if seen.contains(current):
                 continue
@@ -3225,8 +3225,8 @@ impl Sema:
         let exp_start = self.get_type_d0(expected)
         let act_start = self.get_type_d0(actual)
         for pi in 0..param_count:
-            let exp_param = self.type_extra.get((exp_start + pi) as i64)
-            let act_param = self.type_extra.get((act_start + pi) as i64)
+            let exp_param: i32 = self.type_extra.get((exp_start + pi) as i64)
+            let act_param: i32 = self.type_extra.get((act_start + pi) as i64)
             if self.types_compatible(exp_param, act_param) == 0:
                 return 0
         self.types_compatible(self.get_type_d2(expected), self.get_type_d2(actual))
@@ -3407,10 +3407,10 @@ impl Sema:
         for ti in 0..type_count:
             if self.type_kinds.get(ti as i64) == TypeKind.TY_GENERIC_INST:
                 if self.type_d0.get(ti as i64) == vec_sym:
-                    let extra_start = self.type_d1.get(ti as i64)
+                    let extra_start: i32 = self.type_d1.get(ti as i64)
                     let arg_count = self.type_d2.get(ti as i64)
                     if arg_count >= 1:
-                        let elem_ty = self.type_extra.get(extra_start as i64)
+                        let elem_ty: i32 = self.type_extra.get(extra_start as i64)
                         let vi_args: Vec[i32] = Vec.new()
                         vi_args.push(elem_ty)
                         let vi_key = sema_generic_inst_hash(vi_sym, vi_args, 1)
@@ -3423,7 +3423,7 @@ impl Sema:
                     let extra_start = self.type_d1.get(ti as i64)
                     let arg_count = self.type_d2.get(ti as i64)
                     if arg_count >= 2:
-                        let value_ty = self.type_extra.get((extra_start + 1) as i64)
+                        let value_ty: i32 = self.type_extra.get((extra_start + 1) as i64)
                         let opt_args: Vec[i32] = Vec.new()
                         opt_args.push(value_ty)
                         let opt_key = sema_generic_inst_hash(option_sym, opt_args, 1)
@@ -3966,7 +3966,7 @@ impl Sema:
         // Remove bindings from map and parallel arrays
         let reported_pending_calls: Vec[i32] = Vec.new()
         while self.bind_names.len() as i32 > start:
-            let removed_sym = self.bind_names.get(self.bind_names.len() - 1)
+            let removed_sym: i32 = self.bind_names.get(self.bind_names.len() - 1)
             let removed_node = self.binding_decl_node(removed_sym)
             self.check_live_views_for_origin(removed_sym, removed_node)
             self.poison_live_views_for_origin(removed_sym, removed_node)
@@ -4533,7 +4533,7 @@ impl Sema:
     fn alloc_loop_break_region(frame_idx: i32):
         if frame_idx < 0 or frame_idx >= self.label_break_off.len() as i32:
             return
-        let count = self.label_loop_entry_binds.get(frame_idx as i64)
+        let count: i32 = self.label_loop_entry_binds.get(frame_idx as i64)
         self.label_break_off.set_i32(frame_idx as i64, self.loop_break_flat.len() as i32)
         var i = 0
         while i < count:
@@ -4649,7 +4649,7 @@ impl Sema:
         // Free this loop's break-flag and entry-state regions (both are the top of
         // their flat stacks and share the same offset).
         if frame_idx >= 0 and frame_idx < self.label_break_off.len() as i32:
-            let off = self.label_break_off.get(frame_idx as i64)
+            let off: i32 = self.label_break_off.get(frame_idx as i64)
             if off >= 0:
                 while self.loop_break_flat.len() as i32 > off:
                     self.loop_break_flat.pop()
@@ -4988,7 +4988,7 @@ impl Sema:
         if sema_path_is_migrated_regex_implementation(self.current_module_path) != 0:
             return
         for bi in 0..self.bind_names.len() as i32:
-            let view_sym = self.bind_names.get(bi as i64)
+            let view_sym: i32 = self.bind_names.get(bi as i64)
             if view_sym == origin_sym:
                 continue
             if self.bind_states.get(bi as i64) != VarState.LIVE:
@@ -5158,7 +5158,7 @@ impl Sema:
     fn set_sig_param_value_ref_abi(si: i32, pi: i32, value: i32):
         if si < 0 or si >= self.sig_param_eff_starts.len() as i32:
             return
-        let start = self.sig_param_eff_starts.get(si as i64)
+        let start: i32 = self.sig_param_eff_starts.get(si as i64)
         let count = self.sig_param_counts.get(si as i64)
         if pi < 0 or pi >= count:
             return
@@ -5176,7 +5176,7 @@ impl Sema:
     fn set_sig_param_effect(si: i32, pi: i32, eff: i32):
         if si < 0 or si >= self.sig_param_eff_starts.len() as i32:
             return
-        let start = self.sig_param_eff_starts.get(si as i64)
+        let start: i32 = self.sig_param_eff_starts.get(si as i64)
         let count = self.sig_param_counts.get(si as i64)
         if pi < 0 or pi >= count:
             return
@@ -5185,7 +5185,7 @@ impl Sema:
     fn set_sig_param_direct_effect(si: i32, pi: i32, eff: i32):
         if si < 0 or si >= self.sig_param_eff_starts.len() as i32:
             return
-        let start = self.sig_param_eff_starts.get(si as i64)
+        let start: i32 = self.sig_param_eff_starts.get(si as i64)
         let count = self.sig_param_counts.get(si as i64)
         if pi < 0 or pi >= count or start + pi >= self.sig_param_direct_effects.len() as i32:
             return
@@ -5225,7 +5225,7 @@ impl Sema:
     fn set_sig_param_view_origin(si: i32, pi: i32, mask: i32):
         if si < 0 or si >= self.sig_param_eff_starts.len() as i32:
             return
-        let start = self.sig_param_eff_starts.get(si as i64)
+        let start: i32 = self.sig_param_eff_starts.get(si as i64)
         let count = self.sig_param_counts.get(si as i64)
         if pi < 0 or pi >= count:
             return
@@ -5244,7 +5244,7 @@ impl Sema:
             return
         let pi = self.param_index_for_sym(sym)
         if pi >= 0:
-            let cur = self.current_fn_param_effs.get(pi as i64)
+            let cur: i32 = self.current_fn_param_effs.get(pi as i64)
             self.current_fn_param_effs.set_i32(pi as i64, cur | eff)
             // explain:effect provenance — record the FIRST setter of each
             // ownership-forcing bit. The origin node is carried in
@@ -5254,7 +5254,7 @@ impl Sema:
             if new_bits != 0:
                 self.record_effect_provenance_direct(self.current_fn_sig_idx, pi, new_bits, self.effect_note_origin_node)
             if self.recording_propagated_effect == 0:
-                let direct = self.current_fn_param_direct_effs.get(pi as i64)
+                let direct: i32 = self.current_fn_param_direct_effs.get(pi as i64)
                 self.current_fn_param_direct_effs.set_i32(pi as i64, direct | eff)
             return
 
@@ -5288,7 +5288,7 @@ impl Sema:
             return
         let pi = self.param_index_for_sym(sym)
         if pi >= 0:
-            let cur = self.current_fn_param_origins.get(pi as i64)
+            let cur: i32 = self.current_fn_param_origins.get(pi as i64)
             self.current_fn_param_origins.set_i32(pi as i64, cur | mask)
             if origin_node != 0 and self.current_fn_param_view_nodes.get(pi as i64) == 0:
                 self.current_fn_param_view_nodes.set_i32(pi as i64, origin_node)
@@ -5873,7 +5873,7 @@ impl Sema:
         if self.sig_idx_valid(idx) == 0:
             return
         self.sig_ret_types.set_i32(idx as i64, ret)
-        let fn_tid = self.sig_type_ids.get(idx as i64)
+        let fn_tid: i32 = self.sig_type_ids.get(idx as i64)
         if fn_tid >= 0 and fn_tid < self.type_d2.len() as i32:
             self.type_d2.set_i32(fn_tid as i64, ret)
 
@@ -5932,7 +5932,7 @@ impl Sema:
     fn register_fn_clause_decl(dispatch_sym: i32, decl_node: i32):
         let group = self.ensure_fn_clause_group(dispatch_sym)
         let start = self.fn_clause_group_starts.get(group as i64)
-        let count = self.fn_clause_group_counts.get(group as i64)
+        let count: i32 = self.fn_clause_group_counts.get(group as i64)
         for i in 0..count:
             if self.fn_clause_group_decls.get((start + i) as i64) == decl_node:
                 return
@@ -6228,8 +6228,8 @@ impl Sema:
             let exp_start = self.get_type_d0(exp_r)
             let act_start = self.get_type_d0(act_r)
             for ei in 0..exp_count:
-                let exp_elem = self.type_extra.get((exp_start + ei) as i64)
-                let act_elem = self.type_extra.get((act_start + ei) as i64)
+                let exp_elem: i32 = self.type_extra.get((exp_start + ei) as i64)
+                let act_elem: i32 = self.type_extra.get((act_start + ei) as i64)
                 if self.types_compatible(exp_elem, act_elem) == 0:
                     return 0
             return 1
