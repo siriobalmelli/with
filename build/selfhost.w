@@ -4254,7 +4254,7 @@ fn bs_check_migrate_ulong_max_width(ctx: &ActionCtx, compiler_path: str, case_di
     let root = ctx.project_info().project_root()
     let src = bs_join(case_dir, "ulong_max_width.c")
     let out_w = bs_join(case_dir, "ulong_max_width.w")
-    let c_text = "#include <limits.h>\n#include <stdlib.h>\n\nint cmp_ulong_max(unsigned long x) {\n  return x == ULONG_MAX;\n}\n\nint parse_overflow(char *s) {\n  char *end;\n  unsigned long value = strtoul(s, &end, 10);\n  return value == ULONG_MAX;\n}\n"
+    let c_text = "#include <limits.h>\n#include <stdlib.h>\n\nint cmp_ulong_max(unsigned long x) {\n  return x == ULONG_MAX;\n}\n\nint parse_overflow(char *s) {\n  char *end;\n  unsigned long value = strtoul(s, &end, 10);\n  return value == ULONG_MAX;\n}\n\ndouble parse_decimal(char *s) {\n  char *end;\n  return strtod(s, &end);\n}\n"
     var rc = bs_write_fixture(ctx, src, c_text, "ulong max width source")
     if rc != 0: return rc
     var args: Vec[str] = Vec.new()
@@ -4270,6 +4270,10 @@ fn bs_check_migrate_ulong_max_width(ctx: &ActionCtx, compiler_path: str, case_di
     rc = bs_assert_contains(ctx, out_text, "((0 as c_ulong) -% 1)", "ulong_max_width")
     if rc != 0: return rc
     rc = bs_assert_not_contains(ctx, out_text, "9223372036854775807 as c_uint", "ulong_max_width")
+    if rc != 0: return rc
+    rc = bs_assert_contains(ctx, out_text, "fn parse_decimal", "ulong_max_width")
+    if rc != 0: return rc
+    rc = bs_assert_contains(ctx, out_text, "strtod(", "ulong_max_width")
     if rc != 0: return rc
     var check_args: Vec[str] = Vec.new()
     check_args |> push("check")
