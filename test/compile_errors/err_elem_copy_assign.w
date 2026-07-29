@@ -1,7 +1,7 @@
-//! expect-error: cannot take ownership of a non-Copy element copied out of a Vec
+//! expect-error: type mismatch in assignment
 
-// D22 §13.6 / #715: assignment into an owned place is an owned demand and
-// cannot be satisfied by copying a Drop-bearing element out of a Vec.
+// D22 §13.6 / D27: assignment into an owned place is an owned demand and
+// the exact &Thing element view cannot satisfy it because Thing is not Copy.
 
 type Thing { vals: Vec[i32] }
 

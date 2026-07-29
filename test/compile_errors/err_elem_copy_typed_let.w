@@ -1,4 +1,4 @@
-//! expect-error: cannot take ownership of a non-Copy element copied out of a Vec
+//! expect-error: type mismatch in binding
 
 // D27: a binding names what's there; an annotation demands what it says.
 // A typed binding is an owned demand (D22 §6.2) and cannot be satisfied by

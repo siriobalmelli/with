@@ -1,7 +1,7 @@
-//! expect-error: cannot take ownership of a non-Copy element copied out of a Vec
+//! expect-error: type mismatch in struct literal field
 
-// D22 §13.6 / #715: a struct-literal field is an owned demand and cannot be
-// satisfied by copying a Drop-bearing element out of a Vec.
+// D22 §13.6 / D27: a struct-literal field is an owned demand and the exact
+// &Thing element view cannot satisfy it because Thing is not Copy.
 
 type Thing { vals: Vec[i32] }
 type Holder { t: Thing }
