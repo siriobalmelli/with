@@ -396,6 +396,15 @@ impl Sema:
             return 1
         0
 
+    fn unwrap_address_place_expr(node: i32) -> i32:
+        var n = node
+        while n != 0:
+            let kind = self.ast.kind(n)
+            if kind != NodeKind.NK_GROUPED and kind != NodeKind.NK_UNSAFE_BLOCK and kind != NodeKind.NK_NO_SUSPEND:
+                break
+            n = self.ast.get_data0(n)
+        n
+
     mut fn record_contextual_copy_adjustment(source_node: i32, expected: i32, actual: i32) -> i32:
         if source_node <= 0 or self.can_contextually_copy_ref(expected, actual) == 0:
             return 0
@@ -1923,7 +1932,7 @@ impl Sema:
         let method_name = self.impl_method_bare_name(node, fn_name)
         if method_name.len() == 0:
             return sema_trait_impl_method_contract_missing()
-        let trait_idx = self.trait_lookup.get(trait_sym).unwrap()
+        let trait_idx: i32 = self.trait_lookup.get(trait_sym).unwrap()
         let mt_start = self.trait_method_starts.get(trait_idx as i64)
         let mt_count = self.trait_method_counts.get(trait_idx as i64)
         for mi in 0..mt_count:
@@ -8381,9 +8390,10 @@ impl Sema:
             self.emit_error("`&mut` is not part of safe With (§15.1); use `&raw mut` for FFI or mutating receiver methods", node)
             return 0
         if op == UnaryOp.UOP_REF or op == UnaryOp.UOP_RAW_REF_CONST or op == UnaryOp.UOP_RAW_REF_MUT:
+            let address_operand_node = self.unwrap_address_place_expr(operand_node)
             // Reject address-of bitpacked/packed fields — they may not be aligned.
-            if self.ast.kind(operand_node) == NodeKind.NK_FIELD_ACCESS:
-                let ref_recv = self.ast.get_data0(operand_node)
+            if self.ast.kind(address_operand_node) == NodeKind.NK_FIELD_ACCESS:
+                let ref_recv = self.ast.get_data0(address_operand_node)
                 let ref_recv_ty = self.resolve_alias(self.check_expr(ref_recv))
                 if self.bitpacked_types.contains(ref_recv_ty as i32):
                     self.emit_error("cannot take address of bitpacked field", node)
@@ -8429,7 +8439,7 @@ impl Sema:
                 // D27: a runtime subscript already has exact type &T in value
                 // context, but it still denotes the physical T place. Raw
                 // address-taking targets that place, not the temporary &T view.
-                if self.ast.kind(operand_node) == NodeKind.NK_INDEX and self.index_expr_is_type_level(self.ast.get_data0(operand_node)) == 0:
+                if self.ast.kind(address_operand_node) == NodeKind.NK_INDEX and self.index_expr_is_type_level(self.ast.get_data0(address_operand_node)) == 0:
                     let indexed_exact = self.resolve_alias(operand)
                     if self.get_type_kind(indexed_exact) == TypeKind.TY_REF:
                         raw_pointee = self.get_type_d0(indexed_exact)
@@ -8437,7 +8447,7 @@ impl Sema:
             // D27: `&xs[i]` explicitly spells the same element view that the
             // observing subscript read already produces. The index place is
             // borrowed once; do not manufacture &&T.
-            if self.ast.kind(operand_node) == NodeKind.NK_INDEX and self.index_expr_is_type_level(self.ast.get_data0(operand_node)) == 0:
+            if self.ast.kind(address_operand_node) == NodeKind.NK_INDEX and self.index_expr_is_type_level(self.ast.get_data0(address_operand_node)) == 0:
                 let indexed_exact2 = self.resolve_alias(operand)
                 if self.get_type_kind(indexed_exact2) == TypeKind.TY_REF:
                     self.check_borrow_create(operand_node, BorrowKind.SHARED, node)

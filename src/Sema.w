@@ -4979,6 +4979,14 @@ impl Sema:
             return self.binding_decl_nodes.get(sym).unwrap()
         0
 
+    fn binding_has_active_borrow_from(view_sym: i32, origin_sym: i32) -> i32:
+        for bi in 0..self.borrow_refs.len() as i32:
+            let ref_sym: i32 = self.borrow_refs.get(bi as i64)
+            let place_sym: i32 = self.borrow_places.get(bi as i64)
+            if ref_sym == view_sym and place_sym == origin_sym:
+                return 1
+        0
+
     mut fn check_live_views_for_origin(origin_sym: i32, node: i32):
         if origin_sym == 0:
             return
@@ -4995,7 +5003,8 @@ impl Sema:
                 continue
             let view_ty = self.bind_types.get(bi as i64)
             let view_has_drop = self.type_has_drop_impl(view_ty)
-            if self.binding_depends_on_origin(view_sym, origin_sym) != 0 or (view_has_drop != 0 and self.binding_value_depends_on_origin(view_sym, origin_sym) != 0):
+            let active_view = self.binding_depends_on_origin(view_sym, origin_sym) != 0 and self.binding_has_active_borrow_from(view_sym, origin_sym) != 0
+            if active_view or (view_has_drop != 0 and self.binding_value_depends_on_origin(view_sym, origin_sym) != 0):
                 let err_node = if node != 0: node else: self.binding_decl_node(view_sym)
                 if view_has_drop != 0:
                     self.emit_implicit_drop_view_use_error(view_sym, origin_sym, err_node)

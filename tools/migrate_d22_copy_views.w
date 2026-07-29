@@ -4,7 +4,7 @@
 // its §22.3 diagnostic. This tool only uses Lexer tokens to locate that proven
 // binding on the labeled source line; it never guesses from `.get()` spelling.
 //
-//   with run tools/migrate_d22_copy_views.w <candidate-with> [--apply]
+//   with run tools/migrate_d22_copy_views.w <candidate-with> [source.w] [--apply]
 
 use std.process
 use Lexer
@@ -171,16 +171,26 @@ fn apply_one(path: str, line: i32, name: str, ty: str, apply: bool) -> i32:
 fn main:
     let argv = args()
     if argv.len() < 2:
-        print("usage: migrate_d22_copy_views <candidate-with> [--apply]")
+        print("usage: migrate_d22_copy_views <candidate-with> [source.w] [--apply]")
         exit_code(2)
     let candidate = argv.get(1)
-    let apply = argv.len() > 2 and argv.get(2) == "--apply"
+    var source_path = "src/main.w"
+    var apply = false
+    for ai in 2..argv.len() as i32:
+        let arg = argv.get(ai as i64)
+        if arg == "--apply":
+            apply = true
+        else if source_path == "src/main.w":
+            source_path = arg
+        else:
+            print("usage: migrate_d22_copy_views <candidate-with> [source.w] [--apply]")
+            exit_code(2)
     let out_path = "/tmp/with-d22-migrate.stdout"
     let err_path = "/tmp/with-d22-migrate.stderr"
-    let encoded = candidate ++ "\0check\0src/main.w\0"
+    let encoded = candidate ++ "\0check\0" ++ source_path ++ "\0"
     let rc = unsafe { with_exec_argv_capture(encoded, out_path, err_path, 180000) }
     if rc == 0:
-        print("D22 migration: candidate already accepts src/main.w")
+        print(f"D22 migration: candidate already accepts {source_path}")
         return
     let diagnostics = unsafe { with_fs_read_file(err_path) }
     let edits = parse_diagnostics(diagnostics)

@@ -191,8 +191,8 @@ pub fn Arena.reset(mut self: Arena) -> Unit:
 pub fn FrameArena.reset(mut self: FrameArena) -> Unit:
     if self.blocks.len() == 0:
         return
-    let first = self.blocks.get(0)
-    let first_size = self.block_sizes.get(0)
+    let first: i64 = self.blocks.get(0)
+    let first_size: i32 = self.block_sizes.get(0)
     for i in 1..self.blocks.len() as i32:
         let raw = self.blocks.get(i as i64)
         if raw != 0:
@@ -312,7 +312,7 @@ pub fn Pool.alloc(mut self: Pool) -> *i8:
     if self.free_list.len() == 0:
         self.add_slab()
     let last = self.free_list.len() as i32 - 1
-    let raw = self.free_list.get(last as i64)
+    let raw: i64 = self.free_list.get(last as i64)
     self.free_list.remove(last as i64)
     raw as *i8
 

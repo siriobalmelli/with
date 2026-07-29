@@ -74,7 +74,7 @@ fn test_array_find:
 
 fn test_array_max:
     let arr = [3, 1, 4, 1, 5, 9, 2, 6]
-    var max_val = arr[0]
+    var max_val: i32 = arr[0]
     for v in arr:
         if v > max_val:
             max_val = v
@@ -82,7 +82,7 @@ fn test_array_max:
 
 fn test_array_min:
     let arr = [3, 1, 4, 1, 5, 9, 2, 6]
-    var min_val = arr[0]
+    var min_val: i32 = arr[0]
     for v in arr:
         if v < min_val:
             min_val = v
