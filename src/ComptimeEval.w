@@ -1546,6 +1546,13 @@ fn comptime_action_capability_record(package_name: str, package_version: str, pr
     }
 
 impl ComptimeEvaluator:
+    // Snapshot read of the value arena. extra_values GROWS during almost
+    // every evaluation step; a `let x = extra_values.get(i)` view dangles
+    // as soon as a push reallocates (stage2's map-insert loop read a freed
+    // buffer). The typed return is the owned demand — always a copy.
+    fn extra_value_at(index: i64) -> ComptimeValue:
+        self.extra_values.get(index)
+
     fn cleanup_workspace_pending_links():
         for wi in 0..self.workspace_records.len() as i32:
             var record = ce_clone_workspace_record(&self.workspace_records[wi as i64])
@@ -2054,7 +2061,7 @@ impl ComptimeEvaluator:
         if value.kind != ComptimeValueKind.CV_VEC and value.kind != ComptimeValueKind.CV_ARRAY:
             return parts
         for i in 0..value.extra_count:
-            let item = self.extra_values.get((value.extra_start + i) as i64)
+            let item = self.extra_value_at((value.extra_start + i) as i64)
             if item.kind == ComptimeValueKind.CV_STR:
                 parts.push(item.text)
         parts
@@ -2113,7 +2120,7 @@ impl ComptimeEvaluator:
             return ""
         var out = ""
         for i in 0..vars.extra_count:
-            let item = self.extra_values.get((vars.extra_start + i) as i64)
+            let item = self.extra_value_at((vars.extra_start + i) as i64)
             let name = self.struct_field_value_by_name(item, "name")
             let env_value = self.struct_field_value_by_name(item, "value")
             if name.kind == ComptimeValueKind.CV_STR and env_value.kind == ComptimeValueKind.CV_STR:
@@ -2220,7 +2227,7 @@ impl ComptimeEvaluator:
             if fi == field_index:
                 self.extra_values.push(value)
             else:
-                self.extra_values.push(self.extra_values.get((base_value.extra_start + fi) as i64))
+                self.extra_values.push(self.extra_value_at((base_value.extra_start + fi) as i64))
         let updated = comptime_value_struct(base_value.type_id, new_start, base_value.extra_count)
         self.update_slot_value(idx, updated)
         comptime_control_value(comptime_value_void(self.sema.ty_void as i32))
@@ -2321,7 +2328,7 @@ impl ComptimeEvaluator:
     fn copy_extra_slice(start: i32, count: i32) -> i32:
         let new_start = self.extra_values.len() as i32
         for i in 0..count:
-            self.extra_values.push(self.extra_values.get((start + i) as i64))
+            self.extra_values.push(self.extra_value_at((start + i) as i64))
         new_start
 
     fn copy_vec_snapshot(value: ComptimeValue) -> i32:
@@ -2435,7 +2442,7 @@ impl ComptimeEvaluator:
         if bytes_value.kind == ComptimeValueKind.CV_VEC:
             let parts: Vec[str] = Vec.new()
             for i in 0..bytes_value.extra_count:
-                let elem = self.extra_values.get((bytes_value.extra_start + i) as i64)
+                let elem = self.extra_value_at((bytes_value.extra_start + i) as i64)
                 if comptime_value_is_intlike(elem) == 0:
                     let _ = self.fail(node, "StringBuilder bytes field must contain u8 values")
                     return comptime_value_invalid()
@@ -2470,7 +2477,7 @@ impl ComptimeEvaluator:
         var head = builder.extra_start
         var visited = 0
         while head >= 0 and visited < builder.extra_count:
-            let chunk = self.extra_values.get(head as i64)
+            let chunk = self.extra_value_at(head as i64)
             if chunk.kind != ComptimeValueKind.CV_STRING_CHUNK:
                 let _ = self.fail(node, "invalid StringBuilder comptime chunk")
                 return ""
@@ -2994,7 +3001,7 @@ impl ComptimeEvaluator:
             if needle_signal.kind != ComptimeControlKind.CTL_VALUE:
                 return needle_signal
             for i in 0..recv_value.extra_count:
-                let item = self.extra_values.get((recv_value.extra_start + i) as i64)
+                let item = self.extra_value_at((recv_value.extra_start + i) as i64)
                 if comptime_values_equal(item, needle_signal.value, self.extra_values) != 0:
                     return comptime_control_value(comptime_value_bool(1))
             return comptime_control_value(comptime_value_bool(0))
@@ -3010,7 +3017,7 @@ impl ComptimeEvaluator:
             let index = comptime_value_intlike(index_signal.value)
             if index < 0 or index >= recv_value.extra_count as i64:
                 return self.fail(node, "Vec.get() index out of bounds in comptime")
-            return comptime_control_value(self.extra_values.get((recv_value.extra_start + index as i32) as i64))
+            return comptime_control_value(self.extra_value_at((recv_value.extra_start + index as i32) as i64))
 
         if method == "clear":
             if arg_count != 0:
@@ -3026,7 +3033,7 @@ impl ComptimeEvaluator:
                 return self.fail(node, "Vec.pop() needs a resolved Option type in comptime")
             if recv_value.extra_count <= 0:
                 return comptime_control_value(comptime_value_enum(pop_opt_tid, self.sema.syms.none, self.extra_values.len() as i32, 0))
-            let removed = self.extra_values.get((recv_value.extra_start + recv_value.extra_count - 1) as i64)
+            let removed = self.extra_value_at((recv_value.extra_start + recv_value.extra_count - 1) as i64)
             // (start, count-1) is already a frozen prefix view of the existing
             // slice — no copy needed; arena elements are immutable.
             let updated = comptime_value_vec(recv_value.type_id, recv_value.extra_start, recv_value.extra_count - 1)
@@ -3048,12 +3055,12 @@ impl ComptimeEvaluator:
             let index = comptime_value_intlike(index_signal.value) as i32
             if index < 0 or index >= recv_value.extra_count:
                 return self.fail(node, "Vec.remove() index out of bounds in comptime")
-            let removed = self.extra_values.get((recv_value.extra_start + index) as i64)
+            let removed = self.extra_value_at((recv_value.extra_start + index) as i64)
             let new_start = self.extra_values.len() as i32
             for i in 0..recv_value.extra_count:
                 if i == index:
                     continue
-                self.extra_values.push(self.extra_values.get((recv_value.extra_start + i) as i64))
+                self.extra_values.push(self.extra_value_at((recv_value.extra_start + i) as i64))
             let updated = comptime_value_vec(recv_value.type_id, new_start, recv_value.extra_count - 1)
             let rebind = self.rebind_collection_receiver(recv_node, updated, node)
             if rebind.kind != ComptimeControlKind.CTL_VALUE:
@@ -3078,13 +3085,13 @@ impl ComptimeEvaluator:
             var replaced = 0
             for i in 0..recv_value.extra_count:
                 let base = recv_value.extra_start + i * 2
-                let old_key = self.extra_values.get(base as i64)
+                let old_key = self.extra_value_at(base as i64)
                 self.extra_values.push(old_key)
                 if comptime_values_equal(old_key, key_signal.value, self.extra_values) != 0:
                     self.extra_values.push(value_signal.value)
                     replaced = 1
                 else:
-                    self.extra_values.push(self.extra_values.get((base + 1) as i64))
+                    self.extra_values.push(self.extra_value_at((base + 1) as i64))
             if replaced == 0:
                 self.extra_values.push(key_signal.value)
                 self.extra_values.push(value_signal.value)
@@ -3105,7 +3112,7 @@ impl ComptimeEvaluator:
                 return key_signal
             for i in 0..recv_value.extra_count:
                 let base = recv_value.extra_start + i * 2
-                let old_key = self.extra_values.get(base as i64)
+                let old_key = self.extra_value_at(base as i64)
                 if comptime_values_equal(old_key, key_signal.value, self.extra_values) != 0:
                     return comptime_control_value(comptime_value_bool(1))
             return comptime_control_value(comptime_value_bool(0))
@@ -3127,10 +3134,10 @@ impl ComptimeEvaluator:
                 return self.fail(node, "HashMap.get() needs a resolved Option type in comptime")
             for i in 0..recv_value.extra_count:
                 let base = recv_value.extra_start + i * 2
-                let old_key = self.extra_values.get(base as i64)
+                let old_key = self.extra_value_at(base as i64)
                 if comptime_values_equal(old_key, key_signal.value, self.extra_values) != 0:
                     let some_start = self.extra_values.len() as i32
-                    self.extra_values.push(self.extra_values.get((base + 1) as i64))
+                    self.extra_values.push(self.extra_value_at((base + 1) as i64))
                     return comptime_control_value(comptime_value_enum(get_opt_tid, self.sema.syms.some, some_start, 1))
             return comptime_control_value(comptime_value_enum(get_opt_tid, self.sema.syms.none, self.extra_values.len() as i32, 0))
 
@@ -3156,8 +3163,8 @@ impl ComptimeEvaluator:
             var removed = comptime_value_invalid()
             for i in 0..recv_value.extra_count:
                 let base = recv_value.extra_start + i * 2
-                let old_key = self.extra_values.get(base as i64)
-                let old_value = self.extra_values.get((base + 1) as i64)
+                let old_key = self.extra_value_at(base as i64)
+                let old_value = self.extra_value_at((base + 1) as i64)
                 if comptime_values_equal(old_key, key_signal.value, self.extra_values) != 0:
                     found = 1
                     removed = old_value
@@ -3230,7 +3237,7 @@ impl ComptimeEvaluator:
                 return self.fail(node, "Option.unwrap() takes no arguments")
             if is_some == 0:
                 return self.fail(node, "called unwrap on None in comptime")
-            return comptime_control_value(self.extra_values.get(recv_value.extra_start as i64))
+            return comptime_control_value(self.extra_value_at(recv_value.extra_start as i64))
         if method == "expect":
             if arg_count != 1:
                 return self.fail(node, "Option.expect() expects one argument")
@@ -3241,7 +3248,7 @@ impl ComptimeEvaluator:
                 if msg_signal.value.kind == ComptimeValueKind.CV_STR:
                     return self.fail(node, msg_signal.value.text ++ ": None")
                 return self.fail(node, "Option.expect() on None in comptime")
-            return comptime_control_value(self.extra_values.get(recv_value.extra_start as i64))
+            return comptime_control_value(self.extra_value_at(recv_value.extra_start as i64))
         if method == "unwrap_or":
             if arg_count != 1:
                 return self.fail(node, "Option.unwrap_or() expects one argument")
@@ -3250,7 +3257,7 @@ impl ComptimeEvaluator:
                 return default_signal
             if is_some == 0:
                 return comptime_control_value(default_signal.value)
-            return comptime_control_value(self.extra_values.get(recv_value.extra_start as i64))
+            return comptime_control_value(self.extra_value_at(recv_value.extra_start as i64))
         self.fail(node, "Option method '" ++ method ++ "' is not comptime-evaluable yet")
 
 fn comptime_str_find(haystack: str, needle: str) -> i32:
@@ -3651,14 +3658,14 @@ impl ComptimeEvaluator:
         comptime_control_value(comptime_value_tuple(0, start, arg_count))
 
     mut fn capability_arg_str(args: ComptimeValue, index: i32, method: str, node: i32) -> str:
-        let value = self.extra_values.get((args.extra_start + index) as i64)
+        let value = self.extra_value_at((args.extra_start + index) as i64)
         if value.kind != ComptimeValueKind.CV_STR:
             let _ = self.fail(node, "capability method " ++ method ++ " expects a string argument")
             return ""
         value.text
 
     mut fn capability_arg_i32(args: ComptimeValue, index: i32, method: str, node: i32) -> i32:
-        let value = self.extra_values.get((args.extra_start + index) as i64)
+        let value = self.extra_value_at((args.extra_start + index) as i64)
         if comptime_value_is_intlike(value) == 0:
             let _ = self.fail(node, "capability method " ++ method ++ " expects an integer argument")
             return 0
@@ -3744,7 +3751,7 @@ impl ComptimeEvaluator:
         let index = self.struct_field_index(value.type_id, field_sym)
         if index < 0 or index >= value.extra_count:
             return comptime_value_invalid()
-        self.extra_values.get((value.extra_start + index) as i64)
+        self.extra_value_at((value.extra_start + index) as i64)
 
     mut fn vec_str_to_argv(value: ComptimeValue, method: str, node: i32) -> str:
         if value.kind != ComptimeValueKind.CV_VEC and value.kind != ComptimeValueKind.CV_ARRAY:
@@ -3752,7 +3759,7 @@ impl ComptimeEvaluator:
             return ""
         var out = ""
         for i in 0..value.extra_count:
-            let item = self.extra_values.get((value.extra_start + i) as i64)
+            let item = self.extra_value_at((value.extra_start + i) as i64)
             if item.kind != ComptimeValueKind.CV_STR:
                 let _ = self.fail(node, "ProcessRunner." ++ method ++ "() expects Vec[str] args")
                 return ""
@@ -3777,7 +3784,7 @@ impl ComptimeEvaluator:
             let _ = self.fail(node, "ProcessEnv.vars is not a vector")
             return comptime_value_invalid()
         for i in 0..vars.extra_count:
-            let item = self.extra_values.get((vars.extra_start + i) as i64)
+            let item = self.extra_value_at((vars.extra_start + i) as i64)
             let name = self.struct_field_value_by_name(item, "name")
             let env_value = self.struct_field_value_by_name(item, "value")
             if name.kind != ComptimeValueKind.CV_STR or env_value.kind != ComptimeValueKind.CV_STR:
@@ -3789,7 +3796,7 @@ impl ComptimeEvaluator:
         let _clear_tool_token = with_setenv_str("WITH_TOOL_CAPABILITY_TOKEN", "")
         let _clear_action_name = with_setenv_str("WITH_BUILD_ACTION_NAME", "")
         for i in 0..vars.extra_count:
-            let item = self.extra_values.get((vars.extra_start + i) as i64)
+            let item = self.extra_value_at((vars.extra_start + i) as i64)
             let name = self.struct_field_value_by_name(item, "name")
             let env_value = self.struct_field_value_by_name(item, "value")
             self.extra_values.push(comptime_value_str(name.text))
@@ -3819,8 +3826,8 @@ impl ComptimeEvaluator:
             return
         var i = 0
         while i + 1 < saved.extra_count:
-            let name = self.extra_values.get((saved.extra_start + i) as i64)
-            let value = self.extra_values.get((saved.extra_start + i + 1) as i64)
+            let name = self.extra_value_at((saved.extra_start + i) as i64)
+            let value = self.extra_value_at((saved.extra_start + i + 1) as i64)
             if name.kind == ComptimeValueKind.CV_STR and value.kind == ComptimeValueKind.CV_STR:
                 let _restore = with_setenv_str(name.text, value.text)
             i = i + 2
@@ -3861,7 +3868,7 @@ impl ComptimeEvaluator:
         if value.kind != ComptimeValueKind.CV_VEC and value.kind != ComptimeValueKind.CV_ARRAY:
             return out
         for i in 0..value.extra_count:
-            let item = self.extra_values.get((value.extra_start + i) as i64)
+            let item = self.extra_value_at((value.extra_start + i) as i64)
             if item.kind == ComptimeValueKind.CV_STR:
                 out.push(item.text)
         out
@@ -4261,7 +4268,7 @@ impl ComptimeEvaluator:
             let _ = self.fail(node, "LinkCommand." ++ name ++ " must be a Vec[str]")
             return out
         for i in 0..field.extra_count:
-            let item = self.extra_values.get((field.extra_start + i) as i64)
+            let item = self.extra_value_at((field.extra_start + i) as i64)
             if item.kind != ComptimeValueKind.CV_STR:
                 let _ = self.fail(node, "LinkCommand." ++ name ++ " contains a non-string value")
                 return out
@@ -4275,7 +4282,7 @@ impl ComptimeEvaluator:
             let _ = self.fail(node, "LinkCommand.env must be a Vec[EnvVar]")
             return out
         for i in 0..field.extra_count:
-            let item = self.extra_values.get((field.extra_start + i) as i64)
+            let item = self.extra_value_at((field.extra_start + i) as i64)
             if item.kind != ComptimeValueKind.CV_STRUCT:
                 let _ = self.fail(node, "LinkCommand.env contains a non-EnvVar value")
                 return out
@@ -4331,7 +4338,7 @@ impl ComptimeEvaluator:
             return record
         var out = record
         for i in 0..artifacts.extra_count:
-            let artifact = self.extra_values.get((artifacts.extra_start + i) as i64)
+            let artifact = self.extra_value_at((artifacts.extra_start + i) as i64)
             let message = self.compiler_message_artifact_value(artifact, node)
             if message.kind == ComptimeValueKind.CV_INVALID:
                 return out
@@ -4396,7 +4403,7 @@ impl ComptimeEvaluator:
             return -1
         if message.extra_count != 1:
             return -1
-        let payload = self.extra_values.get(message.extra_start as i64)
+        let payload = self.extra_value_at(message.extra_start as i64)
         if comptime_value_is_intlike(payload) == 0:
             return -1
         comptime_value_intlike(payload) as i32
@@ -5020,7 +5027,7 @@ impl ComptimeEvaluator:
             return 1
         var out = StringBuilder.new()
         for i in 0..entries_value.extra_count:
-            let raw_entry = self.extra_values.get((entries_value.extra_start + i) as i64)
+            let raw_entry = self.extra_value_at((entries_value.extra_start + i) as i64)
             let entry = self.archive_entry_from_value(raw_entry, node)
             if self.had_error != 0:
                 return 1
@@ -5599,7 +5606,7 @@ impl ComptimeEvaluator:
             let output_path = self.capability_arg_str(args_signal.value, 0, method, node)
             if self.had_error != 0:
                 return comptime_control_error()
-            let entries_value = self.extra_values.get((args_signal.value.extra_start + 1) as i64)
+            let entries_value = self.extra_value_at((args_signal.value.extra_start + 1) as i64)
             let rc = self.toolfs_write_tar(&record, output_path, entries_value, method, node)
             if self.had_error != 0:
                 return comptime_control_error()
@@ -5632,14 +5639,14 @@ impl ComptimeEvaluator:
             let resolved = self.capability_resolve_project_path(record, path, method, node)
             if self.had_error != 0:
                 return comptime_control_error()
-            let bytes_value = self.extra_values.get((args_signal.value.extra_start + 1) as i64)
+            let bytes_value = self.extra_value_at((args_signal.value.extra_start + 1) as i64)
             let data = if bytes_value.kind == ComptimeValueKind.CV_BYTES:
                 bytes_value.text
             else:
                 if bytes_value.kind == ComptimeValueKind.CV_VEC:
                     let parts: Vec[str] = Vec.new()
                     for i in 0..bytes_value.extra_count:
-                        let elem = self.extra_values.get((bytes_value.extra_start + i) as i64)
+                        let elem = self.extra_value_at((bytes_value.extra_start + i) as i64)
                         parts.push(with_str_from_byte(comptime_value_intlike(elem) as i32))
                     let assembled = self.concat_comptime_string_parts(node, parts)
                     if assembled.kind != ComptimeControlKind.CTL_VALUE:
@@ -5662,7 +5669,7 @@ impl ComptimeEvaluator:
             let spec_args_signal = self.capability_args(extra_start, arg_count)
             if spec_args_signal.kind != ComptimeControlKind.CTL_VALUE:
                 return spec_args_signal
-            let spec_val = self.extra_values.get(spec_args_signal.value.extra_start as i64)
+            let spec_val = self.extra_value_at(spec_args_signal.value.extra_start as i64)
             if spec_val.kind != ComptimeValueKind.CV_STRUCT:
                 return self.fail(node, "run_spec first argument must be ProcessSpec struct")
             let executable = self.struct_field_value_by_name(spec_val, "executable")
@@ -5683,7 +5690,7 @@ impl ComptimeEvaluator:
             argv_parts.push(executable.text)
             if spec_args.kind == ComptimeValueKind.CV_VEC or spec_args.kind == ComptimeValueKind.CV_ARRAY:
                 for ai in 0..spec_args.extra_count:
-                    let elem = self.extra_values.get((spec_args.extra_start + ai) as i64)
+                    let elem = self.extra_value_at((spec_args.extra_start + ai) as i64)
                     argv_parts.push(elem.text)
             let argv = self.vec_str_to_argv_from_parts(argv_parts, method, node)
             if self.had_error != 0:
@@ -5754,7 +5761,7 @@ impl ComptimeEvaluator:
                 return comptime_control_error()
             return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i32 as i32), with_exec_wait(pid, timeout_ms) as i64))
 
-        let argv_value = self.extra_values.get(args_signal.value.extra_start as i64)
+        let argv_value = self.extra_value_at(args_signal.value.extra_start as i64)
         let argv = self.vec_str_to_argv(argv_value, method, node)
         if self.had_error != 0:
             return comptime_control_error()
@@ -5825,7 +5832,7 @@ impl ComptimeEvaluator:
             self.process_env_restore(saved_env)
             return self.tool_process_result(rc, stdout_path, stderr_path, node)
         if method == "run_capture_with_env":
-            let process_env = self.extra_values.get((args_signal.value.extra_start + 4) as i64)
+            let process_env = self.extra_value_at((args_signal.value.extra_start + 4) as i64)
             self.record_process_effect(record, method, argv_parts, "", timeout_ms, "", stdout_path, stderr_path, self.effect_env_text_from_process_env_value(process_env))
             let saved_env = self.process_env_apply(process_env, node)
             if self.had_error != 0:
@@ -5836,7 +5843,7 @@ impl ComptimeEvaluator:
         let cwd = self.capability_arg_str(args_signal.value, 4, method, node)
         if self.had_error != 0:
             return comptime_control_error()
-        let process_env = self.extra_values.get((args_signal.value.extra_start + 5) as i64)
+        let process_env = self.extra_value_at((args_signal.value.extra_start + 5) as i64)
         self.record_process_effect(record, method, argv_parts, cwd, timeout_ms, "", stdout_path, stderr_path, self.effect_env_text_from_process_env_value(process_env))
         let saved_env = self.process_env_apply(process_env, node)
         if self.had_error != 0:
@@ -5981,7 +5988,7 @@ impl ComptimeEvaluator:
             let args_signal = self.capability_args(extra_start, arg_count)
             if args_signal.kind != ComptimeControlKind.CTL_VALUE:
                 return args_signal
-            record.options = self.extra_values.get(args_signal.value.extra_start)
+            record.options = self.extra_value_at(args_signal.value.extra_start)
             self.store_workspace_record(workspace_id, record)
             return comptime_control_value(comptime_value_void(0))
         if method == "set_migrate_options":
@@ -5990,7 +5997,7 @@ impl ComptimeEvaluator:
             let args_signal = self.capability_args(extra_start, arg_count)
             if args_signal.kind != ComptimeControlKind.CTL_VALUE:
                 return args_signal
-            record.migrate_options = self.extra_values.get(args_signal.value.extra_start)
+            record.migrate_options = self.extra_value_at(args_signal.value.extra_start)
             self.store_workspace_record(workspace_id, record)
             return comptime_control_value(comptime_value_void(0))
         if method == "begin_intercept":
@@ -6062,7 +6069,7 @@ impl ComptimeEvaluator:
             let args_signal = self.capability_args(extra_start, arg_count)
             if args_signal.kind != ComptimeControlKind.CTL_VALUE:
                 return args_signal
-            let replacement_value = self.extra_values.get(args_signal.value.extra_start)
+            let replacement_value = self.extra_value_at(args_signal.value.extra_start)
             var replacement = self.link_command_from_value(replacement_value, node)
             if self.had_error != 0:
                 return comptime_control_error()
@@ -6389,7 +6396,7 @@ impl ComptimeEvaluator:
             let field_index = self.struct_field_index(base_signal.value.type_id, field)
             if field_index < 0:
                 return self.fail(node, "unknown comptime struct field")
-            return comptime_control_value(self.extra_values.get((base_signal.value.extra_start + field_index) as i64))
+            return comptime_control_value(self.extra_value_at((base_signal.value.extra_start + field_index) as i64))
         self.fail(node, "comptime field access requires a struct value, got " ++ comptime_value_kind_name(base_signal.value.kind))
 
     mut fn eval_index(node: i32) -> ComptimeControl:
@@ -6406,7 +6413,7 @@ impl ComptimeEvaluator:
         if base.kind == ComptimeValueKind.CV_ARRAY or base.kind == ComptimeValueKind.CV_TUPLE or base.kind == ComptimeValueKind.CV_VEC:
             if index < 0 or index >= base.extra_count as i64:
                 return self.fail(node, "comptime index out of bounds")
-            return comptime_control_value(self.extra_values.get((base.extra_start + index as i32) as i64))
+            return comptime_control_value(self.extra_value_at((base.extra_start + index as i32) as i64))
         self.fail(node, "comptime index requires an array, tuple, or vec")
 
     mut fn fstring_segment_text(value: ComptimeValue, node: i32) -> str:
@@ -6507,7 +6514,7 @@ impl ComptimeEvaluator:
         var matched = 0
         if rhs.kind == ComptimeValueKind.CV_ARRAY or rhs.kind == ComptimeValueKind.CV_TUPLE or rhs.kind == ComptimeValueKind.CV_VEC:
             for i in 0..rhs.extra_count:
-                let item = self.extra_values.get((rhs.extra_start + i) as i64)
+                let item = self.extra_value_at((rhs.extra_start + i) as i64)
                 if comptime_values_equal(lhs, item, self.extra_values) != 0:
                     matched = 1
                     break
@@ -6757,7 +6764,7 @@ impl ComptimeEvaluator:
             let extra_start = self.ast.get_data0(pat)
             for i in 0..count:
                 let elem_pat = self.ast.get_extra(extra_start + i)
-                let elem_value = self.extra_values.get((value.extra_start + i) as i64)
+                let elem_value = self.extra_value_at((value.extra_start + i) as i64)
                 if self.match_pattern(elem_pat, elem_value, node) == 0:
                     return 0
             return 1
@@ -6774,7 +6781,7 @@ impl ComptimeEvaluator:
                 let extra_start = self.ast.get_data1(pat)
                 for i in 0..bind_count:
                     let inner_pat = self.ast.get_extra(extra_start + i)
-                    let inner_value = self.extra_values.get((value.extra_start + i) as i64)
+                    let inner_value = self.extra_value_at((value.extra_start + i) as i64)
                     if self.match_pattern(inner_pat, inner_value, node) == 0:
                         return 0
                 return 1
@@ -6932,7 +6939,7 @@ impl ComptimeEvaluator:
                 let step_value = iterable_signal.value.data0 + i as i64
                 self.bind_value(binding, comptime_value_int(self.sema.ty_i64 as i32, step_value), 0)
             else:
-                let elem = self.extra_values.get((iterable_signal.value.extra_start + i) as i64)
+                let elem = self.extra_value_at((iterable_signal.value.extra_start + i) as i64)
                 self.bind_value(binding, elem, 0)
             if index_binding != 0:
                 self.bind_value(index_binding, comptime_value_int(self.sema.ty_i64 as i32, i as i64), 0)
@@ -7118,7 +7125,7 @@ impl ComptimeEvaluator:
             if recv_signal.value.kind == ComptimeValueKind.CV_STRUCT:
                 let field_index = self.struct_field_index(recv_signal.value.type_id, field)
                 if field_index >= 0:
-                    let field_value = self.extra_values.get((recv_signal.value.extra_start + field_index) as i64)
+                    let field_value = self.extra_value_at((recv_signal.value.extra_start + field_index) as i64)
                     if field_value.kind == ComptimeValueKind.CV_FN:
                         return self.eval_fn_value_call(field_value, self.ast.get_data1(node), arg_count, node)
                 if self.sema.pipeline_method_exists(recv_signal.value.type_id, field) != 0:
@@ -7506,7 +7513,7 @@ impl ComptimeEvaluator:
         let workspace_ids: Vec[i32] = Vec.new()
         let intercepted: Vec[i32] = Vec.new()
         for i in 0..workspaces.extra_count:
-            let workspace_value = self.extra_values.get((workspaces.extra_start + i) as i64)
+            let workspace_value = self.extra_value_at((workspaces.extra_start + i) as i64)
             let workspace_id = self.workspace_record_index(workspace_value, "parallel", node)
             if workspace_id < 0:
                 return comptime_control_error()
