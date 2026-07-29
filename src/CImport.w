@@ -6713,9 +6713,20 @@ impl CiExprPool:
             var ai = 0
             while ai < nc:
                 let child = with_ci_child(session, cursor, ai)
-                let child_kind = with_ci_cursor_kind(session, ci_peel_transparent(session, child))
+                let child_value = ci_peel_transparent(session, child)
+                let child_kind = with_ci_cursor_kind(session, child_value)
+                let child_cxtype = with_ci_cursor_type(session, child_value)
+                let child_ty_str = if child_cxtype >= 0: with_ci_type_translated(session, child_cxtype) else: ""
+                var child_is_whole_elem = child_ty_str.len() > 0 and child_ty_str == elem_ty_str
+                if not child_is_whole_elem and child_cxtype >= 0 and elem_cxtype >= 0:
+                    let child_canonical = with_ci_type_canonical(session, child_cxtype)
+                    let elem_canonical = with_ci_type_canonical(session, elem_cxtype)
+                    if child_canonical >= 0 and elem_canonical >= 0:
+                        let child_canonical_str = with_ci_type_translated(session, child_canonical)
+                        let elem_canonical_str = with_ci_type_translated(session, elem_canonical)
+                        child_is_whole_elem = child_canonical_str.len() > 0 and child_canonical_str == elem_canonical_str
                 var item_id: CiExprId = 0 as CiExprId
-                if elem_field_count > 0 and (child_kind != CXK_INIT_LIST and child_kind != CXK_COMPOUND_LITERAL):
+                if elem_field_count > 0 and not child_is_whole_elem and (child_kind != CXK_INIT_LIST and child_kind != CXK_COMPOUND_LITERAL):
                     if ai + elem_field_count > nc:
                         return 0 as CiExprId
                     var field_names: Vec[i32] = Vec.new()

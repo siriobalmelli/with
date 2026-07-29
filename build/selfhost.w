@@ -3597,6 +3597,28 @@ fn bs_check_migrate_global_init_list(ctx: &ActionCtx, compiler_path: str, case_d
     if rc != 0: return rc
     0
 
+fn bs_check_migrate_compound_array_whole_values(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
+    let root = ctx.project_info().project_root()
+    let src = bs_join(case_dir, "compound_array.c")
+    let out_w = bs_join(case_dir, "compound_array.w")
+    let c_text = "typedef struct pair { int x; int y; } pair;\nextern int pair_sum(const pair *items, int count);\npair flat_pairs[2] = {1, 2, 3, 4};\nint whole_pair_array(pair a, pair b, pair c) {\n  int out = 0;\n  if (a.x == 0) goto done;\n  out = pair_sum((const pair[]){a, b, c}, 3);\ndone:\n  return out;\n}\n"
+    var rc = bs_write_fixture(ctx, src, c_text, "migrate compound array whole values")
+    if rc != 0: return rc
+    var args: Vec[str] = Vec.new()
+    args |> push("migrate")
+    args |> push(bs_abs(root, src))
+    args |> push("--no-c-export")
+    args |> push("--prefer-brace")
+    args |> push("-o")
+    args |> push(bs_abs(root, out_w))
+    let result = bs_migrate_expect_success(ctx, compiler_path, case_dir, "migrate-compound-array-whole-values", args)
+    if result.rc != 0: return result.rc
+    rc = bs_assert_not_contains(ctx, result.stdout ++ result.stderr, "untranslatable", "compound_array_whole_values")
+    if rc != 0: return rc
+    rc = bs_file_contains(ctx, out_w, "pub fn whole_pair_array", "compound_array_whole_values")
+    if rc != 0: return rc
+    bs_file_contains(ctx, out_w, "var flat_pairs: [2]pair = [pair { x: 1, y: 2 }, pair { x: 3, y: 4 }]", "compound_array_flattened_fields")
+
 fn bs_check_migrate_host_header_compat(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
     let root = ctx.project_info().project_root()
     let src = bs_join(case_dir, "uses_isatty.c")
@@ -4094,6 +4116,8 @@ pub fn run_cli_selfhost_migrate_basic_action(ctx: ActionCtx) -> i32:
     let compiler_path = bs_abs(ctx.project_info().project_root(), compiler_input)
 
     var rc = bs_check_migrate_global_init_list(ctx, compiler_path, bs_join(output_dir, "global_init_list"))
+    if rc != 0: return rc
+    rc = bs_check_migrate_compound_array_whole_values(ctx, compiler_path, bs_join(output_dir, "compound_array_whole_values"))
     if rc != 0: return rc
     rc = bs_check_migrate_host_header_compat(ctx, compiler_path, bs_join(output_dir, "host_header_compat"))
     if rc != 0: return rc
