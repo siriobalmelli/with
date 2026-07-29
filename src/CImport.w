@@ -286,7 +286,7 @@ fn ci_build_define_prefix(defines: &Vec[str]) -> str:
     for i in 0..defines.len() as i32:
         let define = defines.get(i as i64)
         if define.len() > 0:
-            var rendered = define
+            var rendered: str = define
             for di in 0..define.len() as i32:
                 if define.byte_at(di as i64) == 61:
                     rendered = define.slice(0, di as i64) ++ " " ++ define.slice((di + 1) as i64, define.len())

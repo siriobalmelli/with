@@ -1087,7 +1087,7 @@ pub fn dump_mir_body(body: &MirBody, pool: &InternPool, sema: &Sema) -> str:
 
         let stmt_start = body.bb_stmt_starts.get(bb as i64)
         let raw_stmt_count = body.bb_stmt_counts.get(bb as i64)
-        var stmt_count = raw_stmt_count
+        var stmt_count: i32 = raw_stmt_count
         if stmt_start < 0 or raw_stmt_count < 0 or stmt_start > stmt_total:
             out = out ++ "    <invalid statement span>\n"
             stmt_count = 0
@@ -1151,7 +1151,7 @@ fn mir_term_text(body: &MirBody, bb: i32, pool: &InternPool, sema: &Sema) -> str
         if d1 >= 0 and d1 < body.switch_table_starts.len() as i32:
             let start = body.switch_table_starts.get(d1 as i64)
             let raw_count = body.switch_table_counts.get(d1 as i64)
-            var count = raw_count
+            var count: i32 = raw_count
             let vals_len = body.switch_table_vals.len() as i32
             let tgts_len = body.switch_table_targets.len() as i32
             if start < 0 or raw_count < 0 or start > vals_len or start > tgts_len:
@@ -3183,7 +3183,7 @@ pub fn mir_validate_place_type(mir_mod: &MirModule, body: &MirBody, place_id: i3
     let local_id = body.place_locals.get(place_id as i64)
     if local_id < 0 or local_id >= body.local_type_ids.len() as i32:
         return 0
-    var current_ty = body.local_type_ids.get(local_id as i64)
+    var current_ty: i32 = body.local_type_ids.get(local_id as i64)
     let proj_start = body.place_proj_starts.get(place_id as i64)
     let proj_count = body.place_proj_counts.get(place_id as i64)
     if proj_count <= 0:

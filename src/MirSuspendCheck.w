@@ -676,7 +676,7 @@ impl Copy for SuspendSiteSpan
 fn suspend_site_span(ast: AstPool, body: &MirBody, bb: i32) -> SuspendSiteSpan:
     let call_id = body.term_data1(bb)
     let node = body.call_ast_node(call_id)
-    var start = body.bb_term_spans.get(bb as i64)
+    var start: i32 = body.bb_term_spans.get(bb as i64)
     var end = start + 1
     if node != 0:
         start = ast.get_start(node)

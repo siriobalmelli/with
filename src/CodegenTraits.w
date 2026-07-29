@@ -442,7 +442,7 @@ impl Codegen:
         var found_self = false
         for i in 0..saved_len:
             let sym = saved_syms.get(i as i64)
-            var ty = saved_tys.get(i as i64)
+            var ty: i64 = saved_tys.get(i as i64)
             if sym == self.sym_Self:
                 ty = concrete_ty
                 found_self = true
@@ -662,7 +662,7 @@ impl Codegen:
 
         let entry = wl_append_bb(self.context, function, "entry")
         wl_position_at_end(self.builder, entry)
-        var lowered_param_count = param_count
+        var lowered_param_count: i32 = param_count
         let actual_param_count = wl_count_params(function)
         if actual_param_count >= 0 and actual_param_count < lowered_param_count:
             lowered_param_count = actual_param_count

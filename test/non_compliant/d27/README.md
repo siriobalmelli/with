@@ -30,6 +30,16 @@ Baseline survey against v0.15.1-gc7dc28ce6 (2026-07-31):
 | view_liveness_get_after_push_error | **runs (copy shape today)** | compile-error §3.2 | E3 |
 | drop_elem_remove_transfers | runs | runs (drop exactly once via binding) | E2 |
 
+Cells added during the E1+E2 stage2-miscompile fix (2026-08-01), from the two
+compiler-scale defects the 19-cell baseline missed:
+
+| Cell | Today | Required | Owner |
+|---|---|---|---|
+| copy_ptr_elem_cast_materializes | runs | runs (cast converts the pointee, not the slot address) | E1 |
+| copy_elem_var_reassign_error | compile-error | compile-error (owned RHS into ref-typed binding) | E1 |
+| copy_elem_var_typed_owned | runs | runs (typed var is an owned demand) | E1 |
+| explicit_borrow_cast_address | runs | runs (`&place as *T` keeps address semantics) | E1 |
+
 str elements are deliberately absent: owned strs are currently never freed
 (#691); the str campaign owns those cells and should add them here when the
 flip lands.

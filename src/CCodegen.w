@@ -3261,7 +3261,7 @@ impl CCodegen:
             else if count > 1:
                 self.fail(f"C backend does not support enum variants with {count} payload fields")
                 return ""
-            var unit_variant = variant_index
+            var unit_variant: i32 = variant_index
             if self.sema.type_reflection_variant_payload_count(dst_tid, unit_variant) != 0:
                 unit_variant = self.payload_enum_single_unit_variant(dst_tid)
             if unit_variant < 0:

@@ -2267,7 +2267,7 @@ impl Sema:
             let tp_count = self.ast.state.impl_type_params.get((tp_meta_idx + 2) as i64)
             let bound_start = self.blanket_bound_syms.len() as i32
             var total_bounds = 0
-            var tp_off = tp_start
+            var tp_off: i32 = tp_start
             for tpi in 0..tp_count:
                 let bound_count = self.ast.get_extra(tp_off + 1)
                 tp_off = tp_off + 2
@@ -2541,7 +2541,7 @@ impl Sema:
             return
         let where_start = self.ast.state.where_meta.get((where_idx + 1) as i64)
         let where_count = self.ast.state.where_meta.get((where_idx + 2) as i64)
-        var pos = where_start
+        var pos: i32 = where_start
         for wi in 0..where_count:
             let wp_name = self.ast.get_extra(pos)
             let bound_count = self.ast.get_extra(pos + 1)
@@ -2783,7 +2783,7 @@ impl Sema:
         0
 
     mut fn ensure_generic_substitutions(tp_start: i32, tp_count: i32, param_start: i32, param_count: i32, call_node: i32):
-        var pos = tp_start
+        var pos: i32 = tp_start
         for ti in 0..tp_count:
             let tp_name = self.ast.get_extra(pos)
             let bound_count = self.ast.get_extra(pos + 1)

@@ -361,13 +361,16 @@ impl Sema:
     // be supplied by reading a shared reference's Copy pointee. This predicate
     // never participates in inference, method/overload selection, dispatch, or
     // ABI selection. Raw pointers and mutable references are deliberately not
-    // eligible.
+    // eligible as the reference side. A pointer-typed demand is satisfiable
+    // only when the pointee is itself that compatible pointer type (a
+    // `&*mut u8` view supplying an owned `*mut u8`, D22 §6.1) — a `&T` view
+    // never decays to `*T` because compat(*T, T) fails below.
     mut fn can_contextually_copy_ref(expected: i32, actual: i32) -> i32:
         if expected == 0 or actual == 0:
             return 0
         let expected_resolved = self.resolve_alias(expected as TypeId)
         let expected_kind = self.get_type_kind(expected_resolved)
-        if expected_kind == TypeKind.TY_REF or expected_kind == TypeKind.TY_PTR:
+        if expected_kind == TypeKind.TY_REF:
             return 0
         let actual_resolved = self.resolve_alias(actual as TypeId)
         if self.get_type_kind(actual_resolved) != TypeKind.TY_REF or self.get_type_d1(actual_resolved) != 0:
@@ -375,7 +378,23 @@ impl Sema:
         let pointee = self.get_type_d0(actual_resolved)
         if pointee == 0 or self.is_copy(pointee as TypeId) == 0:
             return 0
+        if expected_kind == TypeKind.TY_PTR:
+            // A pointer-typed demand is a strict pointee match: `&*mut u8`
+            // supplies `*mut u8`. builtin_arg_type_compatible's arithmetic
+            // promotion must not apply (`&f64 as *const f64` is an address
+            // cast, not a materialization).
+            return if self.types_compatible(expected as TypeId, pointee as TypeId) != 0: 1 else: 0
         self.builtin_arg_type_compatible(expected, pointee)
+
+    // `&place as *T` is the blessed address-taking spelling; a cast operand
+    // spelled with an explicit borrow must not materialize its pointee.
+    fn cast_operand_is_explicit_borrow(node: i32) -> i32:
+        var n = node
+        while n != 0 and self.ast.kind(n) == NodeKind.NK_GROUPED:
+            n = self.ast.get_data0(n)
+        if n != 0 and self.ast.kind(n) == NodeKind.NK_UNARY and self.ast.get_data0(n) == UnaryOp.UOP_REF:
+            return 1
+        0
 
     mut fn record_contextual_copy_adjustment(source_node: i32, expected: i32, actual: i32) -> i32:
         if source_node <= 0 or self.can_contextually_copy_ref(expected, actual) == 0:
@@ -2218,7 +2237,7 @@ impl Sema:
         // validity preconditions instead. Neither owns through the parameter.
         var raw_validity_param_sym = 0
         for pi in 0..self.current_fn_param_effs.len() as i32:
-            var eff = self.current_fn_param_effs.get(pi as i64)
+            var eff: i32 = self.current_fn_param_effs.get(pi as i64)
             if eff != 0:
                 if sig_idx >= 0:
                     let p_tid = self.sig_param_type(sig_idx, pi)
@@ -2239,7 +2258,7 @@ impl Sema:
                         // move-by-default vestige (D5); they are removed, not gated.
                 if pi == 0 and self.sig_receiver_mode(sig_idx) == ReceiverMode.Move:
                     eff = eff | EFF_CONSUME
-                var direct_eff = self.current_fn_param_direct_effs.get(pi as i64)
+                var direct_eff: i32 = self.current_fn_param_direct_effs.get(pi as i64)
                 if pi == 0 and self.sig_receiver_mode(sig_idx) == ReceiverMode.Move:
                     direct_eff = direct_eff | EFF_CONSUME
                 self.set_sig_param_effect(sig_idx, pi, eff)
@@ -6142,7 +6161,16 @@ impl Sema:
             // demand. Resolve the cast itself first, then record a permitted
             // &Copy read plus any ordinary post-copy conversion.
             if src_tid != 0 and cast_tid != 0:
-                let _ = self.record_contextual_copy_adjustment(src_node, cast_tid as i32, src_tid as i32)
+                if self.record_contextual_copy_adjustment(src_node, cast_tid as i32, src_tid as i32) == 0:
+                    // Target can't absorb the pointee by ordinary conversion
+                    // (e.g. `page as i64` on a &*mut u8 view): the cast is
+                    // still an owned demand — materialize the Copy pointee and
+                    // let the cast itself convert (D22 §6.1 step 3). An
+                    // explicit `&place` operand keeps address semantics
+                    // (`&array[0] as *T`).
+                    let cast_src_resolved = self.resolve_alias(src_tid)
+                    if self.get_type_kind(cast_src_resolved) == TypeKind.TY_REF and self.get_type_d1(cast_src_resolved) == 0 and self.cast_operand_is_explicit_borrow(src_node) == 0:
+                        let _ = self.record_contextual_copy_adjustment(src_node, self.get_type_d0(cast_src_resolved), src_tid as i32)
             // Store resolved cast type so MIR lowering can read it without
             // calling resolve_type_expr (which would add_type on a shallow-copied Sema).
             self.typed_expr_types.insert(node, cast_tid as i32)
@@ -9980,6 +10008,17 @@ impl Sema:
 
         // Check type compatibility
         if target_type != 0 and value_type != 0:
+            // An owned value cannot be stored into a reference-typed binding:
+            // assignment creates no borrow (an auto-ref of the RHS would
+            // dangle), and lowering would store the value's bits into a
+            // pointer-typed local. `var x = xs.get(i)` binds the view; a var
+            // meant as owned scratch storage needs the typed spelling
+            // `var x: T = xs.get(i)` (owned demand, D27).
+            let assign_target_resolved = self.resolve_alias(target_type)
+            if self.get_type_kind(assign_target_resolved) == TypeKind.TY_REF:
+                let assign_value_resolved = self.resolve_alias(value_type as TypeId)
+                if self.get_type_kind(assign_value_resolved) != TypeKind.TY_REF and self.get_type_kind(assign_value_resolved) != TypeKind.TY_NEVER:
+                    self.emit_error("cannot assign an owned value to a reference-typed binding; annotate the binding's declared type to take an owned copy (e.g. `var x: T = ...`)", node)
             if self.types_compatible(target_type as i32, value_type as i32) == 0 and self.has_contextual_copy_adjustment(value) == 0:
                 if self.arithmetic_result_type(target_type, value_type) == 0:
                     self.emit_error("type mismatch in assignment", node)
@@ -12613,7 +12652,7 @@ impl Sema:
             return 0
         let elem_tys: Vec[i32] = Vec.new()
         for pi in 0..payload_count:
-            var elem_ty = payloads.get(pi as i64)
+            var elem_ty: i32 = payloads.get(pi as i64)
             if accessor_kind == 3:
                 elem_ty = self.ensure_exact_type(TypeKind.TY_REF, elem_ty, 0, 0) as i32
             else if accessor_kind == 4:
@@ -16091,7 +16130,7 @@ impl Sema:
             return 1
         let tp_start = self.ast.state.impl_type_params.get((tp_meta + 1) as i64)
         let tp_count = self.ast.state.impl_type_params.get((tp_meta + 2) as i64)
-        var pos = tp_start
+        var pos: i32 = tp_start
         for ti in 0..tp_count:
             let tp_name = self.ast.get_extra(pos)
             let bound_count = self.ast.get_extra(pos + 1)
@@ -16111,7 +16150,7 @@ impl Sema:
             return 1
         let tp_start = self.ast.state.impl_type_params.get((tp_meta + 1) as i64)
         let tp_count = self.ast.state.impl_type_params.get((tp_meta + 2) as i64)
-        var pos = tp_start
+        var pos: i32 = tp_start
         for ti in 0..tp_count:
             let tp_name = self.ast.get_extra(pos)
             let bound_count = self.ast.get_extra(pos + 1)

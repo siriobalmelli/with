@@ -1324,7 +1324,7 @@ impl MirBuilder:
                 break_defer_depth: self.goto_label_defer_depths.get(idx as i64),
                 break_scope_depth: self.goto_label_scope_depths.get(idx as i64),
             }
-        var scope_depth = self.goto_label_scope_depths.get(idx as i64)
+        var scope_depth: i32 = self.goto_label_scope_depths.get(idx as i64)
         if scope_depth < 0:
             scope_depth = self.drop_scope_starts.len() as i32
         var drop_depth = self.drop_local_ids.len() as i32
@@ -8606,7 +8606,7 @@ impl MirBuilder:
         let decision = self.contextual_join_decision(join_node)
         let exact_type = self.sema.contextual_join_arm_types.get(arm_index as i64)
         let arm_kind = self.sema.contextual_join_arm_kinds.get(arm_index as i64)
-        var source_type = exact_type
+        var source_type: i32 = exact_type
         var op = self.operand_for_place(exact_place, exact_type)
         if arm_kind == D22_JOIN_ARM_MATERIALIZED_REF:
             let resolved = self.sema.resolve_alias(exact_type as TypeId)
@@ -13553,7 +13553,7 @@ fn lower_generator_next_body(sema: &Sema, source: &MirBody, fn_node: i32) -> Mir
         for si in 0..count:
             let stmt_id = start + si
             let sk = source.stmt_kinds.get(stmt_id as i64)
-            var sd0 = source.stmt_d0.get(stmt_id as i64)
+            var sd0: i32 = source.stmt_d0.get(stmt_id as i64)
             let sd1 = source.stmt_d1.get(stmt_id as i64)
             if sk == StmtKind.StorageLive or sk == StmtKind.StorageDead or sk == StmtKind.Drop:
                 sd0 = mir_gen_remap_local(&local_map, sd0)

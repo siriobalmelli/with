@@ -1,5 +1,96 @@
 # Active Handoff — D22 implementation, Stage 6 (2026-07-24)
 
+## 2026-08-01 session: stage2 miscompile ROOT-CAUSED and FIXED; battery owed
+
+The E1+E2 stage2 miscompile is fixed at the exact line. Stage2 now runs
+(trivial programs, selfcheck ok in 83s, matrix at required verdicts,
+issue64/derive pins green, matrix debug-alloc clean). The battery is the
+remaining gate before reseed.
+
+### Root cause (instruction-level, watchpoint-proven end to end)
+
+Two E1/E2 Sema defects, both "element view used where an owned value is
+demanded, silently un-materialized":
+
+1. **Casts never materialized element views.** `InternStringArena.store`'s
+   `(page as i64 + self.offset)` — `page` binds the `&*mut u8` view from
+   `self.pages.get(last)` — cast the SLOT ADDRESS (`with_vec_get_ptr`
+   result) instead of the loaded element. The arena then memcpy'd interned
+   identifiers over its own pages buffer and up through the small heap
+   (dst = &pages[last] + offset), clobbering a freelist block header with
+   ASCII ("ith_prin"); every later pop propagated the poison until an
+   alloc dereferenced it. Cause: `check_expr`'s NK_CAST arm records the
+   contextual-Copy adjustment against the CAST TARGET
+   (`compat(i64, *mut u8)=0` → refused), and `can_contextually_copy_ref`
+   also early-returned on ANY pointer-typed expected, so a `&*mut u8` view
+   could never supply an owned `*mut u8` at all. Fix (SemaCheck.w): the
+   cast falls back to recording the demand against the POINTEE (ruling
+   §6.1 step 3 — copy pointee, cast converts), except for explicit
+   `&place` operands (`&array[0] as *T` keeps address semantics —
+   `cast_operand_is_explicit_borrow`); the recorder's early-return now
+   excludes only TY_REF expected (decay to `*T` is still blocked by the
+   pointee-compat requirement; the raw-pointer negative control is about
+   the reference side and stays green). 12-line repro:
+   `test/non_compliant/d27/copy_ptr_elem_cast_materializes.w`.
+
+2. **Owned values silently stored into view-typed vars.**
+   `var off = xs.get(0); off = off + 1` typed `off` as `&i32` and accepted
+   the owned-i32 reassignment (`types_compatible` forgives `T → &T` for
+   call-site auto-ref), so codegen stored value bits into a pointer-typed
+   local; any later view-read dereferenced the integer. **This is a
+   D22-era bug: the shipped seed segfaults on the map spelling**
+   (`var v = m.get(k).unwrap(); v = v + 1` → rc=139 under
+   v0.15.1-gc7dc28ce6). Fix: assignment now rejects an owned RHS into a
+   reference-typed binding (no borrow is created; an auto-ref would
+   dangle) with a directed diagnostic naming the `var x: T = ...`
+   spelling. 22 compiler-source sites migrated to typed bindings
+   (typed binding = owned demand, D27 ruling 3). Cells:
+   `copy_elem_var_reassign_error.w`, `copy_elem_var_typed_owned.w`,
+   `explicit_borrow_cast_address.w`.
+
+### Corrections to the 2026-07-31 section below — do not re-chase
+
+- The "Lexer receiver pointer overlaps the caller's TokenList local"
+  inference was a MISATTRIBUTION: 0x16fdc8cf8 is the LEXER (self), and
+  tokenize was a downstream victim of the poisoned freelist, not the
+  corruption source. The freelist poison arrives via legitimate pops of a
+  block whose header the intern arena scribbled.
+- "tokenize MIR byte-identical" was true and irrelevant; the wrong MIR is
+  in `InternStringArena.store`/`intern_str` (`cast(copy _21 as ty4)` with
+  `_21: &*mut u8`, no deref — vs the seed's owned `_21: ty80`).
+- `--dump-abi` seed-vs-stage1: NO divergence (normalized diff empty).
+  The one missing sig, `StackifyGraph.update_block`, is the unsafe
+  writeback helper the E1+E2 commit deliberately DELETED (the seed dumps
+  its own older embedded stdlib) — benign.
+- The frozen-phase suspect (`ensure_exact_type(TY_REF...)` in Vec.get's
+  return path) did not fire on small repros, BUT
+  `analyze src/main.w audit:all` under stage1 reports 48 violations of
+  "frozen phase Codegen.ast_static_type_expr →
+  Sema.struct_field_type_frozen_or_compute: mutable Sema re-entry" —
+  classification pending (seed-vs-stage1 comparison was left running;
+  logs at the session scratchpad `audit2_*.log`). If the seed shows the
+  same class, it is pre-existing; either way it is real and needs its own
+  root-cause pass.
+
+### Still owed
+
+1. **The battery** (the E1+E2 batch + this fix commit are ONE isolated
+   ownership/MIR batch): build, :fixpoint, :test, :move-audit,
+   :drop-audit, :test-green, :last-green — then reseed. Commit BEFORE the
+   battery (version stamp embeds the commit).
+2. **audit:all frozen-phase violations** (above) — classify and fix or
+   file.
+3. **E3 residuals unchanged:** view_liveness_get_after_push_error stays
+   pre-D27 by design; the #715/#730 interim gates retire in E3, not now.
+4. **Eric decision brief (non-blocking):** `var x = <element view>` now
+   binds the view and owned reassignment errors (spec-derived: assignment
+   is an owned demand from the target's type; spec §"binding names
+   what's there" says *let*). The alternative — var-init itself is an
+   owned demand (zero annotation, matches Vale/Rust `let mut x = v[i]`
+   copying) — would be LESS ceremony but needs Eric's words in the spec.
+   Current behavior is honest (loud error + directed fix-it), so this can
+   wait for the E4 close-out brief.
+
 ## 2026-07-31 session tail: D27 enshrined; E1+E2 landed; stage2 miscompile blocks the battery
 
 **Read first:** `docs/decisions.md` D27 (Eric's ruling, three parts),

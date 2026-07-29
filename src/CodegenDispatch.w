@@ -1722,7 +1722,7 @@ impl Codegen:
             let fn_sym = cd
             // ConstKind.CK_FN sym from MirLower is in sema pool — must translate to codegen pool.
             // Direct fn_values lookup would return wrong function (pool ID collision).
-            var translated_sym = fn_sym
+            var translated_sym: i32 = fn_sym
             let sema_text = self.sema_symbol_text(fn_sym)
             if sema_text.len() > 0:
                 translated_sym = self.intern.intern(sema_text)
@@ -6282,7 +6282,7 @@ impl Codegen:
             if stored > 0:
                 return stored
         // Fallback: walk projections using sema snapshot
-        var ty = local_ty
+        var ty: i32 = local_ty
         var active_variant_idx = -1
         let p_start = body.place_proj_starts.get(place_id as i64)
         for pi in 0..p_count:

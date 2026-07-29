@@ -2089,7 +2089,7 @@ impl Codegen:
             byval_types = vec_copy_i64(byval_types_opt.unwrap())
         let param_offset = if has_sret != 0: 1 else: 0
         for ai in 0..arg_count:
-            var arg_val = args.get(ai as i64)
+            var arg_val: i64 = args.get(ai as i64)
             let actual_ai = ai + param_offset
             if actual_ai < param_count:
                 var param_ty = wl_type_of(wl_get_param(fn_val, actual_ai))
