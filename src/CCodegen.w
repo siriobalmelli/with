@@ -3830,7 +3830,7 @@ impl CCodegen:
         var match_sym = 0
         var match_score = -1
         for si in 0..self.sema.sig_names.len() as i32:
-            let sym = self.sema.sig_names.get(si as i64)
+            let sym: i32 = self.sema.sig_names.get(si as i64)
             if only_local_defs != 0 and self.has_body_for_sym(sym) == 0:
                 continue
             if self.sig_matches_call_name(sym, fn_sym) == 0:
@@ -3939,7 +3939,7 @@ impl CCodegen:
         var match_sym = 0
         var match_score = -1
         for si in 0..self.sema.sig_names.len() as i32:
-            let sym = self.sema.sig_names.get(si as i64)
+            let sym: i32 = self.sema.sig_names.get(si as i64)
             if only_local_defs != 0 and self.has_body_for_sym(sym) == 0:
                 continue
             if self.sema.sig_get_param_count(si) != arg_count:
@@ -3975,7 +3975,7 @@ impl CCodegen:
         var out = ""
         var kept = 0
         for si in 0..self.sema.sig_names.len() as i32:
-            let sym = self.sema.sig_names.get(si as i64)
+            let sym: i32 = self.sema.sig_names.get(si as i64)
             if only_local_defs != 0 and self.has_body_for_sym(sym) == 0:
                 continue
             if self.sema.sig_get_param_count(si) != arg_count:
