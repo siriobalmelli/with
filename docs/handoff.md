@@ -1,575 +1,118 @@
-# Handoff: historical state with current D22 override
-
-> **PARAMETER-MODE CORRECTION (2026-07-23).** Any historical SHARE-PLACE/D5
-> statement below about free-function parameters is superseded. Specification
-> §3.8 governs: `&T` borrows and plain `T` consumes. Receiver-mode by-place
-> semantics (D12/D21) remain current.
-
-> **CURRENT D22 OVERRIDE (2026-07-23): A new decision has been made, but
-> implementation is still in progress.** `docs/d22-Eric-Ruling.md` is the
-> canonical and complete ruling. The specification and `docs/decisions.md` D22
-> are derivative: `HashMap.get` and
-> `BTreeMap.get` return `Option[&V]` uniformly, `remove` transfers `Option[V]`,
-> Copy materialization is contextual rather than part of lookup's signature,
-> and transparent carriers preserve view origins. Historical sections below are
-> retained for provenance. Every conflicting statement below is false and must
-> not guide current work. In particular, statements that keyed-map `get` returns
-> `Option[V]` or that origins may be lost through Option/Result elimination are
-> superseded.
-
-The remainder of this file is a 2026-07-19 historical snapshot. Its HEAD,
-queue, and “next” instructions are not current repository status.
-
-Historical snapshot updated 2026-07-19. HEAD = the then-latest `main` doc
-commit, pushed.
-**Both canonized rulings are now IMPLEMENTED: D11 (a80c38c0) and D12 in
-full — scalars (566bc58b), uniform bare-self (e101e7e7), str (e823026b);
-#630/#677/#678/#644 all closed, each battery-gated and reseeded.** The
-2026-07-19 sessions also completed #681 and #683 (both closed), designed
-#682, scheduled #691 (wide flip), and put the allocator lane in the
-standing battery. See the QUEUE section for what's next (#682-inc1 →
-#685 → #690 → #691). Historical sections below keep their original maps
-for provenance; DONE markers lead each one.
-
-The single most important rule for the incoming agent:
-
-> **"Canonize to law" means write it to the spec + decision log + agent-guidance
-> (memory, and CLAUDE.md/AGENTS.md if warranted). It does NOT mean implement.**
-> Implementation is a separate, maintainer-greenlit cycle. Two rulings (D11,
-> D12) are canonized but unimplemented; the spec deliberately leads the
-> compiler. **Never revert the spec to match the compiler** — the compiler is
-> what changes. See `decisions.md` D11/D12 and the memory
-> `project_active_spec_ahead_deltas`.
-
----
-
-## Active work — the two canonized-but-unimplemented rulings
-
-### D11 — IMPLEMENTED 2026-07-19 (a80c38c0, battery-green, reseeded ga80c38c0c)
-
-`len()` → `Int` (i64) landed exactly per the map below: the seven sema
-sites flipped (len/count/capacity → i64, position → Option[i64]);
-size/align stayed usize; compiler sources and lib/std needed ZERO changes
-(dual-compatible — the field-form `.len` was already i64). Fixtures:
-behav_len_signed.w (new), underflow panic re-pinned via pure u64, spec
-18.6 + two §10.3 tests updated to the Int surface. #630 CLOSED. The
-section below is the original implementation map, kept for provenance.
-
-### D11 (original map) — `len()` is signed `Int` (i64), never `usize`, never `Option`  →  issue #630
-
-**Ruling (decisions.md D11, canonized in ad6912c3):** `.len()` on every
-collection returns `Int` (i64). Never wrapped in `Option` (a held container
-always has a length; ownership + init rules make null/uninitialized containers
-unrepresentable in safe code, so an Option wrapper would force `.unwrap()` for a
-case the compiler already proved impossible). C's `-1`/`size_t` conventions are
-translated at the modeled-C binding layer (the `with_net` `-errno` precedent),
-never inherited by core types.
-
-**Spec:** §18.6 (`docs/with-specification.md`, ~line 10355) already amended to
-`Int`, with an inline "do not revert to usize" note; the SlotMap method-table
-`len` row (~line 2633) and the escape-example comment (~line 3121) updated.
-
-**Implementation (NOT done — this is the work):**
-- `src/SemaCheck.w`: `collection_len_method_return_type` (~line 16649) returns
-  `self.ty_usize` for `len` → change to `ty_i64`. Grep `ty_usize` in
-  `src/SemaCheck.w`/`src/Sema.w` for the full site list. Same-class sites to
-  flip for a consistent surface: iterator `count` (~16875, ~18794) → i64;
-  `position` (~16869, ~18788) → `Option[i64]`; StringBuilder `capacity`
-  (~16918, ~18577) → i64.
-- **`size`/`align` type-layout methods STAY `usize`** (SemaCheck ~19347) —
-  memory-layout constants for FFI, a deliberately-excluded different category.
-- Field paths (`s.len` on str/slice/array, SemaCheck 9587/9607/9921) **already
-  return `ty_i64`** — the surface was half-signed already; the ruling unifies it.
-- `lib/std/collections.w`: BTreeMap/BTreeSet already declare `len() -> i64`
-  (was a §18.6 violation, now conformant — leave as-is).
-- The runtime already stores lengths as i64 (`with_vec.len`, `with_hashmap_len`).
-- **Self-host flip sweep (#629 protocol):** length typing threads through the
-  compiler's own sources. After the sema flip, instrument both decisions, diff
-  the tree, and **reseed** — the pre-fix seed miscompiles the fixed shape
-  (symptom: release works, stage1 breaks) until `with build :update-seed`. See
-  memory `project_629_selfhost_flips`.
-- **Fixtures:** new `behav_len_signed.w` pinning `v.len() - 1 == -1` on empty,
-  the countdown idiom, BTree/builtin agreement. Rework
-  `test/behavior/behav_unsigned_underflow_panic_message.w` — it currently pins
-  the overflow panic *via* `v.len() - 1`, which STOPS trapping once len is
-  signed; re-express it as a pure-`u64` underflow so the message stays pinned.
-  Update `test/spec/spec_ss18_6_collection_length_methods.w`.
-
-The panic-message fix (f0c627ca) already landed on #630 and named the trap
-(`integer overflow: u64 subtraction wrapped below zero`); D11 removes the trap
-itself.
-
-### D12 — SCALAR TIER IMPLEMENTED 2026-07-19 (566bc58b, battery-green, reseeded g566bc58ba)
-
-#677 CLOSED: scalar/distinct-over-scalar `mut fn` receivers lower via
-share-place (single D6 classifier; `--dump-abi` verdicts D12-aware);
-bare-self assignment legal for drop-free owners; `let` scalar receiver
-gets the spec's clean error. Two foundation bugs found and filed in the
-process: **#689** place reassignment never drops old contents (plain
-`v = w` on a local LEAKS on the shipped compiler — MIR assign lowering
-has no drop elaboration; blocks heap-owner bare-self and parts of #678)
-and **#690** param rebinding rejected despite mutability.md. The
-drop-audit skill (.claude/skills/drop-audit/) did NOT survive the
-machine switch and is not in the repo — copy it from the old machine or
-recommit it; this cycle substituted a --debug-alloc matrix. Remaining
-D12: #678 (str) — delicate, interacts with §22. Section below is the
-original map, kept for provenance.
-
-**#689 RESOLVED as duplicate of #608's by-design ruling (2026-07-19):**
-the "reassignment leak" is the A5/#606 narrow drop gate — POD-element
-Vec buffers never free ANYWHERE (even plain scope exit) because the
-compiler copies POD Vec headers as cheap handles; freeing would
-double-free. The "wide flip" (Vecs own their buffers) is a deliberate,
-UNSCHEDULED migration (#608 says refile as a project when scheduled).
-User-Drop types drop-on-reassign correctly today (verified 1,2,2
-allocator-silent).
-
-**2026-07-19 maintainer rulings — BOTH EXECUTED:**
-- **Wide flip SCHEDULED: #691** — next cycle's headline campaign,
-  post-v0.16.0, sequenced after #685 arenas. Rust/Vale unique-ownership
-  direction (no ARC/GC); D5 share-place is the migration tool; app
-  developers type zero new characters; four battery-gated increments in
-  the issue.
-- **D12 bare-self gate REMOVED (e101e7e7, battery-green incl. the
-  :debug-alloc-tests lane, reseeded ge101e7e7e + asset):** `mut self`
-  binds mutable for EVERY owner — mode decides, uniformly.
-  `self = W{...}` has exact local-reassignment parity (incl. the
-  provisional A5/#608 POD status #691 retires). Drop-exactly-once
-  through the share-place ref param pinned in
-  da_self_replace_user_drop.w (27 drops, leak count=0); values matrix
-  in behav_d12_self_replace.w. D12 aggregate+scalar surface is now
-  COMPLETE except str (#678).
-- Bonus finding: the allocator lane ran in a battery for the first time
-  and caught two-week-old fixture rot (da_vecdrop_moved_var_reassign
-  was un-compilable since the share-place flip; modernized in 508310f2).
-  **Recommend adding debug-alloc-tests to the standing tests aggregate**
-  (small build.w change, own battery) — the lane is "floor eyes" and
-  proved it catches what nothing else does.
-
-### D12 (original map) — `mut fn` mutates in place on EVERY owner type  →  umbrella #644, impl #677 (scalar) + #678 (str)
-
-**Ruling (decisions.md D12, canonized in 1a016f6a):** a `mut fn` receiver
-borrows and mutates the caller's place for every owner type — scalar primitives,
-`str`, distinct/newtypes over them, and aggregates alike.
-`extend i32: mut fn bump(): self += 1` must make `x.bump()` mutate `x`.
-
-**Governing principle:** the receiver **MODE** decides share-place, the owner's
-type does not. `i32` is `Copy`, but `mut fn` still borrows in place (mode wins
-over Copy-ness, exactly as for Copy structs). `f(x)` copies; `x.bump()` borrows.
-`move self` stays consuming/owned. No new mechanism — this is D5 share-place /
-`PassMode::IndirectPlace`, the same ABI aggregates use.
-
-**Idiom (what the spec examples teach):** domain verbs on distinct/newtypes —
-`distinct type Health = i32; extend Health: mut fn damage(n)` → `hp.damage(30)`.
-Bare `i32.bump()` is legal but prefer the operator when there's no domain
-meaning.
-
-**Spec:** §9.5 (`docs/with-specification.md`, ~line 3662, after the receiver-mode
-table) has the explicit primitive/str clause, the mode-over-type principle, and
-the Health example.
-
-**Implementation (NOT done — the single root-cause gate):**
-`src/SemaDecl.w:1086 fn_param_uses_value_ref_abi` — line ~1089 excludes `str`
-owners; line ~1093 restricts IndirectPlace to `TY_STRUCT`/`TY_GENERIC_INST`/
-`TY_ENUM`. Primitives and str fall through to by-value, so `self += 1` mutates a
-callee copy; after D7 enforcement this surfaces as the misleading
-`cannot assign to immutable variable`.
-- **#677 (scalar primitives, land first):** a non-`move` `self` on a scalar
-  primitive (or distinct-over-scalar) owner returns share-place. Extend via
-  `compute_fn_abi`/`PassMode` (D6) — ONE classifier read by both
-  `declare_function` prologue and `push_call_arg`; never a per-path decision.
-  Verify with `--dump-abi` (shows `SHARE-PLACE | OWNED | COPY` per param).
-- **#678 (str/fat-pointer, delicate follow-on):** `str` is `{ptr,len}`
-  (PassMode::Fat); IndirectPlace = `str*`, callee writes both fields. Distinct
-  ABI shape + its own ephemeral/view-origin cell (§22): a `mut fn` reassigning
-  `self` to a sub-slice must not outlive the source.
-- **Both gated on `/drop-audit`** (`.claude/skills/drop-audit/`) — value shape ×
-  control flow × ownership op × receiver mode. Run before AND after; one bad
-  cell means the region is untested. This is the most delicate subsystem.
-
-Both D11 and D12 were ruled **in scope for v0.16.0** ("do it right, now"),
-not deferred.
-
----
-
-## #665 — comptime HashMap Option convergence (LANDED bb31e86a, battery GREEN)
-
-Confirmed: the full battery passed on bb31e86a (`GATES EXIT: 0` — all 9 targets,
-FIXPOINT, audit violations=0, EMIT-C smoke, last-green recorded). The historical
-fix made comptime `HashMap.get`/`remove` return `Option[V]` (a contract now
-superseded for keyed-map `get` by D22)
-(was naked value — a per-phase type divergence); added `eval_option_method_call`
-in `src/ComptimeEval.w` for comptime Option receivers (unwrap/expect/is_some/
-is_none/unwrap_or). Closure-taking Option combinators (map/and_then/filter) and
-#665 items 2 (comptime annotated-let generic inference) & 3 (user impl-methods
-as comptime fns) remain — keep #665 open for those. **D22 supersedes the `get`
-half of that historical contract:** comptime `get` must converge on
-`Option[&V]`; `remove` remains the owned `Option[V]` transfer.
-
----
-
-## This session's landed & closed work (context)
-
-- **#549** (a3ae4f62) — value-position `if` branches that don't unify now
-  diagnose; distinct-base unwrap keeps BlockId-vs-i32 joins accepted.
-- **#630 message** (f0c627ca) — overflow panics name type/operation/wrap
-  direction. (Issue stays open as the D11 impl vehicle.)
-- **#656** (6f123492) — f-string holes preserve source-level backslashes
-  (normalizer + lexer + hole-scanner all track nested-string context).
-- **#657** (67587e78) — `std.time.now()` returns Unix-epoch seconds
-  (`rt_wall_clock_sec` per platform); `now_ns()` stays monotonic.
-- **#658** (49453206) — `std.net` TCP listen/accept + UDP bind implemented on
-  Darwin/Linux (`-errno` surface, new `sock_port`/`udp_connect`). Windows has no
-  net backend (deferred).
-- **#668** (a7efb23a) + **#619** (33b064ea) — **emit-C cross-compilation loop
-  CLOSED**: `with build src/main.w --emit-c` emits the full compiler (1.84M
-  lines), a stock host `cc` builds it, and `with-from-c` re-emits itself
-  byte-identically (`:emit-c-fixpoint`). #619's OOM no longer reproduces.
-- **#638** (85870d3c) — `with fmt` inline `--prefer-brace`/`--prefer-colon`
-  conversions; new `cli-selfhost-fmt-tests` target.
-- Earlier: **#669/#670/#671/#637/#672** and **D10** (channel `recv()->Option`)
-  all landed pre-this-file.
-
----
-
-## Gate battery (run before EVERY commit; confirm `GATES EXIT: 0` as its own step)
-
-```sh
-(with build && with build :fixpoint && \
- ./out/stage/bin/with-stage2 analyze src/main.w audit:all && \
- WITH_MEMORY_LIMIT_BYTES=0 with build :test && \
- WITH_MEMORY_LIMIT_BYTES=0 with build :test-green && \
- WITH_MEMORY_LIMIT_BYTES=0 with build :last-green; echo "GATES EXIT: $?")
-```
-
-- ~40 min wall. Run in background; do NOT tail-truncate — grep the harness's own
-  `ok:`/`error:` verdict lines and the final `GATES EXIT`.
-- `WITH_MEMORY_LIMIT_BYTES=0` is required for `:test`/`:test-green`/`:last-green`
-  on this high-RAM host (else `:last-green` alone can SIGKILL/125 at the memory
-  cap even when tests pass).
-- Never chain a commit/issue-close onto the tail of gate output — confirm the
-  exit as a separate step first (memory `feedback_gate_check_before_commit`).
-- Doc-only commits (spec/decisions/handoff) don't need the battery.
-- Commit with explicit paths to keep unrelated in-flight changes out.
-
-## Reseed — CURRENT (2026-07-18, third reseed of the day)
-
-Installed seed `~/.local/bin/with` AND `src/main` = **v0.15.1-gf3c65c2d7**
-(= HEAD f3c65c2d), both verified rc=0 with valid signatures; release asset
-re-uploaded to match. The seed carries the COMPLETE #681 work: per-unit
-generation (a497d145 / bc0c9832 / e6c770b9) plus the windowed emit
-concurrency + strip-pipeline deletion (0a14b07c / 60dc5ec9). Reseed
-sequencing landmine (hit live): committing ANYTHING between the battery
-and `:update-seed` restamps the binary and require-last-green rejects it —
-recover by rerunning `:test → :test-green → :last-green` (cheap; verdicts
-key on with.unstamped, D13) then `:update-seed → :install-user` with no
-commits in between. The first
-`with build` after any reseed rebuilds the chain once (seed hash is a stage1
-input — expected). **Verify every reseed with
-`~/.local/bin/with --version; echo $?`** — an in-place overwrite of the
-running signed binary can leave a stale arm64 vnode signature cache →
-SIGKILL rc=137 (root-fixed in the installer 7ba518e2: temp-sibling + rename;
-the stamp action now uses the same pattern, 0efd2552).
-
-**Stale-machine recovery (hit live 2026-07-18):** a machine whose seed
-predates a stdlib API that build.w names (`Target.allow_parallel`,
-`write_tar_gz`) fails EVERY `with build` subcommand — including `:seed` — in
-seconds with "unknown method ... / build.w evaluation wrapper compilation
-failed". That fingerprint = stale seed, not a code bug. Recovery: gh-download
-the `with-darwin-aarch64` release asset (re-uploaded at reseeds; check asset
-`updatedAt`, not the release date), verify `--version`/ancestry, and
-temp-sibling-install to BOTH `src/main` and `~/.local/bin/with`.
-
-## Release posture (v0.16.0)
-
-Queue-driven, not time-driven (maintainer: the queue IS the contract). Deferred
-to milestone **post-v0.16.0**: the migration campaign #675→#673/#674/#676, all
-Windows work (#369), and #650's remainder. In v0.16.0 scope: D11 (#630), D12
-(#677/#678), and the remaining pre-release bug/coverage queue. Two rulings await
-the maintainer's explicit go before implementation.
-
-## Authorship / discipline
-
-Eric Hartford is sole commit author — NEVER add AI co-author/trailer. Never
-`git stash`. One logical change per commit. `-O1` always, never `-O0`.
-Share-place (D5) / single-FnAbi (D6) / receiver-mode-keywords (D7) are load-
-bearing — re-read `docs/completed/mutability.md` before touching parameter
-passing. Vale (`.reference/Vale`) is the ownership reference; "safe as Rust" is
-a bar, not a compass. All tooling in With (no sed/awk/python) — `with -e/-n/-p`.
-
----
-
-# LANDED (2026-07-17): build-cache fix — post-link version stamp (#650)
-
-**Status: full battery GREEN on this exact tree (`GATES EXIT: 0` — build,
-FIXPOINT, audit violations=0, 1876 test files across 9 targets, EMIT-C smoke,
-test-green/last-green recorded); committed on top of bb31e86a.** The change
-spans `src/main.w`, `build.w`, `build/compiler.w`, `build/emit_c.w`
-(emit-c paths consume `out/gen/versioned_main.w`, verify `--version` parity,
-patch the roundtrip binary before byte-compare), `docs/decisions.md` (D13),
-and this file.
-
-## Root causes (exact)
-
-1. `comp_write_versioned_source` substituted `v<base>-g<commit>` into compiled
-   `out/gen/main.w`, so every commit changed a hashed compiler input.
-2. The first post-link implementation left the combined `compiler-sources`
-   action HEAD-sensitive. `src/main.w:1597` marks a completed dependency as
-   rebuilt and `BuildGraphCache.w:466` makes its dependent stale, so stage1
-   would still rebuild after every commit even when `out/gen/main.w` was
-   byte-identical.
-3. Patching the linked Mach-O invalidated the linker-created ad-hoc signature;
-   arm64 AMFI killed the final binary with SIGKILL 9/rc 137.
-
-## Implemented shape
-
-- `src/main.w` embeds a 48-byte sentinel c-string and reads it NUL-terminated
-  for `--version`; no commit text enters the compiled source.
-- `compiler-main-source` owns stable `out/gen/main.w` and is the only generator
-  in stage1's dependency chain. HEAD-sensitive bootstrap/version generation is
-  isolated in `compiler-version-sources`; the public `compiler-sources` group
-  still produces both sets.
-- `link-compiler` produces untouched `out/release/bin/with.unstamped`.
-  Downstream `build` tracks HEAD/`WITH_VERSION`, patches a distinct final
-  output, and fails loudly for missing/truncated/oversized slots.
-- On macOS the patch action runs `/usr/bin/codesign --sign - --force` through
-  `ProcessRunner` after write/chmod. Failure is captured and returned nonzero.
-- D13 in `docs/decisions.md` protects the architecture.
-
-Comptime actions require the evaluator-supported methods: `data.find`, `"\0"`,
-`fs.read_text`/`write_text`, and `fs.chmod`; raw runtime externs and an
-interpreted byte loop over the ~100 MB binary are not viable here.
-
-## Evidence already collected
-
-- `with check build.w`: `ok`; `git diff --check`: clean.
-- Final cold build after the target split: exit 0 in 11m33s; release link wrote
-  `with.unstamped`, patch/sign completed.
-- Version-only invalidation probe:
-  `WITH_VERSION=v0.15.1-cache-probe with build` exited 0 in 13.9s with **no**
-  stage/link markers; `link-compiler` remained `fresh`; final signature was
-  valid and `--version` printed the probe exactly.
-- Restoring the normal stamp took 13.9s, signature validation passed, and
-  `--version` printed `with v0.15.1-g7dde992ff` (HEAD). `compiler-main-source`,
-  `link-compiler`, and `build` all reported `fresh` afterward.
-
-## Remaining queue
-
-1. DONE — full battery green (`GATES EXIT: 0` confirmed as its own step).
-2. DONE — committed. Post-commit `with build` is the real HEAD-change proof and
-   must rerun only the cheap patch, not a stage/link.
-3. Reseed/install: maintainer APPROVED this session ("reseed install"). One
-   chain, no commits between: `:test → :test-green → :last-green →
-   :update-seed → :install-user`; verify installed signature/version/exit code.
-
-## LAPTOP-SWITCH STATE (2026-07-18)
-
-The maintainer moved machines mid-campaign. What transferred and how:
-
-- **Seed:** the `with-darwin-aarch64` asset on the v0.15.1 release is the
-  live seed channel — refreshed at each reseed (check the asset's
-  `updatedAt`, not the release publish date). Refreshed three times on
-  2026-07-18: for the laptop switch (last fully-gated pre-#681 compiler),
-  then to g2765fd4da (per-unit pipeline gated), then to **gf3c65c2d7**
-  (complete #681 incl. windowed emit). `with build :seed`
-  fetches it, but ONLY if the machine's current seed can still evaluate
-  build.w; a too-stale seed fails EVERY subcommand including `:seed`
-  itself (fingerprint + direct-gh-download recovery: see the Reseed
-  section above). Keep the asset current after future reseeds — a stale
-  seed asset silently strands every machine but the one that reseeded
-  locally.
-- **Not in the repo, copy manually if wanted:** the agent memory dir
-  (`~/.claude/projects/-Users-eric-with/` — behavioral/feedback memories;
-  project state is fully duplicated here and in docs/build_time_log.md)
-  and `.deps/llvm-22.1.6-darwin-arm64` (rebuildable via
-  `tools/build-static-llvm.sh`, ~hours).
-- Background batteries running on the old machine died with it; that is
-  why the battery had to be re-run (now DONE — next section).
-
-## GATED (2026-07-18): e6c770b9 battery green; reseed delivered
-
-The battery-first directive is DONE. Full battery on 2765fd4d (= e6c770b9 +
-handoff doc): **`GATES EXIT: 0`** — build, FIXPOINT byte-identical through
-the 16-unit per-unit pipeline, audit facts=2197572 violations=0, all 9 test
-targets green (1876 files), test-green + last-green recorded. The 16-unit
-default is deterministic and formally gated; nothing through HEAD is ungated.
-The standing-approved reseed chain (`:update-seed` → `:install-user`) ran on
-that green tree and verified (see Reseed section).
-
-## CURRENT WORK: structural campaigns, one at a time (maintainer-directed)
-
-Order agreed 2026-07-18: **#681 → #682 → #683**, then the north-star
-campaign: **peak build memory UNDER 8 GB** (compiler buildable on an 8 GB
-machine, Mac/Linux/Windows).
-
-**#681 state: COMPLETE (all tiers landed, pushed, and GATED).**
-- 88ade44f disposal quick tier; a497d145 MIR-via-raw-pointer (the sharing
-  contract; the ~490 sites go through typed in-place-deref accessors —
-  NEVER a ref-returning accessor, that shape segfaults, filed #687);
-  bc0c9832 per-unit generation from MIR (serial gen, one cg alive at a
-  time + parallel slim emit over ~1/K-size unit bitcodes); e6c770b9
-  16-unit default (GATED 2026-07-18 — see the GATED section above).
-- Measured: peak RSS 21.1 → 13.2 GB (−37%) at 8 units; 16 units 149.2 s /
-  15.5 GB (old pipeline: 170.9 s / 30.5 GB). Fixpoint byte-identical;
-  drop-audit 25/25; produced compiler self-checks.
-- Key mechanisms a future reader needs: fn_sym-keyed plan from MIR
-  statement counts (dual-keyed sema+cg-intern in unit_assign); Pass-2/
-  mir-only/generator-next filters; __wcu$<idx>$ declare-time promotion of
-  would-be-internal planned fns; synthesized fns pinned to unit 0 with
-  main force-assigned there; deterministic post-gen demotion walk for
-  foreign external definitions (synthesized prelude trait defaults — the
-  bring-up's one link failure); global-ownership surgery shared with the
-  old strip.
-- #681 leftovers DONE 2026-07-18 (late session), each on its own green
-  battery: dead strip pipeline deleted (60dc5ec9, −221 lines); windowed
-  emit concurrency landed (0a14b07c). Verification finding that reshaped
-  it: peak is K-INDEPENDENT under full concurrency (15.3 GB @ K=5 / 13.2
-  @ K=8 / 14.4–15.5 @ K=16), so the old mem-cap-on-K never protected
-  small hosts — memory now bounds in-flight EMIT THREADS (join-oldest
-  window; W = (mem − 5 GiB) / (plan_cost × 36 KB / K); K = cores only).
-  Forced W=2: peak footprint 10.03 → 7.76 GB at +47 % wall; W=K big-host
-  behavior byte-identical (fixpoint green). Policy is a leaf module
-  `compiler.CodegenUnitsPolicy` with a 21-cell internals matrix — leaf
-  because test files cannot import Mir-adjacent modules (**#688**, new).
-  `WITH_CODEGEN_EMIT_WIDTH` overrides. #681 CLOSED; real-8GB-hardware
-  verification moves to the north star (needs #682/#685 frontend shrink —
-  the 4.9 GB frontend envelope dominates the small-host budget). Serial
-  per-unit sema/intern re-copy (~1 s × K) left as optimize-if-it-shows.
-
-**D12 IS COMPLETE (2026-07-19): #678 DONE (e823026b, battery-green,
-reseeded ge823026b0 + asset), #644 umbrella CLOSED.** Str mut-receivers
-are share-place over the fat pointer; read/plain str self deliberately
-stays by-value (hot-path). §22's reject-shorter-lived-view cell is
-vacuous until #691 (noted there). Both canonized rulings (D11 + D12)
-are now law AND implementation.
-
-**#682 INCREMENT 1 LANDED (33b8517c, battery-green ×3 iterations,
-reseeded g33b8517cb + asset).** The prelude closure is a byte-deterministic
-node/intern/file-id PREFIX (218/221 AST facts identical across different
-programs; the 3 movers are post-parse trait-default synthesis, absent at
-the snapshot cut = right after expand_prelude_closure_frontend). Bring-up
-found and fixed layout-dependent garbage reads in the generic-inst
-accessors (now kind-guarded; audit blindness → #692) and re-pinned 4
---dump-mir golden tests (intern-derived field tokens shifted; shapes
-verified identical). Increments 2-4 (serialize/mmap, sema capture, wire +
-measure) per the issue plan — fresh-session sized.
-
-**#693 SQUASHED 2026-07-20 (4d429574, battery-green, reseeded
-g4d4295743 + asset):** two stacked doubles — the variant ctor never
-consumed its moved payload operands (unguarded scope-exit drop of the
-moved-out temp; the plan said skip, codegen's guard was never armed) AND
-struct-field glue also walked user-enums' layouts (they live in the
-struct tables; Option/Result miss them — why only user enums doubled).
-`with build :drop-audit` steady state: **60 cells / 0 non-PASS /
-0 regressions**; `da_enum_payload_scope_exit.w` pins it in every
-battery. Debug trail is in the issue close (IR call-site counting +
-instrumented Drop beat lldb).
-
-**Still open from the auditor's finds:** **#694** (inferless `.Some(x)`
-in a discard crashes codegen instead of a clean sema error — small).
-`tools/drop_audit.w` + `:drop-audit` gate are LANDED (8d5248b0).
-
-**QUEUE FOR NEXT SESSION (maintainer-stated 2026-07-19):**
-2. **#685** — IN PROGRESS: attribution measured (the 2.9 GB pre-emit
-   holder was per-round Codegen tables, K-scaling-proven) and **inc-2
-   LANDED (8d51c2e3, reseeded g8d51c2e3b)**: consuming deinit disposes
-   all 148 table backings — envelope 4.4→3.6 GB, peak 14.7→13.8 GB,
-   zero wall cost. Boundary rules in the code: decl_source_paths is a
-   Zcu header copy (never free); Vec=inline struct vs HashMap=HANDLE
-   ABI asymmetry. Remaining (issue comments have the full plan): ~2 GB
-   residual per-round growth to attribute (K-scaling discriminator),
-   inc-1 per-phase committed-bytes instrumentation, inc-3 AST release
-   after last reader, inc-4 slab release (freelist nodes live IN pages
-   — needs per-slab restructure; sequenced last).
-3. **#690** — parameter rebinding per mutability.md.
-4. **#691** — the wide flip, next cycle's headline, after #685 (already
-   filed and scheduled — not an open decision).
-Plus one manual maintainer task: **copy the drop-audit skill
-(.claude/skills/drop-audit/) from the old machine** or commit it to the
-repo — it survived only there.
-
-Experiment log: docs/build_time_log.md (the full measured record of
-every kept and rejected change).
-
-**#683 state: substantially DONE (c81e8173, battery-green, reseeded
-gc81e81739 + asset).** Serial build.w actions now run in-process in the
-driver — the per-action worker child (a full build.w re-eval, ~0.85–1.6 s
-each) is gone; commit-shape rebuild 13.9 → 10.4 s (−25 %). Remaining
-floor: pooled children still re-eval per action (~3 s wall per cold
-build, hidden by parallelism) and one re-eval per test target — judged
-not worth a worker-slice protocol; the serialized-graph idea is subsumed
-by #682's machinery if it ever matters. Issue closed with measurements;
-reopen if the resweep of pool-width hosts says otherwise.
-
-**#682 state: DESIGNED, not implemented** — full design + increment plan
-in the 2026-07-18 issue comment; implement in a fresh session against it.
-PREMISE CORRECTION recorded there: measured prelude cost is ~25 ms per
-invocation on the 18-core host (~3–5 s wall per battery), not the study's
-"minutes" — #682's real value is as the pathfinder for #684 module
-interfaces. Maintainer may re-weigh #682-now vs #683-first on those
-numbers; order stands until they say otherwise. Key facts: prelude-closure
-AST/intern IDs currently land AFTER user decls (user-dependent offsets) —
-increment 1 is prelude-first prefix ordering, the risky reordering step,
-landed alone. Sema is SoA Vec[i32] + HashMaps (dump raw + rebuild-on-load
-respectively). Snapshot keyed on with.unstamped + prelude mode, stored
-per-tree under out/.build-state/.
-
-## Build-performance campaign (2026-07-17 session, maintainer-directed)
-
-The maintainer ruled the ~40-min battery unacceptable and directed "fix this
-issue deeply." Evidence base: `docs/build-perf-reference-study.md` (multi-agent
-comparison vs `.reference/{go,rust,swift,Vale,zig}`; 10 adversarially-verified
-deltas). Landed this session:
-
-- **c3de4c0b** — per-target wall-time instrumentation in the graph executor
-  (`[time]` lines + `out/.build-state/build-times.tsv`). First measurement
-  ever: stage1 175.9s + stage2 174.3s + link 173.0s = 77% of `with build`
-  (681s total); the ~30 runtime objects are a serial ~90s tail.
-- **4dcf9419** — test verdicts keyed on `with.unstamped` (D13: stamp is
-  provenance). PROVEN: restamp with a different version → verdicts stay
-  cached. Commits no longer invalidate ~1900 banked test passes.
-- **196056ac** — test runner defaults to host-core width (was 4 on 16 cores;
-  `WITH_BUILD_TEST_JOBS` still overrides, cap 32) with a join-oldest sliding
-  window instead of the spawn-4-join-all batch barrier.
-- **:dev target + D14 tiering policy** (this batch) — iterate = `with check`
-  / `with build :dev` (seed→stage1); battery gates commit batches;
-  independent build-layer changes share one battery, land as separate
-  commits; audit:all ∥ :test concurrency sanctioned. CLAUDE.md amended.
-- **Stamp temp-sibling hardening** (this batch) — `comp_patch_version_binary`
-  writes/signs `with.tmp` then renames; in-place write corrupted a running
-  binary at that path (self-seeded rebuild hazard).
-
-**Measured effect:** commit-only rebuild 16s (was ~12 min); test leg ~8 min
-at core width (was ~22); post-reseed a non-compiler commit's battery ≈
-build 16s + cached verdict sweep.
-
-### Structural arc — FILED as the #679 campaign (dependency order)
-
-- **#679** umbrella: full verification ≤10 min / ≤8 GB; invariants that do
-  not bend (self-hosting, -O1, per-commit fixpoint, no external deps).
-- **#680** parallel build-graph executor with memory-claim admission (d8).
-  **Stage A LANDED** (76c6d969 audit + 0262e1ed edges): the build closure
-  audits clean — zero declaration-order-dependent edges; single-writer per
-  invocation already guaranteed by validate_outputs.
-  **Stage B LANDED + MEASURED** (a2413f2e machinery + 44ab0d26 markers, with
-  an intermediate reseed — build.w cannot name a new stdlib API until a seed
-  embeds it): `Target.allow_parallel()` pools pure compile actions as
-  captured workers at cores/2 width (`WITH_BUILD_JOBS` override);
-  declaration order stays program order; pool drains before unmarked
-  execution. Full chain: 684.2s vs 757.8s serial (~10%); fixpoint stayed
-  byte-identical. Remaining build time is the serial stage chain itself
-  (83%) — #684's territory. Stages C (delegate in-process kinds) and D
-  (memory-claim admission) remain, each its own cycle. LANDMINE: std.build
-  Target has three full copy-literals (Target.target/optimize/output) that
-  must gain any new field, else the embedded stdlib breaks and only behavior
-  tests spawning out/stage/bin/with-stage2 catch it.
-- **#681** codegen-unit windowing + dispose base module/MIR pre-fan-out (d2)
-  — the >30 GB peak; /drop-audit gate if lowering is touched.
-- **#682** serialized prelude snapshot keyed by compiler fingerprint (d6).
-- **#683** compile/serialize the build graph once; stop re-interpreting
-  build.w per worker (d9; the measured ~1.1s/action floor).
-- **#684** separate compilation with module interfaces (d5) — the only fix
-  for the 175s-per-stage constant; prerequisites #680+#682; sequence LAST.
-- **#685** allocator slab release + phase arenas (d7).
-- **#686** over-invalidation: build.w-only edits rebuild the stage chain
-  (CONFIRMED live 2026-07-17); regex-runtime-ir built twice per cold build.
+# Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
+
+Updated 2026-07-30. This replaces the 2026-07-29 handoff, whose "exact next
+steps" were overtaken by four root causes found while executing them. Current
+single remaining blocker for the roundtrip: issue #744 (migrator memory
+retention).
+
+## Read this first
+
+Read `AGENTS.md` before doing anything. The rules that mattered most in this
+continuation: locate the exact wrong line before editing; a build is
+verification, not experimentation; never pipe a verdict-bearing command
+through head/tail (fish `$status` reports the last pipe stage — this bit
+again this session and is recorded in memory).
+
+## What landed (newest first)
+
+| Commit | Change |
+| --- | --- |
+| `d3d55c6a` | emit-c: fat thunk signatures render through `c_decl` (pointer-to-array params/returns need the name inside the declarator; caught by the `emit-c-array-ref` edge fixture during the first battery). |
+| `d39fd508` | rt: large-allocation ownership checks binary-search a sorted range table (was: unsorted append + linear scan per check — quadratic on the compiler-C migration, ~90% of a 43-minute run). |
+| `abf1e2e2` | emit-c: DYN_DOWNCAST/OPT_FILTER/VEC_MAP/VEC_FILTER/VEC_FOLD fail emission nonzero instead of emitting compilable abort() lies. The compiler uses none of them. |
+| `29a369b7` | emit-c: GENERIC_CALL lowers for real (sizeof/alignof → C sizeof/_Alignof via `resolve_type_level_arg_expr_frozen`; transmute → object-representation memcpy with `_Static_assert` size pin; everything else fails loudly). With fn values are now fat `{fn_ptr(ctx, …), ctx}` pairs matching native's closure convention (`Codegen.w` `gen_fn_to_fat_ptr_thunk`): TY_FN typedefs are pair structs, named-fn materialization registers a static C thunk, indirect calls go through `.fn_ptr(.ctx, …)`, CK_FN operands meeting fn-typed demands (assign/arg/aggregate/enum-payload) render pair literals. TY_EXTERN_FN stays a bare C pointer. emit-c-smoke gained a compile-and-run fixture (sizeof/alignof values, transmute bit round-trips, spawn_os/join through the pair). |
+| `1d4fa519` | sema: generic type-argument builtins (sizeof/alignof, nameof, transmute, chan) record their call type in `typed_expr_types`. Unrecorded, MirLower's fallback re-derived void and `lower_fn_with_sig` swapped in the implicit default return: tail-position `transmute` returned zeroed bits SILENTLY, natively, on every seed. `test/behavior/behav_transmute_tail_position.w` pins all six spellings. |
+
+## The three root causes, in discovery order
+
+1. **Sema never typed generic-builtin call nodes.** Symptom: emit-C transmute
+   dest temp typed `int32_t`; deeper symptom: native tail-position transmute
+   (prefix/brace/block unsafe forms, and plain in an `unsafe fn`) silently
+   returned default-initialized values. Pre-existing on the v0.15.1 seed.
+   Chain: `SemaCheck.check_call` builtin early-returns → `typed_expr_types`
+   miss → `MirLower.fallback_expr_type` NK_CALL → `call_return_type` (no
+   NK_INDEX arm) → void temp → `lower_fn_with_sig` fall-through default.
+
+2. **emit-C fn values diverged from native layout.** Native: 16-byte fat pair,
+   fn_ptr always closure-convention, plain fns get thunks. emit-C: bare 8-byte
+   C fn pointer. Observable via `sizeof[fn() -> i32]()` (16 vs 8) and fatal for
+   `std.thread.spawn_os`'s `transmute[RawFn0I32](worker)`, which every
+   prelude-bearing program compiles in. The old backend hid this behind the
+   GENERIC_CALL abort stub; the new `_Static_assert` surfaced it at C-compile
+   time. Fixed by mirroring the native convention (commit `29a369b7`).
+
+3. **Allocator large-range ownership scan was quadratic.** The roundtrip's
+   `migrate-compiler-c` step hit the 900 s timeout; `sample` showed ~90% of
+   CPU in `rt_payload_start_is_owned`'s linear walk of the (unsorted) large
+   range table at 13–44 GB heap. Slab ranges had already been converted to
+   sorted+binary-search for exactly this reason; large ranges now match
+   (commit `d39fd508`). Post-fix the full compiler-C migration completes in
+   ~660 s wall, inside the step's 900 s budget. The dominant cost is now
+   `ci_str_matches_at`/`ci_find_str` (real migrator string scanning).
+
+## Verification state (all on the committed tree at `d39fd508`)
+
+Green so far:
+
+- `with check src/main.w`, `with build :dev` at each step
+- `with build` (full, 570 s) after the allocator fix
+- `with build :emit-c-smoke` — including the new generic-intrinsics fixture
+  (runs the emitted binary; spawn_os/join over a real OS thread)
+- `with build :emit-c-test` (327 s) — whole compiler emitted as C under the
+  fat fn-value backend, built by host cc, version parity + hello
+- `with build :emit-c-fixpoint` (340 s) — C-built compiler re-emits
+  byte-identical C (thunk naming/order deterministic)
+- Native regression `behav_transmute_tail_position.w`: passes on fixed
+  compiler, fails on the seed exactly at the four tail forms
+
+Red, with root cause filed:
+
+- `with build :emit-c-roundtrip` — the `migrate-compiler-c` step now dies at
+  With's own 64 GiB build memory cap
+  (`error: with: memory limit exceeded: committed=68719426576 …`), after
+  ~11 minutes of genuine migration work. This is retention in the C
+  migrator (~1300x the 48 MB input), filed as issue #744 with the
+  attribution evidence and next-step guidance. Do NOT raise the cap or the
+  step timeout to force green; the retention is the defect.
+
+Battery and reseed: DONE on `d3d55c6a`.
+
+- `with build` 358 s, `:fixpoint` 314 s, `:test` 630 s (33 lanes),
+  `:move-audit`, `:drop-audit`, `:emit-c-smoke`, `:emit-c-test` 180 s,
+  `:emit-c-fixpoint` 160 s — all green in one serial run.
+- The first battery attempt (on `d39fd508`) failed exactly one lane:
+  `emit-c-array-ref` caught the thunk declarator bug, fixed by
+  `d3d55c6a`; the battery was rerun from the top on that commit.
+- `:test-green`, `:last-green`, `:update-seed`, `:install-user` completed;
+  seed and installed compiler are `with v0.15.1-gd3d55c6ab`.
+- The roundtrip has never been green (it is the campaign objective, not a
+  regression gate); the reseed bar was the AGENTS.md success checklist
+  plus the audits, all green.
+
+## Watch-outs for the continuation
+
+- Background-shell verdicts: two direct `with migrate` runs were SIGKILLed
+  (~10–11 min) by the session environment, NOT by the code — run long steps
+  nohup-detached with a log file, or through the build graph.
+- The migrate step is CPU-heavy for ~11 of its 900 s budget. Do not run the
+  battery concurrently with the roundtrip; contention could push it over.
+- `out/debug_emit_c_generic.w` (ignored) still exists as the reduction; its
+  tail-position `debug_transmute` exercises the Sema fix. `.fixed3.c` is the
+  current good emission (cc -fsyntax-only clean).
+- Issue #743 (comptime teardown `corrupt vec header` after a failed action)
+  remains open, unrelated, reproduced pre-D27.
+
+## Completion bar (unchanged from previous handoff)
+
+- emitted compiler C contains no executable placeholder for paths the
+  compiler uses ✔ (generic intrinsics real; five unsupported families now
+  fail emission; compiler uses none of them)
+- unsupported C-backend paths fail generation nonzero ✔
+- sizeof/alignof/transmute behaviorally correct in compiled emitted C ✔
+  (fixture runs)
+- C compiler, C-to-With migrated compiler, and normal compiler pass their
+  test lanes — pending roundtrip
+- emit-C fixpoint ✔; full roundtrip self-host equality — pending
+- normal build/fixpoint/test and ownership audits — pending final battery
+- last-green, seed, installed compiler updated only from the exact verified
+  commit — pending
