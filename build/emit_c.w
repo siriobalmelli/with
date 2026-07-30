@@ -312,10 +312,16 @@ fn emitc_parse_export_function(symbol: str, line: str) -> EmitCFunction:
     if close_at < 0:
         return EmitCFunction { symbol, return_type: "", params, ok: 0 }
     let parsed_params = emitc_parse_params(line.slice((open_at + 1) as i64, close_at as i64))
+    // D27: `get` observes through a view; end the view's scope before any
+    // return moves parsed_params into the result.
+    var params_ok = 1
     for pi in 0..parsed_params.len() as i32:
         let param = parsed_params.get(pi as i64)
         if param.name.len() == 0 or param.c_type.len() == 0:
-            return EmitCFunction { symbol, return_type: "", params: parsed_params, ok: 0 }
+            params_ok = 0
+            break
+    if params_ok == 0:
+        return EmitCFunction { symbol, return_type: "", params: parsed_params, ok: 0 }
     var return_type = "void"
     let rest = line.slice((close_at + 1) as i64, line.len())
     let arrow = emitc_index_of(rest, "->")
