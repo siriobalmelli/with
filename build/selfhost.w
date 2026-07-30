@@ -3049,6 +3049,56 @@ fn bs_check_emit_c_collections(ctx: &ActionCtx, compiler_path: str, case_dir: st
     if run_result.rc != 0: return run_result.rc
     bs_edge_assert_exact(ctx, bs_trim_trailing_line_endings(run_result.stdout), "ok", "emit_c_collections", "stdout")
 
+fn bs_check_emit_c_generic_intrinsics(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
+    // #740 roundtrip: sizeof/alignof/transmute lower to real C rather than
+    // generic-call abort placeholders, and spawn_os's fn-value transmute is
+    // bit-correct under the fat {fn_ptr, ctx} representation.
+    let root = ctx.project_info().project_root()
+    let src = bs_join(case_dir, "generic_intrinsics.w")
+    let c_path = bs_join(case_dir, "generic_intrinsics.c")
+    let bin = bs_join(case_dir, "generic_intrinsics")
+    let source = "use std.thread\n\n" ++
+        "type PairI32 {\n" ++
+        "    first: i32,\n" ++
+        "    second: i32,\n" ++
+        "}\n\n" ++
+        "type SplitU64 {\n" ++
+        "    lo: u32,\n" ++
+        "    hi: u32,\n" ++
+        "}\n\n" ++
+        "fn worker() -> i32: 29\n\n" ++
+        "fn main:\n" ++
+        "    if sizeof[PairI32]() != 8: return 1\n" ++
+        "    if alignof[PairI32]() != 4: return 2\n" ++
+        "    if size_of[SplitU64]() != 8: return 3\n" ++
+        "    if align_of[i64]() != 8: return 4\n" ++
+        "    let split = SplitU64 { lo: 0x89abcdefu32, hi: 0x01234567u32 }\n" ++
+        "    let bits: u64 = unsafe transmute[u64](split)\n" ++
+        "    if bits != 0x0123456789abcdefu64: return 5\n" ++
+        "    let back: SplitU64 = unsafe transmute[SplitU64](bits)\n" ++
+        "    if back.lo != 0x89abcdefu32 or back.hi != 0x01234567u32: return 6\n" ++
+        "    let handle = spawn_os(worker)\n" ++
+        "    if join(handle) != 29: return 7\n" ++
+        "    print(\"ok\")\n"
+    var rc = bs_write_fixture(ctx, src, source, "emit-c generic intrinsics source")
+    if rc != 0: return rc
+    var emit_args: Vec[str] = Vec.new()
+    emit_args |> push("build")
+    emit_args |> push(bs_abs(root, src))
+    emit_args |> push("--emit-c")
+    emit_args |> push("-o")
+    emit_args |> push(bs_abs(root, c_path))
+    let emit_result = bs_edge_expect_success(ctx, compiler_path, case_dir, "emit-c-generic-intrinsics", emit_args)
+    if emit_result.rc != 0: return emit_result.rc
+    let c_text = ctx.fs().read_text(c_path)
+    rc = bs_assert_not_contains(ctx, c_text, "generic_call: should be resolved", "emit_c_generic_intrinsics_no_placeholder")
+    if rc != 0: return rc
+    rc = bs_compile_emit_c_output(ctx, root, case_dir, c_path, bin, "emit-c-generic-intrinsics")
+    if rc != 0: return rc
+    let run_result = bs_run_binary_capture(ctx, bin, "emit-c-generic-intrinsics-run", 120000)
+    if run_result.rc != 0: return run_result.rc
+    bs_edge_assert_exact(ctx, bs_trim_trailing_line_endings(run_result.stdout), "ok", "emit_c_generic_intrinsics", "stdout")
+
 fn bs_check_emit_c_hashmap_new_field(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
     let root = ctx.project_info().project_root()
     let src = bs_join(case_dir, "hashmap_new_field.w")
@@ -3391,6 +3441,8 @@ pub fn run_emit_c_smoke_action(ctx: ActionCtx) -> i32:
     rc = bs_check_emit_c_hashmap_new_field(ctx, compiler_path, bs_join(output_dir, "emit_c_hashmap_new_field_case"))
     if rc != 0: return rc
     rc = bs_check_emit_c_collections(ctx, compiler_path, bs_join(output_dir, "emit_c_collections_case"))
+    if rc != 0: return rc
+    rc = bs_check_emit_c_generic_intrinsics(ctx, compiler_path, bs_join(output_dir, "emit_c_generic_intrinsics_case"))
     if rc != 0: return rc
     print("EMIT-C SMOKE OK")
     0

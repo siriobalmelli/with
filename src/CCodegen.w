@@ -322,6 +322,14 @@ type CCodegen {
     local_value_use_cache: HashMap[i64, i32],
     place_kind_cache: HashMap[i64, i32],
     callee_hint_cache: HashMap[i32, i32],
+    // With fn values are fat pairs {fn_ptr(ctx, ...), ctx} matching native
+    // codegen's closure convention. Materializing a named function into a fn
+    // value registers a static C thunk here; definitions are emitted between
+    // the prototypes and the function bodies, in first-use order so emission
+    // stays deterministic.
+    fat_thunk_syms: Vec[i32],
+    fat_thunk_tids: Vec[i32],
+    fat_thunk_keys: HashMap[i64, i32],
 }
 
 impl CCodegen:
@@ -370,6 +378,9 @@ fn c_emit_module(mir_mod: MirModule, ast: AstPool, intern: InternPool, sema: Sem
         local_value_use_cache: HashMap.new(),
         place_kind_cache: HashMap.new(),
         callee_hint_cache: HashMap.new(),
+        fat_thunk_syms: Vec.new(),
+        fat_thunk_tids: Vec.new(),
+        fat_thunk_keys: HashMap.new(),
     }
     for i in 0..cg.mir_mod.body_fn_syms.len() as i32:
         let sym: i32 = cg.mir_mod.body_fn_syms.get(i as i64)
@@ -1366,6 +1377,103 @@ impl CCodegen:
     fn fn_type_c_name(tid: i32) -> str:
         let resolved = self.sema.resolve_alias(tid)
         f"with_fn_{resolved as i32}"
+
+    // With fn VALUES use native codegen's fat-pair convention: a struct
+    // {fn_ptr, ctx} whose fn_ptr always takes ctx first (Codegen.w
+    // gen_fn_to_fat_ptr_thunk). TY_EXTERN_FN stays a bare C function pointer —
+    // it is a foreign ABI surface, not a With fn value.
+    fn fn_tid_is_fat(tid: i32) -> i32:
+        let resolved = self.sema.resolve_alias(tid)
+        if self.sema.get_type_kind(resolved) == TypeKind.TY_FN: 1 else: 0
+
+    fn fat_thunk_name(fn_sym: i32, canon_tid: i32) -> str:
+        let _ = self
+        f"__with_fn_thunk_{fn_sym}_{canon_tid}"
+
+    // Materialize a named function as a fat fn value: register the static
+    // C thunk (emitted between prototypes and bodies) and return the pair
+    // compound literal.
+    mut fn fat_fn_literal(fn_sym: i32, fn_tid: i32) -> str:
+        let canon = self.sema.resolve_alias(fn_tid) as i32
+        let key = (fn_sym as i64) * 4294967296 + (canon as i64)
+        if not self.fat_thunk_keys.contains(key):
+            self.fat_thunk_keys.insert(key, self.fat_thunk_syms.len() as i32)
+            self.fat_thunk_syms.push(fn_sym)
+            self.fat_thunk_tids.push(canon)
+        "((" ++ self.fn_type_c_name(canon) ++ ")" ++ cc_lbrace() ++ " " ++ self.fat_thunk_name(fn_sym, canon) ++ ", 0 " ++ cc_rbrace() ++ ")"
+
+    fn rvalue_ck_fn_sym(body: &MirBody, rval_id: i32) -> i32:
+        if rval_id < 0 or rval_id >= body.rval_kinds.len() as i32:
+            return 0
+        if body.rval_kinds.get(rval_id as i64) != RvalueKind.RK_USE:
+            return 0
+        let op_id = body.rval_d0.get(rval_id as i64)
+        self.operand_ck_fn_sym(body, op_id)
+
+    fn operand_ck_fn_sym(body: &MirBody, op_id: i32) -> i32:
+        if op_id < 0 or op_id >= body.operand_kinds.len() as i32:
+            return 0
+        if body.operand_kinds.get(op_id as i64) != OperandKind.OK_CONSTANT:
+            return 0
+        let const_id = body.operand_d0.get(op_id as i64)
+        if const_id < 0 or const_id >= body.const_kinds.len() as i32:
+            return 0
+        if body.const_kinds.get(const_id as i64) != ConstKind.CK_FN:
+            return 0
+        body.const_d0.get(const_id as i64)
+
+    mut fn emit_fat_thunk_defs() -> str:
+        var out = ""
+        var i = 0
+        while i < self.fat_thunk_syms.len() as i32:
+            let fn_sym: i32 = self.fat_thunk_syms.get(i as i64)
+            let tid: i32 = self.fat_thunk_tids.get(i as i64)
+            i = i + 1
+            let ret_tid = self.sema.get_type_d2(tid as TypeId)
+            let start = self.sema.get_type_d0(tid as TypeId)
+            let count = self.sema.get_type_d1(tid as TypeId)
+            var params = "void* __with_ctx"
+            var args = ""
+            for pi in 0..count:
+                let p_tid: i32 = self.sema.type_extra.get((start + pi) as i64)
+                params = params ++ ", " ++ self.c_type(p_tid, 0) ++ f" _p{pi}"
+                if pi > 0:
+                    args = args ++ ", "
+                args = args ++ f"_p{pi}"
+            let body_sym = self.canonical_body_sym(fn_sym)
+            let target = if body_sym != 0: self.fn_c_name(body_sym) else: self.extern_sym_c_name(fn_sym)
+            let ret_c = self.c_type(ret_tid, 1)
+            out = out ++ "static " ++ ret_c ++ " " ++ self.fat_thunk_name(fn_sym, tid) ++ "(" ++ params ++ ") " ++ cc_lbrace() ++ " (void)__with_ctx; "
+            if self.is_void_tid(ret_tid) != 0:
+                out = out ++ target ++ "(" ++ args ++ "); "
+            else:
+                out = out ++ "return " ++ target ++ "(" ++ args ++ "); "
+            out = out ++ cc_rbrace() ++ "\n"
+        if out.len() > 0:
+            out = out ++ "\n"
+        out
+
+    // A call whose callee is a fn-typed place (not devirtualized to a known
+    // symbol) invokes the fat pair: callee.fn_ptr(callee.ctx, args...).
+    mut fn indirect_callee_place_id(body: &MirBody, callee_operand: i32, args_id: i32) -> i32:
+        if body.call_requires_contract(args_id):
+            return -1
+        if callee_operand < 0 or callee_operand >= body.operand_kinds.len() as i32:
+            return -1
+        let ok = body.operand_kinds.get(callee_operand as i64)
+        if ok != OperandKind.OK_COPY and ok != OperandKind.OK_MOVE:
+            return -1
+        let od = body.operand_d0.get(callee_operand as i64)
+        let local_id = self.place_local_id(body, od)
+        if local_id >= 0 and self.place_is_direct_local(body, od, local_id) != 0:
+            if self.local_assigned_fn_sym(body, local_id) != 0:
+                return -1
+        let callee_tid = self.callee_fn_type_from_operand(body, callee_operand)
+        if callee_tid == 0:
+            return -1
+        if self.fn_tid_is_fat(callee_tid) == 0:
+            return -1
+        od
 
     fn storage_copy_assignment(dst_place: str, rval: str) -> str:
         let _ = self
@@ -3279,7 +3387,13 @@ impl CCodegen:
                 return ""
             let variant_index = body.rval_d2.get(rval_id as i64)
             if count == 1:
-                let payload_text = self.operand_text(body, body.agg_field_operands.get(start as i64))
+                let payload_op: i32 = body.agg_field_operands.get(start as i64)
+                var payload_text = self.operand_text(body, payload_op)
+                let payload_tid = self.sema.type_reflection_variant_payload_type_frozen(dst_tid, variant_index, 0)
+                if self.fn_tid_is_fat(payload_tid) != 0:
+                    let payload_fn_sym = self.operand_ck_fn_sym(body, payload_op)
+                    if payload_fn_sym != 0:
+                        payload_text = self.fat_fn_literal(payload_fn_sym, self.sema.resolve_alias(payload_tid) as i32)
                 return self.payload_enum_literal(dst_tid, variant_index, payload_text)
             else if count > 1:
                 self.fail(f"C backend does not support enum variants with {count} payload fields")
@@ -3302,11 +3416,24 @@ impl CCodegen:
                     body.agg_field_name_syms.get((start + i) as i64)
                 else:
                     0
+                var agg_field_tid = 0
                 if dst_tk == TypeKind.TY_STRUCT and name_sym != 0:
                     let field_name = cc_intern_resolve(self.intern, name_sym)
                     if field_name.len() > 0 and self.struct_field_tid(dst_resolved as i32, name_sym) != 0:
                         out = out ++ "." ++ field_name ++ " = "
-                out = out ++ self.operand_text(body, body.agg_field_operands.get((start + i) as i64))
+                        agg_field_tid = self.struct_field_tid(dst_resolved as i32, name_sym)
+                else if dst_tk == TypeKind.TY_TUPLE:
+                    let t_start = self.sema.get_type_d0(dst_resolved)
+                    let t_count = self.sema.get_type_d1(dst_resolved)
+                    if i < t_count:
+                        agg_field_tid = self.sema.type_extra.get((t_start + i) as i64)
+                let field_op: i32 = body.agg_field_operands.get((start + i) as i64)
+                var field_text = self.operand_text(body, field_op)
+                if agg_field_tid != 0 and self.fn_tid_is_fat(agg_field_tid) != 0:
+                    let agg_fn_sym = self.operand_ck_fn_sym(body, field_op)
+                    if agg_fn_sym != 0:
+                        field_text = self.fat_fn_literal(agg_fn_sym, self.sema.resolve_alias(agg_field_tid) as i32)
+                out = out ++ field_text
         out = out ++ cc_rbrace()
         out
 
@@ -5268,6 +5395,8 @@ impl CCodegen:
                     return self.resolve_call_named_callee(body, local_fn_sym, args_id, dest_place)
             let callee_tid = self.callee_fn_type_from_operand(body, callee_operand)
             if callee_tid != 0:
+                if self.fn_tid_is_fat(callee_tid) != 0:
+                    return self.place_text(body, od) ++ ".fn_ptr"
                 return self.place_text(body, od)
             let inferred = self.infer_direct_call_sym(body, args_id, dest_place)
             if inferred == -2:
@@ -5610,6 +5739,11 @@ impl CCodegen:
                 let p_tid = if callee_sig >= 0: self.sema.sig_param_type(callee_sig, i) else: self.sema.fn_type_param_type(callee_fn_tid, i)
                 let p_resolved = self.sema.resolve_alias(p_tid)
                 let p_tk = self.sema.get_type_kind(p_resolved)
+                if p_tk == TypeKind.TY_FN:
+                    let fat_arg_sym = self.operand_ck_fn_sym(body, op_id)
+                    if fat_arg_sym != 0:
+                        out = out ++ self.fat_fn_literal(fat_arg_sym, p_resolved as i32)
+                        continue
                 if p_tk == TypeKind.TY_PTR or p_tk == TypeKind.TY_REF:
                     if arg_text == "0" or arg_text == "NULL":
                         out = out ++ "NULL"
@@ -7174,13 +7308,59 @@ impl CCodegen:
             out = out ++ f"    goto bb{next_bb};"
             return out
 
-        if kind == CcBuiltin.GENERIC_CALL:
-            // GENERIC_CALL should be resolved before reaching the C backend
-            var out = "    /* generic_call: should be resolved before C backend */ abort();\n"
+        ""
+
+    fn generic_call_type_arg_node(body: &MirBody, args_id: i32) -> i32:
+        let call_node = body.call_ast_node(args_id)
+        if call_node <= 0 or call_node >= self.ast.node_count() or self.ast.kind(call_node) != NodeKind.NK_CALL:
+            return 0
+        let callee = self.ast.get_data0(call_node)
+        let callee_kind = self.ast.kind(callee)
+        if callee_kind == NodeKind.NK_TYPE_GENERIC:
+            let start = self.ast.get_data1(callee)
+            let count = self.ast.get_data2(callee)
+            if count != 1:
+                return 0
+            return self.ast.get_extra(start)
+        if callee_kind == NodeKind.NK_INDEX:
+            return self.ast.get_data1(callee)
+        0
+
+    mut fn emit_builtin_generic_call_term(body: &MirBody, callee_operand: i32, args_id: i32, dest_place: i32, next_bb: i32) -> str:
+        let callee_sym = self.call_callee_fn_sym(body, callee_operand)
+        let name = cc_base_name(cc_intern_resolve(self.intern, callee_sym))
+        if name == "transmute":
+            if self.call_arg_count(body, args_id) != 1:
+                self.fail("transmute expects one argument")
+                return "\n"
+            let src = self.operand_text(body, self.call_arg_operand(body, args_id, 0))
+            let dst = self.place_text(body, dest_place)
+            var out = "    " ++ cc_lbrace() ++ " __typeof__(" ++ src ++ ") __with_transmute_src = " ++ src ++ "; "
+            out = out ++ "_Static_assert(sizeof(" ++ dst ++ ") == sizeof(__with_transmute_src), \"transmute size mismatch\"); "
+            out = out ++ "memcpy(&(" ++ dst ++ "), &__with_transmute_src, sizeof(" ++ dst ++ ")); " ++ cc_rbrace() ++ "\n"
             out = out ++ f"    goto bb{next_bb};"
             return out
 
-        ""
+        if name == "sizeof" or name == "size_of" or name == "alignof" or name == "align_of":
+            let type_node = self.generic_call_type_arg_node(body, args_id)
+            if type_node == 0:
+                self.fail("emit-c could not recover the type argument for " ++ name)
+                return "\n"
+            let target_tid = self.sema.resolve_type_level_arg_expr_frozen(type_node)
+            if target_tid == 0:
+                self.fail("emit-c could not resolve the type argument for " ++ name)
+                return "\n"
+            let type_text = self.c_decl(target_tid, "")
+            let op = if name == "sizeof" or name == "size_of": "sizeof" else: "_Alignof"
+            let dst = self.place_text(body, dest_place)
+            let dst_tid = self.place_tid(body, dest_place)
+            let dst_ty = self.c_type(dst_tid, 0)
+            var out = "    " ++ dst ++ " = (" ++ dst_ty ++ ")" ++ op ++ "(" ++ type_text ++ ");\n"
+            out = out ++ f"    goto bb{next_bb};"
+            return out
+
+        self.fail("emit-c does not support generic intrinsic " ++ if name.len() > 0: name else: "<unknown>")
+        "\n"
 
     mut fn emit_builtin_numeric_format_call_term(body: &MirBody, kind: CcBuiltin, args_id: i32, dest_place: i32, next_bb: i32, argc: i32, ret_tid: i32, has_ret: i32) -> str:
         var out = self.emit_builtin_numeric_call_term(body, kind, args_id, dest_place, next_bb, argc, ret_tid, has_ret)
@@ -7226,6 +7406,8 @@ impl CCodegen:
         out = self.emit_builtin_option_string_call_term(body, kind, args_id, dest_place, next_bb, argc, ret_tid, has_ret)
         if out.len() > 0:
             return out
+        if kind == CcBuiltin.GENERIC_CALL:
+            return self.emit_builtin_generic_call_term(body, callee_operand, args_id, dest_place, next_bb)
         out = self.emit_builtin_vec_extra_call_term(body, kind, args_id, dest_place, next_bb, argc, ret_tid, has_ret)
         if out.len() > 0:
             return out
@@ -7670,7 +7852,7 @@ impl CCodegen:
             return "(with_vec)" ++ cc_lbrace() ++ "0" ++ cc_rbrace()
         if tk == TypeKind.TY_GENERIC_INST and self.generic_inst_needs_struct_def(resolved as i32) != 0:
             return "(" ++ self.c_type(resolved, 0) ++ ")" ++ cc_lbrace() ++ "0" ++ cc_rbrace()
-        if tk == TypeKind.TY_STR or tk == TypeKind.TY_STRUCT or tk == TypeKind.TY_TUPLE or self.type_is_payload_enum(resolved as i32) != 0:
+        if tk == TypeKind.TY_STR or tk == TypeKind.TY_STRUCT or tk == TypeKind.TY_TUPLE or tk == TypeKind.TY_FN or self.type_is_payload_enum(resolved as i32) != 0:
             return "(" ++ self.c_type(resolved, 0) ++ ")" ++ cc_lbrace() ++ "0" ++ cc_rbrace()
         "0"
 
@@ -7705,6 +7887,10 @@ impl CCodegen:
             let dst_tid = self.place_tid(body, d0)
             let dst_resolved = self.sema.resolve_alias(dst_tid)
             let dst_tk = self.sema.get_type_kind(dst_resolved)
+            if dst_tk == TypeKind.TY_FN:
+                let fat_sym = self.rvalue_ck_fn_sym(body, d1)
+                if fat_sym != 0:
+                    return "    " ++ dst_place ++ " = " ++ self.fat_fn_literal(fat_sym, dst_resolved as i32) ++ ";"
             if self.is_unit_rvalue(body, d1) != 0:
                 if dst_tk == TypeKind.TY_ARRAY:
                     return "    memset(" ++ dst_place ++ ", 0, sizeof(" ++ dst_place ++ "));"
@@ -7870,7 +8056,11 @@ impl CCodegen:
             if callee == "/*unresolved_call*/" or callee == "/*ambiguous_call*/" or callee == "/*ambiguous_method*/":
                 let _ = ret_tid
                 return "    abort();"
-            let args = self.call_args_text(body, d1, d0)
+            var args = self.call_args_text(body, d1, d0)
+            let fat_callee_place = self.indirect_callee_place_id(body, d0, d1)
+            if fat_callee_place >= 0:
+                let ctx_text = self.place_text(body, fat_callee_place) ++ ".ctx"
+                args = if args.len() > 0: ctx_text ++ ", " ++ args else: ctx_text
             var out = ""
             if self.is_void_tid(ret_tid) != 0:
                 out = out ++ "    " ++ callee ++ "(" ++ args ++ ");\n"
@@ -8066,7 +8256,17 @@ impl CCodegen:
                 if body.term_kind(bb) != TermKind.TK_CALL:
                     continue
                 let args_id = body.term_data1(bb)
-                if body.call_intrinsic(args_id) != MirIntrinsic.MAP_GET:
+                let call_intr = body.call_intrinsic(args_id)
+                if call_intr == MirIntrinsic.GENERIC_CALL:
+                    // sizeof[T]()/alignof[T]() may name a type no local ever
+                    // carries; the emitted C sizeof needs its definition.
+                    let ga_type_node = self.generic_call_type_arg_node(body, args_id)
+                    if ga_type_node != 0:
+                        let ga_tid = self.sema.resolve_type_level_arg_expr_frozen(ga_type_node) as i32
+                        if ga_tid != 0:
+                            acc = self.collect_struct_types_from_tid(move acc, ga_tid)
+                    continue
+                if call_intr != MirIntrinsic.MAP_GET:
                     continue
                 let recv_operand = self.call_arg_operand(body, args_id, 0)
                 let recv_tid = self.operand_tid_no_infer(body, recv_operand)
@@ -8149,6 +8349,20 @@ impl CCodegen:
             let ret_tid = self.sema.get_type_d2(tid)
             let start = self.sema.get_type_d0(tid)
             let count = self.sema.get_type_d1(tid)
+            if tid_kind == TypeKind.TY_FN:
+                // Fat fn value: {fn_ptr, ctx} matching native's closure
+                // convention — fn_ptr always takes the context first.
+                var fat_params = "void*"
+                for pi in 0..count:
+                    fat_params = fat_params ++ ", " ++ self.c_type(self.sema.type_extra.get((start + pi) as i64), 0)
+                let fat_ptr = "(*fn_ptr)(" ++ fat_params ++ ")"
+                var member = ""
+                if self.type_is_pointer_to_array(ret_tid):
+                    member = self.c_decl(ret_tid, fat_ptr)
+                else:
+                    member = self.c_type(ret_tid, 1) ++ " " ++ fat_ptr
+                out = out ++ "typedef struct " ++ cc_lbrace() ++ " " ++ member ++ "; void* ctx; " ++ cc_rbrace() ++ " " ++ self.fn_type_c_name(tid as i32) ++ ";\n"
+                continue
             var params = ""
             if count == 0:
                 params = "void"
@@ -9222,13 +9436,19 @@ impl CCodegen:
         if self.mir_mod.bodies.len() as i32 > 0:
             out.write("\n")
 
-        // Function bodies.
+        // Function bodies buffer separately: emitting them discovers the fat
+        // fn-value thunks, whose static definitions must precede the bodies
+        // (all lowered functions already have prototypes above).
+        let bodies_out = COut.new()
         for i in 0..self.mir_mod.bodies.len() as i32:
             if self.check_interrupted() != 0:
                 return ""
             let body = self.mir_body_at(i as i64)
-            out.write(self.emit_fn_body(body))
-            out.write("\n")
+            bodies_out.write(self.emit_fn_body(body))
+            bodies_out.write("\n")
+
+        out.write(self.emit_fat_thunk_defs())
+        out.write(bodies_out.finish())
 
         // C entrypoint wrapper for With `main`.
         out.write(self.emit_main_wrapper())
