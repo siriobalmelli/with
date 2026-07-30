@@ -7279,34 +7279,24 @@ impl CCodegen:
             return out
 
         if kind == CcBuiltin.DYN_DOWNCAST:
-            // Dynamic trait downcast — not fully implementable without type info; abort
-            var out = "    /* dyn_downcast: not supported in C backend */ abort();\n"
-            out = out ++ f"    goto bb{next_bb};"
-            return out
+            self.fail("emit-c does not support dynamic trait downcast")
+            return "\n"
 
         if kind == CcBuiltin.OPT_FILTER:
-            // opt.filter requires closure support — not available in C backend
-            var out = "    /* opt.filter: requires closure support */ abort();\n"
-            out = out ++ f"    goto bb{next_bb};"
-            return out
+            self.fail("emit-c does not support opt.filter (requires closure support)")
+            return "\n"
 
         if kind == CcBuiltin.VEC_MAP:
-            // vec.map requires closure support — not available in C backend
-            var out = "    /* vec.map: requires closure support */ abort();\n"
-            out = out ++ f"    goto bb{next_bb};"
-            return out
+            self.fail("emit-c does not support vec.map (requires closure support)")
+            return "\n"
 
         if kind == CcBuiltin.VEC_FILTER:
-            // vec.filter requires closure support — not available in C backend
-            var out = "    /* vec.filter: requires closure support */ abort();\n"
-            out = out ++ f"    goto bb{next_bb};"
-            return out
+            self.fail("emit-c does not support vec.filter (requires closure support)")
+            return "\n"
 
         if kind == CcBuiltin.VEC_FOLD:
-            // vec.fold requires closure support — not available in C backend
-            var out = "    /* vec.fold: requires closure support */ abort();\n"
-            out = out ++ f"    goto bb{next_bb};"
-            return out
+            self.fail("emit-c does not support vec.fold (requires closure support)")
+            return "\n"
 
         ""
 
