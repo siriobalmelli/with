@@ -1436,14 +1436,17 @@ impl CCodegen:
             var args = ""
             for pi in 0..count:
                 let p_tid: i32 = self.sema.type_extra.get((start + pi) as i64)
-                params = params ++ ", " ++ self.c_type(p_tid, 0) ++ f" _p{pi}"
+                // c_decl, not c_type-plus-name: pointer-to-array params need
+                // the name inside the declarator (int32_t (*_p0)[2]).
+                params = params ++ ", " ++ self.c_decl(p_tid, f"_p{pi}")
                 if pi > 0:
                     args = args ++ ", "
                 args = args ++ f"_p{pi}"
             let body_sym = self.canonical_body_sym(fn_sym)
             let target = if body_sym != 0: self.fn_c_name(body_sym) else: self.extern_sym_c_name(fn_sym)
-            let ret_c = self.c_type(ret_tid, 1)
-            out = out ++ "static " ++ ret_c ++ " " ++ self.fat_thunk_name(fn_sym, tid) ++ "(" ++ params ++ ") " ++ cc_lbrace() ++ " (void)__with_ctx; "
+            let thunk_sig = self.fat_thunk_name(fn_sym, tid) ++ "(" ++ params ++ ")"
+            let thunk_decl = if self.type_is_pointer_to_array(ret_tid): self.c_decl(ret_tid, thunk_sig) else: self.c_type(ret_tid, 1) ++ " " ++ thunk_sig
+            out = out ++ "static " ++ thunk_decl ++ " " ++ cc_lbrace() ++ " (void)__with_ctx; "
             if self.is_void_tid(ret_tid) != 0:
                 out = out ++ target ++ "(" ++ args ++ "); "
             else:
