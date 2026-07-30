@@ -425,21 +425,42 @@ fn rt_record_large_range(start: i64, size: i64):
     if rt_large_range_count >= RT_ALLOC_RANGE_CAP:
         rt_large_ranges_complete = 0
         return
-    rt_large_range_starts[rt_large_range_count as i64] = start
-    rt_large_range_ends[rt_large_range_count as i64] = start + size
+    // Insert sorted by start (same discipline as rt_record_slab_range): the
+    // ownership check binary-searches large ranges too. The previous unsorted
+    // append forced a linear scan per check, which went quadratic on
+    // large-allocation-heavy workloads (compiler C migration spent 90% of a
+    // 43-minute run in that scan).
+    var i = rt_large_range_count
+    while i > 0 and rt_large_range_starts[(i - 1) as i64] > start:
+        rt_large_range_starts[i as i64] = rt_large_range_starts[(i - 1) as i64]
+        rt_large_range_ends[i as i64] = rt_large_range_ends[(i - 1) as i64]
+        i = i - 1
+    rt_large_range_starts[i as i64] = start
+    rt_large_range_ends[i as i64] = start + size
     rt_large_range_count = rt_large_range_count + 1
 
 fn rt_forget_large_range(start: i64):
-    var i: i32 = 0
-    while i < rt_large_range_count:
-        if rt_large_range_starts[i as i64] == start:
+    // Binary-search the sorted starts, then shift to close the gap — a swap
+    // remove would break the order the lookup depends on.
+    var lo: i32 = 0
+    var hi = rt_large_range_count - 1
+    while lo <= hi:
+        let mid = (lo + hi) / 2
+        let mid_start = rt_large_range_starts[mid as i64]
+        if mid_start == start:
+            var i = mid
+            while i + 1 < rt_large_range_count:
+                rt_large_range_starts[i as i64] = rt_large_range_starts[(i + 1) as i64]
+                rt_large_range_ends[i as i64] = rt_large_range_ends[(i + 1) as i64]
+                i = i + 1
             rt_large_range_count = rt_large_range_count - 1
-            rt_large_range_starts[i as i64] = rt_large_range_starts[rt_large_range_count as i64]
-            rt_large_range_ends[i as i64] = rt_large_range_ends[rt_large_range_count as i64]
             rt_large_range_starts[rt_large_range_count as i64] = 0
             rt_large_range_ends[rt_large_range_count as i64] = 0
             return
-        i = i + 1
+        if mid_start < start:
+            lo = mid + 1
+        else:
+            hi = mid - 1
 
 fn get_freelist(idx: i32) -> i64:
     if idx == 0: return freelists_0
@@ -551,11 +572,19 @@ fn rt_payload_start_is_owned(ptr: *const u8) -> i32:
             if header + block_size > end:
                 return 0
             return 1
-    for i in 0..rt_large_range_count:
-        let start = rt_large_range_starts[i as i64]
-        let end = rt_large_range_ends[i as i64]
-        if header == start and payload < end:
-            return 1
+    // Large ranges are kept sorted by start; each region's start is unique,
+    // so an exact-match binary search replaces the former linear scan.
+    var llo = 0
+    var lhi = rt_large_range_count - 1
+    while llo <= lhi:
+        let lmid = (llo + lhi) / 2
+        let lstart = rt_large_range_starts[lmid as i64]
+        if lstart == header:
+            return if payload < rt_large_range_ends[lmid as i64]: 1 else: 0
+        if lstart < header:
+            llo = lmid + 1
+        else:
+            lhi = lmid - 1
     0
 
 fn rt_payload_start_can_be_owned(ptr: *const u8) -> i32:
