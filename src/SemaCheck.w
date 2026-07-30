@@ -14359,13 +14359,24 @@ impl Sema:
                 return 0
             if self.reject_opaque_value_type(layout_ty, type_arg_node, self.sizeof_alignof_name(callee)) != 0:
                 return 0
+            self.typed_expr_types.insert(node, self.ty_i64 as i32)
             return self.ty_i64 as i32
         if self.is_nameof_call(callee) != 0:
+            self.typed_expr_types.insert(node, self.ty_str as i32)
             return self.ty_str as i32
         if self.is_transmute_call(callee) != 0:
-            return self.check_transmute_call(node, callee, extra_start, arg_count)
+            // Record the computed type: these builtins have no signatures, so an
+            // unrecorded call node makes MirLower's fallback re-derive void and a
+            // tail-position transmute silently returns the default value.
+            let transmute_ty = self.check_transmute_call(node, callee, extra_start, arg_count)
+            if transmute_ty != 0:
+                self.typed_expr_types.insert(node, transmute_ty)
+            return transmute_ty
         if self.is_chan_call(callee) != 0:
-            return self.chan_return_type(callee)
+            let chan_ty = self.chan_return_type(callee)
+            if chan_ty != 0:
+                self.typed_expr_types.insert(node, chan_ty)
+            return chan_ty
         let typeinfo_ret = self.check_typeinfo_module_call(callee, extra_start, arg_count, node)
         if typeinfo_ret != 0:
             self.typed_expr_types.insert(node, typeinfo_ret)
