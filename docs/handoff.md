@@ -83,12 +83,17 @@ Red, with the root-cause chain fully mapped (#744, investigation comment):
   no jetsam log). From an interactive terminal, run:
   `WITH_MEMORY_LIMIT_BYTES=0 with build :emit-c-roundtrip` — the migrate
   step needs one uninterrupted ~11-minute run.
-- After migration completes, the next known fallout item is **#746**: the
-  goto-CFG memcpy path renders positional struct literals (invalid With)
-  for std.regex's `Regex` struct — present in any prelude-bearing input.
-- The fix fork is the maintainer's: land the #691 str flip first (real
-  fix), or run the roundtrip's migrate step with a documented interim cap
-  raise tied to the flip, or keep the roundtrip red until then.
+- D28 (Eric's ruling, 2026-07-31) settled the fork: the migrate step pins
+  its cap off until the #691 str flip (`bdcb9b35`); the flip itself is
+  #747; ephemeral view-structs (the view-token shape) are #748.
+- #746 (positional record literals) is FIXED (`e7bdd9c9`): the field scan
+  continues past self-referential typedefs, and unrecoverable-record
+  initializers fail loudly instead of emitting invalid With.
+- The roundtrip's next critical-path item is **#749**: designated inits
+  over payload-enum carriers (tag + anonymous union) — the emit-C
+  rendering of With enums — must lower to enum-variant construction.
+  Fast repro: migrate the 5 MB `emit_c_generic_intrinsics_case` fixture C
+  (~2 min); it stops loudly at `str_to_cstring__83`.
 
 Battery and reseed: DONE on `d3d55c6a`.
 
