@@ -151,6 +151,8 @@ let CI_VAR_DECL_ONLY: i32 = 0
 let CI_VAR_TENTATIVE_DEF: i32 = 1
 let CI_VAR_FULL_DEF: i32 = 2
 
+let CI_CXTYPE_RECORD: i32 = 105
+
 // CXCursorKind constants (new API — cursor-level, LLVM 22 values)
 let CXK_LABEL_STMT: i32 = 201
 let CXK_COMPOUND_STMT: i32 = 202
@@ -6791,6 +6793,16 @@ impl CiExprPool:
                 fj = fj + 1
             ci_trace_port("STRUCTURAL[b11.11.init_list]")
             return self.designated_init(fields_start, nc, init_ty_id)
+        // A record initializer whose field names cannot be recovered must not
+        // fall through to the positional form — `T { a, b }` is not valid
+        // With and a compiling variant would misassign fields. Fail loudly.
+        let init_canonical = with_ci_type_canonical(session, init_ty)
+        let canonical_kind = if init_canonical >= 0: with_ci_type_kind(session, init_canonical) else: 0
+        if canonical_kind == CI_CXTYPE_RECORD:
+            if g_ci_bail_message.len() == 0:
+                g_ci_bail_message = "record initializer field names could not be recovered for type '" ++ ty_str ++ "'"
+                g_ci_bail_location = with_ci_cursor_location(session, cursor)
+            return 0 as CiExprId
         if nc == 1:
             return self.lower_expr_ir(session, with_ci_child(session, cursor, 0), types, scope)
         var item_ids: Vec[i32] = Vec.new()
@@ -14650,7 +14662,11 @@ fn ci_type_field_count(session: i64, ty_name: str) -> i32:
             let underlying = with_cimport_typedef_underlying_translated(session, i)
             if underlying.len() > 0 and underlying != ty_name:
                 return ci_type_field_count(session, underlying)
-            return 0
+            // typedef struct X X; — the typedef usually precedes the struct
+            // decl, so keep scanning: the struct with the same name later in
+            // the list carries the fields (#746).
+            i = i + 1
+            continue
         i = i + 1
     0
 
@@ -14681,7 +14697,9 @@ fn ci_type_field_name(session: i64, ty_name: str, field_idx: i32) -> str:
             let underlying = with_cimport_typedef_underlying_translated(session, i)
             if underlying.len() > 0 and underlying != ty_name:
                 return ci_type_field_name(session, underlying, field_idx)
-            return ""
+            // typedef struct X X; — keep scanning for the struct decl (#746).
+            i = i + 1
+            continue
         i = i + 1
     ""
 
@@ -14715,7 +14733,9 @@ fn ci_type_field_type(session: i64, ty_name: str, field_idx: i32) -> str:
             let underlying = with_cimport_typedef_underlying_translated(session, i)
             if underlying.len() > 0 and underlying != ty_name:
                 return ci_type_field_type(session, underlying, field_idx)
-            return ""
+            // typedef struct X X; — keep scanning for the struct decl (#746).
+            i = i + 1
+            continue
         i = i + 1
     ""
 
