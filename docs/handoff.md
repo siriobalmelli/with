@@ -96,9 +96,20 @@ Red, with the root-cause chain fully mapped (#744, investigation comment):
   wrong-sized types and every `.payloadN` access dangles. Fix bottom-up
   per the issue: (1) surface anonymous members in the bridge's field
   enumeration, (2) let the existing synth-type path render the union
-  member, (3) designator-aware (or enum-variant) init lowering. Fast
-  repro: migrate the 5 MB `emit_c_generic_intrinsics_case` fixture C
-  (~2 min); it stops loudly at `str_to_cstring__83`.
+  member, (3) enum-variant construction for the carrier inits (at scale,
+  per-designator stores don't cut it). Fast repro: migrate the 5 MB
+  `emit_c_generic_intrinsics_case` fixture C (~2 min); it stops loudly
+  at `str_to_cstring__83`.
+- **Census (2026-07-31):** the roundtrip now runs its complete migration
+  scan end-to-end (639 s total, uncapped per the D28 pin) and reports
+  **1,111 untranslatable functions**, all the kind=100 carrier shape —
+  the full inventory is in
+  `out/command/emit-c-roundtrip/migrate-compiler-c.stderr`. #749 is the
+  sole remaining gate; no mystery failures remain in the chain.
+- Environment note: long runs on this box die ~10 min after session
+  activity stops (traveling laptop — lid/sleep/battery). Take an
+  `mcp__adrafinil__keep_awake` hold for any long verification and
+  release it after; launch detached with a log file regardless.
 
 Battery and reseed: DONE on `d3d55c6a`.
 
