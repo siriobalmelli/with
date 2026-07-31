@@ -89,10 +89,15 @@ Red, with the root-cause chain fully mapped (#744, investigation comment):
 - #746 (positional record literals) is FIXED (`e7bdd9c9`): the field scan
   continues past self-referential typedefs, and unrecoverable-record
   initializers fail loudly instead of emitting invalid With.
-- The roundtrip's next critical-path item is **#749**: designated inits
-  over payload-enum carriers (tag + anonymous union) — the emit-C
-  rendering of With enums — must lower to enum-variant construction.
-  Fast repro: migrate the 5 MB `emit_c_generic_intrinsics_case` fixture C
+- The roundtrip's next critical-path item is **#749**, and its true root
+  is DECL-level: `collect_field` (ClangBridge.w:993) keeps only
+  `CXCursor_FieldDecl` children, and a C11 anonymous member has no
+  FieldDecl cursor — so the enum-carrier structs translate as 1-field,
+  wrong-sized types and every `.payloadN` access dangles. Fix bottom-up
+  per the issue: (1) surface anonymous members in the bridge's field
+  enumeration, (2) let the existing synth-type path render the union
+  member, (3) designator-aware (or enum-variant) init lowering. Fast
+  repro: migrate the 5 MB `emit_c_generic_intrinsics_case` fixture C
   (~2 min); it stops loudly at `str_to_cstring__83`.
 
 Battery and reseed: DONE on `d3d55c6a`.
