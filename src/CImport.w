@@ -380,18 +380,16 @@ fn ci_direct_call_name(translated: str) -> str:
 fn ci_lookup_c_function_return_type(session: i64, name: str) -> str:
     if session == 0 or name.len() == 0:
         return ""
-    let count = with_cimport_decl_count(session)
-    var i = 0
-    while i < count:
-        if with_cimport_decl_kind(session, i) == CK_FUNCTION and with_cimport_decl_name(session, i) == name:
-            if with_cimport_fn_is_noreturn(session, i) != 0:
-                return "Never"
-            let ret = ci_pointer_type_explicit_mut(with_cimport_fn_return_type_translated(session, i))
-            if ci_starts_with(ret, "__UNSUPPORTED:"):
-                return ""
-            return ret
-        i = i + 1
-    ""
+    ci_fn_decl_index_ensure(session)
+    if not g_ci_fn_decl_by_raw.contains(name):
+        return ""
+    let i = g_ci_fn_decl_by_raw.get(name).unwrap()
+    if with_cimport_fn_is_noreturn(session, i) != 0:
+        return "Never"
+    let ret = ci_pointer_type_explicit_mut(with_cimport_fn_return_type_translated(session, i))
+    if ci_starts_with(ret, "__UNSUPPORTED:"):
+        return ""
+    ret
 
 fn ci_infer_macro_return_type_from_expr(type_session: i64, translated: str, known_macro_returns: str, fallback: str) -> str:
     let cast_type = ci_infer_cast_return_type(translated)
@@ -759,6 +757,7 @@ fn process_c_import_with_defines(header_spec: str, defines: &Vec[str]) -> str:
         output.push_str(ci_translate_macros(macro_session, session, extern_vars, include_text))
         with_cimport_dispose_macros(macro_session)
     with_cimport_dispose(session)
+    ci_fn_decl_index_reset()
     g_macro_type_names = ""
     g_macro_type_aliases = ""
     g_migrate_macro_values = ""
@@ -7894,15 +7893,51 @@ impl CiExprPool:
                 return self.cast(target_ty_id, value_id)
         value_id
 
-fn ci_lookup_c_function_decl_idx(session: i64, name: str) -> i32:
-    if session == 0 or name.len() == 0:
-        return -1
+// #744: per-call linear rescans of the decl table cost O(decls) libclang
+// spelling queries each, and every probe permanently retained a session
+// string — migrating the emitted compiler C held 82M+ live strings. One
+// pass builds owned-copy name indexes; the maps rebuild on session change
+// and are cleared at migration teardown so a recycled session address can
+// never see a stale index.
+var g_ci_fn_decl_by_escaped: HashMap[str, i32] = HashMap.new()
+var g_ci_fn_decl_by_raw: HashMap[str, i32] = HashMap.new()
+var g_ci_fn_decl_index_session: i64 = 0
+var g_ci_fn_decl_index_generation: i64 = 0
+
+fn ci_fn_decl_index_ensure(session: i64):
+    if g_ci_fn_decl_index_session == session and g_ci_fn_decl_index_generation == with_cimport_parse_generation():
+        return
+    var by_escaped: HashMap[str, i32] = HashMap.new()
+    var by_raw: HashMap[str, i32] = HashMap.new()
     let count = with_cimport_decl_count(session)
     var i = 0
     while i < count:
-        if with_cimport_decl_kind(session, i) == CK_FUNCTION and ci_escape_reserved(with_cimport_decl_name(session, i)) == name:
-            return i
+        if with_cimport_decl_kind(session, i) == CK_FUNCTION:
+            let raw_name = with_cimport_decl_name(session, i)
+            if raw_name.len() > 0:
+                let escaped = ci_escape_reserved(raw_name)
+                if not by_raw.contains(raw_name):
+                    by_raw.insert(ci_ir_owned_text(raw_name), i)
+                if not by_escaped.contains(escaped):
+                    by_escaped.insert(ci_ir_owned_text(escaped), i)
         i = i + 1
+    g_ci_fn_decl_by_escaped = by_escaped
+    g_ci_fn_decl_by_raw = by_raw
+    g_ci_fn_decl_index_session = session
+    g_ci_fn_decl_index_generation = with_cimport_parse_generation()
+
+fn ci_fn_decl_index_reset:
+    g_ci_fn_decl_by_escaped = HashMap.new()
+    g_ci_fn_decl_by_raw = HashMap.new()
+    g_ci_fn_decl_index_session = 0
+    g_ci_fn_decl_index_generation = 0
+
+fn ci_lookup_c_function_decl_idx(session: i64, name: str) -> i32:
+    if session == 0 or name.len() == 0:
+        return -1
+    ci_fn_decl_index_ensure(session)
+    if g_ci_fn_decl_by_escaped.contains(name):
+        return g_ci_fn_decl_by_escaped.get(name).unwrap()
     -1
 
 fn ci_call_callee_name(session: i64, cursor: i32) -> str:

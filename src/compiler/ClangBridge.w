@@ -372,6 +372,12 @@ type CImportSession:
     child_indices_count: i32
     child_indices_cap: i32
     children_cache_cap: i32
+    // #744: decl idx -> stored cursor idx memo. Re-storing the cursor on
+    // every with_cimport_decl_cursor call minted duplicate cursor indexes,
+    // and every subtree walk from a fresh index rebuilt whole children
+    // caches (~125M duplicated cursors migrating the compiler C).
+    decl_cursor_indices: *mut i32
+    decl_cursor_cap: i32
 
 type ChildCollector:
     session: *mut CImportSession
@@ -1142,9 +1148,18 @@ pub fn with_cimport_set_resource_dir(path: str) -> Unit:
 
 // ── Parse ───────────────────────────────────────────────────
 
+// #744: monotonically increasing parse counter. Caches keyed by session
+// address also record the generation, so a session address recycled by a
+// later parse can never validate a stale cache.
+var g_cimport_parse_counter: i64 = 0
+
+pub fn with_cimport_parse_generation() -> i64:
+    g_cimport_parse_counter
+
 pub fn with_cimport_parse(header_code: str) -> i64:
     unsafe:
-        let size = 232  // sizeof(CImportSession) — all pointer fields
+        g_cimport_parse_counter = g_cimport_parse_counter + 1
+        let size = sizeof[CImportSession]()
         let s = with_alloc(size) as *mut CImportSession
         if s as i64 == 0: return 0
         with_memset(s as *mut u8, 0, size)
@@ -1260,6 +1275,7 @@ pub fn with_cimport_dispose(session: i64) -> Unit:
         if (*s).child_starts as i64 != 0: with_free((*s).child_starts as *mut u8)
         if (*s).child_counts as i64 != 0: with_free((*s).child_counts as *mut u8)
         if (*s).child_indices as i64 != 0: with_free((*s).child_indices as *mut u8)
+        if (*s).decl_cursor_indices as i64 != 0: with_free((*s).decl_cursor_indices as *mut u8)
         // Cleanup temp file
         if (*s).tmp_path as i64 != 0:
             let _ = unlink((*s).tmp_path as *const u8)
@@ -1341,8 +1357,18 @@ pub fn with_cimport_decl_cursor(session: i64, idx: i32) -> i32:
     unsafe:
         let s = session as *mut CImportSession
         if s as i64 == 0 or idx < 0 or idx >= (*s).decl_count: return -1
+        if (*s).decl_cursor_indices as i64 == 0:
+            let memo_size = (*s).decl_count as i64 * 4
+            let memo = with_alloc(memo_size)
+            with_memset(memo, -1, memo_size)
+            (*s).decl_cursor_indices = memo as *mut i32
+            (*s).decl_cursor_cap = (*s).decl_count
+        let slot = ((*s).decl_cursor_indices as i64 + idx as i64 * 4) as *mut i32
+        if *slot >= 0: return *slot
         let cursor = *(((*s).decls as i64 + idx as i64 * 32) as *const CXCursor)
-        store_cursor(s, cursor)
+        let stored = store_cursor(s, cursor)
+        *slot = stored
+        stored
 
 // ── Function queries ────────────────────────────────────────
 
