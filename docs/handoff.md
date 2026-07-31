@@ -17,6 +17,8 @@ again this session and is recorded in memory).
 
 | Commit | Change |
 | --- | --- |
+| `22d09501` | c-migrate: decl-name lookups use one-pass owned-copy indexes (was: full-table rescan per call, permanently session-retaining a spelling per probe — 82M+ live strings); decl cursors memoized (was: fresh store per query, ~125M duplicated cursors via subtree cache rebuilds). Output byte-identical on a prelude-scale migration. |
+| `6eb6158c` | build: `emitc_parse_export_function` ends its element view before moving the params Vec — the post-D27 checker rejects the old shape, and the first post-flip reseed wedged every `with build` until this fix (see #745). |
 | `d3d55c6a` | emit-c: fat thunk signatures render through `c_decl` (pointer-to-array params/returns need the name inside the declarator; caught by the `emit-c-array-ref` edge fixture during the first battery). |
 | `d39fd508` | rt: large-allocation ownership checks binary-search a sorted range table (was: unsorted append + linear scan per check — quadratic on the compiler-C migration, ~90% of a 43-minute run). |
 | `abf1e2e2` | emit-c: DYN_DOWNCAST/OPT_FILTER/VEC_MAP/VEC_FILTER/VEC_FOLD fail emission nonzero instead of emitting compilable abort() lies. The compiler uses none of them. |
@@ -65,15 +67,28 @@ Green so far:
 - Native regression `behav_transmute_tail_position.w`: passes on fixed
   compiler, fails on the seed exactly at the four tail forms
 
-Red, with root cause filed:
+Red, with the root-cause chain fully mapped (#744, investigation comment):
 
-- `with build :emit-c-roundtrip` — the `migrate-compiler-c` step now dies at
-  With's own 64 GiB build memory cap
-  (`error: with: memory limit exceeded: committed=68719426576 …`), after
-  ~11 minutes of genuine migration work. This is retention in the C
-  migrator (~1300x the 48 MB input), filed as issue #744 with the
-  attribution evidence and next-step guidance. Do NOT raise the cap or the
-  step timeout to force green; the retention is the defect.
+- **Primary cause: transient `str` drops do not free** until the pending
+  #691 str flip (Vec buffers flipped; str awaits the Copy-with-str ruling).
+  Migrating the 48 MB compiler C allocates ~68 GB of never-freed transient
+  strings (measured peak 68.4 GB with the cap disabled) — the 64 GiB
+  default cap kills it by construction. The migrator was simply the first
+  workload big enough to expose the staged flip.
+- Two migrator-side amplifiers were real and are fixed in `22d09501`
+  (byte-identical output proven on a fixture-scale migration).
+- Final whole-compiler verification is blocked ON THIS DEV BOX by an
+  environment reaper: macOS 26.5 SIGKILLs long CPU-pegged processes at
+  ~10–11 min regardless of nohup/launchd (66 looped attempts, all rc=137,
+  no jetsam log). From an interactive terminal, run:
+  `WITH_MEMORY_LIMIT_BYTES=0 with build :emit-c-roundtrip` — the migrate
+  step needs one uninterrupted ~11-minute run.
+- After migration completes, the next known fallout item is **#746**: the
+  goto-CFG memcpy path renders positional struct literals (invalid With)
+  for std.regex's `Regex` struct — present in any prelude-bearing input.
+- The fix fork is the maintainer's: land the #691 str flip first (real
+  fix), or run the roundtrip's migrate step with a documented interim cap
+  raise tied to the flip, or keep the roundtrip red until then.
 
 Battery and reseed: DONE on `d3d55c6a`.
 
