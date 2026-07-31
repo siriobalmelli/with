@@ -500,6 +500,9 @@ fn emitc_capture_rel(ctx: &ActionCtx, label: str, suffix: str) -> str:
     emitc_join(emitc_join("out/command", ctx.target_name()), label ++ "." ++ suffix)
 
 fn emitc_run_capture(ctx: &ActionCtx, label: str, argv: Vec[str], timeout_ms: i32) -> i32:
+    emitc_run_capture_env(ctx, label, argv, timeout_ms, "", "")
+
+fn emitc_run_capture_env(ctx: &ActionCtx, label: str, argv: Vec[str], timeout_ms: i32, extra_key: str, extra_val: str) -> i32:
     let root = ctx.project_info().project_root()
     let fs = ctx.fs()
     let capture_dir = emitc_join("out/command", ctx.target_name())
@@ -509,6 +512,8 @@ fn emitc_run_capture(ctx: &ActionCtx, label: str, argv: Vec[str], timeout_ms: i3
     let stderr_rel = emitc_capture_rel(ctx, label, "stderr")
     var env = process_env()
     env = env.set("WITH_OUT_DIR", emitc_abs(root, "out"))
+    if extra_key.len() > 0:
+        env = env.set(extra_key, extra_val)
     let result = ctx.process_runner().run_capture_with_env(argv, emitc_abs(root, stdout_rel), emitc_abs(root, stderr_rel), timeout_ms, env)
     if result.rc == 0:
         let _remove_stdout = fs.remove_file(stdout_rel)
@@ -658,7 +663,12 @@ fn emitc_migrate_compiler_c(ctx: &ActionCtx, compiler_path: str, main_c: str, ou
     argv |> push("-include")
     argv |> push(emitc_abs(root, "out/gen/wl_decls.h"))
     argv |> push("--no-c-export")
-    emitc_run_capture(ctx, "migrate-compiler-c", argv, 900000)
+    // D28 ruling 3 pin: migrating the 48 MB compiler C allocates ~68 GB of
+    // transient strings that cannot free until the #691 str flip lands
+    // (#744). The default 64 GiB cap therefore kills this one step by
+    // construction. Disable it HERE ONLY; every other step keeps the cap.
+    // REVERT with the str flip: delete the env override and this comment.
+    emitc_run_capture_env(ctx, "migrate-compiler-c", argv, 900000, "WITH_MEMORY_LIMIT_BYTES", "0")
 
 fn emitc_build_with_compiler(ctx: &ActionCtx, compiler_path: str, source_w: str, output_path: str, label: str) -> i32:
     let root = ctx.project_info().project_root()
