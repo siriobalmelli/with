@@ -601,9 +601,11 @@ fn process_c_import_with_defines(header_spec: str, defines: &Vec[str]) -> str:
     var output = StringBuilder.new()
     let count = with_cimport_decl_count(session)
 
-    // Emit c_void opaque type for void pointer translation
+    // c_void comes from the prelude's builtins (`pub type c_void = opaque`);
+    // re-declaring it here shadows the foundation module out of the program
+    // (#750). Mark it emitted without emitting so a header's own c_void
+    // typedef still dedups.
     if with_cimport_is_name_emitted("c_void") == 0:
-        output.push_str("type c_void = opaque\n")
         with_cimport_mark_name_emitted("c_void")
         ci_mark_type_name_emitted("c_void")
 
@@ -2102,6 +2104,17 @@ fn ci_translate_struct(session: i64, idx: i32, is_union: bool, known_structs: st
     let name = with_cimport_decl_name(session, idx)
     if name.len() == 0:
         return ""
+
+    // #750: a system-header record that std.libc already models (rlimit)
+    // must not re-declare — the duplicate shadows the imported libc module
+    // out of the program. The libc note ensures `use std.libc` is added.
+    if ci_libc_symbol_allowed_as(name, CI_LIBC_KIND_TYPE):
+        let sys_cursor = with_cimport_decl_cursor(session, idx)
+        let sys_loc = with_ci_cursor_location(session, sys_cursor)
+        if sys_loc.len() > 0 and ci_is_system_path(sys_loc):
+            ci_migrate_note_libc_symbol(name)
+            ci_mark_type_name_emitted(name)
+            return ""
 
     // Skip reserved C internal names (__foo or _Uppercase), keep _lowercase (e.g., _pcre2_*)
     if name.len() >= 2 and name.byte_at(0) == 95:

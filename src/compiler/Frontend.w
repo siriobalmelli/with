@@ -1950,6 +1950,13 @@ impl Zcu:
             higher_fn_names.push(root_fn_names.get(hi as i64))
         for hi in 0..user_fn_names.len() as i32:
             higher_fn_names.push(user_fn_names.get(hi as i64))
+        // #750: user type declarations do NOT yet shadow prelude/std types
+        // (§18.1 non-conformance). Module-granular dropping generalizes ONLY
+        // to leaf modules — dropping a module that retained std modules
+        // depend on (string.w's StringBuilder is used by traits.w's Display
+        // impls) rebinds those internals to the user's shadowing type and
+        // explodes. Box/Rc below are safe precisely because they are leaves.
+        // Real conformance needs scoped name resolution; see the issue.
         for oi in 0..prelude_ordered.len() as i32:
             let id = prelude_ordered.get(oi as i64)
             let ik = merged_pool.kind(id)

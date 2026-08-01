@@ -575,8 +575,9 @@ fn ci_migrate_preamble_text() -> str:
     p = p ++ "extern fn acos(x: f64) -> f64\n"
     p = p ++ "extern fn atan(x: f64) -> f64\n"
     p = p ++ "extern fn atan2(y: f64, x: f64) -> f64\n"
-    p = p ++ "\ntype c_void = opaque\n"
-    p = p ++ "type c_char = i8\n"
+    // c_void comes from the prelude's builtins; re-declaring it here would
+    // shadow the foundation module out of the program (#750).
+    p = p ++ "\ntype c_char = i8\n"
     p = p ++ "type c_short = i16\n"
     p = p ++ "type c_ushort = u16\n"
     p = p ++ "type c_int = i32\n"
