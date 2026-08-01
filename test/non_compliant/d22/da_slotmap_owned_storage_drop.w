@@ -7,6 +7,7 @@
 //! drop-behavior: retained and removed Vec buffers plus SlotMap backing storage each drop exactly once; leak count=0
 //! expect-debug-alloc: leak count=0
 
+use std.collections.SlotMap
 type Holder {
     slots: SlotMap[Vec[i64]],
 }

@@ -6,6 +6,7 @@
 //   .len64()  -> i64
 //   .ulen32() -> u32     (panics if the length exceeds u32 range)
 
+use std.collections.HashMap
 fn make_vec -> Vec[i32]:
     var items: Vec[i32] = Vec.new()
     items.push(10)

@@ -4,6 +4,7 @@
 // and is destroyed at the end of the call statement, not at scope exit. The
 // assert directly after the call pins the timing: before D16 the drop was
 // silently deferred to scope exit and drops was still 0 here.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

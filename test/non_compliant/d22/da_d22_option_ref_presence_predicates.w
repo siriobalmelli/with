@@ -1,6 +1,7 @@
 //! expect-debug-alloc: leak count=0
 //! NON-COMPLIANT: D22 nullable view carriers must preserve Option predicate polarity.
 
+use std.collections.HashMap
 fn main:
     var map: HashMap[i32, i32] = HashMap.new()
     map.insert(1, 7)

@@ -5,6 +5,7 @@
 // run — the blanked field's user drop must be skipped by the member-level
 // sentinel guard. Was: user drop ran against the reset sentinel (a
 // single-field holder only passed because it became all-zero after the blank).
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

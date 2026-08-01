@@ -3,6 +3,8 @@
 // moving path the field is blanked (null Box); the owner's member drop must
 // skip it via the member-level guard rather than calling the concrete Box drop
 // on null. Was: SIGSEGV in Box.drop dereferencing the blanked pointer.
+use std.box.Box
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *i8
 extern fn with_free(ptr: *i8) -> Unit
 

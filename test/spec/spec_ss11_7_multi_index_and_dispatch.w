@@ -2,6 +2,7 @@
 
 // Spec test: Section 11.7 - Multi-Index and `@` Dispatch.
 
+use std.collections.IndexSpec
 type Matrix {
     a00: i32,
     a01: i32,

@@ -1,6 +1,8 @@
 //! expect-stdout: ok
 // Spec test: §11.7 BTreeMap/BTreeSet membership through Contains syntax.
 
+use std.collections.BTreeSet
+use std.collections.BTreeMap
 fn test_btreeset_contains:
     var set: BTreeSet[i32] = BTreeSet[i32].new()
     set.insert(3)

@@ -7,6 +7,7 @@
 //! drop-behavior: each pointee is copied once per demand; map storage drops once; leak count=0
 //! expect-debug-alloc: leak count=0
 
+use std.collections.HashMap
 type Snapshot { value: i32 }
 type Meter { value: i32 }
 enum Wrapped:

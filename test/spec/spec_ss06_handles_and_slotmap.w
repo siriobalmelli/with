@@ -1,5 +1,6 @@
 // Spec test: Section 6 - Handles and SlotMap
 
+use std.collections.SlotMap
 fn test_insert_get_contains_len:
     var map = SlotMap[i32].new()
     let h = map.insert(10)

@@ -16,6 +16,7 @@
 // Deferred to follow-up issues (not yet implemented):
 //   - negative case: `in` is non-associative
 
+use std.collections.HashSet
 enum Color { Red | Green | Blue | Yellow }
 
 // Basic array membership — optimized to an equality chain.

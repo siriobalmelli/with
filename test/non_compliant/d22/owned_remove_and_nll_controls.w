@@ -6,6 +6,7 @@
 //! origin-set: `view` has `{map}` until its final use; `owned` has `{}`
 //! drop-behavior: clear drops the first Vec; remove transfers the replacement; each buffer drops exactly once
 
+use std.collections.HashMap
 fn main:
     var map: HashMap[i32, Vec[i64]] = HashMap.new()
     let values: Vec[i64] = Vec.new()

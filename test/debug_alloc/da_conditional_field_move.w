@@ -3,6 +3,7 @@
 // struct. The moving path must NOT double-free h.r (the field-place niche blanks
 // it and the owner's guarded per-field drop skips it); the not-moved path must
 // still free it exactly once.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

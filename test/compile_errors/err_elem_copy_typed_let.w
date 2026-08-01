@@ -5,6 +5,7 @@
 // copying a Drop-bearing element out of a Vec. (The unannotated form
 // `let t = items.get(0)` binds the view and stays legal.)
 
+use std.builtins.int_to_string
 type Thing { vals: Vec[i32] }
 
 fn main:

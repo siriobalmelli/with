@@ -3,6 +3,7 @@
 // A5/#605: moving a Vec into a struct field transfers ownership. The source Vec
 // cannot be used afterward once Vec has real Drop semantics.
 
+use std.builtins.print_i32
 type W { id: i32 }
 impl Drop for W:
     fn drop(move self: Self):

@@ -6,6 +6,7 @@
 //! origin-set: no owned result is formed; the view would have `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.collections.HashMap
 fn main:
     var map: HashMap[i32, Vec[i64]] = HashMap.new()
     let stored: Vec[i64] = Vec.new()

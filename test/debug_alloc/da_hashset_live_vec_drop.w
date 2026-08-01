@@ -1,5 +1,6 @@
 //! expect-debug-alloc: leak count=0
 
+use std.collections.HashSet
 fn main:
     var set: HashSet[Vec[i64]] = HashSet.new()
     let values: Vec[i64] = Vec.new()

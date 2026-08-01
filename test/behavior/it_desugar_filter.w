@@ -1,4 +1,5 @@
 //! expect-stdout: 24
+use std.builtins.write
 fn main:
     var items: Vec[i32] = Vec.new()
     items.push(1)

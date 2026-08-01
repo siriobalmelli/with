@@ -1,6 +1,8 @@
 //! expect-stdout: ok
 // Spec test: §18.6 std.collections BTreeMap/BTreeSet surface.
 
+use std.collections.BTreeMap
+use std.collections.BTreeSet
 fn test_btreemap_operations:
     var map: BTreeMap[str, i32] = BTreeMap[str, i32].new()
     assert(map.is_empty())

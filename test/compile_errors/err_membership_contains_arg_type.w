@@ -1,5 +1,6 @@
 //! expect-error: wrong argument type in call to 'Whitelist.contains'
 
+use std.collections.HashSet
 type Whitelist { allowed: HashSet[i32] }
 
 impl Contains[i32] for Whitelist:    fn contains(self: &Self, value:

@@ -1,5 +1,6 @@
 //! expect-check-fail: ephemeral Task cannot be stored in non-ephemeral struct
 
+use std.task.Task
 type TaskHolder {
     task: Task[i32],
 }

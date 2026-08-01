@@ -1,6 +1,7 @@
 //! args: --no-std
 //! expect-check-fail: HashMap requires alloc
 
+use std.collections.HashMap
 @[panic_handler]
 fn on_panic -> Never: unreachable()
 

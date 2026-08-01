@@ -1,5 +1,6 @@
 //! expect-check-fail: field type mismatch for 'b'
 
+use std.collections.HashSet
 type Pair[T] { a: T, b: T }
 
 fn main:

@@ -7,6 +7,7 @@
 // borrowed and never dereferenced here (no layout dependency).
 
 use c_import("typedef struct __dirstream DIR;\nstruct dirent;\nDIR *opendir(const char *name);\nstruct dirent *readdir(DIR *dirp);\nint closedir(DIR *dirp);\nstatic inline const char *dot357(void){return \".\";}\n")
+use std.builtins.print_i32
 
 fn main:
     unsafe:

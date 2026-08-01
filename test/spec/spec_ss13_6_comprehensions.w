@@ -1,6 +1,10 @@
 //! expect-stdout: ok
 // Spec test: Section 13.6 — Comprehensions.
 
+use std.collections.HashSet
+use std.collections.HashMap
+use std.collections.BTreeSet
+use std.collections.BTreeMap
 fn assert_vec_i32(xs: Vec[i32], a: i32, b: i32, c: i32):
     assert(xs.len() == 3)
     assert(xs.get(0) == a)

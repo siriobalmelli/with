@@ -1,6 +1,8 @@
 //! expect-stdout: ok
 // Spec test: §4.3c collection literals.
 
+use std.collections.HashSet
+use std.collections.HashMap
 fn test_fixed_array_default:
     let xs = [1, 2, 3]
     assert(xs[0] == 1)

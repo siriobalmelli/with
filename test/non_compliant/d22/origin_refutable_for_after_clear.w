@@ -6,6 +6,7 @@
 //! origin-set: array storage and refutable iteration preserve `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.collections.HashMap
 fn main:
     var map: HashMap[i32, i32] = HashMap.new()
     map.insert(1, 128)

@@ -3,6 +3,7 @@
 // #598 (ruled: no turbofish): explicit type args on a free generic fn get a
 // teaching diagnostic, not "value is not callable".
 
+use std.builtins.print_i32
 fn id[T](x: T) -> T:
     x
 

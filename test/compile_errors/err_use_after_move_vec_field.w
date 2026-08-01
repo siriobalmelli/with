@@ -4,6 +4,7 @@
 // of the moved field is rejected (the runtime blank makes it safe; the
 // diagnostic makes it a compile error rather than a silent empty value).
 
+use std.builtins.print_i32
 type W { slot: *mut i32 }
 impl Drop for W:
     fn drop(move self: Self):

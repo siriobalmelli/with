@@ -1,5 +1,6 @@
 //! expect-check-fail: ephemeral
 
+use std.collections.SlotMapSlot
 type BadVecIterBox {
     iter: VecIter[i32],
 }

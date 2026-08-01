@@ -1,5 +1,6 @@
 //! expect-check-fail: missing multi_index_set method required by MultiIndexMut
 
+use std.collections.IndexSpec
 type Tensor { value: i32 }
 
 impl Tensor:

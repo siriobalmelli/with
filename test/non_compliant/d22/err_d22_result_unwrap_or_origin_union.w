@@ -6,6 +6,7 @@
 //! origin-set: `Result.unwrap_or` gives `view` `{primary, fallback}`
 //! drop-behavior: rejection precedes codegen; both maps retain ownership
 
+use std.collections.HashMap
 fn main:
     var primary: HashMap[i32, i32] = HashMap.new()
     var fallback: HashMap[i32, i32] = HashMap.new()

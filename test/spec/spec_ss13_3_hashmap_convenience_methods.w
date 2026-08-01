@@ -1,5 +1,6 @@
 // Spec test: Section 13.3 — HashMap Convenience Methods (formerly 25.98)
 
+use std.collections.HashMap
 fn test_hashmap_update_inserts_default_then_transforms:
     var counts: HashMap[str, i32] = HashMap.new()
     counts.update("alice", 0, n => n + 1)

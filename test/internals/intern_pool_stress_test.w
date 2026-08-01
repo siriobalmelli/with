@@ -2,6 +2,7 @@
 
 use compiler.foundation.Ids
 use compiler.foundation.InternPool
+use std.builtins.int_to_string
 
 
 fn symbol_name(i: i32) -> str:

@@ -6,6 +6,9 @@
 // call inside the instantiated combinator body), so it must be rendered
 // against THAT file's line table and name the file.
 
+use std.task.Task
+use std.task.await_all
+use std.builtins.print_i32
 var counter: i32 = 0
 
 fn main:

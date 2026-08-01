@@ -5,6 +5,7 @@
 // substituting i32 and reporting a mismatch against a type the user
 // never wrote (the old output claimed "expects Wrap[i32]").
 
+use std.builtins.int_to_string
 type Wrap[T] { item: T }
 
 fn unwrap_it[T](w: Wrap[T]) -> i64: 0

@@ -6,6 +6,7 @@
 //! origin-set: `count` has `{counts}`
 //! drop-behavior: rejection precedes codegen; `counts` remains the sole owner
 
+use std.collections.HashMap
 fn main:
     var counts: HashMap[str, i32] = HashMap.new()
     counts.insert("api", 119)

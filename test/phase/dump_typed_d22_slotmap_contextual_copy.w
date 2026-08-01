@@ -7,6 +7,7 @@
 
 // SlotMap is D22's already-uniform keyed lookup control. This fixture asks only
 // Sema questions; its ownership/drop behavior remains a Stage 5 gate.
+use std.collections.SlotMap
 fn main:
     var map: SlotMap[i32] = SlotMap.new()
     let handle = map.insert(88)

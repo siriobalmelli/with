@@ -1,5 +1,6 @@
 //! expect-stdout: ok
 
+use std.traits.ControlFlow
 type ParseError { msg: str, pos: usize }
 type ParseValue { value: i32, remaining: str }
 

@@ -6,6 +6,7 @@
 //! origin-set: `view` has `{map}`; `owned` has `{}`
 //! drop-behavior: lookup creates no owner; remove transfers one owner; all buffers and map storage drop once
 
+use std.collections.HashMap
 fn main:
     var map: HashMap[i32, Vec[i64]] = HashMap.new()
     let stored: Vec[i64] = Vec.new()

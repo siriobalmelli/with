@@ -2,6 +2,7 @@
 // A6: a (W, W) tuple field two struct levels deep (Outer { Inner { pair } }).
 // Drop must propagate through both struct layers into the tuple elements —
 // each freed exactly once at the outer owner's scope exit.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

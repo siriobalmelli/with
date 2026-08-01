@@ -2,6 +2,7 @@
 // A7 (#606): struct-pattern discards — a `_` field pattern and a `..` rest —
 // own the fields they discard in a consuming destructure. Every discarded
 // Drop field must be freed exactly once.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

@@ -1,5 +1,6 @@
 //! expect-stdout: 5
 //! expect-stdout: none
+use std.builtins.int_to_string
 fn main:
     // filter: keep Some(5) because 5 > 3
     let a: Option[i32] = Some(5)

@@ -4,6 +4,7 @@
 // Spec test: Section 18.7 - FixedString[N] is the stack-owned
 // string option available in freestanding core code.
 
+use std.fixed_string.FixedString
 @[panic_handler]
 fn on_panic -> Never: unreachable()
 

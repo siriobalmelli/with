@@ -1,5 +1,6 @@
 //! expect-check-fail: ephemeral Task cannot be stored in enum payload
 
+use std.task.Task
 enum TaskSlot:
     Holding(Task[i32])
 

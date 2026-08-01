@@ -6,6 +6,7 @@
 //! origin-set: the inferred return forwards `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.collections.HashMap
 fn find(map: &HashMap[i32, i32]): map.get(1).unwrap()
 
 fn main:

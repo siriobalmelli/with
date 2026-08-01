@@ -1,5 +1,6 @@
 //! expect-stdout: errdefer-2errdefer-1defer-2defer-1done
 
+use std.builtins.write
 enum MyResult { Ok(i32) | Err(str) }
 
 fn fail() -> MyResult:

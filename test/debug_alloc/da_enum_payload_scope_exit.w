@@ -3,6 +3,7 @@
 // once. The moved-in payload temp must be consumed (reset-on-move + guard)
 // by the variant ctor; the discard/match paths were always clean, which is
 // why this cell existed nowhere until tools/drop_audit.w found the bug.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 type R { id: i32, ptr: *mut u8, slot: *mut i32 }

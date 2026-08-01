@@ -1,5 +1,6 @@
 //! expect-stdout: ok
 
+use std.task.Task
 extern fn with_runtime_run_one_step() -> Unit
 
 async fn tick() -> i32:

@@ -3,6 +3,7 @@
 // and dropped exactly once. With's async is fiber-based, so the value stays on the
 // fiber stack across the suspend (no copy/zero of generator state); the niche
 // drops it normally at scope exit / on move.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

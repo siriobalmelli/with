@@ -1,5 +1,6 @@
 //! expect-stdout: ok
 
+use std.result.ContextError
 error ParseError =
     Bad(msg: str)
     Eof

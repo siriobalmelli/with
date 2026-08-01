@@ -3,6 +3,7 @@
 // #558: a Task passed as an ordinary async parameter is captured by the spawned
 // fiber. The parameter owns that capture, so awaiting it must free its result
 // buffer exactly once for both concrete and generic wrappers.
+use std.task.Task
 async fn echo[T](value: T) -> T: value
 
 async fn await_i32(task: Task[i32]) -> i32: task.await

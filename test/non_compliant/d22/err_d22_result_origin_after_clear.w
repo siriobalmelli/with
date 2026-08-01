@@ -6,6 +6,7 @@
 //! origin-set: `Ok`, return forwarding, and `unwrap` preserve `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.collections.HashMap
 fn carry(map: &HashMap[i32, i32]) -> Result[&i32, str]:
     Ok(map.get(1).unwrap())
 

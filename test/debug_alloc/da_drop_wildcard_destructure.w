@@ -2,6 +2,7 @@
 // A7 (#606): a `_` in an irrefutable destructure receives ownership of the
 // value it discards. The discarded element must still be freed exactly once
 // (anonymous drop-local); the source tuple's consume must not orphan it.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

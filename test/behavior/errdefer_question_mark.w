@@ -1,5 +1,6 @@
 //! expect-stdout: cleanupdone
 
+use std.builtins.write
 enum MyResult { Ok(i32) | Err(str) }
 
 fn step1() -> MyResult:

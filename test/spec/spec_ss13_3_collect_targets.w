@@ -1,6 +1,10 @@
 //! expect-stdout: ok
 // Spec test: §13.3 collect[C] target selection.
 
+use std.collections.HashSet
+use std.collections.HashMap
+use std.collections.BTreeSet
+use std.collections.BTreeMap
 fn numbers() -> Vec[i32]:
     let xs: Vec[i32] = Vec.new()
     xs.push(1)

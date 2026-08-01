@@ -6,6 +6,7 @@
 //! origin-set: no result is formed; success would have `{jobs}`
 //! drop-behavior: rejection precedes codegen; `jobs` and `fallback` retain ownership
 
+use std.collections.HashMap
 fn main:
     var jobs: HashMap[i32, Vec[i64]] = HashMap.new()
     let stored: Vec[i64] = Vec.new()

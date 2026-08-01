@@ -19,6 +19,7 @@
 // D22 Stage 2 is intentionally check-only. It proves exact carrier/projection
 // types and one Sema-owned adjustment for every independently resolved scalar
 // demand without requiring the Stage 5 MIR materialization implementation.
+use std.collections.HashMap
 type Snapshot { value: i32 }
 type Meter { value: i32 }
 enum Wrapped:

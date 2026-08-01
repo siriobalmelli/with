@@ -1,6 +1,7 @@
 //! expect-debug-alloc: leak count=0
 // A6: an Option[W] field of a struct holding Some. The payload must be freed
 // exactly once when the owning struct goes out of scope.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

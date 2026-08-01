@@ -7,6 +7,7 @@
 //! drop-behavior: the replaced and replacement Vec buffers plus SlotMap storage each drop exactly once; leak count=0
 //! expect-debug-alloc: leak count=0
 
+use std.collections.SlotMap
 fn main:
     var map: SlotMap[Vec[i64]] = SlotMap.new()
     let first: Vec[i64] = Vec.new()

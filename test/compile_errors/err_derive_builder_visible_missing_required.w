@@ -1,5 +1,6 @@
 //! expect-error: derive Builder missing required field 'host' before build()
 
+use std.result.BuilderError
 @[derive(Builder)]
 type Config {
     host: str,

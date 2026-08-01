@@ -7,6 +7,7 @@
 //! drop-behavior: the pointee is copied once into `slots`; both containers drop once; leak count=0
 //! expect-debug-alloc: leak count=0
 
+use std.collections.HashMap
 fn main:
     var map: HashMap[i32, i32] = HashMap.new()
     map.insert(1, 41)

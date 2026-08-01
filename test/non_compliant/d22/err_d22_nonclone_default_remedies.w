@@ -6,6 +6,7 @@
 //! origin-set: no result is formed; success would have `{tickets}`
 //! drop-behavior: rejection precedes codegen; `tickets` retains ownership
 
+use std.collections.HashMap
 type Ticket { number: i64 }
 
 fn main:

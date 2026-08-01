@@ -1,5 +1,6 @@
 //! expect-check-fail: BTreeSet literal element type must implement Ord
 
+use std.collections.BTreeSet
 type Key { value: i32 }
 
 fn main:

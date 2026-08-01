@@ -4,6 +4,7 @@
 // Option-shaped get/remove surface — Some/None, unwrap, is_some/is_none,
 // unwrap_or, and the map-untouched-on-miss remove contract.
 
+use std.collections.HashMap
 comptime fn map_battery(n: i32) -> i32:
     let m = HashMap[i32, i32].new()
     for i in 0..n:

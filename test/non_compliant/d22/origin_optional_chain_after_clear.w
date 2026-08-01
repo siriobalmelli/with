@@ -6,6 +6,7 @@
 //! origin-set: construction, optional chaining, and unwrap preserve `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.collections.HashMap
 type D22OptionalView = ephemeral { value: &i32 }
 
 fn main:

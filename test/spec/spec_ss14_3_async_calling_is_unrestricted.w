@@ -1,5 +1,6 @@
 //! expect-stdout: ok
 
+use std.task.Task
 async fn fetch_data(id: i32) -> i32:
     id + 1
 

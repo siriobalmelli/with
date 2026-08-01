@@ -6,6 +6,7 @@
 //! origin-set: the contextual Copy gives `snapshot` `{}`
 //! drop-behavior: the map remains sole storage owner and drops once
 
+use std.collections.HashMap
 fn main:
     var map: HashMap[i32, i32] = HashMap.new()
     map.insert(1, 46)

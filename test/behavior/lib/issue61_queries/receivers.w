@@ -1,4 +1,5 @@
 use issue61_queries.shared
+use std.collections.HashMap
 
 pub type IntList = Vec[i32]
 

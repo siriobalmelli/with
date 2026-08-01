@@ -6,6 +6,7 @@
 // and sizeof silently became 0, so the memcpy below copied nothing —
 // arena_vec_push lost every element the same way.
 
+use std.builtins.print_i32
 extern fn with_memcpy(dst: *i8, src: *i8, n: i64) -> Unit
 
 type Slot[T] {

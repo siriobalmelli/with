@@ -1,5 +1,6 @@
 //! expect-debug-alloc: leak count=0
 
+use std.collections.HashMap
 fn main:
     var map: HashMap[i32, Vec[i64]] = HashMap.new()
     let values: Vec[i64] = Vec.new()

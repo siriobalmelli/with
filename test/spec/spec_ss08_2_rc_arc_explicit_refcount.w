@@ -1,5 +1,7 @@
 // Spec test: Section 8.2 — reference counting is explicit Rc/Arc.
 
+use std.rc.Rc
+use std.rc.Arc
 fn test_rc_reference_counting_is_explicit:
     let a = Rc.new(11)
     assert(a.strong_count() == 1)

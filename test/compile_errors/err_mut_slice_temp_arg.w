@@ -3,6 +3,7 @@
 // #604: a temporary collection cannot back a slice view argument — it would
 // be freed while the callee still uses it.
 
+use std.builtins.print_i32
 fn total(xs: []i32) -> i32:
     xs[0]
 

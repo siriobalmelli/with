@@ -3,6 +3,7 @@
 // drop. `let _ = r.ptr` / `let p = r.ptr` previously marked the (Copy) field moved
 // via cancel_scheduled_value_drop_for_receiver_expr, degrading r's whole-value
 // Drop into a no-op partial drop -> leak.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

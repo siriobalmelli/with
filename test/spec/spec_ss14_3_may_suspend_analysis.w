@@ -1,5 +1,6 @@
 //! expect-stdout: ok
 
+use std.task.Task
 @[no_await_guard]
 type LocalGuard {
     value: i32,

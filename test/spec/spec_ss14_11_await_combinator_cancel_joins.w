@@ -1,6 +1,7 @@
 //! known-issue: #724 owned collections lack element-transfer iteration; await combinators double-own tasks via view bit-copies
 //! expect-stdout: ok
 
+use std.task.Task
 extern fn with_fiber_live_fibers() -> i32
 extern fn with_runtime_run_one_step() -> Unit
 

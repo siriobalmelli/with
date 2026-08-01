@@ -1,6 +1,11 @@
 //! known-issue: #724 owned collections lack element-transfer iteration; await combinators double-own tasks via view bit-copies
 //! expect-stdout: ok
 
+use std.task.Task
+use std.task.await_all
+use std.task.await_first
+use std.task.await_any
+use std.task.await_settled
 extern fn with_fiber_live_fibers() -> i32
 
 async fn tick(): ()

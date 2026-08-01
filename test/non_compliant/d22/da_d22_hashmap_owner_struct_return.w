@@ -7,6 +7,7 @@
 //! drop-behavior: aggregate construction transfers the map into `Owner`; the map header and tables drop exactly once
 //! expect-debug-alloc: leak count=0
 
+use std.collections.HashMap
 type Owner { map: HashMap[i32, i32] }
 
 fn make_owner() -> Owner:

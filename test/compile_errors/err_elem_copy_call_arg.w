@@ -6,6 +6,7 @@
 // structurally before the interim #715 gate — the E3-target diagnostic,
 // reached early.
 
+use std.builtins.int_to_string
 type Thing { vals: Vec[i32] }
 
 fn consume(t: Thing) -> i64:

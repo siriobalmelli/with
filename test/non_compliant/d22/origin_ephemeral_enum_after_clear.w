@@ -6,6 +6,7 @@
 //! origin-set: enum construction and pattern projection preserve `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.collections.HashMap
 enum D22Choice ephemeral:
     Value(&i32)
     Empty

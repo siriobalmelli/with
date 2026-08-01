@@ -2,6 +2,7 @@
 // #604: a collection passed as a slice view is BORROWED — the callee neither
 // frees nor copies the elements, and the caller's Vec drops them exactly once
 // at scope exit. A header copy in the coercion would double-free.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

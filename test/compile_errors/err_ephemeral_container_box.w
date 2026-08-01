@@ -1,6 +1,7 @@
 //! expect-check-fail: cannot be stored on the heap
 // §5.1 (#625): boxing an ephemeral value (here via a struct literal) is a heap
 // escape — the #600 heap-boxing gate fires.
+use std.box.Box
 type View ephemeral { p: &i32 }
 
 fn main:

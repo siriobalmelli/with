@@ -1,5 +1,6 @@
 //! expect-check-fail: count parameter must be `i32`
 
+use std.collections.IndexSpec
 type Tensor { value: i32 }
 
 impl Tensor:

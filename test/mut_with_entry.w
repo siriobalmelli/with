@@ -1,5 +1,6 @@
 // Test: §10 scoped with-access via HashMapEntry
 
+use std.collections.HashMap
 fn test_entry_or_insert_new:
     var m: HashMap[str, i32] = HashMap.new()
     with m.entry("x") as mut e:

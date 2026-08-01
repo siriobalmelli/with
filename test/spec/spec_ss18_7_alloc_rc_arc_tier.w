@@ -1,6 +1,8 @@
 //! check-only
 //! args: --no-std --alloc
 
+use std.rc.Rc
+use std.rc.Arc
 @[global_allocator]
 global ALLOC: i32 = 0
 

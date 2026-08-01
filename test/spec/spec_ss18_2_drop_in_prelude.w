@@ -4,6 +4,7 @@
 // `drop` is available from the ambient prelude and triggers cleanup at the
 // call site instead of waiting for the end of the enclosing scope.
 
+use std.builtins.write
 var PRELUDE_DROP_TRACE = ""
 
 type PreludeDropProbe { label: str }

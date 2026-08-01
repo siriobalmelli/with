@@ -3,6 +3,7 @@
 //! required-verdict: compile-and-run
 //! expected-diagnostic: none; the condition is the view's final use
 
+use std.collections.HashMap
 type NllConditionMap {
     values: HashMap[i32, i32],
 }

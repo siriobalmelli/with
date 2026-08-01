@@ -2,6 +2,7 @@
 // D27 supersedes A8's implicit index-extraction surface: array reads are views.
 // Observing one or every element, including through a returned view, leaves the
 // array as sole owner and drops every allocation-bearing sibling exactly once.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

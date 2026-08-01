@@ -3,6 +3,7 @@
 // A8: moving a Drop field out of a struct consumes that field path. Reading the
 // same field afterward is a use-after-move.
 
+use std.builtins.print_i32
 type W { id: i32 }
 impl Drop for W:
     fn drop(move self: Self):

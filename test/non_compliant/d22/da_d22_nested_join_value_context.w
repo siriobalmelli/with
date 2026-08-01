@@ -7,6 +7,7 @@
 //! drop-behavior: no reference or owner is duplicated; leak count=0
 //! expect-debug-alloc: leak count=0
 
+use std.collections.HashMap
 fn take(value: i32): value + 1
 
 fn main:

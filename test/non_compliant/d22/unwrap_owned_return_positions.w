@@ -2,6 +2,7 @@
 //! NON-COMPLIANT: D22 owned-demand materialization of Option[&V].unwrap()
 //! must deref exactly once in every return spelling.
 
+use std.collections.HashMap
 fn tail_chain(m: &HashMap[i32, i32], k: i32) -> i32:
     m.get(k).unwrap()
 

@@ -2,6 +2,7 @@
 //! NON-COMPLIANT: D22 discriminants must be enum-scoped; a repr enum's
 //! bare `None = k` must not poison Option.None (accessor, match, guards).
 
+use std.collections.HashMap
 enum Junk: i32:
     None = 3
     Blah = 5

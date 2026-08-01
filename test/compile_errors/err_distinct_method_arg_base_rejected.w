@@ -1,5 +1,6 @@
 //! expect-check-fail: wrong argument type
 
+use std.builtins.int_to_string
 type UserId = distinct i32
 type Account { salt: i32 }
 

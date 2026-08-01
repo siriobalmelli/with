@@ -6,6 +6,7 @@
 // the reassignment freed the moved-out pointer a second time → DOUBLE FREE. The
 // allocator is the oracle: a double-free fails this test; leak count must be 0.
 
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

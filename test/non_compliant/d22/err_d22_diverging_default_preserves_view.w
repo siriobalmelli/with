@@ -6,6 +6,7 @@
 //! origin-set: `view` has `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.collections.HashMap
 fn observe(present: bool):
     var map: HashMap[i32, i32] = HashMap.new()
     if present:

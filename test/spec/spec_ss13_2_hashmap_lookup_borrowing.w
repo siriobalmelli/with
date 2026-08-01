@@ -1,6 +1,7 @@
 // Spec test: Section 13.2 — HashMap Lookup Borrowing
 // HashMap.get borrows the map (not the key) and returns an Option.
 
+use std.collections.HashMap
 type User:
     name: str
 

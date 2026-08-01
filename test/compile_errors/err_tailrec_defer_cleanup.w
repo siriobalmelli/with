@@ -1,5 +1,6 @@
 //! expect-build-fail: active defer/errdefer cleanup remains
 
+use std.builtins.int_to_string
 @[tailrec]
 fn f(n: i32) -> i32:
     if n <= 0: 0

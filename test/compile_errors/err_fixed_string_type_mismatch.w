@@ -1,5 +1,6 @@
 //! expect-check-fail: wrong argument type in call to 'takes_four'
 
+use std.fixed_string.FixedString
 fn takes_four(s: FixedString[4]):
     let _ = s
 

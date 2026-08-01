@@ -6,6 +6,7 @@
 //! origin-set: the match result has `{primary, fallback}`
 //! drop-behavior: rejection precedes codegen; both maps retain ownership
 
+use std.collections.HashMap
 fn main:
     var primary: HashMap[i32, i32] = HashMap.new()
     var fallback: HashMap[i32, i32] = HashMap.new()

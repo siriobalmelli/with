@@ -2,6 +2,7 @@
 //! expect-stdout: hello
 //! expect-stdout: world
 //! expect-stdout: foo
+use std.builtins.int_to_string
 fn main:
     let s = "hello,world,foo"
     let parts = s.split(",")

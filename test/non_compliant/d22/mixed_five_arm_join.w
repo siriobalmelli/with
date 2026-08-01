@@ -6,6 +6,7 @@
 //! origin-set: all three owned join results have `{}`
 //! drop-behavior: each selected reference arm is copied once; map storage remains singly owned
 
+use std.collections.HashMap
 fn main:
     var map: HashMap[i32, i32] = HashMap.new()
     map.insert(0, 50)

@@ -3,6 +3,7 @@
 // D22 §13.6 / D27: assignment into an owned place is an owned demand and
 // the exact &Thing element view cannot satisfy it because Thing is not Copy.
 
+use std.builtins.int_to_string
 type Thing { vals: Vec[i32] }
 
 fn main:

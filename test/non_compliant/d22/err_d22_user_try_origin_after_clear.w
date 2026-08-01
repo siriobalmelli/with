@@ -6,6 +6,8 @@
 //! origin-set: user-defined `Try` preserves `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.traits.ControlFlow
+use std.collections.HashMap
 enum Probe[T]:
     Good(T)
     Bad(str)

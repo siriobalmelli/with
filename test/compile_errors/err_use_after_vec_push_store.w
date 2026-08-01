@@ -1,5 +1,6 @@
 //! expect-check-fail: use of moved value
 
+use std.builtins.print_i32
 type Payload {
     values: Vec[i32],
 }

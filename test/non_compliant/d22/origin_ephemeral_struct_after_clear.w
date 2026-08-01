@@ -6,6 +6,7 @@
 //! origin-set: struct construction and field projection preserve `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.collections.HashMap
 type D22View = ephemeral { value: &i32 }
 
 fn main:

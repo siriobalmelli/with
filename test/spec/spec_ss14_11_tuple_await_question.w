@@ -1,5 +1,6 @@
 //! expect-stdout: ok
 
+use std.task.Task
 var TUPLE_AWAIT_STARTED: i32 = 0
 
 fn reset_started:

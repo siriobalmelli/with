@@ -3,6 +3,7 @@
 // D22 §13.6 / #735: a struct-literal field is an owned demand and cannot be
 // filled from a non-Copy field reached through a shared view.
 
+use std.builtins.int_to_string
 type Outer { v: Vec[i32], n: i32 }
 type Wrap { held: Vec[i32] }
 

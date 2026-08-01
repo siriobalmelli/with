@@ -1,5 +1,6 @@
 use issue59_queries.generic
 use issue59_queries.shared
+use std.collections.HashMap
 
 pub fn sample_state() -> State:
     let first_values: Vec[i32] = Vec.new()

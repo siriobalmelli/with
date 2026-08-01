@@ -1,5 +1,6 @@
 // Spec test: Section 10.6 — Error Context (formerly 25.43)
 
+use std.result.ContextError
 fn fallible(value: i32) -> Result[i32, str]:
     if value < 0:
         Err("negative")

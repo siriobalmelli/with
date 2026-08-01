@@ -1,4 +1,5 @@
 use issue59_queries.shared
+use std.collections.HashMap
 
 pub fn method_score(state: State, lookup: HashMap[str, i32]) -> i32:
     var counter = Counter.new()

@@ -7,6 +7,7 @@
 //! drop-behavior: SlotMap storage is released once; leak count=0
 //! expect-debug-alloc: leak count=0
 
+use std.collections.SlotMap
 fn main:
     var map: SlotMap[i32] = SlotMap.new()
     let handle = map.insert(88)

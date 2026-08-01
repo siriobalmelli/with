@@ -1,6 +1,7 @@
 //! expect-stdout: 6
 //! expect-stdout: 1
 //! expect-stdout: 1
+use std.builtins.int_to_string
 fn main:
     let pi = 3.14
     let two_pi = pi + pi

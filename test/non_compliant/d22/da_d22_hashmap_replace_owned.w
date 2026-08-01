@@ -7,6 +7,8 @@
 //! drop-behavior: displaced values and unused duplicate keys drop once; retained entries drop once; leak count=0
 //! expect-debug-alloc: leak count=0
 
+use std.collections.HashMap
+use std.collections.HashSet
 fn values(n: i64) -> Vec[i64]:
     let out: Vec[i64] = Vec.new()
     out.push(n)

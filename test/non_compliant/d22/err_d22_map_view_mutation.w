@@ -3,6 +3,7 @@
 //! view returned by map get (D22 §4.2: get borrows map-owned storage; §15.3
 //! mutation requires an exclusive place). Stage 8 diagnostics work.
 
+use std.collections.HashMap
 type Inner {
     tags: Vec[i32],
 }

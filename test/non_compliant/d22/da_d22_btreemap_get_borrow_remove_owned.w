@@ -10,6 +10,7 @@
 // D22 gives BTreeMap the same ownership split as HashMap: get borrows map
 // storage uniformly, while insert rotation/replacement and remove transfer
 // every non-Copy value exactly once.
+use std.collections.BTreeMap
 fn values(a: i64, b: i64):
     let out: Vec[i64] = Vec.new()
     out.push(a)

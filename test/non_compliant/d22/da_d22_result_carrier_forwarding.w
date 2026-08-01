@@ -7,6 +7,7 @@
 //! drop-behavior: map storage remains singly owned and drops once; leak count=0
 //! expect-debug-alloc: leak count=0
 
+use std.collections.HashMap
 fn carry(map: &HashMap[i32, i32]) -> Result[&i32, str]:
     Ok(map.get(1).unwrap())
 

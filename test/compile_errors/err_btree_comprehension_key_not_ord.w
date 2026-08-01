@@ -1,5 +1,6 @@
 //! expect-error: BTreeMap comprehension key type must implement Ord
 
+use std.collections.BTreeMap
 type Key { value: i32 }
 
 fn main:

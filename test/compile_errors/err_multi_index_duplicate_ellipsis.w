@@ -1,5 +1,6 @@
 //! expect-check-fail: multi-dimensional index may contain at most one ellipsis
 
+use std.collections.IndexSpec
 type Tensor { value: i32 }
 
 impl Tensor:

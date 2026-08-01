@@ -3,6 +3,7 @@
 // D22 §13.6 / #735: a by-value parameter is an owned demand and cannot be
 // satisfied from a non-Copy field reached through a shared view.
 
+use std.builtins.int_to_string
 type Outer { v: Vec[i32], n: i32 }
 
 fn takes_owned(x: Vec[i32]) -> i64:

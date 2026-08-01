@@ -1,5 +1,6 @@
 //! expect-check-fail: ? cannot propagate break type 'str' through enclosing return type 'OtherResult'
 
+use std.traits.ControlFlow
 enum TextResult:
     TextOk(i32)
     TextErr(str)

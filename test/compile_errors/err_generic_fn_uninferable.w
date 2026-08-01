@@ -4,6 +4,7 @@
 // (annotate the binding or pass an argument mentioning T), not a cascade of
 // bare "unknown type" errors.
 
+use std.builtins.print_i32
 fn make[T]() -> Vec[T]:
     Vec.new()
 

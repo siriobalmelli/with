@@ -7,6 +7,7 @@
 //! drop-behavior: lookup never creates an owner; remove transfers the Vec; all allocations drop once; leak count=0
 //! expect-debug-alloc: leak count=0
 
+use std.collections.HashMap
 fn find[K, V](map: &HashMap[K, V], key: K) -> Option[&V]:
     map.get(key)
 

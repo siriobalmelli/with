@@ -6,6 +6,7 @@
 //! origin-set: `carrier` and `view` have `{value}`; contextual Copy results have `{}`
 //! drop-behavior: scalar-only check fixture; no drop-bearing ownership is created
 
+use std.collections.HashMap
 type Snapshot { value: i32 }
 type Meter { value: i32 }
 enum Wrapped:

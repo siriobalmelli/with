@@ -1,4 +1,5 @@
 //! expect-check-fail: argument 1 expects Handle[Mesh]
+use std.collections.SlotMap
 type Texture:
     id: i32
 

@@ -3,6 +3,7 @@
 // HashMap.get exposes a shared view into map-owned storage. It must not copy a
 // non-Copy value into a second owner. HashMap.remove is the ownership-transfer
 // operation and returns the removed value exactly once.
+use std.collections.HashMap
 fn observe(map: &HashMap[i32, Vec[i64]]):
     let found: Option[&Vec[i64]] = map.get(1)
     assert(found.is_some())

@@ -1,5 +1,6 @@
 // Spec test: Section 11.3 - Object Safety.
 
+use std.box.Box
 var DRAW_TOTAL: i32 = 0
 
 trait Drawable:

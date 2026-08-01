@@ -2,6 +2,8 @@
 // #697: conditional move of a whole Rc local. On the moving path the handle is
 // reset to null; the scope-exit refcount drop must null-check before touching
 // the strong count. Same class as the Box crash, refcount flavor.
+use std.rc.Rc
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *i8
 extern fn with_free(ptr: *i8) -> Unit
 

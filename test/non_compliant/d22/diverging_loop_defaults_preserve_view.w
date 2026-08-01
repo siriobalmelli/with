@@ -6,6 +6,7 @@
 //! origin-set: each live loop-local view has `{map}` until contextual Copy into `result`
 //! drop-behavior: contextual copies are independent; map storage drops once
 
+use std.collections.HashMap
 fn via_break(map: &HashMap[i32, i32]) -> i32:
     var result = 0
     loop:

@@ -1,6 +1,7 @@
 //! check-only
 //! args: --no-std --alloc
 
+use std.box.Box
 @[global_allocator]
 global ALLOC: i32 = 0
 

@@ -1,5 +1,6 @@
 // Spec test: Section 3.7 — Box auto-dereferencing.
 
+use std.box.Box
 type BoxAutoDerefUser { name: str, score: i32 }
 
 impl BoxAutoDerefUser:

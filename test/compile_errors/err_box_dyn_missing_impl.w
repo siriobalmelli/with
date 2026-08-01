@@ -1,5 +1,6 @@
 //! expect-check-fail: type mismatch
 
+use std.box.Box
 trait BoxDynMissingLogger:
     fn message(self: &Self) -> str
 

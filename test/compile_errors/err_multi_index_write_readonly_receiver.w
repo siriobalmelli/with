@@ -1,5 +1,6 @@
 //! expect-check-fail: cannot assign through a read-only place
 
+use std.collections.IndexSpec
 type Tensor { value: i32 }
 
 impl MultiIndex[i32] for Tensor:

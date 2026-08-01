@@ -3,6 +3,7 @@
 // receiver via the temp-local idiom, no restore. The caller's scope-exit drop
 // must see a blanked header — not the stale one — or the elements double-drop
 // and the buffer double-frees.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

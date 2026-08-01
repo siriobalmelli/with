@@ -2,6 +2,7 @@
 // A7 (#606): match takes ownership of its subject; a `_` in the taken arm —
 // as a discarded tuple element or as the whole-subject wildcard arm — owns
 // what it discards and must free it exactly once, not leak it.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

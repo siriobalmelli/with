@@ -2,6 +2,7 @@
 // A7 (#606): enum-payload discards in a consuming match — a `_` payload
 // pattern, a `..` payload rest, and the whole-subject `_` arm — own what they
 // discard and must free each Drop payload exactly once.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

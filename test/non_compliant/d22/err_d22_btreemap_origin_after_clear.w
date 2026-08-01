@@ -6,6 +6,7 @@
 //! origin-set: `view` has `{map}`
 //! drop-behavior: rejection precedes codegen; the map remains the sole owner
 
+use std.collections.BTreeMap
 fn main:
     var map: BTreeMap[i32, i32] = BTreeMap.new()
     map.insert(1, 86)

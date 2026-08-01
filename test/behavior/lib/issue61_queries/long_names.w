@@ -1,3 +1,4 @@
+use std.collections.HashMap
 pub type MonumentallyVerboseCarrierForCompilerOwnedStringStability {
     extraordinarily_verbose_lookup_field_name_that_must_remain_stable: HashMap[str, i32],
     extraordinarily_verbose_alias_field_name_that_must_remain_stable: Option[str],

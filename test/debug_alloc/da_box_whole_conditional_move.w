@@ -3,6 +3,8 @@
 // reset to null; the scope-exit box drop must null-check before dropping the
 // pointee. Was: SIGSEGV at scope exit (mir_emit_box_drop_place dereferenced
 // the reset pointer with no runtime guard).
+use std.box.Box
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *i8
 extern fn with_free(ptr: *i8) -> Unit
 

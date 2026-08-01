@@ -1,5 +1,6 @@
 //! expect-check-fail: receiver must be `mut self: Self` for MultiIndexMut
 
+use std.collections.IndexSpec
 type Tensor { value: i32 }
 
 impl MultiIndex[i32] for Tensor:

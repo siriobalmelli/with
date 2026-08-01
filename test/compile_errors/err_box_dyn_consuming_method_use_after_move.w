@@ -1,5 +1,6 @@
 //! expect-check-fail: use of moved value
 
+use std.box.Box
 trait BoxDynConsumable:
     fn peek(self: &Self) -> i32
     fn consume(move self: Self) -> i32

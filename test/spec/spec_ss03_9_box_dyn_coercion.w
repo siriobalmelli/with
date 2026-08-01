@@ -1,3 +1,4 @@
+use std.box.Box
 trait BoxDynLogger:
     fn message(self: &Self) -> str
 

@@ -3,6 +3,7 @@
 // the task COMPLETES or is CANCELLED. `select await` cancels the loser; the slow
 // task holds a Drop local across its suspend. Either outcome (slow wins → consume
 // drops it; fast wins → slow's fiber unwinds and drops it) must be leak-free.
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 

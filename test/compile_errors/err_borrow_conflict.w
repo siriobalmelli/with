@@ -2,6 +2,7 @@
 
 // Test: &mut is rejected at P12 lockdown.
 
+use std.builtins.int_to_string
 fn main:
     var x = 5
     let r1 = &x

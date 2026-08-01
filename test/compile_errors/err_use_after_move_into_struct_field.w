@@ -3,6 +3,7 @@
 // #605: a non-Copy value moved into a struct field must be consumed -- using it
 // afterward is a use-after-move.
 
+use std.builtins.print_i32
 type W { id: i32 }
 impl Drop for W:
     fn drop(move self: Self):

@@ -1,6 +1,8 @@
 //! expect-stdout: ok
 // Spec test: §4.3c BTree collection literal targets.
 
+use std.collections.BTreeSet
+use std.collections.BTreeMap
 fn test_btreeset_literal:
     let set: BTreeSet[i32] = [3, 1, 2, 2]
     assert(set.len() == 3)

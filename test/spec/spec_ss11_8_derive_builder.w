@@ -1,5 +1,6 @@
 //! expect-stdout: ok
 
+use std.result.BuilderError
 @[derive(Builder)]
 type Config {
     host: str,

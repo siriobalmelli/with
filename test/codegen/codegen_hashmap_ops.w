@@ -1,4 +1,6 @@
 //! expect-stdout: 2
+use std.collections.HashMap
+use std.builtins.int_to_string
 fn main:
     let m: HashMap[str, i64] = HashMap.new()
     m.increment("count")

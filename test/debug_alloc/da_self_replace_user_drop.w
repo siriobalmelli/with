@@ -5,6 +5,7 @@
 // caller. slot counts drops; ptr is a real allocation so over/under-drop
 // shows up as leak or double-free.
 
+use std.builtins.print_i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 
