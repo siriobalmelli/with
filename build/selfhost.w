@@ -2420,7 +2420,7 @@ fn bs_check_pointer_index_rejected(ctx: &ActionCtx, compiler_path: str, case_dir
 fn bs_check_prelude_output_functions(ctx: &ActionCtx, compiler_path: str, case_dir: str) -> i32:
     let root = ctx.project_info().project_root()
     let src = bs_join(case_dir, "prelude_output_functions.w")
-    var rc = bs_write_fixture(ctx, src, "fn main:\n    write(\"A\")\n    print(\"B\")\n    write(\"C\")\n    ewrite(\"D\")\n    eprint(\"E\")\n    ewrite(\"F\")\n", "prelude output source")
+    var rc = bs_write_fixture(ctx, src, "use std.builtins\n\nfn main:\n    write(\"A\")\n    print(\"B\")\n    write(\"C\")\n    ewrite(\"D\")\n    eprint(\"E\")\n    ewrite(\"F\")\n", "prelude output source")
     if rc != 0: return rc
     var args: Vec[str] = Vec.new()
     args |> push("run")
