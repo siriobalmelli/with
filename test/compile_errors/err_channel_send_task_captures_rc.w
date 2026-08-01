@@ -1,4 +1,6 @@
 //! expect-error: Task captures non-Send value `owner`
+use std.rc.Rc
+use std.task.Task
 
 use std.rc
 

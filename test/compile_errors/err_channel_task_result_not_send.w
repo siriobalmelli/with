@@ -1,4 +1,6 @@
 //! expect-error: channel element type must be Send
+use std.rc.Rc
+use std.task.Task
 
 use std.rc
 

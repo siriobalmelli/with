@@ -1,4 +1,5 @@
 //! expect-check-fail: collect[BTreeSet[T]] element type must implement Ord
+use std.collections.BTreeSet
 
 type Key { value: i32 }
 

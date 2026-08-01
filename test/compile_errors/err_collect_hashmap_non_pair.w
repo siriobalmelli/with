@@ -1,4 +1,5 @@
 //! expect-check-fail: collect[HashMap[K, V]] requires iterator elements of type (K, V)
+use std.collections.HashMap
 
 fn main:
     let xs: Vec[i32] = Vec.new()

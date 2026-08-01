@@ -1,4 +1,5 @@
 //! expect-check-fail: ephemeral Task cannot be stored in generic container
+use std.task.Task
 
 async fn owned_task(value: i32) -> i32:
     value
