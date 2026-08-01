@@ -364,6 +364,16 @@ impl Sema:
     fn decls_share_source_file(a: i32, b: i32) -> i32:
         if a < 0 or b < 0:
             return 0
+        // #754: c_import-synthesized decls carry the importing file's id, but
+        // their spans index the synthetic generated source — byte-range
+        // reasoning across the two coordinate spaces is meaningless (a
+        // generated impl's span can "contain" an unrelated root fn and adopt
+        // it as a method, erasing its signature). Different origin classes
+        // never share a source file.
+        let a_ci = if a < self.decl_is_c_import.len() as i32: self.decl_is_c_import.get(a as i64) else: 0
+        let b_ci = if b < self.decl_is_c_import.len() as i32: self.decl_is_c_import.get(b as i64) else: 0
+        if a_ci != b_ci:
+            return 0
         if a < self.decl_source_file_ids.len() as i32 and b < self.decl_source_file_ids.len() as i32:
             if self.decl_source_file_ids.get(a as i64) == self.decl_source_file_ids.get(b as i64):
                 return 1

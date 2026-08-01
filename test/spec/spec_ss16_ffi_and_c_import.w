@@ -14,7 +14,7 @@ use c_import("#define WITH_U64_TOP_BIT 0x8000000000000000ULL\n")
 use c_import("typedef struct WithMacroObj WithMacroObj;\nint with_macro_ret(WithMacroObj *p);\nvoid with_macro_drop(WithMacroObj *p);\n#define WITH_MACRO_RET(p) with_macro_ret(p)\n#define WITH_MACRO_DROP(p) with_macro_drop(p)\n#define WITH_MACRO_RET_ALIAS with_macro_ret\n#define WITH_MACRO_ZERO(x) 0\n")
 use c_import("typedef int (*WithInlineCb)(int);\ntypedef struct WithInlineHolder { WithInlineCb function; } WithInlineHolder;\nstatic inline WithInlineCb with_inline_cb(const WithInlineHolder *h) { return (WithInlineCb)h->function; }\n")
 use c_import("struct WithTimeval { long tv_sec; int tv_usec; };\nextern long with_timezone;\nint with_settimeofday(const struct WithTimeval *tv, const struct with_timezone *tz);\n")
-use std.builtins
+use std.builtins.write
 
 extern "C" fn atoi(s: *const u8) -> i32
 
