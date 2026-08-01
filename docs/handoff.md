@@ -83,11 +83,32 @@ an ownership regression:
    locate the victim (`kind` binding at :2885 in some src file the lane
    compiles) and annotate the binding (`let kind: i32 = ...`).
 
+## Battery 2 + 3 (all fixes landed through commit "ss16 module form")
+
+Battery 2 (on the batch-2 fixes): all green EXCEPT 6 compile-error tests
+(imports added; committed) and emit-c-smoke fixtures (imports added;
+committed). Battery 3 (283d09e0): build/fixpoint/move/drop/ecsmoke/
+ectest/ecfix ALL GREEN; :test red on exactly 2 spec tests, both fixed
+and committed since: spec_ss14 (Task import added by hand — its check
+resolves Task via the async-lowering side door while MIR does not; seam
+noted in #750) and spec_ss16 (module-form `use std.builtins` — the
+symbol form trips pre-existing #754: symbol-form closure import +
+c_import cluster drops an unrelated root fn from the pool; SEED
+reproduces; full notes in the issue).
+
 ## Next steps
 
-1. Finish the fix batch: CImport.w skip-site check (item 2), implicit-
-   main sweep (item 3), #753 victim annotation (item 5). `with build
-   :dev`, rerun the 19 + probes, commit, RERUN the full battery.
+1. On the current committed tree: `with build` + `with build :test`
+   (compiler sources unchanged since battery 3 — its fixpoint/audit/
+   emit-C verdicts carry; the rebuild is for the version stamp and the
+   test rerun blesses the spec/test edits). Verify RCs unpiped.
+2. All green → reseed: `:test-green`, `:last-green`, `:update-seed`,
+   `:install-user`. Post-reseed the seed enforces the gate (src/build/
+   tools already import-complete, both #753 victims annotated).
+3. Roundtrip under keep-awake: `with build :emit-c-roundtrip` — migrate
+   now self-applies import fix-its; #749's rlimit-gate/c_void loose ends
+   may surface there and belong to #750 WI-1.
+4. Then #747 (str flip) per the D29 sequence.
 2. Reseed (`:test-green`, `:last-green`, `:update-seed`, `:install-user`).
    Post-reseed the SEED enforces the gate — src/build/tools already carry
    their imports.
