@@ -2036,7 +2036,10 @@ fn build_https_fetch_source() -> str:
 fn build_zlib_gunzip_source() -> str:
     "use std.fs\n" ++
     "use std.process\n" ++
-    "use std.zlib\n\n" ++
+    "use std.zlib\n" ++
+    // D29 (#750): a generated helper is a synthesized program and carries
+    // its imports; StringBuilder is import-gated under the §18.2 prelude.
+    "use std.string.StringBuilder\n\n" ++
     "const MAX_OUTPUT: i64 = 8589934592\n\n" ++
     "fn bytes_from_str(data: str) -> Vec[u8]:\n" ++
     "    let out: Vec[u8] = Vec.new()\n" ++
