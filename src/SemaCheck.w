@@ -2882,7 +2882,10 @@ impl Sema:
             if value != 0:
                 self.check_expr(value)
             return
-        let kind = self.label_kinds.get(target as i64)
+        // Annotated: copy the kind out — an unannotated binding views the
+        // element, and the seed's pre-#753 checker phantom-flags the
+        // emit_error below (offset-sensitive cross-file span matching).
+        let kind: i32 = self.label_kinds.get(target as i64)
         if value != 0 and kind != LabelFrameKind.LFK_LOOP:
             self.emit_error("break with a value is only valid for `loop`; `while`, `for`, `do`-`while`, and labeled blocks cannot carry a break value (§13.5a)", node)
             self.check_expr(value)
