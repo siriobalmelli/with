@@ -1,10 +1,66 @@
 # Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
 
-Updated 2026-08-01. Current single remaining blocker for the roundtrip:
-#750 work item 1 (D29 scaffolding — remove flat std injection, enforce the
-§18.2 prelude, ship the insert-use fix-it). D29 is ruled and documented;
-this round was docs-only per Eric's directive — **no implementation has
-started**.
+Updated 2026-08-01 (second pass). **#750 work item 1 (D29 scaffolding) is
+IMPLEMENTED and committed** (`6430d1ee` compiler, `67816feb` corpora); the
+exact-tree battery was launched on `67816feb` (build → fixpoint → test →
+move/drop audits → emit-C gates; log in the session scratchpad
+`battery.log`). If green: `:test-green`, `:last-green`, `:update-seed`,
+`:install-user`, then the roundtrip (`:emit-c-roundtrip`, cap pinned off
+per D28) is unblocked.
+
+## #750 WI-1 implementation map (all scaffolding-labeled)
+
+- **Gate**: `decl_visible_from_current_gated` (Sema.w) — §18.2 allow-list
+  (`sema_prelude_gate_allows_name`; c_void + assert_matches_failed are
+  lowering support), std blindness (std never sees user decls), explicit-
+  import reachability via `module_visible_no_prelude` (skips synthetic
+  prelude edges). Externs exempt (global C symbols; frontend dedups decls).
+  Compiler demands (regex literals) use `lookup_named_type_ambient`.
+- **Fix-it diagnostic**: `'X' requires an explicit import (§18.1); add: use
+  std.m.X` — from the identifier tail, emit_unknown_type_error, struct
+  literals, and the generic-base path (was an ungated flat fallback).
+- **Shadow coexistence** (user type redefines a closure name): per-tier
+  provenance recorded at registration (`type_sym_tier_mask`,
+  `type_tid_is_std`, `type_decl_nodes_by_tid`, `impl_extra_is_std`);
+  shadowed syms route is_copy/Drop/trait-selection/struct-literal decl
+  nodes through the tid's tier (`select_trait_impl_tiered`, uncached).
+  Codegen: std-tier decl registers LLVM types under `name$std`
+  (`shadow_reg_sym`/`shadow_lookup_sym`); `declare_function_at` wraps in
+  the fn's own tier context so signatures match call sites. Frontend Box/Rc
+  ad-hoc drops REMOVED; fn decls still shadow by decl-drop (flat sig
+  table, #751).
+- **Sweeps**: src/build/tools self-import-complete (HashMap 994 sites, 12
+  files; int_to_string/parse/StringBuilder tail). Corpora: 181 behavior +
+  242 other/examples files migrated via tools/insert_std_uses.w +
+  tools/sweep_gate_corpus.w, zero stuck; import-free originals of the 181
+  forked to **test/d_acceptance/** (quarantined; no lane globs it; #752
+  un-quarantines).
+- **Migrator**: `migrate_apply_std_use_fixits` (main.w) applies the fix-it
+  to its own output in-process, loud on non-convergence. **One-liners**:
+  -e/-n/-p synthesized header now imports the ambient vocabulary.
+- **Fixtures**: behav_prelude_shadow_types.w (user Regex/CString/
+  StringBuilder/Box/Rc shadows incl. Copy-vs-std-Drop), 
+  behav_prelude_import_gate.w (gated names via imports, ambient §18.2,
+  regex literal).
+- **#753 filed+mitigated**: view-liveness whole-pool span scan matched
+  same-named idents across files (insertion-sensitive phantom errors);
+  guard added, victim annotated. Known WI-1 gaps (documented, B/D fix):
+  trait names stay flat-ambient; enum-variant gating deferred; shadowed
+  GENERIC types conflate; same-named methods across tiers conflate
+  ((sym, method)-keyed tables); comptime/emit-C shadow paths untiered.
+
+## Next steps
+
+1. Battery verdict (check per-step `BATTERY_RC_*=0` markers in
+   battery.log — never pipe the verdict). Red → bisect within the batch.
+2. Reseed (`:test-green`, `:last-green`, `:update-seed`, `:install-user`).
+   Post-reseed the SEED enforces the gate — src/build/tools already carry
+   their imports.
+3. Roundtrip: `with build :emit-c-roundtrip` under a keep-awake hold —
+   the migrate step now auto-inserts imports into its output; #749's two
+   loose ends (rlimit gate location, round-tripped `struct c_void`
+   name-skip) may surface here and belong to this work item.
+4. Update #750 with results; #747 str flip is next in the D29 sequence.
 
 ## Read this first
 
