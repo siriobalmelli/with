@@ -76,6 +76,13 @@ type CiMigratePendingSharedExternVar {
 var g_migrate_shared_pending_extern_vars: Vec[CiMigratePendingSharedExternVar] = Vec.new()
 var g_migrate_shared_usage_idents: str = ""
 var g_migrate_libc_symbols_used: str = ""
+// D29 (#750): discriminates migrate translation from in-place c_import. The
+// std.libc record dedup is only sound for migrate output, whose preamble
+// imports std.libc; a c_import expansion has no importer, so it keeps
+// emitting the record itself.
+var g_ci_translate_migrate_mode: i32 = 0
+
+pub fn ci_translate_in_migrate_mode -> bool: g_ci_translate_migrate_mode != 0
 var g_migrate_unsafe_extern_fn_names: str = ""
 
 fn ci_migrate_text_is_blank(text: str) -> bool:
@@ -1051,7 +1058,10 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
 
 pub fn migrate_c_file(input_path: str, output_path: str) -> i32:
     var project = CiProject.new()
-    ci_migrate_file_inner(input_path, output_path, false, &project)
+    g_ci_translate_migrate_mode = 1
+    let rc = ci_migrate_file_inner(input_path, output_path, false, &project)
+    g_ci_translate_migrate_mode = 0
+    rc
 
 fn ci_migrate_path_basename(path: str) -> str:
     var end = path.len() as i32

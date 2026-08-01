@@ -606,7 +606,13 @@ impl Sema:
         if is_local != 0:
             self.set_pretty_symbol(name, self.extract_decl_name_after(node, "type"))
         self.type_decl_nodes.insert(name, node)
-        self.record_type_decl_tier(name)
+        // Generic decls stay OUT of the shadow tier mask: a tiered lookup
+        // returning the other tier's generic base would mint fresh generic
+        // insts after freeze (is_copy_frozen misses). Generic name reuse
+        // keeps flat behavior until #751 carries identity through
+        // instantiation.
+        if self.type_decl_tp_count(node) == 0:
+            self.record_type_decl_tier(name)
         let extra_start = self.ast.get_data1(node)
         let packed_kind = self.ast.get_data2(node)
         let sub_kind = type_decl_sub_kind(packed_kind)

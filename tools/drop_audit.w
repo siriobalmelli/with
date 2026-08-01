@@ -53,6 +53,11 @@ fn resource_prelude() -> str:
     // *i8 spelling matches <embedded-std>/std/box.w and std/rc.w's extern
     // declarations — Box/Rc shape cells pull those modules in, and a *mut u8
     // redeclaration is a signature clash.
+    // D29 (#750): generated probes carry their imports — print_i32 and the
+    // Box/Rc shape cells' names are import-gated under the §18.2 prelude.
+    "use std.builtins.print_i32\n" ++
+    "use std.box\n" ++
+    "use std.rc\n" ++
     "extern fn with_alloc(size: i64) -> *i8\n" ++
     "extern fn with_free(ptr: *i8) -> Unit\n" ++
     "type R { id: i32, ptr: *i8, slot: *mut i32 }\n" ++
@@ -323,7 +328,7 @@ fn sc_vec_elem() -> str:
 // POD-container cells: #691/D18 — every Vec frees its buffer at scope exit
 // and on reassignment, so the allocator verdict must be CLEAN.
 fn pod_cell(name: str, body: str) -> Cell:
-    let src = "fn main:\n" ++ body ++ "    print_i32(0)\n"
+    let src = "use std.builtins.print_i32\n" ++ "fn main:\n" ++ body ++ "    print_i32(0)\n"
     Cell { name: name, source: src, expect_sum: 0, expect_clean: true }
 
 fn build_cells() -> Vec[Cell]:

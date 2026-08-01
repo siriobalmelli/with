@@ -2107,9 +2107,9 @@ fn ci_translate_struct(session: i64, idx: i32, is_union: bool, known_structs: st
         return ""
 
     // #750: a system-header record that std.libc already models (rlimit)
-    // must not re-declare — the duplicate shadows the imported libc module
-    // out of the program. The libc note ensures `use std.libc` is added.
-    if ci_libc_symbol_allowed_as(name, CI_LIBC_KIND_TYPE):
+    // must not re-declare in MIGRATE output — its preamble imports std.libc.
+    // In-place c_import has no importer, so it keeps emitting the record.
+    if ci_translate_in_migrate_mode() and ci_libc_symbol_allowed_as(name, CI_LIBC_KIND_TYPE):
         let sys_cursor = with_cimport_decl_cursor(session, idx)
         let sys_loc = with_ci_cursor_location(session, sys_cursor)
         if sys_loc.len() > 0 and ci_is_system_path(sys_loc):

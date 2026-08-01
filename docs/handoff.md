@@ -49,10 +49,45 @@ per D28) is unblocked.
   GENERIC types conflate; same-named methods across tiers conflate
   ((sym, method)-keyed tables); comptime/emit-C shadow paths untiered.
 
+## Battery 1 verdict (on 67816feb) and the fix batch
+
+build ✔, fixpoint ✔, move-audit ✔. RED: behavior 19/937, drop-audit
+(all cells COMPILE-FAIL), emit-c-smoke. Every red is classed and none is
+an ownership regression:
+
+1. **Shadow-generic crash** (`is_copy_frozen miss`, behav_generics +
+   issue59_* + generic_* — tests define `type Box[T]`/`Pair[T]`): tiered
+   lookups returned the other tier's generic base → fresh generic insts
+   minted post-freeze. FIXED: `record_type_decl_tier` only for
+   `tp_count==0` decls (generic name reuse keeps flat behavior; #751).
+2. **rlimit unknown-type** (c_import tests + imported_alias): ba67bcb2's
+   std.libc record skip fired for in-place c_import where nothing imports
+   std.libc. FIXED: `g_ci_translate_migrate_mode` scopes the skip to
+   migrate (`ci_translate_in_migrate_mode`; gate the CImport.w:2112 skip
+   on it — VERIFY the CImport.w side actually consults it, the flag is
+   set in CiMigrate.w but the skip-site condition still needs the check
+   added!).
+3. **Sweep-missed implicit-main tests** (behav_implicit_main,
+   nonassoc_parenthesized, string_builder, regex_language_semantics,
+   raw_ptr_arithmetic?, opaque_struct_call?): `check` cannot parse
+   implicit-main files, so the sweep skipped them. Fix: feed each failed
+   test's harness stderr (out/test-graph/behavior-tests/*.stderr) to
+   tools/insert_std_uses.w --apply, or sweep via a build-based check.
+4. **drop-audit COMPILE-FAIL wall**: its GENERATED probes used gated
+   names bare. FIXED: resource_prelude()/the second builder now emit
+   use-lines.
+5. **emit-c-smoke red**: the #753 phantom-view class again, new victim —
+   "cannot mutate `self` while `kind` is a live view" label @2885:9
+   (file not captured; found during the lane's stage1 action under the
+   SEED, whose checker predates the guard). Fix like expire_borrows:
+   locate the victim (`kind` binding at :2885 in some src file the lane
+   compiles) and annotate the binding (`let kind: i32 = ...`).
+
 ## Next steps
 
-1. Battery verdict (check per-step `BATTERY_RC_*=0` markers in
-   battery.log — never pipe the verdict). Red → bisect within the batch.
+1. Finish the fix batch: CImport.w skip-site check (item 2), implicit-
+   main sweep (item 3), #753 victim annotation (item 5). `with build
+   :dev`, rerun the 19 + probes, commit, RERUN the full battery.
 2. Reseed (`:test-green`, `:last-green`, `:update-seed`, `:install-user`).
    Post-reseed the SEED enforces the gate — src/build/tools already carry
    their imports.
