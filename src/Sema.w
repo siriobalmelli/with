@@ -13,6 +13,8 @@ use InternPool
 use render
 use Overflow
 use compiler.TrackedInputs
+use std.collections.HashMap
+use std.collections.HashSet
 
 extern fn with_write(s: str) -> Unit
 extern fn with_eprint(s: str) -> Unit
@@ -640,6 +642,15 @@ type Sema {
     impl_counts: Vec[i32],
     impl_type_syms: Vec[i32],
     impl_lookup: HashMap[i32, i32],
+    // D29 scaffolding (#750): tier provenance for the shadow case (a user type
+    // decl reusing a prelude-closure type name). impl_extra_is_std runs in
+    // lockstep with impl_extra; type_tid_is_std / type_decl_nodes_by_tid are
+    // recorded at type-decl registration; type_sym_tier_mask bits: 1=std, 2=user.
+    // All queries stay on the flat path unless the mask reads 3 (shadowed).
+    impl_extra_is_std: Vec[i32],
+    type_decl_nodes_by_tid: HashMap[i32, i32],
+    type_tid_is_std: HashMap[i32, i32],
+    type_sym_tier_mask: HashMap[i32, i32],
     // Generic inst impls: impl Trait for Type[Args]
     // Key: pair(type_id, trait_sym) → 1
     impl_generic_inst: HashMap[i64, i32],
@@ -1204,6 +1215,64 @@ fn sema_tier_path_is_std_implementation(path: str) -> i32:
     if path.starts_with("lib/std/") or path.starts_with("<embedded-std>/"):
         return 1
     if path.contains("/lib/std/"):
+        return 1
+    0
+
+fn sema_vec_str_contains(v: &Vec[str], s: str) -> i32:
+    for i in 0..v.len() as i32:
+        if v.get(i as i64) == s:
+            return 1
+    0
+
+// "<embedded-std>/std/collections.w" or ".../lib/std/collections.w" → "std.collections"
+fn sema_std_module_dotted(path: str) -> str:
+    var rel = ""
+    if path.starts_with("<embedded-std>/"):
+        rel = path.slice("<embedded-std>/".len(), path.len())
+    else if path.starts_with("lib/std/"):
+        rel = path.slice("lib/".len(), path.len())
+    else:
+        var i = 0 as i64
+        let marker = "/lib/std/"
+        while i + marker.len() <= path.len():
+            if path.slice(i, i + marker.len()) == marker:
+                rel = path.slice(i + "/lib/".len(), path.len())
+                break
+            i = i + 1
+    if rel.len() == 0:
+        return ""
+    if rel.ends_with(".w"):
+        rel = rel.slice(0, rel.len() - 2)
+    rel.replace("/", ".")
+
+// D29 scaffolding (#750): the §18.2 prelude, exactly as enumerated. These
+// names stay ambient; every other prelude-closure name is import-gated until
+// the D fallback tier activates. Primitives and Bool literals never reach the
+// gate (they register pathless). c_void and assert_matches_failed are
+// compiler-lowering support: c_import emissions and the assert_matches
+// desugaring reference them in user-tier positions the user never spelled.
+fn sema_prelude_gate_allows_name(name: str) -> i32:
+    if name == "print" or name == "eprint":
+        return 1
+    if name == "assert" or name == "assert_eq" or name == "assert_ne":
+        return 1
+    if name == "require" or name == "check":
+        return 1
+    if name == "panic" or name == "unreachable" or name == "todo":
+        return 1
+    if name == "drop":
+        return 1
+    if name == "Option" or name == "Some" or name == "None":
+        return 1
+    if name == "Result" or name == "Ok" or name == "Err":
+        return 1
+    if name == "Vec" or name == "String" or name == "str" or name == "Unit":
+        return 1
+    if name == "Eq" or name == "Ord" or name == "Hash" or name == "Debug":
+        return 1
+    if name == "Display" or name == "Default" or name == "Drop":
+        return 1
+    if name == "c_void" or name == "assert_matches_failed":
         return 1
     0
 
@@ -1852,6 +1921,10 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         trait_assoc_bound_starts: Vec.new(),
         trait_assoc_bound_counts: Vec.new(),
         impl_extra: Vec.new(),
+        impl_extra_is_std: Vec.new(),
+        type_decl_nodes_by_tid: HashMap.new(),
+        type_tid_is_std: HashMap.new(),
+        type_sym_tier_mask: HashMap.new(),
         impl_starts: Vec.new(),
         impl_counts: Vec.new(),
         impl_type_syms: Vec.new(),
@@ -2419,9 +2492,89 @@ impl Sema:
             return 0
         self.module_is_visible_from_current(target_path)
 
+    // D29 scaffolding (#750): name-aware visibility. Two rules on top of
+    // decl_visible_from_current, applied before its internal-boundary and
+    // reachability shortcuts:
+    //   1. std blindness — a std implementation module never resolves a
+    //      user-tier declaration. The flat merge let newer user decls hijack
+    //      std-internal references (user `type Regex` rebound regex.w).
+    //   2. prelude gate — a prelude-closure declaration is ambient only for
+    //      the §18.2 enumerated names; any other std name resolves from user
+    //      code only through an explicit import path (never the synthetic
+    //      prelude edge). Replaced by the D fallback tier when #751 lands.
+    fn decl_visible_from_current_gated(target_path: str, is_pub: i32, sym: i32) -> i32:
+        if target_path.len() == 0:
+            return 1
+        if self.current_module_path.len() == 0:
+            return 1
+        if target_path == self.current_module_path:
+            return 1
+        if sema_path_is_compiler_hook_runner(self.current_module_path) != 0:
+            return 1
+        let current_is_std = sema_tier_path_is_std_implementation(self.current_module_path)
+        let target_is_std = sema_tier_path_is_std_implementation(target_path)
+        if current_is_std != 0 and target_is_std == 0:
+            return 0
+        if current_is_std == 0 and target_is_std != 0 and self.module_in_prelude_closure(target_path) != 0:
+            if sema_prelude_gate_allows_name(self.pool_resolve(sym)) == 0:
+                if self.module_visible_no_prelude(target_path) == 0:
+                    return 0
+        self.decl_visible_from_current(target_path, is_pub)
+
+    fn module_in_prelude_closure(path: str) -> i32:
+        if self.global_visible_module_paths.contains(path): 1 else: 0
+
+    // Reachability over explicit import edges only: the synthetic prelude
+    // edge and the global prelude-closure shortcut are excluded, so this
+    // answers "did the user actually import a path to this module?".
+    fn module_visible_no_prelude(target_path: str) -> i32:
+        if self.current_module_path.len() == 0:
+            return 1
+        if target_path == self.current_module_path:
+            return 1
+        if not self.module_index_by_path.contains(self.current_module_path):
+            return 0
+        if not self.module_index_by_path.contains(target_path):
+            return 0
+        let cache_key = "noprelude|" ++ sema_visibility_cache_key(self.current_module_path, target_path)
+        if self.module_visibility_cache.contains(cache_key):
+            return self.module_visibility_cache.get(cache_key).unwrap()
+        let start_idx: i32 = self.module_index_by_path.get(self.current_module_path).unwrap()
+        let target_idx: i32 = self.module_index_by_path.get(target_path).unwrap()
+        let seen: HashMap[i32, i32] = sema_new_map_i32_i32()
+        let stack: Vec[i32] = Vec.new()
+        stack.push(start_idx)
+        while stack.len() as i32 > 0:
+            let last = stack.len() as i32 - 1
+            let current: i32 = stack.get(last as i64)
+            stack.pop()
+            if seen.contains(current):
+                continue
+            seen.insert(current, 1)
+            if current == target_idx:
+                self.module_visibility_cache.insert(sema_owned_text(cache_key), 1)
+                return 1
+            if current >= 0 and current < self.module_import_starts.len() as i32:
+                let edge_start = self.module_import_starts.get(current as i64)
+                let edge_count = self.module_import_counts.get(current as i64)
+                for ei in 0..edge_count:
+                    let idx = edge_start + ei
+                    if idx >= 0 and idx < self.module_import_paths.len() as i32:
+                        let ip: str = self.module_import_paths.get(idx as i64)
+                        if ip == "std.prelude" or ip == "std.prelude_core" or ip == "std.prelude_alloc":
+                            continue
+                        stack.push(self.module_import_targets.get(idx as i64))
+        self.module_visibility_cache.insert(sema_owned_text(cache_key), 0)
+        0
+
     fn symbol_visible_from_current(sym: i32) -> i32:
         let symbol_name = self.pool_resolve(sym)
         if symbol_name.starts_with("with_") or symbol_name.starts_with("rt_") or symbol_name.starts_with("wl_"):
+            return 1
+        // D29 (#750): an extern declaration names a global C symbol — one
+        // contract in every tier, and the frontend dedups the decls across
+        // tiers — so tier gating and blindness do not apply.
+        if self.extern_fn_names.contains(sym):
             return 1
         if self.ci_syms.contains(sym) and self.is_ci_visible(sym) != 0:
             return 1
@@ -2432,7 +2585,7 @@ impl Sema:
                 saw_candidate = 1
                 let path = self.decl_visibility_paths.get(i as i64)
                 let is_pub = self.decl_visibility_pub.get(i as i64)
-                if self.decl_visible_from_current(path, is_pub) != 0:
+                if self.decl_visible_from_current_gated(path, is_pub, sym) != 0:
                     return 1
             i = i - 1
         if saw_candidate == 0:
@@ -2472,8 +2625,52 @@ impl Sema:
             i = i - 1
         ""
 
+    // D29 scaffolding (#750): when a name failed resolution only because the
+    // prelude gate requires an import, name the exact use line. The message
+    // suffix "; add: use <module>.<name>" is a stable contract consumed by
+    // tools/insert_std_uses.w and the migrator's self-fix pass.
+    fn std_gated_import_note(sym: i32) -> str:
+        if sym == 0:
+            return ""
+        let name = self.pool_resolve(sym)
+        if name.len() == 0 or sema_prelude_gate_allows_name(name) != 0:
+            return ""
+        var modules = sema_new_vec_str()
+        var i = 0
+        while i < self.named_type_candidate_syms.len() as i32:
+            if self.named_type_candidate_syms.get(i as i64) == sym and self.named_type_candidate_pub.get(i as i64) != 0:
+                let path = self.named_type_candidate_paths.get(i as i64)
+                if sema_tier_path_is_std_implementation(path) != 0 and self.module_in_prelude_closure(path) != 0:
+                    let dotted = sema_std_module_dotted(path)
+                    if dotted.len() > 0 and sema_vec_str_contains(&modules, dotted) == 0:
+                        modules.push(sema_owned_text(dotted))
+            i = i + 1
+        i = 0
+        while i < self.decl_visibility_syms.len() as i32:
+            if self.decl_visibility_syms.get(i as i64) == sym and self.decl_visibility_pub.get(i as i64) != 0:
+                let path = self.decl_visibility_paths.get(i as i64)
+                if sema_tier_path_is_std_implementation(path) != 0 and self.module_in_prelude_closure(path) != 0:
+                    let dotted = sema_std_module_dotted(path)
+                    if dotted.len() > 0 and sema_vec_str_contains(&modules, dotted) == 0:
+                        modules.push(sema_owned_text(dotted))
+            i = i + 1
+        if modules.len() as i32 == 0:
+            return ""
+        if modules.len() as i32 == 1:
+            return "; add: use " ++ modules.get(0) ++ "." ++ name
+        var listed = ""
+        for mi in 0..modules.len() as i32:
+            if mi > 0:
+                listed = listed ++ " | "
+            listed = listed ++ "use " ++ modules.get(mi as i64) ++ "." ++ name
+        "; candidates: " ++ listed
+
     mut fn emit_private_symbol_error(sym: i32, node: i32) -> Unit:
         let name = self.pool_resolve(sym)
+        let gate_note = self.std_gated_import_note(sym)
+        if gate_note.len() > 0:
+            self.emit_error("'" ++ name ++ "' requires an explicit import (§18.1)" ++ gate_note, node)
+            return
         let path = self.private_symbol_path_from_current(sym)
         if path.len() > 0:
             self.emit_error("symbol '" ++ name ++ "' is private to module '" ++ path ++ "'", node)
@@ -2523,6 +2720,31 @@ impl Sema:
         0
 
     fn lookup_named_type_visible(sym: i32) -> i32:
+        self.lookup_named_type_filtered(sym, 1)
+
+    // Ambient lookup for compiler-demand resolutions (regex literals, async
+    // Task synthesis, dyn boxing): lowerings the user never spelled bypass
+    // the D29 prelude gate, but still honor module privacy.
+    fn lookup_named_type_ambient(sym: i32) -> i32:
+        self.lookup_named_type_filtered(sym, 0)
+
+    // D29 scaffolding (#750): registration-truth lookup for codegen. Picks the
+    // candidate declared in the requested tier, ignoring module visibility —
+    // codegen runs after checking and needs the layout of a specific tier's
+    // decl, not a context-relative resolution.
+    fn lookup_named_type_for_tier(sym: i32, want_std: i32) -> i32:
+        var i = self.named_type_candidate_syms.len() as i32 - 1
+        while i >= 0:
+            if self.named_type_candidate_syms.get(i as i64) == sym:
+                let path = self.named_type_candidate_paths.get(i as i64)
+                if path.len() > 0:
+                    let cand_std = if sema_tier_path_is_std_implementation(path) != 0: 1 else: 0
+                    if cand_std == want_std:
+                        return self.named_type_candidate_tids.get(i as i64)
+            i = i - 1
+        if self.named_types.contains(sym): self.named_types.get(sym).unwrap() else: 0
+
+    fn lookup_named_type_filtered(sym: i32, gated: i32) -> i32:
         let named_tid = if self.named_types.contains(sym): self.named_types.get(sym).unwrap() else: 0
         var global_tid = 0
         var saw_recorded = 0
@@ -2536,10 +2758,11 @@ impl Sema:
                 let candidate_pub = self.named_type_candidate_pub.get(i as i64)
                 if named_tid != 0 and candidate_tid == named_tid:
                     saw_named_tid = 1
+                let candidate_visible = if gated != 0: self.decl_visible_from_current_gated(candidate_path, candidate_pub, sym) else: self.decl_visible_from_current(candidate_path, candidate_pub)
                 if candidate_path.len() == 0:
                     if global_tid == 0:
                         global_tid = candidate_tid
-                else if self.decl_visible_from_current(candidate_path, candidate_pub) != 0:
+                else if candidate_visible != 0:
                     return candidate_tid
             i = i - 1
         if named_tid != 0 and (saw_recorded == 0 or saw_named_tid == 0):
@@ -3544,6 +3767,12 @@ impl Sema:
                 gi_base_sym = canonical_base
                 gi_base_tid = self.lookup_named_type_visible(gi_base_sym)
         if gi_base_tid == 0:
+            // D29 scaffolding (#750): a registered-but-gated generic base is an
+            // import error, not a silent flat-map fallback.
+            let gi_gate_note = self.std_gated_import_note(gi_base_sym)
+            if gi_gate_note.len() > 0:
+                self.emit_error("'" ++ self.pool_resolve_symbol(gi_base_sym) ++ "' requires an explicit import (§18.1)" ++ gi_gate_note, node)
+                return 0
             if not self.type_decl_nodes.contains(gi_base_sym):
                 if self.require_alloc_tier_for_symbol(gi_base_sym, node) == 0:
                     return 0
@@ -4858,6 +5087,25 @@ impl Sema:
             return 0
         self.expr_view_depends_on_origin(self.binding_value_nodes.get(sym).unwrap(), origin_sym)
 
+    // D29 scaffolding (#750): shadow-case tier plumbing. A sym is shadowed when
+    // both a prelude-closure module and user code declare a type under it; only
+    // then do impl/drop queries discriminate by tier (registration-time truth,
+    // valid in frozen phases too). Unshadowed syms take the flat path unchanged.
+    fn type_sym_is_shadowed(sym: i32) -> i32:
+        if sym == 0 or not self.type_sym_tier_mask.contains(sym):
+            return 0
+        if self.type_sym_tier_mask.get(sym).unwrap() == 3: 1 else: 0
+
+    fn type_tid_std_tier(tid: i32) -> i32:
+        if not self.type_tid_is_std.contains(tid):
+            return 0
+        self.type_tid_is_std.get(tid).unwrap()
+
+    fn impl_record_matches_tier(record_idx: i32, want_std: i32) -> i32:
+        if record_idx < 0 or record_idx >= self.impl_extra_is_std.len() as i32:
+            return 1
+        if self.impl_extra_is_std.get(record_idx as i64) == want_std: 1 else: 0
+
     fn type_has_drop_impl(tid: i32) -> i32:
         if tid == 0:
             return 0
@@ -4865,6 +5113,11 @@ impl Sema:
         var owner_sym = self.get_type_name(resolved)
         if owner_sym == 0 and self.get_type_kind(resolved) == TypeKind.TY_GENERIC_INST:
             owner_sym = self.get_generic_inst_base(resolved as i32)
+        if owner_sym != 0 and self.type_sym_is_shadowed(owner_sym) != 0:
+            let want_std = self.type_tid_std_tier(resolved as i32)
+            if self.select_trait_impl_tiered(owner_sym, self.syms.drop, want_std) != 0:
+                return 1
+            return 0
         if owner_sym != 0 and self.has_drop_method(owner_sym) != 0:
             return 1
         if owner_sym != 0 and self.impl_lookup.contains(owner_sym):
@@ -6622,6 +6875,13 @@ impl Sema:
             return 1
         if tk == TypeKind.TY_STRUCT:
             let name = self.get_type_d0(resolved)
+            // D29 scaffolding (#750): a shadowed sym's Copy/Drop verdicts come
+            // from the tid's own tier — the flat caches would conflate them.
+            if name > 0 and self.type_sym_is_shadowed(name) != 0:
+                let want_std = self.type_tid_std_tier(resolved as i32)
+                if self.select_trait_impl_tiered(name, self.syms.drop, want_std) != 0:
+                    return 0
+                return self.select_trait_impl_tiered(name, self.syms.copy_trait, want_std)
             if self.has_drop_method(name) != 0:
                 if sema_debug_move_enabled() != 0:
                     with_eprint("[noncopy] type=" ++ self.pool_resolve(name) ++ " reason=drop")
@@ -6720,7 +6980,9 @@ impl Sema:
     fn expire_borrows_in_scope(scope_start: i32):
         var i = self.bind_names.len() as i32 - 1
         while i >= scope_start:
-            let sym = self.bind_names.get(i as i64)
+            // Annotated: copy the id out — an unannotated binding views the
+            // element and the swap-remove below mutates the same receiver.
+            let sym: i32 = self.bind_names.get(i as i64)
             // Remove borrows whose ref_binding is this sym
             var bi = 0
             while bi < self.borrow_refs.len() as i32:

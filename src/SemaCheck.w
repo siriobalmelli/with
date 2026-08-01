@@ -11,6 +11,7 @@ use Diagnostic
 use InternPool
 use TypeLayout
 use render
+use std.builtins.int_to_string
 
 extern fn with_write(s: str) -> Unit
 extern fn with_eprint(s: str) -> Unit
@@ -5923,7 +5924,7 @@ impl Sema:
             if self.no_std != 0 and self.current_module_is_std_implementation() == 0:
                 self.emit_error("regex literals require std", node)
                 return 0 as TypeId
-            let regex_ty = self.lookup_named_type_visible(self.syms.regex)
+            let regex_ty = self.lookup_named_type_ambient(self.syms.regex)
             if regex_ty == 0:
                 self.emit_error("Regex type is not available; import std.regex", node)
                 return 0 as TypeId
@@ -5964,7 +5965,7 @@ impl Sema:
             let rhs_ty = self.check_expr(rhs)
             if lhs_ty != 0 and self.types_compatible(self.ty_str as i32, lhs_ty as i32) == 0:
                 self.emit_error("left side of regex match must be str-compatible", lhs)
-            let regex_ty = self.lookup_named_type_visible(self.syms.regex)
+            let regex_ty = self.lookup_named_type_ambient(self.syms.regex)
             if regex_ty != 0 and rhs_ty != 0 and self.types_compatible(regex_ty, rhs_ty as i32) == 0:
                 self.emit_error("right side of regex match must be Regex", rhs)
             self.typed_expr_types.insert(node, self.ty_bool as i32)
@@ -6885,7 +6886,12 @@ impl Sema:
             self.emit_error(f"c_import symbol '{target_name}' was omitted: {detail}{at}{direction}", node)
             return 0
 
-        // Unknown identifier — suggest close matches
+        // Unknown identifier — an import-gated std name gets its exact use
+        // line (D29 #750); otherwise suggest close matches.
+        let ident_gate_note = self.std_gated_import_note(sym)
+        if ident_gate_note.len() > 0:
+            self.emit_error("'" ++ target_name ++ "' requires an explicit import (§18.1)" ++ ident_gate_note, node)
+            return 0
         let suggestion = self.suggest_name(target_name, node)
         self.emit_error_with_suggestion("undefined variable", node, suggestion)
         0
@@ -11514,6 +11520,19 @@ impl Sema:
                 self.emit_error("field type mismatch for '" ++ self.pool_resolve(declared_name) ++ "': expected '" ++ self.type_name(expected) ++ "', found '" ++ self.type_name(value_ty) ++ "'", value)
         inferred
 
+    // D29 scaffolding (#750): the literal's declaring node must come from the
+    // resolved tid, not a fresh symbol lookup — with a shadowed sym the flat
+    // type_decl_nodes map holds the newest (user) decl, and std-internal
+    // literals would be validated against the user's field list.
+    fn struct_literal_decl_node(name: i32, tid: i32) -> i32:
+        if tid != 0:
+            let resolved = self.resolve_alias(tid as TypeId) as i32
+            if self.type_decl_nodes_by_tid.contains(resolved):
+                return self.type_decl_nodes_by_tid.get(resolved).unwrap()
+        if self.type_decl_nodes.contains(name):
+            return self.type_decl_nodes.get(name).unwrap()
+        0
+
     mut fn check_struct_literal(node: i32) -> i32:
         var name = self.ast.get_data0(node)
         let extra_start = self.ast.get_data1(node)
@@ -11541,7 +11560,11 @@ impl Sema:
                 self.emit_private_symbol_error(name, node)
                 return 0
             if self.pool_resolve(name) != "Self":
-                self.emit_error("unknown type '" ++ self.pool_resolve(name) ++ "' in struct literal", node)
+                let lit_gate_note = self.std_gated_import_note(name)
+                if lit_gate_note.len() > 0:
+                    self.emit_error("'" ++ self.pool_resolve(name) ++ "' requires an explicit import (§18.1)" ++ lit_gate_note, node)
+                else:
+                    self.emit_error("unknown type '" ++ self.pool_resolve(name) ++ "' in struct literal", node)
             return 0
         if self.reject_tool_capability_construction_if_needed(name, tid, node):
             return 0
@@ -11567,9 +11590,9 @@ impl Sema:
                         expected_struct_ty = expected_resolved
                     else if expected_tk == TypeKind.TY_GENERIC_INST and same_expected_base:
                         expected_struct_ty = expected_resolved
-                if expected_struct_ty == 0 and self.type_decl_nodes.contains(name):
-                    let td_node = self.type_decl_nodes.get(name).unwrap()
-                    if self.type_decl_tp_count(td_node) == 0:
+                if expected_struct_ty == 0:
+                    let td_node = self.struct_literal_decl_node(name, tid)
+                    if td_node != 0 and self.type_decl_tp_count(td_node) == 0:
                         expected_struct_ty = resolved
                 // Check field initializers and collect value types
                 let val_types: Vec[i32] = Vec.new()
@@ -11641,8 +11664,9 @@ impl Sema:
                 // declared field names (stride-3 field triples, per SemaDecl), so it
                 // is correct for generic structs too (type params affect field types,
                 // not names). Positional initializers (cf_name == 0) are skipped.
-                if self.type_decl_nodes.contains(name):
-                    let uf_td_node: i32 = self.type_decl_nodes.get(name).unwrap()
+                let uf_probe_node = self.struct_literal_decl_node(name, tid)
+                if uf_probe_node != 0:
+                    let uf_td_node: i32 = uf_probe_node
                     let uf_td_extra = self.ast.get_data1(uf_td_node)
                     let uf_td_packed = self.ast.get_data2(uf_td_node)
                     if type_decl_sub_kind(uf_td_packed) == TypeDeclKind.Struct:
@@ -11668,8 +11692,9 @@ impl Sema:
                                     break
                             if not cf_known:
                                 self.emit_error("unknown field '" ++ self.pool_resolve(cf_name) ++ "' for type '" ++ self.pool_resolve(name) ++ "'", node)
-                if self.type_decl_nodes.contains(name):
-                    let defaults_td_node: i32 = self.type_decl_nodes.get(name).unwrap()
+                let defaults_probe_node = self.struct_literal_decl_node(name, tid)
+                if defaults_probe_node != 0:
+                    let defaults_td_node: i32 = defaults_probe_node
                     let defaults_td_extra = self.ast.get_data1(defaults_td_node)
                     let defaults_td_packed = self.ast.get_data2(defaults_td_node)
                     if type_decl_sub_kind(defaults_td_packed) == TypeDeclKind.Struct:
@@ -11701,8 +11726,9 @@ impl Sema:
                                         self.check_ephemeral_task_storage(decl_default, "non-ephemeral struct")
                                     let _ = default_ty
                 // Check if struct has type params — infer GenericInst
-                if self.type_decl_nodes.contains(name):
-                    let td_node: i32 = self.type_decl_nodes.get(name).unwrap()
+                let gi_probe_node = self.struct_literal_decl_node(name, tid)
+                if gi_probe_node != 0:
+                    let td_node: i32 = gi_probe_node
                     let td_extra = self.ast.get_data1(td_node)
                     let td_packed = self.ast.get_data2(td_node)
                     if type_decl_sub_kind(td_packed) == TypeDeclKind.Struct:
@@ -12828,7 +12854,7 @@ impl Sema:
         if kind == NodeKind.NK_PAT_REGEX:
             if subject_type != 0 and self.types_compatible(self.ty_str as i32, subject_type) == 0:
                 self.emit_error("regex pattern requires a str-compatible match subject", node)
-            let regex_ty = self.lookup_named_type_visible(self.syms.regex)
+            let regex_ty = self.lookup_named_type_ambient(self.syms.regex)
             if regex_ty != 0:
                 let _ = self.ensure_exact_type(TypeKind.TY_REF, regex_ty, 0, 0)
             self.validate_regex_literal(node)
@@ -16094,6 +16120,46 @@ impl Sema:
 
     fn blanket_guard_contains(key: i64) -> i32:
         if self.blanket_guard.contains(key): 1 else: 0
+
+    // D29 scaffolding (#750): tier-discriminating selection for shadowed type
+    // syms. Direct impl records must come from the tid's own tier; blanket
+    // impls apply across tiers (a bound-generic impl is not name-keyed).
+    // Uncached — the flat selection_cache would conflate the two meanings.
+    fn select_trait_impl_tiered(type_sym: i32, trait_sym: i32, want_std: i32) -> i32:
+        if self.impl_lookup.contains(type_sym):
+            let idx = self.impl_lookup.get(type_sym).unwrap()
+            let start = self.impl_starts.get(idx as i64)
+            let count = self.impl_counts.get(idx as i64)
+            for i in 0..count:
+                let record_idx = start + i
+                if self.impl_extra.get(record_idx as i64) == trait_sym and self.impl_record_matches_tier(record_idx, want_std) != 0:
+                    return 1
+        let key = self.selection_cache_key(type_sym, trait_sym)
+        if self.blanket_guard_contains(key) != 0:
+            return 0
+        var found = 0
+        let guard = &raw const self.blanket_guard as *const HashSet[i64] as *mut HashSet[i64]
+        unsafe { (*guard).insert(key) }
+        for bi in 0..self.blanket_trait_syms.len() as i32:
+            if self.blanket_trait_syms.get(bi as i64) != trait_sym:
+                continue
+            let target_base = self.blanket_target_base_syms.get(bi as i64)
+            if target_base != 0 and target_base != type_sym:
+                continue
+            if target_base != 0 and self.type_decl_type_param_count(type_sym) == 0:
+                continue
+            let b_start = self.blanket_bound_starts.get(bi as i64)
+            let b_count = self.blanket_bound_counts.get(bi as i64)
+            var all_satisfied = 1
+            for bj in 0..b_count:
+                let bound_trait = self.blanket_bound_syms.get((b_start + bj) as i64)
+                if self.select_trait_impl_tiered(type_sym, bound_trait, want_std) == 0:
+                    all_satisfied = 0
+            if all_satisfied != 0:
+                found = 1
+        let guard_out = &raw const self.blanket_guard as *const HashSet[i64] as *mut HashSet[i64]
+        let _ = unsafe { (*guard_out).remove(key) }
+        found
 
     fn select_trait_impl(type_sym: i32, trait_sym: i32) -> i32:
         let key = self.selection_cache_key(type_sym, trait_sym)
@@ -21110,6 +21176,14 @@ impl Sema:
 
     fn find_symbol_use_after_in_span(root: i32, sym: i32, after: i32) -> i32:
         if root == 0:
+            return 0
+        // Spans are per-file byte offsets and the pool holds every module, so
+        // the window scan below can match a same-named identifier from another
+        // file whose offsets happen to land inside [root_start, root_end] —
+        // phantom "future uses" that shift with any upstream edit. Nodes carry
+        // no file identity, so first require a real use somewhere in root's
+        // subtree; this only ever prunes matches the subtree provably lacks.
+        if self.expr_uses_symbol(root, sym) == 0:
             return 0
         let root_start = self.ast.get_start(root)
         let root_end = self.ast.get_end(root)

@@ -7,6 +7,7 @@
 
 use compiler.foundation.Types
 use compiler.foundation.Values
+use std.collections.HashMap
 
 extern fn with_hashmap_new_at(base: &i8, offset: i64, key_size: i64, val_size: i64) -> Unit
 extern fn with_getenv_str(name: str) -> str

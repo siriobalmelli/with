@@ -10,6 +10,7 @@ use compiler.Compilation.Config
 use compiler.ProjectConfig
 use compiler.Runtime
 use compiler.TrackedInputs
+use std.collections.HashMap
 
 fn zcu_owned_text(text: str) -> str:
     if text.len() == 0:

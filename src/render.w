@@ -5,6 +5,7 @@
 use Ast
 use Token
 use InternPool
+use std.string.StringBuilder
 
 
 extern fn str_from_byte(b: i32) -> str

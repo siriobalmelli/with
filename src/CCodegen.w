@@ -11,6 +11,8 @@ use Sema
 use Source
 use compiler.EmbeddedStdlib
 use Overflow
+use std.collections.HashMap
+use std.string.StringBuilder
 
 extern fn with_fs_read_file(path: str) -> str
 extern fn with_i64_to_str(n: i64) -> str

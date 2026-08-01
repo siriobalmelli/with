@@ -1,6 +1,7 @@
 module build.package
 
 use std.build
+use std.string.StringBuilder
 use std.sysinfo
 
 fn pkg_fail(ctx: &ActionCtx, message: str) -> i32:

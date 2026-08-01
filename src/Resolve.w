@@ -11,6 +11,8 @@ use Diagnostic
 use Span
 use compiler.EmbeddedStdlib
 use compiler.Runtime
+use std.collections.HashMap
+use std.string.StringBuilder
 
 extern fn with_fs_read_file(path: str) -> str
 extern fn with_write(s: str) -> Unit

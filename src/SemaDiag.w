@@ -6,6 +6,7 @@ use Span
 use Diagnostic
 use InternPool
 use render
+use std.string.StringBuilder
 
 extern fn with_eprint(s: str) -> Unit
 extern fn with_getenv_str(name: str) -> str
@@ -138,6 +139,12 @@ impl Sema:
             with_eprint(f"[unknown-type] sym={sym} '{self.pool_resolve(sym)}' subst_frame_len={self.generic_subst_param_syms.len() as i32} named_has={ut_named}")
         if sym <= 0:
             self.emit_error("unknown type", node)
+            return
+        // D29 scaffolding (#750): a type that exists in the prelude closure but
+        // is import-gated names its exact use line instead of a fuzzy match.
+        let gate_note = self.std_gated_import_note(sym)
+        if gate_note.len() > 0:
+            self.emit_error("'" ++ self.pool_resolve(sym) ++ "' requires an explicit import (§18.1)" ++ gate_note, node)
             return
         let target_name = self.pool_resolve(sym)
         let suggestion = self.suggest_type_name(target_name, node)

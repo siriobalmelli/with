@@ -7,6 +7,7 @@ use Diagnostic
 use Source
 use Overflow
 use AnalysisTypes
+use std.builtins.int_to_string
 
 extern fn with_eprint(s: str) -> Unit
 

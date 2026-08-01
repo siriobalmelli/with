@@ -10,6 +10,7 @@ use CiMigrate
 use std.cfg.stackify
 use compiler.ClangBridge.*
 use compiler.EmbeddedClangResource
+use std.string.StringBuilder
 
 extern fn with_parse_float(s: str) -> f64
 

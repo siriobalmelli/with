@@ -6,6 +6,7 @@
 use Ast
 use InternPool
 use Sema
+use std.collections.HashMap
 
 type BlockId = distinct i32
 impl Copy for BlockId

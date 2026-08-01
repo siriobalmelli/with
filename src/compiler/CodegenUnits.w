@@ -21,6 +21,7 @@ use compiler.LlvmBridge.*
 use compiler.Runtime
 use compiler.CodegenUnitsPolicy
 use Mir
+use std.string.parse
 
 extern fn with_fs_remove_file(path: str) -> i32
 @[effect(fn_ptr: escape_value, ctx: escape_value)]

@@ -629,6 +629,15 @@ fn cli_build_synthetic_source(one: &CliOneLiner) -> CliSyntheticSource:
     source.push_str("use std.regex\n")
     source.push_str("use std.math\n")
     source.push_str("use std.collections\n")
+    // D29 (#750): one-liners are synthesized programs; their generated header
+    // imports the ambient vocabulary explicitly now that the prelude closure
+    // is import-gated (scripting ergonomics until the D fallback tier lands).
+    source.push_str("use std.string\n")
+    source.push_str("use std.fixed_string\n")
+    source.push_str("use std.box\n")
+    source.push_str("use std.rc\n")
+    source.push_str("use std.task\n")
+    source.push_str("use std.thread\n")
     source.push_str("use std.builtins\n\n")
     source.push_str(cli_build_args_binding(one.args))
     if one.mode == CliOneLinerMode.Eval:
@@ -3361,6 +3370,61 @@ fn run_bench_command(argc: i32, opt_level: i32, no_std: bool, alloc_mode: bool, 
         return 0
     run_bench_file(target, opt_level, no_std, alloc_mode, runtime_available, prelude_mode, debug_info, filter)
 
+// D29 (#750) work item 1: the migrator applies the compiler's insert-use
+// fix-it to its own output — migrated C is a synthesized program, so it
+// carries its imports explicitly. Loops the live gate diagnostics to a
+// fixpoint; anything still gated after that is a loud failure, and non-gate
+// diagnostics stay with the downstream compile that owns them.
+fn migrate_header_insert_offset(text: str) -> i64:
+    var last_use_end = -1 as i64
+    var line_start = 0 as i64
+    let n = text.len()
+    while line_start < n:
+        var line_end = line_start
+        while line_end < n and text.byte_at(line_end) != 10:
+            line_end = line_end + 1
+        let line = text.slice(line_start, line_end)
+        if line.starts_with("use ") or line.starts_with("module "):
+            last_use_end = line_end + 1
+        else if line.len() > 0 and not line.starts_with("//"):
+            break
+        line_start = line_end + 1
+    if last_use_end >= 0: last_use_end else: line_start
+
+fn migrate_apply_std_use_fixits(output_path: str) -> i32:
+    var pass = 0
+    while pass < 3:
+        let result = compiler_analyze_file(output_path, "select:kind=diagnostic")
+        var block = ""
+        for i in 0..result.report.facts.len() as i32:
+            let fact = result.report.facts.get(i as i64)
+            if fact.kind != AnalysisFactKind.Diagnostic or fact.flags != AnalysisDiagnosticSeverity.Error as i32:
+                continue
+            let parts = fact.name.split("; add: use ")
+            if parts.len() < 2:
+                continue
+            let use_line = "use " ++ parts.get(1)
+            if not ("\n" ++ block).contains("\n" ++ use_line ++ "\n"):
+                block = block ++ use_line ++ "\n"
+        if block.len() == 0:
+            return 0
+        let text = with_fs_read_file(output_path)
+        var to_insert = ""
+        for line in block.split("\n"):
+            if line.len() > 0 and not ("\n" ++ text).contains("\n" ++ line ++ "\n"):
+                to_insert = to_insert ++ line ++ "\n"
+        if to_insert.len() == 0:
+            eprint("migrate: import fix-its did not converge for " ++ output_path)
+            return 1
+        let at = migrate_header_insert_offset(text)
+        let updated = text.slice(0, at) ++ to_insert ++ text.slice(at, text.len())
+        if with_fs_write_file(output_path, updated) != 0:
+            eprint("migrate: cannot rewrite " ++ output_path)
+            return 1
+        pass = pass + 1
+    eprint("migrate: import fix-its still pending after 3 passes: " ++ output_path)
+    1
+
 fn run_migrate_command(argc: i32) -> i32:
     if argc < 3:
         eprint("usage: with migrate <file.c|dir/> [-o output] [-I include_dir] [-include header] [--exclude basename]")
@@ -3468,7 +3532,10 @@ fn run_migrate_command(argc: i32) -> i32:
         else:
             output_path = source_path ++ ".w"
 
-    migrate_c_file(source_path, output_path)
+    let migrate_rc = migrate_c_file(source_path, output_path)
+    if migrate_rc != 0:
+        return migrate_rc
+    migrate_apply_std_use_fixits(output_path)
 
 fn cli_read_all_stdin() -> str:
     var out = StringBuilder.new()

@@ -5,6 +5,7 @@ use BuildGraphRuntime
 use BuildGraphSupport
 use compiler.TrackedInputs
 use std.crypto.sha256
+use std.collections.HashMap
 
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit

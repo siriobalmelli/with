@@ -205,6 +205,11 @@ type Codegen {
 
     // Struct types: sym → index into struct_type_* arrays
     struct_type_map: HashMap[i32, i32],
+    // D29 scaffolding (#750): shadowed type names carry per-tier codegen
+    // symbols so both layouts coexist in LLVM — the std-tier decl registers
+    // under `name$std`, the user decl keeps the plain name. Populated during
+    // type registration; read-only afterwards.
+    shadow_alias_map: HashMap[i32, i32],
     struct_llvm_types: Vec[i64],
     struct_index_syms: Vec[i32],
     struct_field_starts: Vec[i32],
@@ -860,6 +865,7 @@ fn Codegen.init_with_opt(module_name: str, opt_level: i32) -> Codegen:
         extern_fn_direct_param_types: HashMap.new(),
         extern_fn_direct_ret_type: HashMap.new(),
         struct_type_map: HashMap.new(),
+        shadow_alias_map: HashMap.new(),
         struct_llvm_types: Vec.new(),
         struct_index_syms: Vec.new(),
         struct_field_starts: Vec.new(),
@@ -2779,11 +2785,11 @@ impl Codegen:
     fn resolve_named_type(sym: i32) -> i64:
         // Resolve Self to current method owner type
         if sym == self.sym_Self and self.current_method_owner_sym != 0:
-            return self.resolve_user_named_type(self.current_method_owner_sym)
+            return self.resolve_user_named_type(self.shadow_lookup_sym(self.current_method_owner_sym))
         let prim = self.resolve_primitive_named_type(sym)
         if prim != 0:
             return prim
-        self.resolve_user_named_type(sym)
+        self.resolve_user_named_type(self.shadow_lookup_sym(sym))
 
     mut fn type_expr_to_sema_type(type_node: i32) -> i32:
         if type_node == 0:
@@ -2798,6 +2804,12 @@ impl Codegen:
             if prim != 0:
                 return prim
             if self.sema.named_types.contains(lookup_sym):
+                // D29 (#750): a shadowed name inside a std-tier fn body means
+                // the std decl's tid, not the flat map's newest (user) entry.
+                if self.sema.type_sym_is_shadowed(lookup_sym) != 0 and self.current_fn_is_std_tier() != 0:
+                    let tiered = self.sema.lookup_named_type_for_tier(lookup_sym, 1)
+                    if tiered != 0:
+                        return tiered
                 return self.sema.named_types.get(lookup_sym).unwrap() as i32
             let llvm_ty = self.resolve_named_type(sym)
             if llvm_ty != 0:
@@ -3215,10 +3227,14 @@ impl Codegen:
             if self.sema.distinct_type_names.contains(sym):
                 let inner_tid: i32 = self.sema.type_extra.get((self.sema.get_type_d1(resolved_tid) + 1) as i64)
                 return self.sema_type_to_llvm(inner_tid)
-            let cg_sym = self.sema_sym_to_codegen_sym(sym)
-            if cg_sym != 0:
-                return self.resolve_named_type(cg_sym)
-            return self.resolve_named_type(sym)
+            var cg_sym = self.sema_sym_to_codegen_sym(sym)
+            if cg_sym == 0:
+                cg_sym = sym
+            // D29 (#750): a shadowed name's tid carries its tier; route the
+            // std-tier tid to the aliased LLVM slot.
+            if self.sema.type_sym_is_shadowed(sym) != 0 and self.sema.type_tid_std_tier(resolved_tid as i32) != 0:
+                cg_sym = self.shadow_alias_for(cg_sym)
+            return self.resolve_named_type(cg_sym)
         if tk == TypeKind.TY_TUPLE:
             let elem_start = self.sema.get_type_d0(resolved_tid)
             let elem_count = self.sema.get_type_d1(resolved_tid)
@@ -3413,6 +3429,57 @@ impl Codegen:
         if text.len() > 0:
             return self.intern.intern(text)
         sema_sym
+
+    // ── D29 scaffolding (#750): shadowed-type codegen symbols ─────────
+
+    fn codegen_sema_sym_for(sym: i32) -> i32:
+        let text = self.intern.resolve(sym)
+        if text.len() == 0:
+            return 0
+        self.sema.pool_lookup_symbol(text)
+
+    fn type_sym_shadowed_cg(sym: i32) -> i32:
+        let sema_sym = self.codegen_sema_sym_for(sym)
+        if sema_sym == 0:
+            return 0
+        self.sema.type_sym_is_shadowed(sema_sym)
+
+    // Registration side: the std-tier decl of a shadowed name registers under
+    // `name$std`; interning here is fine (registration runs in mut context).
+    fn shadow_reg_sym(name_sym: i32, decl_index: i32) -> i32:
+        if self.type_sym_shadowed_cg(name_sym) == 0:
+            return name_sym
+        if sema_tier_path_is_std_implementation(self.sema.decl_index_source_path(decl_index)) == 0:
+            return name_sym
+        let alias = self.intern.intern(self.intern.resolve(name_sym) ++ "$std")
+        let map = &raw const self.shadow_alias_map as *const HashMap[i32, i32] as *mut HashMap[i32, i32]
+        unsafe { (*map).insert(name_sym, alias) }
+        alias
+
+    // Lookup side: reads the alias recorded at registration; never interns.
+    fn shadow_alias_for(name_sym: i32) -> i32:
+        if self.shadow_alias_map.contains(name_sym):
+            return self.shadow_alias_map.get(name_sym).unwrap()
+        name_sym
+
+    fn current_fn_is_std_tier() -> i32:
+        if self.current_function_name_sym == 0:
+            return 0
+        let sema_sym = self.codegen_sema_sym_for(self.current_function_name_sym)
+        if sema_sym == 0:
+            return 0
+        if not self.sema.fn_decl_source_paths.contains(sema_sym):
+            return 0
+        sema_tier_path_is_std_implementation(self.sema.fn_decl_source_paths.get(sema_sym).unwrap())
+
+    // By-name type lookups while generating a std-tier fn body must see the
+    // std tier's layout for shadowed names.
+    fn shadow_lookup_sym(name_sym: i32) -> i32:
+        if self.type_sym_shadowed_cg(name_sym) == 0:
+            return name_sym
+        if self.current_fn_is_std_tier() == 0:
+            return name_sym
+        self.shadow_alias_for(name_sym)
 
     fn codegen_resolve_sema_type(tid: i32) -> i32:
         let resolved = self.mir_resolve_alias_at(tid)
@@ -4139,6 +4206,19 @@ impl Codegen:
         self.declare_function_at(fn_node, self.find_decl_index(fn_node))
 
     mut fn declare_function_at(fn_node: i32, decl_index: i32):
+        // D29 (#750): signature types must resolve under this fn's own tier —
+        // shadowed names in a std fn's signature mean the std layout. Body
+        // generation sets the same context later; declaring without it would
+        // bind the plain (user) slot and diverge from the call sites.
+        let ctx_sym = self.sema.fn_decl_semantic_symbol_at(fn_node, self.pool.get_data0(fn_node), decl_index)
+        if ctx_sym == 0:
+            return
+        let saved_decl_fn_sym = self.current_function_name_sym
+        self.current_function_name_sym = ctx_sym
+        self.declare_function_at_inner(fn_node, decl_index)
+        self.current_function_name_sym = saved_decl_fn_sym
+
+    mut fn declare_function_at_inner(fn_node: i32, decl_index: i32):
         let name_sym = self.sema.fn_decl_semantic_symbol_at(fn_node, self.pool.get_data0(fn_node), decl_index)
         let raw_name_str = self.intern.resolve(name_sym)
         let sema_name_str = self.sema_symbol_text(name_sym)
@@ -5857,10 +5937,11 @@ impl Codegen:
             let kind = self.pool.kind(decl)
             if kind != NodeKind.NK_TYPE_DECL:
                 continue
-            let name_sym = self.sema.fn_decl_semantic_symbol_at(decl as i32, self.pool.get_data0(decl), i)
+            var name_sym = self.sema.fn_decl_semantic_symbol_at(decl as i32, self.pool.get_data0(decl), i)
             let name_str = self.intern.resolve(name_sym)
             if name_sym == 0 or name_str.len() == 0:
                 continue
+            name_sym = self.shadow_reg_sym(name_sym, i)
             let sub_kind = type_decl_sub_kind(self.pool.get_data2(decl))
             if sub_kind == TypeDeclKind.Distinct:
                 continue
@@ -5889,10 +5970,11 @@ impl Codegen:
             let kind = self.pool.kind(decl)
             if kind != NodeKind.NK_TYPE_DECL:
                 continue
-            let name_sym = self.pool.get_data0(decl)
+            var name_sym = self.pool.get_data0(decl)
             let name_str = self.intern.resolve(name_sym)
             if name_sym == 0 or name_str.len() == 0:
                 continue
+            name_sym = self.shadow_reg_sym(name_sym, i)
             let sub_kind = type_decl_sub_kind(self.pool.get_data2(decl))
             if sub_kind == TypeDeclKind.Struct:
                 if self.type_decl_tp_count(decl) == 0:

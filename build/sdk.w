@@ -1,6 +1,7 @@
 module build.sdk
 
 use std.build
+use std.string.StringBuilder
 use std.sysinfo
 use build.compiler
 

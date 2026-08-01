@@ -7,6 +7,7 @@ use Diagnostic
 use InternPool
 use CapabilityRegistry
 use render
+use std.collections.HashMap
 
 extern fn with_eprint(s: str) -> Unit
 extern fn with_str_eq(a: str, b: str) -> i32
@@ -584,11 +585,28 @@ impl Sema:
                 return 1
         0
 
+    // D29 scaffolding (#750): registration-time tier provenance. The mask marks
+    // a sym shadowed (bit 1 std, bit 2 user) so tier-discriminating queries stay
+    // dormant everywhere else; the tid maps let frozen-phase queries recover the
+    // declaring node and tier without symbol re-resolution.
+    mut fn record_type_decl_tier(name: i32):
+        let bit = if sema_tier_path_is_std_implementation(self.current_module_path) != 0: 1 else: 2
+        let old = if self.type_sym_tier_mask.contains(name): self.type_sym_tier_mask.get(name).unwrap() else: 0
+        self.type_sym_tier_mask.insert(name, old | bit)
+
+    mut fn record_type_decl_tid(node: i32, tid: i32):
+        self.type_decl_tids.insert(node, tid)
+        let resolved = self.resolve_alias(tid as TypeId) as i32
+        self.type_decl_nodes_by_tid.insert(resolved, node)
+        let is_std = if sema_tier_path_is_std_implementation(self.current_module_path) != 0: 1 else: 0
+        self.type_tid_is_std.insert(resolved, is_std)
+
     mut fn collect_type_decl(node: i32, is_local: i32):
         let name = self.ast.get_data0(node)
         if is_local != 0:
             self.set_pretty_symbol(name, self.extract_decl_name_after(node, "type"))
         self.type_decl_nodes.insert(name, node)
+        self.record_type_decl_tier(name)
         let extra_start = self.ast.get_data1(node)
         let packed_kind = self.ast.get_data2(node)
         let sub_kind = type_decl_sub_kind(packed_kind)
@@ -640,7 +658,7 @@ impl Sema:
                 self.type_extra.push(self.ast.get_extra(align_base + fi))
             let tid = self.add_type(TypeKind.TY_STRUCT, name, te_start, field_count)
             self.record_named_type_with_pub(name, tid as i32, decl_is_pub)
-            self.type_decl_tids.insert(node, tid as i32)
+            self.record_type_decl_tid(node, tid as i32)
             if type_decl_is_bitpacked(packed_kind) != 0:
                 self.bitpacked_types.insert(tid as i32, 1)
             if type_decl_is_packed(packed_kind) != 0:
@@ -694,7 +712,7 @@ impl Sema:
                     payload_cursor = payload_cursor + 1
             let tid = self.add_type(TypeKind.TY_ENUM, name, te_start, variant_count)
             self.record_named_type_with_pub(name, tid as i32, decl_is_pub)
-            self.type_decl_tids.insert(node, tid as i32)
+            self.record_type_decl_tid(node, tid as i32)
             // Re-register variants with actual enum TypeId (bare + qualified names)
             let plain_type_name_str = self.pool_resolve(name)
             var vpos = te_start
@@ -758,7 +776,7 @@ impl Sema:
                     payload_cursor = payload_cursor + 1
             let tid = self.add_type(TypeKind.TY_ENUM, name, te_start, variant_count)
             self.record_named_type_with_pub(name, tid as i32, decl_is_pub)
-            self.type_decl_tids.insert(node, tid as i32)
+            self.record_type_decl_tid(node, tid as i32)
             self.disc_repr_types.insert(tid as i32, repr_type_tid as i32)
             // Check if any variant has payloads
             var any_payload = 0
@@ -797,7 +815,7 @@ impl Sema:
             let target = self.resolve_type_expr(aliased_node)
             let tid = self.add_type(TypeKind.TY_ALIAS, target as i32, 0, 0)
             self.record_named_type_with_pub(name, tid as i32, decl_is_pub)
-            self.type_decl_tids.insert(node, tid as i32)
+            self.record_type_decl_tid(node, tid as i32)
 
         if sub_kind == TypeDeclKind.Distinct:
             let inner_node = self.ast.get_extra(extra_start)
@@ -814,7 +832,7 @@ impl Sema:
             self.type_extra.push(0)
             let tid = self.add_type(TypeKind.TY_STRUCT, name, te_start, 1)
             self.record_named_type_with_pub(name, tid as i32, decl_is_pub)
-            self.type_decl_tids.insert(node, tid as i32)
+            self.record_type_decl_tid(node, tid as i32)
             self.distinct_type_names.insert(name, tid as i32)
 
         if sub_kind == TypeDeclKind.Opaque:
@@ -822,7 +840,7 @@ impl Sema:
             let te_start = self.type_extra.len() as i32
             let tid = self.add_type(TypeKind.TY_STRUCT, name, te_start, 0)
             self.record_named_type_with_pub(name, tid as i32, decl_is_pub)
-            self.type_decl_tids.insert(node, tid as i32)
+            self.record_type_decl_tid(node, tid as i32)
 
         if sub_kind == TypeDeclKind.Union:
             // Union type: register fields like a struct (codegen handles layout)
@@ -854,7 +872,7 @@ impl Sema:
                 self.type_extra.push(self.ast.get_extra(align_base + fi))
             let tid = self.add_type(TypeKind.TY_STRUCT, name, te_start, field_count)
             self.record_named_type_with_pub(name, tid as i32, decl_is_pub)
-            self.type_decl_tids.insert(node, tid as i32)
+            self.record_type_decl_tid(node, tid as i32)
 
         if self.ast.is_must_use_type_node(node) != 0:
             self.must_use_types.insert(name, 1)
@@ -2181,12 +2199,20 @@ impl Sema:
             // Check if this type already has a Drop impl (via impl_extra, since
             // Drop methods aren't collected yet at this point in Pass 2)
             let drop_sym = self.syms.drop
+            // D29 scaffolding (#750): for a shadowed sym the conflict must be
+            // judged against the impl target's own tier — this impl attaches to
+            // whichever decl the (gated) lookup resolves from this module.
+            let conflict_shadowed = self.type_sym_is_shadowed(type_name)
+            let conflict_want_std = if conflict_shadowed != 0: self.type_tid_std_tier(self.resolve_alias(self.lookup_named_type_visible(type_name) as TypeId) as i32) else: 0
             if self.impl_lookup.contains(type_name):
                 let drop_idx: i32 = self.impl_lookup.get(type_name).unwrap()
                 let drop_start = self.impl_starts.get(drop_idx as i64)
                 let drop_count = self.impl_counts.get(drop_idx as i64)
                 for di in 0..drop_count:
-                    if self.impl_extra.get((drop_start + di) as i64) == drop_sym:
+                    let record_idx = drop_start + di
+                    if conflict_shadowed != 0 and self.impl_record_matches_tier(record_idx, conflict_want_std) == 0:
+                        continue
+                    if self.impl_extra.get(record_idx as i64) == drop_sym:
                         self.emit_error("type '" ++ self.pool_resolve(type_name) ++ "' cannot implement Copy because it implements Drop", node)
                         return
             let type_tid = self.lookup_named_type_visible(type_name)
@@ -2205,7 +2231,12 @@ impl Sema:
                     self.warn_large_copy_type(type_name, type_tid, node)
 
         if trait_name == "Drop":
-            if self.select_trait_impl(type_name, self.syms.copy_trait) != 0:
+            let drop_conflict = if self.type_sym_is_shadowed(type_name) != 0:
+                let want_std = self.type_tid_std_tier(self.resolve_alias(self.lookup_named_type_visible(type_name) as TypeId) as i32)
+                self.select_trait_impl_tiered(type_name, self.syms.copy_trait, want_std)
+            else:
+                self.select_trait_impl(type_name, self.syms.copy_trait)
+            if drop_conflict != 0:
                 self.emit_error("type '" ++ self.pool_resolve(type_name) ++ "' cannot implement Drop because it implements Copy", node)
                 return
 
@@ -2325,7 +2356,9 @@ impl Sema:
             let new_start = self.impl_extra.len() as i32
             for i in 0..old_count:
                 self.impl_extra.push(self.impl_extra.get((old_start + i) as i64))
+                self.impl_extra_is_std.push(self.impl_extra_is_std.get((old_start + i) as i64))
             self.impl_extra.push(trait_sym)
+            self.impl_extra_is_std.push(sema_tier_path_is_std_implementation(self.current_module_path))
             self.impl_starts.set_i32(idx as i64, new_start)
             self.impl_counts.set_i32(idx as i64, old_count + 1)
         else:
@@ -2334,6 +2367,7 @@ impl Sema:
             self.impl_starts.push(self.impl_extra.len() as i32)
             self.impl_counts.push(1)
             self.impl_extra.push(trait_sym)
+            self.impl_extra_is_std.push(sema_tier_path_is_std_implementation(self.current_module_path))
             self.impl_lookup.insert(type_name, idx)
 
         // Track sealed trait implementors

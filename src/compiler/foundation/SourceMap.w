@@ -2,6 +2,7 @@
 
 use compiler.foundation.Ids
 use compiler.foundation.Source
+use std.collections.HashMap
 
 pub type SourceMap {
     sources: Vec[Source],

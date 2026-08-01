@@ -226,7 +226,7 @@ impl Sema:
                 let imp = resolved.imports.get((root.import_start + ii) as i64)
                 if imp.target_module < 0:
                     continue
-                if imp.path_text == "std.prelude" or imp.path_text == "std.prelude_core":
+                if imp.path_text == "std.prelude" or imp.path_text == "std.prelude_core" or imp.path_text == "std.prelude_alloc":
                     global_frontier.push(imp.target_module)
             let seen_global: HashMap[i32, i32] = HashMap.new()
             while global_frontier.len() as i32 > 0:
@@ -1927,16 +1927,6 @@ impl Zcu:
             if uk == NodeKind.NK_FN_DECL or uk == NodeKind.NK_EXTERN_FN:
                 user_fn_names.push(merged_pool.get_data0(ud))
 
-        var higher_type_names: Vec[i32] = Vec.new()
-        for ri in 0..root_ordered.len() as i32:
-            let rd = root_ordered.get(ri as i64)
-            if merged_pool.kind(rd) == NodeKind.NK_TYPE_DECL:
-                higher_type_names.push(merged_pool.get_data0(rd))
-        for ui in 0..user_import_ordered.len() as i32:
-            let ud = user_import_ordered.get(ui as i64)
-            if merged_pool.kind(ud) == NodeKind.NK_TYPE_DECL:
-                higher_type_names.push(merged_pool.get_data0(ud))
-
         // Rebuild decl list: prelude → user imports → root.
         // Drop fn/extern_fn decls shadowed by a higher-priority tier.
         while merged_pool.decl_count() > 0:
@@ -1950,21 +1940,17 @@ impl Zcu:
             higher_fn_names.push(root_fn_names.get(hi as i64))
         for hi in 0..user_fn_names.len() as i32:
             higher_fn_names.push(user_fn_names.get(hi as i64))
-        // #750: user type declarations do NOT yet shadow prelude/std types
-        // (§18.1 non-conformance). Module-granular dropping generalizes ONLY
-        // to leaf modules — dropping a module that retained std modules
-        // depend on (string.w's StringBuilder is used by traits.w's Display
-        // impls) rebinds those internals to the user's shadowing type and
-        // explodes. Box/Rc below are safe precisely because they are leaves.
-        // Real conformance needs scoped name resolution; see the issue.
+        // D29 scaffolding (#750): user type declarations shadow prelude/std
+        // types through Sema's tier-aware resolution (std blindness + the
+        // §18.2 import gate + per-tier codegen symbols). The old ad-hoc
+        // Box/Rc module drops this loop carried are superseded — dropping
+        // decls was only sound for leaf modules. FN decls still shadow by
+        // decl-drop below: the flat signature table holds one entry per fn
+        // symbol, so coexistence is not yet representable there (#751).
         for oi in 0..prelude_ordered.len() as i32:
             let id = prelude_ordered.get(oi as i64)
             let ik = merged_pool.kind(id)
             let prelude_path = prelude_paths.get(oi as i64)
-            if frontend_path_is_std_box_module(prelude_path) and frontend_vec_contains_i32(higher_type_names, self.pool.intern("Box")):
-                continue
-            if frontend_path_is_std_rc_module(prelude_path) and (frontend_vec_contains_i32(higher_type_names, self.pool.intern("Rc")) or frontend_vec_contains_i32(higher_type_names, self.pool.intern("Arc"))):
-                continue
             if (ik == NodeKind.NK_FN_DECL or ik == NodeKind.NK_EXTERN_FN) and frontend_fn_shadowed_in_tier(prelude_ordered, prelude_paths, merged_pool, self.pool, oi, higher_fn_names):
                 // Error when a prelude fn (with a body) is shadowed by an extern fn
                 // (no body). The extern silently replaces the real function with an

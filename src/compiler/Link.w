@@ -1,5 +1,6 @@
 use Archive
 use compiler.Runtime
+use std.collections.Atomic
 
 extern let with_embedded_cimport_stubs_o_start: u8
 extern let with_embedded_cimport_stubs_o_end: u8

@@ -14,6 +14,7 @@ use std.crypto.sha256
 use render
 use CiMigrate
 use Overflow
+use std.string.StringBuilder
 
 extern fn with_eprint(s: str) -> Unit
 extern fn with_str_clone(s: str) -> str
