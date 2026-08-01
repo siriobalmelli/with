@@ -1,5 +1,6 @@
 //! expect-run-output: "7\n"
 
+use std.builtins.int_to_string
 let x = 3
 
 print(int_to_string(double(x) + 1))

@@ -1,5 +1,6 @@
 //! expect-stdout: ok
 
+use std.string.StringBuilder
 fn test_basic_builder:
     var sb = StringBuilder.new()
     assert(sb.is_empty())

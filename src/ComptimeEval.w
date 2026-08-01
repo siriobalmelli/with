@@ -1701,13 +1701,16 @@ impl ComptimeEvaluator:
         if kind == CapabilityKind.CK_BUILD_WORKSPACE: return "Workspace"
         ""
 
+    // D29 (#750): the evaluator's by-name type demands are compiler-internal
+    // (the user's comptime code was already import-checked by Sema), so they
+    // resolve ambiently — the §18.2 gate is for user-spelled references.
     mut fn capability_type_id(kind: i32, node: i32) -> i32:
         let type_name = self.capability_type_name(kind)
         if type_name.len() == 0:
             let _ = self.fail(node, "unknown capability type")
             return 0
         let type_sym = self.pool.intern(type_name) as i32
-        let tid = self.sema.lookup_named_type_visible(type_sym)
+        let tid = self.sema.lookup_named_type_ambient(type_sym)
         if tid == 0:
             let _ = self.fail(node, "capability type is not visible to comptime evaluator")
             return 0
@@ -1715,7 +1718,7 @@ impl ComptimeEvaluator:
 
     mut fn named_type_id(type_name: str, node: i32) -> i32:
         let type_sym = self.pool.intern(type_name) as i32
-        let tid = self.sema.lookup_named_type_visible(type_sym)
+        let tid = self.sema.lookup_named_type_ambient(type_sym)
         if tid == 0:
             let _ = self.fail(node, "type '" ++ type_name ++ "' is not visible to comptime evaluator")
             return 0

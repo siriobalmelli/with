@@ -2084,7 +2084,7 @@ impl MirBuilder:
         if kind == NodeKind.NK_BOOL_LIT:
             return self.sema.ty_bool as i32
         if kind == NodeKind.NK_REGEX_LIT:
-            let regex_ty = self.sema.lookup_named_type_visible(self.sema.syms.regex)
+            let regex_ty = self.sema.lookup_named_type_ambient(self.sema.syms.regex)
             if regex_ty != 0:
                 return regex_ty
             return self.sema.ty_void as i32
@@ -2737,7 +2737,7 @@ impl MirBuilder:
         self.lower_call_arg(default_node, sig_idx, callable_fn_tid, param_idx)
 
     mut fn lower_regex_literal(node: i32) -> i32:
-        let regex_ty = self.sema.lookup_named_type_visible(self.sema.syms.regex)
+        let regex_ty = self.sema.lookup_named_type_ambient(self.sema.syms.regex)
         let inferred_ty = self.expr_type(node)
         let result_ty = if inferred_ty != 0 and self.sema.type_is_unit(inferred_ty) == 0: inferred_ty else: regex_ty
         let c = self.body.new_const(ConstKind.CK_REGEX_LIT, self.ast.get_data0(node), self.ast.get_data1(node), node, result_ty)
@@ -2762,7 +2762,7 @@ impl MirBuilder:
         self.sema.find_generic_inst_type(opt_sym, args, 1) as i32
 
     mut fn regex_ref_operand(regex_place: i32) -> i32:
-        let regex_ty = self.sema.lookup_named_type_visible(self.sema.syms.regex)
+        let regex_ty = self.sema.lookup_named_type_ambient(self.sema.syms.regex)
         let regex_ref_ty = self.sema.find_exact_type(TypeKind.TY_REF, regex_ty, 0, 0) as i32
         let regex_ref_tmp = self.new_temp(regex_ref_ty)
         let regex_ref_place = self.place_for_local(regex_ref_tmp)
@@ -7471,7 +7471,7 @@ impl MirBuilder:
         let type_name_sym = self.ast.get_data0(pat_node)
         if type_name_sym == 0:
             return 0
-        let named_tid = self.sema.lookup_named_type_visible(type_name_sym)
+        let named_tid = self.sema.lookup_named_type_ambient(type_name_sym)
         if named_tid == 0:
             return 0
         if self.sema.get_type_kind(self.sema.resolve_alias(named_tid as TypeId)) != TypeKind.TY_STRUCT:
@@ -7516,7 +7516,7 @@ impl MirBuilder:
         ref_place
 
     mut fn lower_regex_pattern_match(scrutinee_place: i32, pat_node: i32, arm_bb: i32, fail_bb: i32):
-        let regex_ty = self.sema.lookup_named_type_visible(self.sema.syms.regex)
+        let regex_ty = self.sema.lookup_named_type_ambient(self.sema.syms.regex)
         let regex_val = self.lower_regex_literal(pat_node)
         let regex_place = self.materialize_operand(regex_val, regex_ty, self.ast.get_start(pat_node))
         let captures_opt_place = self.lower_regex_captures_places(regex_place, scrutinee_place)
@@ -11302,7 +11302,7 @@ impl MirBuilder:
         var struct_fc = self.sema.get_type_d2(resolved_ty)
         if self.sema.get_type_kind(resolved_ty) == TypeKind.TY_GENERIC_INST:
             let base_sym = self.sema.get_generic_inst_base(resolved_ty as i32)
-            let base_tid = self.sema.lookup_named_type_visible(base_sym)
+            let base_tid = self.sema.lookup_named_type_ambient(base_sym)
             if base_tid != 0:
                 let base_resolved = self.sema.resolve_alias(base_tid)
                 if self.sema.get_type_kind(base_resolved) == TypeKind.TY_STRUCT:
