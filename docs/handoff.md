@@ -105,10 +105,8 @@ back on symbol-form as the live pin. Debug instrumentation stripped.
 
 ## Next steps
 
-1. On the current committed tree: `with build` + `with build :test`
-   (compiler sources unchanged since battery 3 — its fixpoint/audit/
-   emit-C verdicts carry; the rebuild is for the version stamp and the
-   test rerun blesses the spec/test edits). Verify RCs unpiped.
+1. FULL battery on the committed tree (the #754 fix changed SemaDecl.w,
+   so battery 3's verdicts no longer carry). Verify RCs unpiped.
 2. All green → reseed: `:test-green`, `:last-green`, `:update-seed`,
    `:install-user`. Post-reseed the seed enforces the gate (src/build/
    tools already import-complete, both #753 victims annotated).
@@ -116,14 +114,6 @@ back on symbol-form as the live pin. Debug instrumentation stripped.
    now self-applies import fix-its; #749's rlimit-gate/c_void loose ends
    may surface there and belong to #750 WI-1.
 4. Then #747 (str flip) per the D29 sequence.
-2. Reseed (`:test-green`, `:last-green`, `:update-seed`, `:install-user`).
-   Post-reseed the SEED enforces the gate — src/build/tools already carry
-   their imports.
-3. Roundtrip: `with build :emit-c-roundtrip` under a keep-awake hold —
-   the migrate step now auto-inserts imports into its output; #749's two
-   loose ends (rlimit gate location, round-tripped `struct c_void`
-   name-skip) may surface here and belong to this work item.
-4. Update #750 with results; #747 str flip is next in the D29 sequence.
 
 ## Read this first
 
