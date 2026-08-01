@@ -103,10 +103,23 @@ into c_import-generated impls (synthetic spans vs real file ids — the
 #753 disease family). Fix + full notes in the closed issue; spec_ss16
 back on symbol-form as the live pin. Debug instrumentation stripped.
 
+## Battery 4 (post-#754-fix): one red, resolved
+
+All green except :test → cli-selfhost-build-w-tests 'build-w-toolfs-archive'
+with a corrupt-vec-header panic. Chain: the extract_tar_gz action's
+GENERATED zlib_gunzip helper (template in lib/std/build.w) used
+StringBuilder bare → gate error → action failed → pre-existing #743
+(teardown corruption after a FAILED action) fired on top. Battery 3
+passed on a cached helper compile. Template now imports StringBuilder;
+fixture green end to end. #743 gained a deterministic 3s reproducer
+(recipe on the issue); it reproduces under the untouched seed too and
+stays open/unrelated. The #754 guard was verified NOT causal (revert
+still panicked) before the true chain surfaced via --debug-alloc.
+
 ## Next steps
 
-1. FULL battery on the committed tree (the #754 fix changed SemaDecl.w,
-   so battery 3's verdicts no longer carry). Verify RCs unpiped.
+1. Battery 5 (running at launch time of this note) on the committed
+   tree including the helper-template fix. Verify RCs unpiped.
 2. All green → reseed: `:test-green`, `:last-green`, `:update-seed`,
    `:install-user`. Post-reseed the seed enforces the gate (src/build/
    tools already import-complete, both #753 victims annotated).
