@@ -1780,8 +1780,11 @@ fn ci_translate_function(session: i64, idx: i32, known_structs: str) -> str:
 
     let cc = with_cimport_fn_calling_conv(session, idx)
     let cc_prefix = if cc != "c" and cc.len() > 0: "@[callconv(\"" ++ cc ++ "\")]\n" else: ""
+    // A renamed extern (keyword or prelude collision) keeps its C linkage
+    // through the original symbol.
+    let link_prefix = if safe_name != name: "@[link_name(\"" ++ name ++ "\")]\n" else: ""
     let ret_render = ci_unsafe_fn_ptr_type(ret)
-    cc_prefix ++ "extern fn " ++ safe_name ++ "(" ++ params ++ ") -> " ++ ret_render ++ "\n"
+    link_prefix ++ cc_prefix ++ "extern fn " ++ safe_name ++ "(" ++ params ++ ") -> " ++ ret_render ++ "\n"
 
 // ── Member function detection (Zig-style) ───────────────────
 // Scan all functions. If a function's first parameter is *StructType (pointer
@@ -5179,6 +5182,16 @@ fn ci_map_base_type(name: str) -> str:
 // ── Reserved word escaping ──────────────────────────────────
 
 fn ci_escape_reserved(name: str) -> str:
+    // #749: names that collide with the With prelude surface rename the
+    // same way keywords do; extern declarations preserve C linkage via
+    // @[link_name] at their emission sites (a main-file C declaration of
+    // POSIX `write` must become `write_` or it shadows the prelude).
+    // `c_void` is deliberately absent — it is a type spelling.
+    if name == "print" or name == "eprint" or name == "write" or name == "ewrite": return name ++ "_"
+    if name == "print_i32" or name == "print_i64" or name == "print_bool": return name ++ "_"
+    if name == "assert" or name == "require" or name == "check": return name ++ "_"
+    if name == "assert_eq" or name == "assert_ne" or name == "assert_matches_failed": return name ++ "_"
+    if name == "int_to_string": return name ++ "_"
     if name == "and": return "and_"
     if name == "as": return "as_"
     if name == "asm": return "asm_"

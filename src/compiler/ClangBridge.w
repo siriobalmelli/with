@@ -98,6 +98,7 @@ extern fn clang_Cursor_isBitField(cursor: CXCursor) -> i32
 extern fn clang_Cursor_isAnonymous(cursor: CXCursor) -> i32
 extern fn clang_Cursor_isAnonymousRecordDecl(cursor: CXCursor) -> i32
 extern fn clang_Cursor_getOffsetOfField(cursor: CXCursor) -> i64
+extern fn clang_equalCursors(a: CXCursor, b: CXCursor) -> u32
 extern fn clang_Cursor_hasAttrs(cursor: CXCursor) -> i32
 extern fn clang_Cursor_getBinaryOpcode(cursor: CXCursor) -> i32
 extern fn clang_getCursorUnaryOperatorKind(cursor: CXCursor) -> i32
@@ -3596,8 +3597,57 @@ pub fn with_ci_member_is_arrow(session: i64, cursor_idx: i32) -> i32:
             i = i + 1
         0
 
+type AnonOrdinalCounter:
+    target: CXCursor
+    ordinal: i32
+    found: i32
+
+@[callconv("c")]
+unsafe fn count_anon_member_ordinal(cursor: CXCursor, parent: CXCursor, data: *mut u8) -> i32:
+    let c = data as *mut AnonOrdinalCounter
+    let kind = clang_getCursorKind(cursor)
+    if kind == CXCursor_StructDecl or kind == CXCursor_UnionDecl:
+        if clang_Cursor_isAnonymousRecordDecl(cursor) != 0:
+            if clang_equalCursors(cursor, (*c).target) != 0:
+                (*c).found = 1
+                return CXChildVisit_Break
+            (*c).ordinal = (*c).ordinal + 1
+    CXChildVisit_Continue
+
+// #749: the member's access path in the migrated With, including the
+// synthesized names of any anonymous record members between the base type
+// and the field. C flattens `x.payload0` through an unnamed union member;
+// the With rendering needs `x.anon_0.payload0` — the same anon_N ordinals
+// the decl renderer and ci_struct_field_emitted_name synthesize.
 pub fn with_ci_member_field_name(session: i64, cursor_idx: i32) -> str:
-    with_ci_cursor_spelling(session, cursor_idx)
+    unsafe:
+        let s = session as *mut CImportSession
+        if s as i64 == 0 or cursor_idx < 0 or cursor_idx >= (*s).cursor_count:
+            return with_ci_cursor_spelling(session, cursor_idx)
+        let cursor = *(((*s).cursors as i64 + cursor_idx as i64 * 32) as *const CXCursor)
+        let referenced = clang_getCursorReferenced(cursor)
+        if clang_getCursorKind(referenced) != CXCursor_FieldDecl:
+            return with_ci_cursor_spelling(session, cursor_idx)
+        var path = ""
+        var member = clang_getCursorSemanticParent(referenced)
+        while 1 == 1:
+            let kind = clang_getCursorKind(member)
+            if kind != CXCursor_StructDecl and kind != CXCursor_UnionDecl:
+                break
+            if clang_Cursor_isAnonymousRecordDecl(member) == 0:
+                break
+            let outer = clang_getCursorSemanticParent(member)
+            var counter = AnonOrdinalCounter { target: member, ordinal: 0, found: 0 }
+            let _ = clang_visitChildren(outer, count_anon_member_ordinal as *const u8, &raw mut counter as *mut AnonOrdinalCounter as *mut u8)
+            if counter.found == 0:
+                break
+            let seg = f"anon_{counter.ordinal}"
+            path = if path.len() > 0: seg ++ "." ++ path else: seg
+            member = outer
+        let field = with_ci_cursor_spelling(session, cursor_idx)
+        if path.len() == 0 or field.len() == 0:
+            return field
+        path ++ "." ++ field
 
 // ── Binary/unary operators ──────────────────────────────────
 

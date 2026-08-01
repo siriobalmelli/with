@@ -1320,6 +1320,13 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
     if ci_is_mapped_libc_fn(name):
         return ""
 
+    // #749: a system-header declaration whose name collides with the With
+    // prelude (unistd's `write` against prelude `write`) must not emit an
+    // extern — the same filter the c_import flow applies.
+    if ci_is_system_prelude_collision_decl(session, idx, name):
+        ci_record_omitted_symbol(name, "system declaration collides with With prelude")
+        return ""
+
     // Skip already-emitted names
     if with_cimport_is_name_emitted(name) != 0:
         return ""
@@ -1414,8 +1421,11 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
         g_migrate_fn_translated = g_migrate_fn_translated + 1
         let cc = with_cimport_fn_calling_conv(session, idx)
         let cc_prefix = if cc != "c" and cc.len() > 0: "@[callconv(\"" ++ cc ++ "\")]\n" else: ""
+        // A renamed extern (keyword or prelude collision) keeps its C
+        // linkage through the original symbol.
+        let link_prefix = if safe_name != name: "@[link_name(\"" ++ name ++ "\")]\n" else: ""
         let ret_render = ci_unsafe_fn_ptr_type(ret)
-        return cc_prefix ++ "extern fn " ++ safe_name ++ "(" ++ params ++ ") -> " ++ ret_render ++ "\n"
+        return link_prefix ++ cc_prefix ++ "extern fn " ++ safe_name ++ "(" ++ params ++ ") -> " ++ ret_render ++ "\n"
 
     // @[c_export] for non-static functions (preserves C ABI)
     let export_prefix = if (g_migrate_no_c_export != 0 and g_migrate_export_function_defs == 0) or storage == CX_SC_STATIC: "" else: "@[c_export(\"" ++ name ++ "\")]\n"
