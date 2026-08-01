@@ -100,14 +100,19 @@ Red, with the root-cause chain fully mapped (#744, investigation comment):
   field defaults. The 5 MB fixture C migrates with **zero**
   untranslatable functions (the class was 1,111 across the compiler C).
   Migrator basic/core lanes green.
-- **#749 remaining, in order:** (1) the ACCESS hop — payload reads still
-  render `.payload0` without `.anon_0`; the member-ref lowering needs
-  the same anon-member resolution (referenced field's parent is an
-  anonymous member → insert the synthesized member name). (2) the
-  migrated output's `extern fn 'write' shadows prelude function 'write'`
-  error — artifact vs real blocker, decided at the roundtrip's
-  build-migrated step. Fast iterate loop: migrate the fixture C
-  (~2 min), `with check` the output.
+- **#749 access side is DONE** (`6bed71c9`): member refs render the full
+  path through anonymous members (`x.anon_0.payload0`), and
+  prelude-colliding C declarations rename with `@[link_name]` (POSIX
+  `write` etc.). Migrator lanes green.
+- **#749 remaining — a design question, take it through the decision
+  procedure:** the migrated self-hosting program's own runtime types
+  (`CString`, `Regex`, …) collide with the embedded std's types under a
+  prelude build (~11 errors: duplicate trait impls, Copy-with-Drop);
+  `--no-prelude` is not the answer (the output needs prelude surface,
+  ~993 errors). Options to brief: dedup/alias identical types against
+  the prelude, namespace the migrated copies, or a dedicated
+  migrate-build mode. Fast iterate loop: migrate the fixture C (~2 min),
+  `with check` the output with prelude.
 - Environment note: long runs on this box die ~10 min after session
   activity stops (traveling laptop — lid/sleep/battery). Take an
   `mcp__adrafinil__keep_awake` hold for any long verification and
