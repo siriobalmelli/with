@@ -104,17 +104,25 @@ Red, with the root-cause chain fully mapped (#744, investigation comment):
   path through anonymous members (`x.anon_0.payload0`), and
   prelude-colliding C declarations rename with `@[link_name]` (POSIX
   `write` etc.). Migrator lanes green.
-- **#749's tail is NOT a design question — it is conformance bug #750.**
-  The spec rules name precedence twice (§18.1 "local bindings ... win
-  over prelude names"; the #627 ruling "the visible user declaration
-  wins"), and the implementation violates it: a user's `type Regex`
-  loses to std's Regex in the user's own file (probes in the issue),
-  and the `extern fn shadows prelude` diagnostic rejects what §18.1
-  permits. Fix in Sema name resolution + coherence keyed on resolved
-  identity; then revert 6bed71c9's prelude-surface renames (keep the
-  `@[link_name]` emission). This is the roundtrip's next gate. Fast
-  iterate loop: migrate the fixture C (~2 min), `with check` the output
-  with prelude.
+- **#750 (the roundtrip's gate) needs SCOPED NAME RESOLUTION — the quick
+  fix was tried and is unsound.** Module-granular prelude-shadow drops
+  (generalizing Box/Rc) explode when retained std modules depend on the
+  dropped module (traits.w's Display impls use string.w's
+  StringBuilder); the failure is usage-emergent, so small probes pass
+  and the 12.5k-line repro would not reduce. Under the flat namespace,
+  shadowing a type std itself uses means one name needing two meanings —
+  contradiction. Landed and kept (`ba67bcb2`): the migrator no longer
+  re-declares `c_void` (builtins provides it) or std.libc-modeled
+  system records (rlimit — its location gate needs a follow-up, and the
+  emitted C's own round-tripped `struct c_void` needs the same
+  name-based skip; both in the issue). The Frontend generalization is
+  reverted with the boundary documented. Open decision for Eric: build
+  the scoped-resolution Sema campaign, or have the roundtrip compile
+  migrated output against a leaner prelude (core + libc) — the file
+  redefines everything else it needs. The extern-shadow diagnostic
+  turned out to be a deliberate guard (bodyless extern silently
+  replacing a bodied prelude fn = linker breakage), so 6bed71c9's
+  `write_` renames stay.
 - Environment note: long runs on this box die ~10 min after session
   activity stops (traveling laptop — lid/sleep/battery). Take an
   `mcp__adrafinil__keep_awake` hold for any long verification and
