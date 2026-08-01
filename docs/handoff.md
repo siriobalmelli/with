@@ -104,15 +104,17 @@ Red, with the root-cause chain fully mapped (#744, investigation comment):
   path through anonymous members (`x.anon_0.payload0`), and
   prelude-colliding C declarations rename with `@[link_name]` (POSIX
   `write` etc.). Migrator lanes green.
-- **#749 remaining — a design question, take it through the decision
-  procedure:** the migrated self-hosting program's own runtime types
-  (`CString`, `Regex`, …) collide with the embedded std's types under a
-  prelude build (~11 errors: duplicate trait impls, Copy-with-Drop);
-  `--no-prelude` is not the answer (the output needs prelude surface,
-  ~993 errors). Options to brief: dedup/alias identical types against
-  the prelude, namespace the migrated copies, or a dedicated
-  migrate-build mode. Fast iterate loop: migrate the fixture C (~2 min),
-  `with check` the output with prelude.
+- **#749's tail is NOT a design question — it is conformance bug #750.**
+  The spec rules name precedence twice (§18.1 "local bindings ... win
+  over prelude names"; the #627 ruling "the visible user declaration
+  wins"), and the implementation violates it: a user's `type Regex`
+  loses to std's Regex in the user's own file (probes in the issue),
+  and the `extern fn shadows prelude` diagnostic rejects what §18.1
+  permits. Fix in Sema name resolution + coherence keyed on resolved
+  identity; then revert 6bed71c9's prelude-surface renames (keep the
+  `@[link_name]` emission). This is the roundtrip's next gate. Fast
+  iterate loop: migrate the fixture C (~2 min), `with check` the output
+  with prelude.
 - Environment note: long runs on this box die ~10 min after session
   activity stops (traveling laptop — lid/sleep/battery). Take an
   `mcp__adrafinil__keep_awake` hold for any long verification and
