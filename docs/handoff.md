@@ -1,9 +1,10 @@
 # Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
 
-Updated 2026-07-30. This replaces the 2026-07-29 handoff, whose "exact next
-steps" were overtaken by four root causes found while executing them. Current
-single remaining blocker for the roundtrip: issue #744 (migrator memory
-retention).
+Updated 2026-08-01. Current single remaining blocker for the roundtrip:
+#750 work item 1 (D29 scaffolding — remove flat std injection, enforce the
+§18.2 prelude, ship the insert-use fix-it). D29 is ruled and documented;
+this round was docs-only per Eric's directive — **no implementation has
+started**.
 
 ## Read this first
 
@@ -104,24 +105,26 @@ Red, with the root-cause chain fully mapped (#744, investigation comment):
   path through anonymous members (`x.anon_0.payload0`), and
   prelude-colliding C declarations rename with `@[link_name]` (POSIX
   `write` etc.). Migrator lanes green.
-- **#750 (the roundtrip's gate) needs SCOPED NAME RESOLUTION — the quick
-  fix was tried and is unsound.** Module-granular prelude-shadow drops
-  (generalizing Box/Rc) explode when retained std modules depend on the
-  dropped module (traits.w's Display impls use string.w's
-  StringBuilder); the failure is usage-emergent, so small probes pass
-  and the 12.5k-line repro would not reduce. Under the flat namespace,
-  shadowing a type std itself uses means one name needing two meanings —
-  contradiction. Landed and kept (`ba67bcb2`): the migrator no longer
-  re-declares `c_void` (builtins provides it) or std.libc-modeled
-  system records (rlimit — its location gate needs a follow-up, and the
-  emitted C's own round-tripped `struct c_void` needs the same
-  name-based skip; both in the issue). The Frontend generalization is
-  reverted with the boundary documented. Open decision for Eric: build
-  the scoped-resolution Sema campaign, or have the roundtrip compile
-  migrated output against a leaner prelude (core + libc) — the file
-  redefines everything else it needs. The extern-shadow diagnostic
-  turned out to be a deliberate guard (bodyless extern silently
-  replacing a bodied prelude fn = linker breakage), so 6bed71c9's
+- **#750 (the roundtrip's gate) is RULED — D29.** Eric's directive (verbatim
+  in docs/decisions.md D29) sets the destination: implicit std availability
+  as a lowest-priority exact-match fallback tier, precedence
+  lexical/generic-params → current-module → imports/aliases → prelude →
+  unique std fallback; spec §18.2 now states it (the spec is deliberately
+  ahead of the implementation). Staging: **work item 1** (#750, the
+  roundtrip gate, label commits *scaffolding*) removes flat std injection,
+  enforces the §18.2 prelude exactly, ships an insert-`use` fix-it the
+  migrator auto-applies, migrates the affected behavior tests via the
+  fix-it, and forks the import-free originals into a quarantined
+  D acceptance corpus — acceptance criteria are in the issue comment.
+  **#751** (canonical module-qualified identity, record-don't-start,
+  after #747) and **#752** (fallback-tier activation, blocked on #751,
+  `with update` pinning-imports migration is a hard ship-with requirement)
+  are filed. Rejected forever: option C / lean-prelude modes, prelude
+  expansion, fuzzy/ranked resolution, flat injection. Prior findings
+  stand: the module-drop generalization is unsound for non-leaf modules
+  (reverted, boundary documented in Frontend.w); `ba67bcb2`'s migrator
+  dedups (c_void, rlimit) are kept, their two loose ends folded into
+  work item 1; the extern-shadow diagnostic is a deliberate guard, so
   `write_` renames stay.
 - Environment note: long runs on this box die ~10 min after session
   activity stops (traveling laptop — lid/sleep/battery). Take an

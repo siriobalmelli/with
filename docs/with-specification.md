@@ -10289,9 +10289,45 @@ use math.vector.{Vec3, dot, cross}
 - `assert`, `assert_eq`, `assert_ne`, `require`, `check`, `panic`, `unreachable`, `todo`
 - `drop[T](val: T)` — explicitly drop a value to trigger cleanup
 
-Name precedence is deterministic: local bindings and explicit `use`
-imports win over prelude names. If you define `print` in a module,
-calls to `print(...)` resolve to your definition in that scope.
+The enumerated prelude list is closed. Its role is (a) the set of
+non-imported names permitted bare in `impl` and `extend` headers, and
+(b) the `--no-std` core surface. It does not grow to track the standard
+library.
+
+**Implicit standard-library availability.** Every public declaration of
+the standard library is available by its unqualified name as the
+lowest-priority resolution tier. Fallback declarations retain canonical
+module identity — this tier is a lookup fallback, never injection into
+the module's declaration table.
+
+**Name precedence is deterministic**, highest to lowest:
+
+1. Lexical bindings and generic parameters
+2. Current-module declarations
+3. Explicit imports and aliases
+4. The prelude
+5. Unique standard-library fallback
+
+A user-controlled declaration is never shadowed, merged, or
+impl-captured by the fallback tier. If you define `print` — or `Regex` —
+in a module, uses in that module resolve to your definition.
+
+**Fallback matching is exact** — no fuzzy matching, ever. Two or more
+standard-library candidates for one name is a hard ambiguity error, with
+each candidate offered as an insertable-import fix-it; candidate ranking
+may order the suggestions but never resolves.
+
+**`impl` and `extend` headers.** A non-prelude standard-library name may
+not resolve through fallback alone in an `impl` or `extend` header — an
+explicit import or qualified path is required.
+
+**Compatibility invariant.** A standard-library addition may turn a
+unique fallback resolution into an ambiguity, but may never rebind an
+existing resolution.
+
+**Engine packages** are ordinary explicit dependencies and are never
+ambient; a public re-export from the standard library is deliberate
+promotion into the ambient vocabulary.
 
 `drop` is a built-in identity function that takes any value by
 move and does nothing — the value is destroyed when the argument
