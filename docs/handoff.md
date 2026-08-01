@@ -89,23 +89,25 @@ Red, with the root-cause chain fully mapped (#744, investigation comment):
 - #746 (positional record literals) is FIXED (`e7bdd9c9`): the field scan
   continues past self-referential typedefs, and unrecoverable-record
   initializers fail loudly instead of emitting invalid With.
-- The roundtrip's next critical-path item is **#749**, and its true root
-  is DECL-level: `collect_field` (ClangBridge.w:993) keeps only
-  `CXCursor_FieldDecl` children, and a C11 anonymous member has no
-  FieldDecl cursor — so the enum-carrier structs translate as 1-field,
-  wrong-sized types and every `.payloadN` access dangles. Fix bottom-up
-  per the issue: (1) surface anonymous members in the bridge's field
-  enumeration, (2) let the existing synth-type path render the union
-  member, (3) enum-variant construction for the carrier inits (at scale,
-  per-designator stores don't cut it). Fast repro: migrate the 5 MB
-  `emit_c_generic_intrinsics_case` fixture C (~2 min); it stops loudly
-  at `str_to_cstring__83`.
-- **Census (2026-07-31):** the roundtrip now runs its complete migration
-  scan end-to-end (639 s total, uncapped per the D28 pin) and reports
-  **1,111 untranslatable functions**, all the kind=100 carrier shape —
-  the full inventory is in
-  `out/command/emit-c-roundtrip/migrate-compiler-c.stderr`. #749 is the
-  sole remaining gate; no mystery failures remain in the chain.
+- **#749's initializer side is DONE** (`2545b05b`): the bridge enumerates
+  C11 anonymous members (cursor-identity detection — clang's
+  "(unnamed ...)" spelling drift was silently demoting every carrier to
+  `opaque`), carrier decls render faithfully with synthesized union
+  members, initializer lowering is designator-driven (designators
+  recovered from source text; libclang's C visitor never surfaces them
+  as cursors), C's `{0}` is a zero marker, and designated-init
+  assignments print as memset + field stores — no dependence on With
+  field defaults. The 5 MB fixture C migrates with **zero**
+  untranslatable functions (the class was 1,111 across the compiler C).
+  Migrator basic/core lanes green.
+- **#749 remaining, in order:** (1) the ACCESS hop — payload reads still
+  render `.payload0` without `.anon_0`; the member-ref lowering needs
+  the same anon-member resolution (referenced field's parent is an
+  anonymous member → insert the synthesized member name). (2) the
+  migrated output's `extern fn 'write' shadows prelude function 'write'`
+  error — artifact vs real blocker, decided at the roundtrip's
+  build-migrated step. Fast iterate loop: migrate the fixture C
+  (~2 min), `with check` the output.
 - Environment note: long runs on this box die ~10 min after session
   activity stops (traveling laptop — lid/sleep/battery). Take an
   `mcp__adrafinil__keep_awake` hold for any long verification and
