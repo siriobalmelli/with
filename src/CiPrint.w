@@ -478,11 +478,50 @@ fn ci_type_needs_memcpy_assignment(types: CiTypePool, ty: CiTypeId) -> bool:
         return not ci_named_type_is_scalar(name) and not ci_starts_with_str(name, "*")
     false
 
+// Mirror of the migrator's unsafe-fn-body context (set through
+// ci_migrate_set_unsafe_function_body_context; CiPrint cannot depend on
+// CImport). The memcpy assignment calls an extern and must supply its own
+// unsafe context when the surrounding function is not `unsafe fn` (#749:
+// value-returning carrier functions are plain fns).
+var g_ci_print_in_unsafe_fn: bool = false
+
+pub fn ci_print_set_unsafe_fn_context(enabled: bool) -> Unit:
+    g_ci_print_in_unsafe_fn = enabled
+
+fn ci_print_unsafe_stmt(indent: str, call: str) -> str:
+    if g_ci_print_in_unsafe_fn:
+        return indent ++ call ++ "\n"
+    indent ++ "unsafe { " ++ call ++ " }\n"
+
 fn ci_print_memcpy_assignment(indent: str, exprs: CiExprPool, types: CiTypePool, lhs: CiExprId, rhs: CiExprId, ty: CiTypeId) -> str:
     let lhs_str = ci_print_expr(exprs, types, lhs, 0, 1)
-    let rhs_str = ci_print_expr(exprs, types, rhs, 0, 1)
     let ty_text = ci_print_sizeof_type_text(ci_print_type(types, ty))
-    indent ++ "with_memcpy((&raw mut " ++ lhs_str ++ " as *i8), (&raw const " ++ rhs_str ++ " as *i8), sizeof[" ++ ty_text ++ "]())\n"
+    // A designated-init rhs renders as C's own compound-literal assignment
+    // semantics: zero the destination, then store the mentioned fields.
+    // This never depends on the With type having field defaults (partial
+    // carrier inits, struct-typed union arms, with_str fields), and a
+    // zero-pair init (C's `{0}`) is just the memset alone. A one-pair
+    // nested init (the anonymous-member union arm) flattens to a member
+    // store.
+    if exprs.kind(rhs) == CiExprKind.CIE_DESIGNATED_INIT:
+        var out = ci_print_unsafe_stmt(indent, "with_memset((&raw mut " ++ lhs_str ++ " as *i8), 0, sizeof[" ++ ty_text ++ "]())")
+        let start = exprs.get_d0(rhs)
+        let count = exprs.get_d1(rhs)
+        var i = 0
+        while i < count:
+            let field_name = exprs.get_string(exprs.get_extra(start + i * 2))
+            let val_id = (exprs.get_extra(start + i * 2 + 1)) as CiExprId
+            if exprs.kind(val_id) == CiExprKind.CIE_DESIGNATED_INIT and exprs.get_d1(val_id) == 1:
+                let inner_start = exprs.get_d0(val_id)
+                let inner_name = exprs.get_string(exprs.get_extra(inner_start))
+                let inner_val = (exprs.get_extra(inner_start + 1)) as CiExprId
+                out = out ++ indent ++ lhs_str ++ "." ++ field_name ++ "." ++ inner_name ++ " = " ++ ci_print_expr(exprs, types, inner_val, 0, 0) ++ "\n"
+            else:
+                out = out ++ indent ++ lhs_str ++ "." ++ field_name ++ " = " ++ ci_print_expr(exprs, types, val_id, 0, 0) ++ "\n"
+            i = i + 1
+        return out
+    let rhs_str = ci_print_expr(exprs, types, rhs, 0, 1)
+    ci_print_unsafe_stmt(indent, "with_memcpy((&raw mut " ++ lhs_str ++ " as *i8), (&raw const " ++ rhs_str ++ " as *i8), sizeof[" ++ ty_text ++ "]())")
 
 fn ci_print_sizeof_type_text(text: str) -> str:
     if ci_starts_with_str(text, "*const "):

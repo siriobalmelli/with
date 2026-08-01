@@ -96,6 +96,8 @@ extern fn clang_Cursor_getArgument(cursor: CXCursor, idx: u32) -> CXCursor
 extern fn clang_Cursor_isFunctionInlined(cursor: CXCursor) -> i32
 extern fn clang_Cursor_isBitField(cursor: CXCursor) -> i32
 extern fn clang_Cursor_isAnonymous(cursor: CXCursor) -> i32
+extern fn clang_Cursor_isAnonymousRecordDecl(cursor: CXCursor) -> i32
+extern fn clang_Cursor_getOffsetOfField(cursor: CXCursor) -> i64
 extern fn clang_Cursor_hasAttrs(cursor: CXCursor) -> i32
 extern fn clang_Cursor_getBinaryOpcode(cursor: CXCursor) -> i32
 extern fn clang_getCursorUnaryOperatorKind(cursor: CXCursor) -> i32
@@ -322,6 +324,10 @@ type FieldInfo:
     type_spelling: *mut u8
     is_bitfield: i32
     clang_type: CXType
+    // #749: the field's own cursor. A C11 anonymous record member has no
+    // name, so by-name offset lookups fail; clang_Cursor_getOffsetOfField
+    // on this cursor is the nameless-field fallback.
+    cursor: CXCursor
 
 type EnumConstInfo:
     name: *mut u8
@@ -992,15 +998,24 @@ unsafe fn collect_decl(cursor: CXCursor, parent: CXCursor, data: *mut u8) -> i32
 @[callconv("c")]
 unsafe fn collect_field(cursor: CXCursor, parent: CXCursor, data: *mut u8) -> i32:
     let fc = data as *mut FieldCollector
-    if clang_getCursorKind(cursor) != CXCursor_FieldDecl:
+    let cursor_kind = clang_getCursorKind(cursor)
+    // #749: a C11 anonymous record member (`union { ... };` with no
+    // declarator) has no FieldDecl cursor — only the bare record decl —
+    // yet occupies a field slot at its declaration position. Enumerate it
+    // so record layouts, decl rendering, and initializer lowering see it.
+    var is_anon_member = 0
+    if cursor_kind == CXCursor_StructDecl or cursor_kind == CXCursor_UnionDecl:
+        if clang_Cursor_isAnonymousRecordDecl(cursor) != 0:
+            is_anon_member = 1
+    if cursor_kind != CXCursor_FieldDecl and is_anon_member == 0:
         return CXChildVisit_Continue
     if (*fc).count >= (*fc).cap:
         (*fc).cap = if (*fc).cap > 0: (*fc).cap * 2 else: 16
-        let new_buf = with_alloc((*fc).cap as i64 * 48)  // sizeof(FieldInfo) = 8+8+4+pad+24 = 48
+        let new_buf = with_alloc((*fc).cap as i64 * sizeof[FieldInfo]())
         if new_buf as i64 != 0:
-            with_memset(new_buf, 0, (*fc).cap as i64 * 48)
+            with_memset(new_buf, 0, (*fc).cap as i64 * sizeof[FieldInfo]())
             if (*fc).fields as i64 != 0 and (*fc).count > 0:
-                with_memcpy(new_buf, (*fc).fields as *const u8, (*fc).count as i64 * 48)
+                with_memcpy(new_buf, (*fc).fields as *const u8, (*fc).count as i64 * sizeof[FieldInfo]())
             if (*fc).fields as i64 != 0:
                 with_free((*fc).fields as *mut u8)
         (*fc).fields = new_buf as *mut FieldInfo
@@ -1008,11 +1023,15 @@ unsafe fn collect_field(cursor: CXCursor, parent: CXCursor, data: *mut u8) -> i3
     let ty = clang_getCursorType(cursor)
     let canonical = clang_getCanonicalType(ty)
     let type_str = clang_getTypeSpelling(canonical)
-    let fi = ((*fc).fields as i64 + (*fc).count as i64 * 48) as *mut FieldInfo
-    (*fi).name = c_strdup(clang_getCString(name))
+    let fi = ((*fc).fields as i64 + (*fc).count as i64 * sizeof[FieldInfo]()) as *mut FieldInfo
+    // Anonymous members store an empty name regardless of clang's spelling
+    // ("(unnamed union at ...)" in some versions) — the empty name IS the
+    // downstream signal that this slot needs a synthesized identity.
+    (*fi).name = if is_anon_member != 0: c_strdup("\0" as *const u8) else: c_strdup(clang_getCString(name))
     (*fi).type_spelling = c_strdup(clang_getCString(type_str))
     (*fi).clang_type = ty
     (*fi).is_bitfield = if clang_Cursor_isBitField(cursor) != 0: 1 else: 0
+    (*fi).cursor = cursor
     (*fc).count = (*fc).count + 1
     clang_disposeString(name)
     clang_disposeString(type_str)
@@ -1021,10 +1040,10 @@ unsafe fn collect_field(cursor: CXCursor, parent: CXCursor, data: *mut u8) -> i3
 unsafe fn ensure_fields_cached(s: *mut CImportSession, idx: i32):
     if idx < 0 or idx >= (*s).decl_count: return
     if (*s).caches as i64 == 0:
-        let size = (*s).decl_count as i64 * 48  // sizeof(DeclCache) ≈ 48
+        let size = (*s).decl_count as i64 * sizeof[DeclCache]()
         (*s).caches = with_alloc(size) as *mut DeclCache
         with_memset((*s).caches as *mut u8, 0, size)
-    let cache = ((*s).caches as i64 + idx as i64 * 48) as *mut DeclCache
+    let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *mut DeclCache
     if (*cache).fields_cached != 0: return
     (*cache).fields_cached = 1
     var fc = FieldCollector { fields: 0 as *mut FieldInfo, count: 0, cap: 0 }
@@ -1059,10 +1078,10 @@ unsafe fn collect_enum_const(cursor: CXCursor, parent: CXCursor, data: *mut u8) 
 unsafe fn ensure_enum_consts_cached(s: *mut CImportSession, idx: i32):
     if idx < 0 or idx >= (*s).decl_count: return
     if (*s).caches as i64 == 0:
-        let size = (*s).decl_count as i64 * 48
+        let size = (*s).decl_count as i64 * sizeof[DeclCache]()
         (*s).caches = with_alloc(size) as *mut DeclCache
         with_memset((*s).caches as *mut u8, 0, size)
-    let cache = ((*s).caches as i64 + idx as i64 * 48) as *mut DeclCache
+    let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *mut DeclCache
     if (*cache).enum_consts_cached != 0: return
     (*cache).enum_consts_cached = 1
     var ec = EnumConstCollector { consts: 0 as *mut EnumConstInfo, count: 0, cap: 0 }
@@ -1243,10 +1262,10 @@ pub fn with_cimport_dispose(session: i64) -> Unit:
         if (*s).caches as i64 != 0:
             var i: i32 = 0
             while i < (*s).decl_count:
-                let cache = ((*s).caches as i64 + i as i64 * 48) as *mut DeclCache
+                let cache = ((*s).caches as i64 + i as i64 * sizeof[DeclCache]()) as *mut DeclCache
                 var j: i32 = 0
                 while j < (*cache).field_count:
-                    let fi = ((*cache).fields as i64 + j as i64 * 48) as *mut FieldInfo
+                    let fi = ((*cache).fields as i64 + j as i64 * sizeof[FieldInfo]()) as *mut FieldInfo
                     with_free((*fi).name)
                     with_free((*fi).type_spelling)
                     j = j + 1
@@ -1526,7 +1545,7 @@ pub fn with_cimport_struct_field_count(session: i64, idx: i32) -> i32:
         if s as i64 == 0: return 0
         ensure_fields_cached(s, idx)
         if (*s).caches as i64 == 0: return 0
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         (*cache).field_count
 
 pub fn with_cimport_struct_field_name(session: i64, idx: i32, field: i32) -> str:
@@ -1535,9 +1554,9 @@ pub fn with_cimport_struct_field_name(session: i64, idx: i32, field: i32) -> str
         if s as i64 == 0: return ""
         ensure_fields_cached(s, idx)
         if (*s).caches as i64 == 0: return ""
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if field < 0 or field >= (*cache).field_count: return ""
-        let fi = ((*cache).fields as i64 + field as i64 * 48) as *const FieldInfo
+        let fi = ((*cache).fields as i64 + field as i64 * sizeof[FieldInfo]()) as *const FieldInfo
         make_str((*fi).name as *const u8)
 
 pub fn with_cimport_struct_field_type(session: i64, idx: i32, field: i32) -> str:
@@ -1546,9 +1565,9 @@ pub fn with_cimport_struct_field_type(session: i64, idx: i32, field: i32) -> str
         if s as i64 == 0: return ""
         ensure_fields_cached(s, idx)
         if (*s).caches as i64 == 0: return ""
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if field < 0 or field >= (*cache).field_count: return ""
-        let fi = ((*cache).fields as i64 + field as i64 * 48) as *const FieldInfo
+        let fi = ((*cache).fields as i64 + field as i64 * sizeof[FieldInfo]()) as *const FieldInfo
         make_str((*fi).type_spelling as *const u8)
 
 pub fn with_cimport_struct_field_is_bitfield(session: i64, idx: i32, field: i32) -> i32:
@@ -1557,9 +1576,9 @@ pub fn with_cimport_struct_field_is_bitfield(session: i64, idx: i32, field: i32)
         if s as i64 == 0: return 0
         ensure_fields_cached(s, idx)
         if (*s).caches as i64 == 0: return 0
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if field < 0 or field >= (*cache).field_count: return 0
-        let fi = ((*cache).fields as i64 + field as i64 * 48) as *const FieldInfo
+        let fi = ((*cache).fields as i64 + field as i64 * sizeof[FieldInfo]()) as *const FieldInfo
         (*fi).is_bitfield
 
 pub fn with_cimport_struct_field_offset(session: i64, idx: i32, field: i32) -> i64:
@@ -1568,11 +1587,16 @@ pub fn with_cimport_struct_field_offset(session: i64, idx: i32, field: i32) -> i
         if s as i64 == 0: return -1
         ensure_fields_cached(s, idx)
         if (*s).caches as i64 == 0: return -1
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if field < 0 or field >= (*cache).field_count: return -1
         let cursor = *(((*s).decls as i64 + idx as i64 * 32) as *const CXCursor)
         let ty = clang_getCursorType(cursor)
-        let fi = ((*cache).fields as i64 + field as i64 * 48) as *const FieldInfo
+        let fi = ((*cache).fields as i64 + field as i64 * sizeof[FieldInfo]()) as *const FieldInfo
+        // #749: anonymous members have no name to look up; use their cursor.
+        if (*fi).name as i64 == 0 or *((*fi).name as *const u8) == 0:
+            let anon_offset_bits = clang_Cursor_getOffsetOfField((*fi).cursor)
+            if anon_offset_bits < 0: return -1
+            return anon_offset_bits / 8
         let offset_bits = clang_Type_getOffsetOf(ty, (*fi).name as *const u8)
         if offset_bits < 0: return -1
         offset_bits / 8
@@ -1634,9 +1658,9 @@ pub fn with_cimport_struct_field_size(session: i64, idx: i32, field: i32) -> i64
         if s as i64 == 0: return -1
         ensure_fields_cached(s, idx)
         if (*s).caches as i64 == 0: return -1
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if field < 0 or field >= (*cache).field_count: return -1
-        let fi = ((*cache).fields as i64 + field as i64 * 48) as *const FieldInfo
+        let fi = ((*cache).fields as i64 + field as i64 * sizeof[FieldInfo]()) as *const FieldInfo
         clang_Type_getSizeOf((*fi).clang_type)
 
 pub fn with_cimport_struct_is_opaque(session: i64, idx: i32) -> i32:
@@ -1671,9 +1695,9 @@ pub fn with_cimport_struct_field_type_translated(session: i64, idx: i32, field: 
         if s as i64 == 0: return ""
         ensure_fields_cached(s, idx)
         if (*s).caches as i64 == 0: return ""
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if field < 0 or field >= (*cache).field_count: return ""
-        let fi = ((*cache).fields as i64 + field as i64 * 48) as *const FieldInfo
+        let fi = ((*cache).fields as i64 + field as i64 * sizeof[FieldInfo]()) as *const FieldInfo
         let is_last = if field == (*cache).field_count - 1: 1 else: 0
         let result = translate_type_recursive(s, (*fi).clang_type, 0, is_last)
         if result as i64 == 0: return ""
@@ -1685,9 +1709,9 @@ pub fn with_cimport_struct_field_align(session: i64, idx: i32, field: i32) -> i6
         if s as i64 == 0: return -1
         ensure_fields_cached(s, idx)
         if (*s).caches as i64 == 0: return -1
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if field < 0 or field >= (*cache).field_count: return -1
-        let fi = ((*cache).fields as i64 + field as i64 * 48) as *const FieldInfo
+        let fi = ((*cache).fields as i64 + field as i64 * sizeof[FieldInfo]()) as *const FieldInfo
         clang_Type_getAlignOf((*fi).clang_type)
 
 // ── Enum queries ────────────────────────────────────────────
@@ -1698,7 +1722,7 @@ pub fn with_cimport_enum_const_count(session: i64, idx: i32) -> i32:
         if s as i64 == 0: return 0
         ensure_enum_consts_cached(s, idx)
         if (*s).caches as i64 == 0: return 0
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         (*cache).enum_const_count
 
 pub fn with_cimport_enum_const_name(session: i64, idx: i32, ci: i32) -> str:
@@ -1707,7 +1731,7 @@ pub fn with_cimport_enum_const_name(session: i64, idx: i32, ci: i32) -> str:
         if s as i64 == 0: return ""
         ensure_enum_consts_cached(s, idx)
         if (*s).caches as i64 == 0: return ""
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if ci < 0 or ci >= (*cache).enum_const_count: return ""
         let eci = ((*cache).enum_consts as i64 + ci as i64 * 16) as *const EnumConstInfo
         make_str((*eci).name as *const u8)
@@ -1718,7 +1742,7 @@ pub fn with_cimport_enum_const_value(session: i64, idx: i32, ci: i32) -> i64:
         if s as i64 == 0: return 0
         ensure_enum_consts_cached(s, idx)
         if (*s).caches as i64 == 0: return 0
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if ci < 0 or ci >= (*cache).enum_const_count: return 0
         let eci = ((*cache).enum_consts as i64 + ci as i64 * 16) as *const EnumConstInfo
         (*eci).value
@@ -2570,9 +2594,9 @@ pub fn with_cimport_struct_field_is_anonymous_record(session: i64, idx: i32, fie
         if s as i64 == 0: return 0
         ensure_fields_cached(s, idx)
         if (*s).caches as i64 == 0: return 0
-        let cache = ((*s).caches as i64 + idx as i64 * 48) as *const DeclCache
+        let cache = ((*s).caches as i64 + idx as i64 * sizeof[DeclCache]()) as *const DeclCache
         if field < 0 or field >= (*cache).field_count: return 0
-        let fi = ((*cache).fields as i64 + field as i64 * 48) as *const FieldInfo
+        let fi = ((*cache).fields as i64 + field as i64 * sizeof[FieldInfo]()) as *const FieldInfo
         let canonical = clang_getCanonicalType((*fi).clang_type)
         if canonical.kind != CXType_Record: return 0
         let decl = clang_getTypeDeclaration(canonical)
@@ -2732,6 +2756,18 @@ pub fn with_ci_cursor_kind(session: i64, cursor_idx: i32) -> i32:
         if s as i64 == 0 or cursor_idx < 0 or cursor_idx >= (*s).cursor_count: return 0
         let cursor = *(((*s).cursors as i64 + cursor_idx as i64 * 32) as *const CXCursor)
         clang_getCursorKind(cursor)
+
+// #749: true when the cursor is a C11 anonymous record MEMBER (an unnamed
+// `struct`/`union { ... };` that occupies a field slot), as opposed to a
+// mere nested type declaration.
+pub fn with_ci_cursor_is_anon_record_member(session: i64, cursor_idx: i32) -> i32:
+    unsafe:
+        let s = session as *mut CImportSession
+        if s as i64 == 0 or cursor_idx < 0 or cursor_idx >= (*s).cursor_count: return 0
+        let cursor = *(((*s).cursors as i64 + cursor_idx as i64 * 32) as *const CXCursor)
+        let kind = clang_getCursorKind(cursor)
+        if kind != CXCursor_StructDecl and kind != CXCursor_UnionDecl: return 0
+        clang_Cursor_isAnonymousRecordDecl(cursor)
 
 pub fn with_ci_cursor_spelling(session: i64, cursor_idx: i32) -> str:
     unsafe:

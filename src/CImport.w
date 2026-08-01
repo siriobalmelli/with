@@ -34,6 +34,7 @@ var g_cimport_no_methods_types: Vec[str] = Vec.new()
 
 pub fn ci_migrate_set_unsafe_function_body_context(enabled: bool) -> Unit:
     g_ci_migrate_in_unsafe_function_body = enabled
+    ci_print_set_unsafe_fn_context(enabled)
 
 fn ci_set_no_methods(all_flag: i32, types: Vec[str]):
     g_cimport_no_methods_all = all_flag
@@ -1079,7 +1080,9 @@ fn ci_decl_field_cursor(session: i64, decl_cursor: i32, field_idx: i32) -> i32:
     var i = 0
     while i < nc:
         let child = with_ci_child(session, decl_cursor, i)
-        if with_ci_cursor_kind(session, child) == CK_FIELD:
+        // #749: anonymous record members occupy field slots too — the index
+        // space must match the bridge's field cache exactly.
+        if with_ci_cursor_kind(session, child) == CK_FIELD or with_ci_cursor_is_anon_record_member(session, child) != 0:
             if seen == field_idx:
                 return child
             seen = seen + 1
@@ -1089,6 +1092,12 @@ fn ci_decl_field_cursor(session: i64, decl_cursor: i32, field_idx: i32) -> i32:
 fn ci_field_cursor_anon_record_decl(session: i64, field_cursor: i32) -> i32:
     if field_cursor < 0:
         return -1
+    // #749: for a C11 anonymous member the slot cursor IS the record decl —
+    // no FieldDecl indirection, and clang's spelling for it varies by
+    // version ("(unnamed union at ...)" vs "(unnamed at ...)"), so detect by
+    // cursor identity, not by name shape.
+    if with_ci_cursor_is_anon_record_member(session, field_cursor) != 0:
+        return field_cursor
     let field_ty = with_ci_cursor_type(session, field_cursor)
     if field_ty < 0:
         return -1
@@ -6698,7 +6707,294 @@ fn ci_init_list_record_field_cxtype(session: i64, ty_text: str, ty: i32, field_i
         return -1
     ci_record_type_field_cxtype(session, ty, field_idx)
 
+// #749: designator machinery for record initializers. A designated
+// initializer child (`.name = value`) surfaces as libclang's unexposed
+// DesignatedInitExpr: kind 100 with exactly one MemberRef designator child
+// (kind 47 — the reference form, distinct from MemberRefExpr 102) plus the
+// value as the last child. Array and nested designators are not recognized.
+let CXK_DESIGNATOR_MEMBER_REF: i32 = 47
+
+fn ci_init_child_designator_name(session: i64, child: i32) -> str:
+    if with_ci_cursor_kind(session, child) != 100:
+        return ""
+    // Prefer the structural designator when libclang surfaces it (a kind-47
+    // MemberRef child); the C visitor usually does NOT, so fall back to the
+    // child's source text, whose leading `.identifier` IS the designator
+    // (same spelling-location recovery the sizeof path uses).
+    let nc = with_ci_num_children(session, child)
+    var member_refs = 0
+    var name = ""
+    var i = 0
+    while i < nc:
+        let sub = with_ci_child(session, child, i)
+        if with_ci_cursor_kind(session, sub) == CXK_DESIGNATOR_MEMBER_REF:
+            member_refs = member_refs + 1
+            name = with_ci_cursor_spelling(session, sub)
+        i = i + 1
+    if member_refs == 1 and name.len() > 0:
+        return name
+    let src = ci_trim(with_ci_cursor_source_text(session, child))
+    if src.len() < 2 or src.byte_at(0) != 46:
+        return ""
+    let first = src.byte_at(1)
+    if not ((first >= 65 and first <= 90) or (first >= 97 and first <= 122) or first == 95):
+        return ""
+    var j = 2
+    while j < src.len() as i32:
+        let c = src.byte_at(j as i64)
+        if not ((c >= 65 and c <= 90) or (c >= 97 and c <= 122) or (c >= 48 and c <= 57) or c == 95):
+            break
+        j = j + 1
+    // Only the clean `.name = value` shape resolves; nested (`.a.b = ...`)
+    // and array designators return "" — the caller distinguishes via
+    // ci_init_child_has_designator and bails rather than mis-assigning.
+    let rest = ci_trim(src.slice(j as i64, src.len()))
+    if rest.len() == 0 or rest.byte_at(0) != 61:
+        return ""
+    src.slice(1, j as i64)
+
+// True when a kind-100 init child carries ANY designator syntax (leading
+// `.name` or `[index]`). A leading-dot float (`.5`) is a value, not a
+// designator.
+fn ci_init_child_has_designator(session: i64, child: i32) -> i32:
+    if with_ci_cursor_kind(session, child) != 100:
+        return 0
+    let src = ci_trim(with_ci_cursor_source_text(session, child))
+    if src.len() < 2:
+        return 0
+    if src.byte_at(0) == 91:
+        return 1
+    if src.byte_at(0) != 46:
+        return 0
+    let first = src.byte_at(1)
+    if (first >= 65 and first <= 90) or (first >= 97 and first <= 122) or first == 95: 1 else: 0
+
+fn ci_init_child_designated_value(session: i64, child: i32) -> i32:
+    let nc = with_ci_num_children(session, child)
+    if nc < 1:
+        return -1
+    with_ci_child(session, child, nc - 1)
+
+// Resolve the record decl index for a translated type name, following
+// typedefs; a self-referential `typedef struct X X;` keeps scanning for the
+// struct decl of the same name.
+fn ci_record_decl_idx_for_name(session: i64, ty_name: str) -> i32:
+    if ty_name.len() == 0:
+        return -1
+    let decl_count = with_cimport_decl_count(session)
+    var i = 0
+    while i < decl_count:
+        let kind = with_cimport_decl_kind(session, i)
+        let decl_name = with_cimport_decl_name(session, i)
+        if (kind == CK_STRUCT or kind == CK_UNION) and ci_decl_name_matches_type(decl_name, ty_name):
+            if with_cimport_struct_field_count(session, i) > 0:
+                return i
+        if kind == CK_TYPEDEF and ci_decl_name_matches_type(decl_name, ty_name):
+            let underlying = with_cimport_typedef_underlying_translated(session, i)
+            if underlying.len() > 0 and underlying != ty_name:
+                return ci_record_decl_idx_for_name(session, underlying)
+        i = i + 1
+    -1
+
+// C's `{0}` / `{}` whole-record zero idiom: every child is an undesignated
+// integer literal zero. Lowered as a zero-pair designated init, which the
+// assignment printer turns into with_memset (exact C semantics — no per-arm
+// zero spelling needed).
+fn ci_init_children_all_zero_ints(session: i64, cursor: i32, nc: i32) -> bool:
+    var i = 0
+    while i < nc:
+        let child = with_ci_child(session, cursor, i)
+        if ci_init_child_has_designator(session, child) != 0:
+            return false
+        let peeled = ci_peel_transparent(session, child)
+        if with_ci_cursor_kind(session, peeled) != CXK_INT_LITERAL:
+            return false
+        if with_ci_eval_int_valid(session, peeled) == 0:
+            return false
+        if ci_eval_int_text(session, peeled) != "0":
+            return false
+        i = i + 1
+    true
+
+// Index of `name` among the CK_FIELD children of the anonymous member at
+// `slot`, or -1.
+fn ci_anon_member_field_index(session: i64, decl_cursor: i32, slot: i32, name: str) -> i32:
+    let field_cursor = ci_decl_field_cursor(session, decl_cursor, slot)
+    let anon_decl = ci_field_cursor_anon_record_decl(session, field_cursor)
+    if anon_decl < 0:
+        return -1
+    let nc = with_ci_num_children(session, anon_decl)
+    var seen = 0
+    var i = 0
+    while i < nc:
+        let child = with_ci_child(session, anon_decl, i)
+        if with_ci_cursor_kind(session, child) == CK_FIELD:
+            if with_ci_cursor_spelling(session, child) == name:
+                return seen
+            seen = seen + 1
+        i = i + 1
+    -1
+
+// The synthesized With type name for the anonymous member at `slot`,
+// matching the decl renderer's naming exactly (ci_translate_struct).
+fn ci_anon_member_synth_type_name(session: i64, decl_idx: i32, slot: i32) -> str:
+    let name_raw = with_cimport_decl_name(session, decl_idx)
+    let fname = with_cimport_struct_field_name(session, decl_idx, slot)
+    if fname.len() > 0:
+        return ci_escape_reserved(name_raw ++ "_" ++ fname)
+    var ordinal = 0
+    var i = 0
+    while i < slot:
+        if with_cimport_struct_field_is_anonymous_record(session, decl_idx, i) != 0:
+            ordinal = ordinal + 1
+        i = i + 1
+    ci_escape_reserved(name_raw ++ "_anon_" ++ i64_to_string(ordinal as i64))
+
 impl CiExprPool:
+    // #749: record initializers lower designator-first. C designators may
+    // target fields INSIDE an anonymous member directly (`.payload1 = v` on
+    // the enclosing struct), so children cannot be index-paired with slots;
+    // each child resolves by name against direct fields, then anonymous
+    // members' inner fields, building the nested union literal the With
+    // decl renderer's synthesized types expect.
+    fn lower_record_init_ir(session: i64, cursor: i32, nc: i32, ty_str: str, init_ty_id: CiTypeId, field_count: i32, types: CiTypePool, scope: CiScope) -> CiExprId:
+        if nc == 0 or ci_init_children_all_zero_ints(session, cursor, nc):
+            // Whole-record zero: a zero-pair designated init is the marker
+            // the assignment printer renders as with_memset.
+            let zero_start = self.extra_len() as i32
+            ci_trace_port("STRUCTURAL[b11.11.init_list]")
+            return self.designated_init(zero_start, 0, init_ty_id)
+        let decl_idx = ci_record_decl_idx_for_name(session, ty_str)
+        if decl_idx < 0:
+            if g_ci_bail_message.len() == 0:
+                g_ci_bail_message = "record initializer type '" ++ ty_str ++ "' has no resolvable declaration"
+                g_ci_bail_location = with_ci_cursor_location(session, cursor)
+            return 0 as CiExprId
+        let decl_cursor = ci_find_decl_cursor_for_idx(session, decl_idx)
+        let record_is_union = with_cimport_decl_kind(session, decl_idx) == CK_UNION
+        var slot_exprs: Vec[i32] = Vec.new()
+        var si = 0
+        while si < field_count:
+            slot_exprs.push(0)
+            si = si + 1
+        var next_positional = 0
+        var ci2 = 0
+        while ci2 < nc:
+            let child = with_ci_child(session, cursor, ci2)
+            let designator = ci_init_child_designator_name(session, child)
+            var slot = -1
+            var arm_idx = -1
+            if designator.len() == 0:
+                if ci_init_child_has_designator(session, child) != 0:
+                    if g_ci_bail_message.len() == 0:
+                        g_ci_bail_message = "unsupported initializer designator shape in '" ++ ty_str ++ "'"
+                        g_ci_bail_location = with_ci_cursor_location(session, child)
+                    return 0 as CiExprId
+                slot = next_positional
+                next_positional = next_positional + 1
+            else:
+                var fi2 = 0
+                while fi2 < field_count and slot < 0:
+                    if with_cimport_struct_field_is_anonymous_record(session, decl_idx, fi2) == 0:
+                        if with_cimport_struct_field_name(session, decl_idx, fi2) == designator:
+                            slot = fi2
+                    fi2 = fi2 + 1
+                if slot < 0:
+                    fi2 = 0
+                    while fi2 < field_count and slot < 0:
+                        if with_cimport_struct_field_is_anonymous_record(session, decl_idx, fi2) != 0:
+                            let probe = ci_anon_member_field_index(session, decl_cursor, fi2, designator)
+                            if probe >= 0:
+                                slot = fi2
+                                arm_idx = probe
+                        fi2 = fi2 + 1
+                if slot < 0:
+                    if g_ci_bail_message.len() == 0:
+                        g_ci_bail_message = "initializer designator '" ++ designator ++ "' not found in '" ++ ty_str ++ "'"
+                        g_ci_bail_location = with_ci_cursor_location(session, child)
+                    return 0 as CiExprId
+                next_positional = slot + 1
+            if slot >= field_count:
+                if g_ci_bail_message.len() == 0:
+                    g_ci_bail_message = "initializer has more values than fields in '" ++ ty_str ++ "'"
+                    g_ci_bail_location = with_ci_cursor_location(session, cursor)
+                return 0 as CiExprId
+            let value_cursor = if designator.len() > 0: ci_init_child_designated_value(session, child) else: child
+            if value_cursor < 0:
+                return 0 as CiExprId
+            if arm_idx < 0 and not record_is_union and with_cimport_struct_field_is_anonymous_record(session, decl_idx, slot) != 0:
+                // A positional value landing on an anonymous member
+                // initializes its first arm (C semantics).
+                arm_idx = 0
+            if arm_idx >= 0 and not record_is_union:
+                let lowered = self.lower_anon_member_arm_init(session, decl_idx, decl_cursor, slot, arm_idx, value_cursor, ty_str, types, scope)
+                if (lowered as i32) == 0:
+                    return 0 as CiExprId
+                slot_exprs.set_i32(slot as i64, lowered as i32)
+            else:
+                let raw_id = self.lower_expr_ir(session, value_cursor, types, scope)
+                if (raw_id as i32) == 0:
+                    return 0 as CiExprId
+                let coerced = self.coerce_init_expr_to_type(types, raw_id, with_cimport_struct_field_type_translated(session, decl_idx, slot))
+                slot_exprs.set_i32(slot as i64, coerced as i32)
+            ci2 = ci2 + 1
+        // Unmentioned fields (C zero-fills them) need no pairs: the
+        // assignment printer renders a designated init as memset + field
+        // stores, so absence IS the zero.
+        var pair_names: Vec[i32] = Vec.new()
+        var pair_values: Vec[i32] = Vec.new()
+        si = 0
+        while si < field_count:
+            let v = slot_exprs.get(si as i64)
+            if v != 0:
+                pair_names.push(self.add_string(ci_struct_field_emitted_name(session, decl_idx, si)))
+                pair_values.push(v)
+            si = si + 1
+        if record_is_union and pair_values.len() as i32 > 1:
+            if g_ci_bail_message.len() == 0:
+                g_ci_bail_message = "union initializer sets multiple arms in '" ++ ty_str ++ "'"
+                g_ci_bail_location = with_ci_cursor_location(session, cursor)
+            return 0 as CiExprId
+        let fields_start = self.extra_len() as i32
+        var pj: i64 = 0
+        while pj < pair_names.len():
+            let _ = self.add_extra(pair_names.get(pj))
+            let _ = self.add_extra(pair_values.get(pj))
+            pj = pj + 1
+        ci_trace_port("STRUCTURAL[b11.11.init_list]")
+        self.designated_init(fields_start, pair_names.len() as i32, init_ty_id)
+
+    // Build `SynthUnion { arm: value }` for the anonymous member at `slot`.
+    fn lower_anon_member_arm_init(session: i64, decl_idx: i32, decl_cursor: i32, slot: i32, arm_idx: i32, value_cursor: i32, ty_str: str, types: CiTypePool, scope: CiScope) -> CiExprId:
+        let field_cursor = ci_decl_field_cursor(session, decl_cursor, slot)
+        let anon_decl = ci_field_cursor_anon_record_decl(session, field_cursor)
+        if anon_decl < 0:
+            return 0 as CiExprId
+        let nc = with_ci_num_children(session, anon_decl)
+        var seen = 0
+        var arm_cursor = -1
+        var i = 0
+        while i < nc and arm_cursor < 0:
+            let child = with_ci_child(session, anon_decl, i)
+            if with_ci_cursor_kind(session, child) == CK_FIELD:
+                if seen == arm_idx:
+                    arm_cursor = child
+                seen = seen + 1
+            i = i + 1
+        if arm_cursor < 0:
+            return 0 as CiExprId
+        let arm_name = ci_escape_reserved(with_ci_cursor_spelling(session, arm_cursor))
+        let arm_ty = with_ci_type_translated(session, with_ci_cursor_type(session, arm_cursor))
+        let raw_id = self.lower_expr_ir(session, value_cursor, types, scope)
+        if (raw_id as i32) == 0:
+            return 0 as CiExprId
+        let coerced = self.coerce_init_expr_to_type(types, raw_id, arm_ty)
+        let union_ty = types.named_type_from_text(ci_anon_member_synth_type_name(session, decl_idx, slot))
+        let fields_start = self.extra_len() as i32
+        let _ = self.add_extra(self.add_string(arm_name))
+        let _ = self.add_extra(coerced as i32)
+        self.designated_init(fields_start, 1, union_ty)
+
     fn lower_init_list_ir(session: i64, cursor: i32, types: CiTypePool, scope: CiScope) -> CiExprId:
         let nc = with_ci_num_children(session, cursor)
         let init_ty = with_ci_cursor_type(session, cursor)
@@ -6769,30 +7065,7 @@ impl CiExprPool:
             return self.init_list(items_start, item_ids.len() as i32, init_ty_id)
         let aggregate_field_count = ci_init_list_record_field_count(session, ty_str, init_ty)
         if aggregate_field_count > 0:
-            var field_names: Vec[i32] = Vec.new()
-            var field_values: Vec[i32] = Vec.new()
-            var fi = 0
-            while fi < nc:
-                let field_name = ci_init_list_record_field_name(session, ty_str, init_ty, fi)
-                let field_type = ci_init_list_record_field_type(session, ty_str, init_ty, fi)
-                if field_name.len() == 0:
-                    return 0 as CiExprId
-                let item_id_raw = self.lower_expr_ir(session, with_ci_child(session, cursor, fi), types, scope)
-                if (item_id_raw as i32) == 0:
-                    return 0 as CiExprId
-                let item_id = self.coerce_init_expr_to_type(types, item_id_raw, field_type)
-                let field_idx = self.add_string(field_name)
-                field_names.push(field_idx)
-                field_values.push(item_id as i32)
-                fi = fi + 1
-            let fields_start = self.extra_len() as i32
-            var fj: i64 = 0
-            while fj < field_names.len():
-                let _ = self.add_extra(field_names.get(fj))
-                let _ = self.add_extra(field_values.get(fj))
-                fj = fj + 1
-            ci_trace_port("STRUCTURAL[b11.11.init_list]")
-            return self.designated_init(fields_start, nc, init_ty_id)
+            return self.lower_record_init_ir(session, cursor, nc, ty_str, init_ty_id, aggregate_field_count, types, scope)
         // A record initializer whose field names cannot be recovered must not
         // fall through to the positional form — `T { a, b }` is not valid
         // With and a compiling variant would misassign fields. Fail loudly.
