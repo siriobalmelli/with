@@ -96,6 +96,31 @@ symbol form trips pre-existing #754: symbol-form closure import +
 c_import cluster drops an unrelated root fn from the pool; SEED
 reproduces; full notes in the issue).
 
+## #754 root-cause state (in progress; debug prints in the WORKING TREE)
+
+Chain established with WITH_DEBUG_FIND_FN=<fn> + WITH_DEBUG_TIERS=1
+(instrumentation is UNCOMMITTED in Frontend.w process_imports/
+expand_c_imports + SemaDecl pass 3 — keep or strip before the next
+battery):
+
+- Frontend is INNOCENT: the decl survives both rebuilds (node=6521,
+  meta=1701, ci=0, right path), user-import bucket EMPTY (the
+  symbol-form use dedupes fine at import merge).
+- Sema pass 3 REACHES it (skip=0, is_local=1) and collect_fn_decl runs,
+  but get_sig(original sym) is -1 AFTER collection, with NO "already
+  defined" error. So the sig lands under a renamed symbol or an early
+  return before add_sig. Suspects inside collect_fn_decl
+  (SemaDecl:1298+): the clause-group path (fn_decl_nodes carrying a
+  STALE node for the sym across sema re-runs → prepare_current_fn_clause
+  renames fn_name), or the extension-method rename
+  (extension_method_unique_symbol_at). Note sema runs 3× per check with
+  the fn at di=1548 then di=1554 — fn_decl_nodes persisting across runs
+  with different node ids is exactly the stale-state shape.
+- Next probe: print method_owner_sym/method_base_sym/final fn_name and
+  which add_sig branch fires for the target inside collect_fn_decl.
+- Repro: /tmp/ss16_moved.w (ss16 at 283d09e0 + `use std.builtins.write`
+  symbol-form). Module form does not trip it. Seed reproduces.
+
 ## Next steps
 
 1. On the current committed tree: `with build` + `with build :test`
