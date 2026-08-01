@@ -116,10 +116,32 @@ fixture green end to end. #743 gained a deterministic 3s reproducer
 stays open/unrelated. The #754 guard was verified NOT causal (revert
 still panicked) before the true chain surfaced via --debug-alloc.
 
-## Next steps
+## RESEEDED — and the roundtrip's next blocker
 
-1. Battery 5 (running at launch time of this note) on the committed
-   tree including the helper-template fix. Verify RCs unpiped.
+Battery 5 + :test rerun (after the prelude-output edge-fixture import
+fix, harness data only): ALL GREEN. Reseed complete: seed + installed
+compiler are **v0.15.1-g21751b3be** — the first gate-enforcing
+toolchain. (:last-green needed a :fixpoint refresh first because the
+:test rerun re-stamped the stages; the :last-green failure ALSO stacked
+the #743 teardown corruption, consistent with its failed-action
+trigger.)
+
+Roundtrip attempt on the reseeded toolchain: FAILED at ~600s in
+`run_emit_c_roundtrip_action` with `panic: integer overflow: i32
+multiplication out of range` during comptime evaluation, right after
+compiler-version-sources (i.e. in/around `emitc_build_compiler_c_workspace`,
+BEFORE migrate). Facts: direct out-of-process emission
+(`with build out/gen/versioned_main.w --emit-c -o …`) SUCCEEDS, so the
+overflow is in the driver's comptime execution under the NEW compiler —
+either a comptime-arithmetic regression in the reseeded binary or a
+pre-existing silent overflow now correctly checked. The panic carries
+no source location (worth fixing while there). Multiply scan candidates
+found so far: lib/std/build.w:1300 `tool_pax_parse_decimal` (i32
+decimal parse) — unconfirmed. Next: rerun the action with lldb break on
+the overflow panic (or add comptime panic locations), localize the
+multiply, fix, rerun `with build :emit-c-roundtrip` under keep-awake.
+
+## Next steps (historical: battery 5 plan)
 2. All green → reseed: `:test-green`, `:last-green`, `:update-seed`,
    `:install-user`. Post-reseed the seed enforces the gate (src/build/
    tools already import-complete, both #753 victims annotated).
