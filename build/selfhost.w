@@ -3009,7 +3009,9 @@ fn bs_check_emit_c_collections(ctx: &ActionCtx, compiler_path: str, case_dir: st
     let src = bs_join(case_dir, "collections.w")
     let c_path = bs_join(case_dir, "collections.c")
     let bin = bs_join(case_dir, "collections")
-    let source = "fn pair() -> (i32, str): (42, \"x\")\n\n" ++
+    let source = "use std.collections.HashSet\n" ++
+        "use std.collections.HashMap\n\n" ++
+        "fn pair() -> (i32, str): (42, \"x\")\n\n" ++
         "fn main:\n" ++
         "    var s: HashSet[i32] = HashSet.new()\n" ++
         "    s.insert(7)\n" ++
@@ -3104,7 +3106,8 @@ fn bs_check_emit_c_hashmap_new_field(ctx: &ActionCtx, compiler_path: str, case_d
     let src = bs_join(case_dir, "hashmap_new_field.w")
     let c_path = bs_join(case_dir, "hashmap_new_field.c")
     let bin = bs_join(case_dir, "hashmap_new_field")
-    let source = "use std.prelude_alloc\n\n" ++
+    let source = "use std.prelude_alloc\n" ++
+        "use std.collections.HashMap\n\n" ++
         "extern fn with_print_str(s: str) -> Unit\n\n" ++
         "type Registry {\n" ++
         "    names: HashMap[str, i32],\n" ++
