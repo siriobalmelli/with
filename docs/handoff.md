@@ -1,5 +1,40 @@
 # Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
 
+## #747 session-2 state (2026-08-02, continues below)
+
+DONE since the census: (a) is_copy needed an EXPLICIT `TY_STR → 0`
+branch — removing it from the prim line fell through to the fn's
+DEFAULT COPY tail, which is why drops never scheduled (bindings gate on
+is_copy_frozen, MirLower:5370) and the strdrop smoke leaked 2000×16 B.
+(b) The 37 move sites → 0 via ~12 clone insertions (movers were
+field-to-local/field-to-field assignments; with_str_clone / *_owned_text
+idiom; the REAL mover is often lines above the flagged use — the checker
+flags USES). (c) De-Copy round 1: 8 str-bearing `impl Copy` removed
+(std Match, CiProjectSymbol, CompilationConfig, TypeKey, ValueKey,
+LockEntry, ComptimeControl, ComptimeValue).
+
+OPEN, in order:
+1. **Seed compat**: the SEED now rejects src with 139 errors — the
+   de-Copied TypeKey/ValueKey cascade through InternPool
+   (`st.type_keys.push(key)` moves; `st.type_keys.get(id)` returned-view
+   lifetimes). Fixes must pass BOTH worlds (seed str=Copy, stage1
+   flipped). Iterate against the SEED's list (`with check src/main.w`)
+   — it is the complete set; the flipped stage1 aborts early on the
+   stale embed until the next full :dev.
+2. stage1's :dev at 71s was incremental and did NOT re-embed
+   lib/std/regex.w (Match impl still in the embedded copy) — force the
+   embed (touch lib/std/regex.w or clean the embed target).
+3. Then: lib/std de-Copy tail (JsonView json.w:22, Package/ProjectInfo/
+   Diagnostics build.w:255-270 — surface when corpora/build.w check),
+   corpus sweep, un-pin emitc cap, drop-audit before/after, battery
+   ALONE, reseed, roundtrip.
+4. Bug found en route: the SEED miscompiles a `with -e` one-liner with
+   Vec[str] pushes + for-loop + .get() ("LLVM function verification
+   failed after MIR cleanup for main") — file an issue with the repro
+   from the session log (scratchpad command history).
+5. strdrop smoke (post-fix) still to re-verify: expect leak count=0
+   under --debug-alloc once drops schedule.
+
 ## #747 STR FLIP IN PROGRESS — WORKING TREE DIRTY (2026-08-02)
 
 The flip's mechanics are implemented and sitting UNCOMMITTED in the
