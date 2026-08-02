@@ -1,6 +1,17 @@
 # Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
 
-## #747 session-3b: BATTERY 7 RED — bridge-object worker hits #743-class corruption
+## #743 IS THE BLOCKER — UAF, predates everything (see issue for full diagnosis + fix recipe)
+
+Batteries 6/7 reds, bridge objects, toolfs, :last-green: ALL one latent
+UAF (str view outliving its buffer; read via compute_method_origins →
+extract_name_after_keyword_in_text; lldb backtrace on the issue).
+Pre-groundwork worktree + untouched seed panics identically → #747
+groundwork EXONERATED. Nondeterministic by address luck; MallocScribble
++MallocGuardEdges makes it fault reliably. NEXT: MallocStackLogging +
+malloc_history on the fault address → the freeing stack IS the fix
+site. Fix #743 FIRST — no battery is trustworthy until it lands.
+
+## #747 session-3b: BATTERY 7 RED (superseded by the above) — bridge-object worker hits #743-class corruption
 
 Battery 6 red was regex find_all (fixed, committed with the migration
 tools). Battery 7 red: llvm-bridge-object AND clang-bridge-object
