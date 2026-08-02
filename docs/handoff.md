@@ -1,5 +1,42 @@
 # Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
 
+## #747 STR FLIP IN PROGRESS — WORKING TREE DIRTY (2026-08-02)
+
+The flip's mechanics are implemented and sitting UNCOMMITTED in the
+working tree (seed-checks clean; flipped stage1 builds):
+
+- Sema.w: `is_copy` drops TY_STR from the Copy primitives line;
+  `type_needs_drop` returns 1 for TY_STR (comment block explains).
+- rt/rt_core.w: `with_str_free` / `with_str_free_drop_origin` — free the
+  data ptr ONLY if `rt_payload_start_is_owned` (literals/views/moved-from
+  no-op), then blank the {ptr,len} place. Leak-not-free under
+  WITH_ALLOC_SYSTEM=1 (documented).
+- CodegenDispatch.w: `mir_emit_str_free_ptr` + ensure-fns, dispatched
+  from `mir_emit_drop_ptr_for_sema_type` on TY_STR (before the Vec
+  branch), drop-origin tagging mirrored from the Vec pattern.
+
+**Measured fallout (the big surprise): flipped stage1 check of src =
+only 37 `use of moved value` errors** (24 main.w:1840-1980 one build-
+graph loop; 4 compiler/Backend.w:51/135/195/238; 3 Codegen.w:1103-1104
+(`self.source_file.slice` twice); 3 CodegenDispatch.w:17693-17694;
+2 Analysis.w:532/816; 1 compiler/Frontend.w:1650). is_copy-only flip
+produced ZERO errors — move tracking keys on type_needs_drop.
+
+Diagnosis so far: NOT one cause. build_graph_dispatch_standard_target
+already takes &BuildGraphTarget, so main.w's loop moves come from
+something else (loop-carried field move via `completed_targets.push(
+target.name)` in earlier iterations, or build_cache_record's params —
+UNVERIFIED). Codegen.w:1103-04 suggests a field-read+method-receiver
+interaction. Next: diagnose each site with the flipped stage1
+(`out/bootstrap/bin/with-stage1 check src/main.w`), fix per D5 doctrine
+(observers borrow; genuine retention spells the owned copy via the
+*_owned_text idiom), iterate. THEN: #747 scope items 2 (de-Copy
+JsonView/Package/ProjectInfo/Diagnostics + ~95 impl Copy sweep — the
+compiler now REJECTS Copy on str-bearing structs automatically) and 3
+(delete the cap pin in emitc_migrate_compiler_c). Then corpus check,
+:move-audit/:drop-audit BEFORE AND AFTER per the ruling, full battery
+ALONE in its batch, reseed, roundtrip.
+
 Updated 2026-08-01 (second pass). **#750 work item 1 (D29 scaffolding) is
 IMPLEMENTED and committed** (`6430d1ee` compiler, `67816feb` corpora); the
 exact-tree battery was launched on `67816feb` (build → fixpoint → test →
