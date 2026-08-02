@@ -141,6 +141,19 @@ decimal parse) — unconfirmed. Next: rerun the action with lldb break on
 the overflow panic (or add comptime panic locations), localize the
 multiply, fix, rerun `with build :emit-c-roundtrip` under keep-awake.
 
+## Roundtrip attempt 2 (post-overflow-fix): #747 is the wall
+
+The comptime-overflow root cause was the migrate CHILD: session_strdup
+cap*2 in i32 past 2^30 tracked strings, driven by the un-indexed
+record/typedef lookup family x #749 per-member-expr probes. Fixed
+(indexed + i64 counters, fixture-verified, committed). The step now
+dies at max RSS 94.4 GiB (OS kill; 68.4 GB was the old surviving
+peak) — transient-str retention (D28 bridge) outgrew the machine.
+Roundtrip migrate stays red until #747 (str flip) — which D29
+sequences next anyway. Repro: stage1 migrate out/emit-c-roundtrip/
+main.c with -I runtime -include out/gen/wl_decls.h --no-c-export,
+WITH_MEMORY_LIMIT_BYTES=0.
+
 ## Next steps (historical: battery 5 plan)
 2. All green → reseed: `:test-green`, `:last-green`, `:update-seed`,
    `:install-user`. Post-reseed the seed enforces the gate (src/build/
