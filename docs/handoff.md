@@ -1,5 +1,39 @@
 # Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
 
+## #747 session-3b: BATTERY 7 RED — bridge-object worker hits #743-class corruption
+
+Battery 6 red was regex find_all (fixed, committed with the migration
+tools). Battery 7 red: llvm-bridge-object AND clang-bridge-object
+workers die rc=139 — worker.stderr shows the exact #743 signature
+(corrupt vec header, origin=drop#struct __drop_struct_220, ASCII
+garbage cap/elem) ~4s in. Batteries 1-5 ran these lanes green, so the
+groundwork batch (ComptimeValue clones / borrowed evaluator helpers /
+InternPool clone-returns) either shifted the latent #743 allocation
+alignment or introduced a REAL teardown double-free in the comptime
+action machinery.
+
+NEXT (in order):
+1. Repro standalone: `with build :llvm-bridge-object` (worker mode —
+   the crash is in the spawned worker; run the worker command from
+   out/command/llvm-bridge-object args if needed).
+2. DIFFERENTIAL first: git worktree at the pre-groundwork commit (the
+   one before "compiler/std: #747 groundwork"), run the same step —
+   green there = my regression, red = #743 alignment luck. If mine:
+   WITH_DEBUG_ALLOC=1 + tools/debug_drop.w on the repro; suspect list =
+   comptime_value_clone at slot/extras sites (double-ownership of
+   extra_start/extra_count-referenced payloads is the obvious hazard:
+   clone copies the EXTRA RANGE INDICES, so two values now claim the
+   same extras — if extras teardown frees per-value, that is the
+   double-free).
+3. Fix, both-worlds check, RERUN battery 7. Then the worktree flip +
+   fixpoint driver per the plan below.
+
+NOTE the suspicion in 2: comptime_value_clone is a SHALLOW clone of a
+value whose extra_start/extra_count reference shared extras storage —
+review every site where the ORIGINAL and the CLONE both live at
+teardown; the fix may be that extras teardown must not free through
+value handles at all (or clones must not duplicate range claims).
+
 ## #747 session-3 state: groundwork COMMITTED, flip is 3 local hunks
 
 The de-Copy groundwork (139 seed errors to 0) is COMMITTED and both-
