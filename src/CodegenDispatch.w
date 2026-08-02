@@ -543,6 +543,7 @@ fn mir_scan_vec_fill(count: i32, value: i32) -> Vec[i32]:
         out.push(value)
     out
 
+extern fn with_str_clone(s: str) -> str
 extern fn with_alloc(size: i64) -> *mut u8
 
 // Worklist handle for the block-reachability walk: copies share state by
@@ -4270,6 +4271,50 @@ impl Codegen:
 
         wl_position_at_end(self.builder, done_bb)
 
+    // #747: free a str's buffer via the ownership-checked runtime helper and
+    // blank the place. Mirrors the Vec pattern including drop-origin tagging.
+    fn ensure_with_str_free_fn() -> i64:
+        var free_fn = wl_get_named_function(self.llmod, "with_str_free")
+        if free_fn != 0:
+            return free_fn
+        let void_ty = wl_void_type(self.context)
+        let params: Vec[i64] = Vec.new()
+        params.push(wl_ptr_type(self.context))
+        let fn_ty = wl_function_type(void_ty, vec_data_i64(&params), 1, 0)
+        wl_add_function(self.llmod, "with_str_free", fn_ty)
+
+    fn ensure_with_str_free_drop_origin_fn() -> i64:
+        var free_fn = wl_get_named_function(self.llmod, "with_str_free_drop_origin")
+        if free_fn != 0:
+            return free_fn
+        let void_ty = wl_void_type(self.context)
+        let params: Vec[i64] = Vec.new()
+        params.push(wl_ptr_type(self.context))
+        params.push(wl_ptr_type(self.context))
+        params.push(wl_i64_type(self.context))
+        let fn_ty = wl_function_type(void_ty, vec_data_i64(&params), 3, 0)
+        wl_add_function(self.llmod, "with_str_free_drop_origin", fn_ty)
+
+    fn mir_emit_str_free_ptr(ptr: i64) -> Unit:
+        if ptr == 0:
+            return
+        if self.mir_drop_origin_active():
+            let free_fn = self.ensure_with_str_free_drop_origin_fn()
+            if free_fn == 0:
+                return
+            let args_tagged: Vec[i64] = Vec.new()
+            args_tagged.push(ptr)
+            args_tagged.push(self.current_drop_origin_ptr)
+            args_tagged.push(self.current_drop_origin_len)
+            let _tagged = wl_build_call(self.builder, wl_global_get_value_type(free_fn), free_fn, vec_data_i64(&args_tagged), 3)
+            return
+        let free_fn = self.ensure_with_str_free_fn()
+        if free_fn == 0:
+            return
+        let args: Vec[i64] = Vec.new()
+        args.push(ptr)
+        let _ = wl_build_call(self.builder, wl_global_get_value_type(free_fn), free_fn, vec_data_i64(&args), 1)
+
     // #606: free a Vec's heap buffer via the runtime helper.
     fn mir_emit_vec_free_ptr(ptr: i64) -> Unit:
         if ptr == 0:
@@ -4600,6 +4645,11 @@ impl Codegen:
         // #606: arrays likewise drop each element in place.
         if tk == TypeKind.TY_ARRAY:
             self.mir_emit_drop_array_ptr(ptr, ty, resolved)
+            return
+        // #747 (#691 second half): dropping a str frees its buffer through the
+        // runtime's payload-start ownership check (literals/views are no-ops).
+        if tk == TypeKind.TY_STR:
+            self.mir_emit_str_free_ptr(ptr)
             return
         // #606 (A5 narrow): a std Vec[T] with a Drop element drops each element then
         // frees the buffer. POD-element Vecs return false here and fall through.
@@ -17610,7 +17660,7 @@ impl Codegen:
     fn gen_src_intrinsic(node: i32) -> i64:
         let span_start = self.pool.get_start(node)
         let source_path = if self.current_decl_source_file.len() > 0 and self.current_decl_source_file != "<unknown>":
-            self.current_decl_source_file
+            with_str_clone(self.current_decl_source_file)
         else:
             self.source_file
         var source_text = self.source_text
@@ -17635,16 +17685,16 @@ impl Codegen:
     mut fn gen_embed_file(node: i32) -> i64:
         let args_start = self.pool.get_data1(node)
         let arg_node = self.pool.get_extra(args_start)
-        let current_source_file = self.current_decl_source_file
+        let current_source_file = with_str_clone(self.current_decl_source_file)
         let path_value = self.try_eval_const_string(arg_node, current_source_file, 0)
         if not path_value.ok:
             with_eprint("error: embed_file() argument must be a compile-time string")
             self.had_error = 1
             return wl_get_undef(wl_i32_type(self.context))
         let base_path = if self.current_decl_source_file.len() > 0 and self.current_decl_source_file != "<unknown>":
-            self.current_decl_source_file
+            with_str_clone(self.current_decl_source_file)
         else:
-            self.source_file
+            with_str_clone(self.source_file)
         let read_result = self.read_tracked_embed_file(base_path, path_value.text)
         if not read_result.ok:
             with_eprint("error: " ++ read_result.error_msg)

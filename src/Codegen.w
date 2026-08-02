@@ -1098,7 +1098,9 @@ impl Codegen:
                 last_slash = i
 
         var dir = "."
-        var file = self.source_file
+        // #747: an owned copy — plain field assignment would move source_file
+        // out of self and poison the slice reads below.
+        var file = with_str_clone(self.source_file)
         if last_slash >= 0:
             dir = self.source_file.slice(0, last_slash as i64)
             file = self.source_file.slice((last_slash + 1) as i64, self.source_file.len())

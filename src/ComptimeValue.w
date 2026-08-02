@@ -2,6 +2,7 @@ use Sema
 use CapabilityRegistry
 
 extern fn with_str_eq(a: str, b: str) -> i32
+extern fn with_str_clone(s: str) -> str
 
 enum ComptimeValueKind: i32:
     CV_INVALID = 0
@@ -31,7 +32,7 @@ type ComptimeValue {
     extra_start: i32,
     extra_count: i32,
 }
-impl Copy for ComptimeValue
+// #747: str field — owned, non-Copy now; moves/clones spell intent.
 
 fn comptime_value_invalid() -> ComptimeValue:
     ComptimeValue {
@@ -220,20 +221,20 @@ fn comptime_value_string_chunk(prev: i32, data: str) -> ComptimeValue:
         extra_count: 0,
     }
 
-fn comptime_value_is_valid(value: ComptimeValue) -> i32:
+fn comptime_value_is_valid(value: &ComptimeValue) -> i32:
     if value.kind == ComptimeValueKind.CV_INVALID:
         return 0
     1
 
-fn comptime_value_is_intlike(value: ComptimeValue) -> i32:
+fn comptime_value_is_intlike(value: &ComptimeValue) -> i32:
     if value.kind == ComptimeValueKind.CV_INT or value.kind == ComptimeValueKind.CV_BOOL:
         return 1
     0
 
-fn comptime_value_intlike(value: ComptimeValue) -> i64:
+fn comptime_value_intlike(value: &ComptimeValue) -> i64:
     value.data0
 
-fn comptime_value_truthy(value: ComptimeValue) -> i32:
+fn comptime_value_truthy(value: &ComptimeValue) -> i32:
     if value.kind == ComptimeValueKind.CV_BOOL or value.kind == ComptimeValueKind.CV_INT:
         if value.data0 != 0:
             return 1
@@ -259,7 +260,7 @@ fn comptime_value_kind_name(kind: i32) -> str:
     if kind == ComptimeValueKind.CV_STRING_CHUNK: return "string chunk"
     "invalid"
 
-fn comptime_value_format(value: ComptimeValue, extras: &Vec[ComptimeValue], sema: &Sema) -> str:
+fn comptime_value_format(value: &ComptimeValue, extras: &Vec[ComptimeValue], sema: &Sema) -> str:
     if value.kind == ComptimeValueKind.CV_VOID:
         return "void"
     if value.kind == ComptimeValueKind.CV_INT:
@@ -336,7 +337,7 @@ fn comptime_value_format(value: ComptimeValue, extras: &Vec[ComptimeValue], sema
         return "<" ++ sema.type_name(value.type_id) ++ ">"
     "<invalid>"
 
-fn comptime_values_equal(lhs: ComptimeValue, rhs: ComptimeValue, extras: &Vec[ComptimeValue]) -> i32:
+fn comptime_values_equal(lhs: &ComptimeValue, rhs: &ComptimeValue, extras: &Vec[ComptimeValue]) -> i32:
     if lhs.kind != rhs.kind:
         return 0
     if lhs.kind == ComptimeValueKind.CV_INVALID:
@@ -422,3 +423,7 @@ fn comptime_values_equal(lhs: ComptimeValue, rhs: ComptimeValue, extras: &Vec[Co
             return with_str_eq(lhs.text, rhs.text)
         return 0
     0
+
+// #747: explicit owned copy — ComptimeValue's text is an owned str now.
+pub fn comptime_value_clone(v: &ComptimeValue) -> ComptimeValue:
+    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: with_str_clone(v.text), extra_start: v.extra_start, extra_count: v.extra_count }

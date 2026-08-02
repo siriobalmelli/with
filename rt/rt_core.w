@@ -2435,6 +2435,27 @@ pub fn with_vec_free_drop_origin(v: *mut u8, drop_origin: *const u8, drop_origin
     vec_set_len(v, 0)
     vec_set_cap(v, 0)
 
+// #747 (#691 second half): dropping a str frees its buffer. A str place is
+// {data_ptr, len}; only a pointer that is the START of a live allocation
+// payload is owned — literals (static), views (interior pointers), and
+// blanked moved-from strs all fail the check and are no-ops. The place is
+// blanked afterwards so double-drop of a copied header stays safe. Under
+// WITH_ALLOC_SYSTEM=1 the range tables don't track, so strs leak there —
+// the safe direction for a diagnostic mode.
+pub fn with_str_free(s: *mut u8) -> Unit:
+    let p = unsafe *(s as *const *mut u8)
+    if p as i64 != 0 and rt_payload_start_is_owned(p as *const u8) != 0:
+        rt_free(p)
+    unsafe *(s as *mut i64) = 0
+    unsafe *((s as i64 + 8) as *mut i64) = 0
+
+pub fn with_str_free_drop_origin(s: *mut u8, drop_origin: *const u8, drop_origin_len: i64) -> Unit:
+    let p = unsafe *(s as *const *mut u8)
+    if p as i64 != 0 and rt_payload_start_is_owned(p as *const u8) != 0:
+        rt_free_with_drop_origin(p, drop_origin, drop_origin_len)
+    unsafe *(s as *mut i64) = 0
+    unsafe *((s as i64 + 8) as *mut i64) = 0
+
 pub fn with_vec_push_i32(v: *mut u8, val: i32) -> Unit:
     with_vec_push(v, &val as *const u8)
 

@@ -1588,7 +1588,7 @@ impl Zcu:
             pre_sema.source_text_names = sema_clone_str_vec(&self.source_text_names)
             pre_sema.source_texts = sema_clone_str_vec(&self.source_texts)
             pre_sema.ci_omitted_symbols = self.c_import_omitted_symbols
-            pre_sema.tool_mode_entry_path = self.tool_mode_entry_path
+            pre_sema.tool_mode_entry_path = frontend_owned_text(self.tool_mode_entry_path)
             pre_sema.runtime_available = if self.project_config.runtime_available: 1 else: 0
             pre_sema.runtime_fiber_stack_size = self.project_config.runtime_fiber_stack_size
             pre_sema.runtime_fiber_pool_size = self.project_config.runtime_fiber_pool_size
@@ -1647,7 +1647,7 @@ impl Zcu:
         sema.source_text_names = sema_clone_str_vec(&self.source_text_names)
         sema.source_texts = sema_clone_str_vec(&self.source_texts)
         sema.ci_omitted_symbols = self.c_import_omitted_symbols
-        sema.tool_mode_entry_path = self.tool_mode_entry_path
+        sema.tool_mode_entry_path = frontend_owned_text(self.tool_mode_entry_path)
         sema.runtime_available = if self.project_config.runtime_available: 1 else: 0
         sema.runtime_fiber_stack_size = self.project_config.runtime_fiber_stack_size
         sema.runtime_fiber_pool_size = self.project_config.runtime_fiber_pool_size

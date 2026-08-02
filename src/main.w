@@ -35,6 +35,7 @@ use Analysis
 use ReceiverMigration
 
 extern fn with_arg_count() -> i32
+extern fn with_str_clone(s: str) -> str
 extern fn with_arg_at(idx: i32) -> str
 extern fn with_fs_write_file(path: str, data: str) -> i32
 extern fn with_fs_mkdir_p(path: str) -> i32
@@ -1835,7 +1836,9 @@ unsafe fn run_build_graph(root: str, cfg: &ProjectConfig, graph: &BuildGraph, ac
             pool_timeouts.push(if target.timeout_ms > 0: target.timeout_ms else: 1200000)
             continue
         if times_top_level:
-            timing_name = target.name
+            // #747: the timing label is retained across the iteration while
+            // target keeps its name — an owned copy, not a field move.
+            timing_name = with_str_clone(target.name)
             timing_t0 = with_clock_nanos()
         let standard_result = build_graph_dispatch_standard_target(root, target, completed_targets)
         if standard_result.handled:

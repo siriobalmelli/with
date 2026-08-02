@@ -383,9 +383,10 @@ impl Compilation:
     mut fn set_prelude_mode(mode: i32):
         var cfg = self.config
         cfg.prelude_mode = compilation_normalize_prelude_mode(mode)
+        let cfg_prelude_mode = cfg.prelude_mode
         self.config = cfg
         var zcu = self.zcu
-        zcu.set_prelude_mode(cfg.prelude_mode)
+        zcu.set_prelude_mode(cfg_prelude_mode)
         self.zcu = zcu
 
     mut fn set_overflow_mode(mode: i32):

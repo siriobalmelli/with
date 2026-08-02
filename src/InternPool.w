@@ -167,7 +167,7 @@ impl InternPool:
         let st = self.state
         if id <= 0 or id >= st.type_keys.len() as i32:
             return type_key_invalid()
-        st.type_keys.get(id as i64)
+        type_key_clone(st.type_keys.get(id as i64))
 
     fn intern_value(key: ValueKey) -> ValueId:
         let st = self.state
@@ -185,7 +185,7 @@ impl InternPool:
         let st = self.state
         if id <= 0 or id >= st.value_keys.len() as i32:
             return value_key_invalid()
-        st.value_keys.get(id as i64)
+        value_key_clone(st.value_keys.get(id as i64))
 
     fn symbol_count() -> i32:
         (self.state.symbol_texts.len() as i32) - 1

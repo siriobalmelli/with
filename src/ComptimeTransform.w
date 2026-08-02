@@ -338,7 +338,7 @@ impl Sema:
         let flags = (if is_mut != 0: 1 else: 0) + (type_extra + 1) * 2
         pool.add_node(NodeKind.NK_LET_BINDING, pool.get_start(node), pool.get_end(node), name_sym, value, flags) as i32
 
-    fn ct_build_vec_value_tree(pool: AstPool, intern: InternPool, value: ComptimeValue, node: i32, extras: &Vec[ComptimeValue]) -> i32:
+    fn ct_build_vec_value_tree(pool: AstPool, intern: InternPool, value: &ComptimeValue, node: i32, extras: &Vec[ComptimeValue]) -> i32:
         let tmp_sym = ct_fresh_sym(intern, "__ct_vec_", node)
         let ctor = self.ct_build_collection_ctor(pool, intern, value.type_id, node)
         if ctor == 0:
@@ -365,7 +365,7 @@ impl Sema:
         let tail = pool.add_node(NodeKind.NK_IDENT, pool.get_start(node), pool.get_end(node), tmp_sym, 0, 0)
         pool.add_node(NodeKind.NK_BLOCK, pool.get_start(node), pool.get_end(node), stmt_extra, stmts.len() as i32, tail as i32) as i32
 
-    fn ct_build_map_value_tree(pool: AstPool, intern: InternPool, value: ComptimeValue, node: i32, extras: &Vec[ComptimeValue]) -> i32:
+    fn ct_build_map_value_tree(pool: AstPool, intern: InternPool, value: &ComptimeValue, node: i32, extras: &Vec[ComptimeValue]) -> i32:
         let tmp_sym = ct_fresh_sym(intern, "__ct_map_", node)
         let ctor = self.ct_build_collection_ctor(pool, intern, value.type_id, node)
         if ctor == 0:
@@ -394,7 +394,7 @@ impl Sema:
         let tail = pool.add_node(NodeKind.NK_IDENT, pool.get_start(node), pool.get_end(node), tmp_sym, 0, 0)
         pool.add_node(NodeKind.NK_BLOCK, pool.get_start(node), pool.get_end(node), stmt_extra, stmts.len() as i32, tail as i32) as i32
 
-    fn ct_build_value_tree(pool: AstPool, intern: InternPool, value: ComptimeValue, node: i32, extras: &Vec[ComptimeValue]) -> i32:
+    fn ct_build_value_tree(pool: AstPool, intern: InternPool, value: &ComptimeValue, node: i32, extras: &Vec[ComptimeValue]) -> i32:
         if value.kind == ComptimeValueKind.CV_INT:
             return pool.add_node(
                 NodeKind.NK_INT_LIT,
@@ -527,7 +527,7 @@ impl Sema:
             return self.ct_transform_expr(source_ast, pool, intern, else_body)
         pool.ct_empty_block(wrapper)
 
-fn ct_iter_count(value: ComptimeValue) -> i32:
+fn ct_iter_count(value: &ComptimeValue) -> i32:
     if value.kind == ComptimeValueKind.CV_ARRAY or value.kind == ComptimeValueKind.CV_TUPLE or value.kind == ComptimeValueKind.CV_VEC:
         return value.extra_count
     if value.kind == ComptimeValueKind.CV_RANGE:
@@ -538,7 +538,7 @@ fn ct_iter_count(value: ComptimeValue) -> i32:
     -1
 
 impl Sema:
-    fn ct_iter_item_node(pool: AstPool, intern: InternPool, iterable: ComptimeValue, index: i32, node: i32, extras: &Vec[ComptimeValue]) -> i32:
+    fn ct_iter_item_node(pool: AstPool, intern: InternPool, iterable: &ComptimeValue, index: i32, node: i32, extras: &Vec[ComptimeValue]) -> i32:
         if iterable.kind == ComptimeValueKind.CV_RANGE:
             let item = comptime_value_int(0, iterable.data0 + index as i64)
             return self.ct_build_value_tree(pool, intern, item, node, extras)

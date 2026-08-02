@@ -30,27 +30,27 @@ impl BuildGraphMaterializer:
                 return i
         -1
 
-    fn field_value(value: ComptimeValue, field_name: str) -> ComptimeValue:
+    fn field_value(value: &ComptimeValue, field_name: str) -> ComptimeValue:
         if value.kind != ComptimeValueKind.CV_STRUCT:
             return comptime_value_invalid()
         let index = self.field_index(value.type_id, field_name)
         if index < 0 or index >= value.extra_count:
             return comptime_value_invalid()
-        self.extras.get((value.extra_start + index) as i64)
+        comptime_value_clone(self.extras.get((value.extra_start + index) as i64))
 
-    fn expect_str_field(value: ComptimeValue, field_name: str) -> ComptimeValue:
+    fn expect_str_field(value: &ComptimeValue, field_name: str) -> ComptimeValue:
         let field = self.field_value(value, field_name)
         if field.kind != ComptimeValueKind.CV_STR:
             return comptime_value_invalid()
         field
 
-    fn expect_i32_field(value: ComptimeValue, field_name: str) -> ComptimeValue:
+    fn expect_i32_field(value: &ComptimeValue, field_name: str) -> ComptimeValue:
         let field = self.field_value(value, field_name)
         if field.kind != ComptimeValueKind.CV_INT:
             return comptime_value_invalid()
         field
 
-    fn string_vec_field(value: ComptimeValue, field_name: str) -> Vec[str]:
+    fn string_vec_field(value: &ComptimeValue, field_name: str) -> Vec[str]:
         let out: Vec[str] = Vec.new()
         let field = self.field_value(value, field_name)
         if field.kind != ComptimeValueKind.CV_VEC and field.kind != ComptimeValueKind.CV_ARRAY:
@@ -93,7 +93,7 @@ impl BuildGraphMaterializer:
                 return true
         false
 
-    fn materialize_target(value: ComptimeValue, graph: BuildGraph) -> BuildGraph:
+    fn materialize_target(value: &ComptimeValue, graph: BuildGraph) -> BuildGraph:
         var out = graph
         if value.kind != ComptimeValueKind.CV_STRUCT:
             out.error_msg = "build target is not a struct value"
@@ -211,7 +211,7 @@ impl BuildGraphMaterializer:
             paths.push(self.sema.module_paths.get(visited.get(i as i64) as i64))
         paths
 
-    fn materialize_generated_source(value: ComptimeValue, graph: BuildGraph) -> BuildGraph:
+    fn materialize_generated_source(value: &ComptimeValue, graph: BuildGraph) -> BuildGraph:
         var out = graph
         if value.kind != ComptimeValueKind.CV_STRUCT:
             out.error_msg = "generated source is not a struct value"
@@ -230,7 +230,7 @@ pub type BuildGraphMaterializeResult {
 }
 
 impl BuildGraphMaterializer:
-    fn materialize_build(value: ComptimeValue) -> BuildGraph:
+    fn materialize_build(value: &ComptimeValue) -> BuildGraph:
         if value.kind != ComptimeValueKind.CV_STRUCT:
             return self.error("build(ctx) did not return a Build value")
         var graph = empty_build_graph()
@@ -268,7 +268,7 @@ impl BuildGraphMaterializer:
 // Returns the materialized graph alongside the Sema handed in: the
 // materializer stores the Sema (refs cannot be struct fields), so the
 // caller gets it back instead of reusing a moved value (§3.8).
-pub fn materialize_build_graph_from_comptime(sema: Sema, value: ComptimeValue, extras: Vec[ComptimeValue]) -> BuildGraphMaterializeResult:
+pub fn materialize_build_graph_from_comptime(sema: Sema, value: &ComptimeValue, extras: Vec[ComptimeValue]) -> BuildGraphMaterializeResult:
     let mat = build_graph_materializer(move sema, move extras)
     let graph = mat.materialize_build(value)
     BuildGraphMaterializeResult { graph, sema: mat.sema }

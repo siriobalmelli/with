@@ -3,6 +3,7 @@
 // Canonical keys are encoded to deterministic strings for HashMap lookups.
 
 use compiler.foundation.Ids
+extern fn with_str_clone(s: str) -> str
 
 // (int_to_string removed — using f-strings)
 
@@ -28,7 +29,7 @@ pub type TypeKey {
     arg1: i32,
     flags: i32,
 }
-impl Copy for TypeKey
+// #747: str field — owned, non-Copy now; moves/clones spell intent.
 
 pub fn type_key_invalid -> TypeKey:
     TypeKey {
@@ -165,7 +166,7 @@ pub fn type_key_generic_apply2(base_name: str, a0: TypeId, a1: TypeId, arg_count
         flags: arg_count,
     }
 
-pub fn type_key_to_string(key: TypeKey) -> str:
+pub fn type_key_to_string(key: &TypeKey) -> str:
     if key.tag == TYPE_KEY_NAMED():
         return f"named:{key.name}"
     if key.tag == TYPE_KEY_PTR():
@@ -193,3 +194,7 @@ pub fn type_key_to_string(key: TypeKey) -> str:
     if key.tag == TYPE_KEY_GENERIC_APPLY2():
         return f"gapply2:{key.name}:{key.arg0}:{key.arg1}:n={key.flags}"
     "invalid"
+
+// #747: explicit owned copy — TypeKey's name is an owned str now.
+pub fn type_key_clone(key: &TypeKey) -> TypeKey:
+    TypeKey { tag: key.tag, name: with_str_clone(key.name), arg0: key.arg0, arg1: key.arg1, flags: key.flags }

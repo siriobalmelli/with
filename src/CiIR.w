@@ -843,7 +843,7 @@ type CiProjectSymbol {
     owner_rank: i32,
     owner_definition_kind: i32,
 }
-impl Copy for CiProjectSymbol
+// #747: str field — owned, non-Copy now; moves/clones spell intent.
 
 fn CiProjectSymbol.new(name: str, kind: i32) -> CiProjectSymbol:
     CiProjectSymbol {

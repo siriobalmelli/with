@@ -6,6 +6,7 @@
 use compiler.Runtime
 use compiler.ConanClient
 use std.crypto.sha256
+extern fn with_str_clone(s: str) -> str
 
 type LockEntry {
     name: str,
@@ -16,7 +17,7 @@ type LockEntry {
     package_rev: str,
     sha256: str,
 }
-impl Copy for LockEntry
+// #747: str field — owned, non-Copy now; moves/clones spell intent.
 
 type LockFile {
     entries: Vec[LockEntry],
@@ -257,13 +258,13 @@ pub fn lock_upsert(lock: &LockFile, entry: LockEntry) -> LockFile:
         let cmp = lock_str_compare(entry.name, existing.name)
         if cmp == 0:
             if not inserted:
-                out_entries.push(entry)
+                out_entries.push(lock_entry_clone(entry))
                 inserted = true
         else:
             if not inserted and cmp < 0:
-                out_entries.push(entry)
+                out_entries.push(lock_entry_clone(entry))
                 inserted = true
-            out_entries.push(existing)
+            out_entries.push(lock_entry_clone(existing))
     if not inserted:
         out_entries.push(entry)
     LockFile { entries: out_entries }
@@ -273,7 +274,7 @@ pub fn lock_remove(lock: &LockFile, name: str) -> LockFile:
     for i in 0..lock.entries.len() as i32:
         let entry = lock.entries.get(i as i64)
         if entry.name != name:
-            out_entries.push(entry)
+            out_entries.push(lock_entry_clone(entry))
     LockFile { entries: out_entries }
 
 pub fn lock_write(project_root: str, lock: &LockFile) -> i32:
@@ -391,7 +392,7 @@ fn lock_c_name(entry_name: str) -> str:
         return entry_name.slice(2, entry_name.len())
     ""
 
-fn lock_cached_archive_matches(entry: LockEntry, project_root: str, dep_dir: str) -> bool:
+fn lock_cached_archive_matches(entry: &LockEntry, project_root: str, dep_dir: str) -> bool:
     let meta_path = dep_dir ++ "/metadata.json"
     let tgz_path = dep_dir ++ "/conan_package.tgz"
     if runtime_file_exists(meta_path) == 0 or runtime_file_exists(tgz_path) == 0:
@@ -399,7 +400,7 @@ fn lock_cached_archive_matches(entry: LockEntry, project_root: str, dep_dir: str
     let actual = lock_sha256_file(tgz_path)
     actual.len() > 0 and actual == entry.sha256
 
-fn lock_restore_entry(project_root: str, entry: LockEntry) -> i32:
+fn lock_restore_entry(project_root: str, entry: &LockEntry) -> i32:
     if entry.source == "registry":
         runtime_eprint("error: the With package registry is not available yet; cannot restore With package '" ++ entry.name ++ "'")
         runtime_eprint("  With packages (spec §18.8) will come from the With package registry, which is not live yet.")
@@ -451,3 +452,7 @@ pub fn lock_restore(project_root: str) -> i32:
         if rc != 0:
             return rc
     0
+
+// #747: explicit owned copy — LockEntry's fields are owned strs now.
+fn lock_entry_clone(e: &LockEntry) -> LockEntry:
+    LockEntry { name: with_str_clone(e.name), source: with_str_clone(e.source), version: with_str_clone(e.version), recipe_rev: with_str_clone(e.recipe_rev), package_id: with_str_clone(e.package_id), package_rev: with_str_clone(e.package_rev), sha256: with_str_clone(e.sha256) }

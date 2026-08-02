@@ -27,7 +27,7 @@ pub type Match {
     start: i32,
     end: i32,
 }
-impl Copy for Match
+// #747: str field — owned, non-Copy now; moves/clones spell intent.
 
 pub type RegexError {
     code: i32,
