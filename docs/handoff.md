@@ -1,6 +1,26 @@
 # Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
 
-## #747 session-2 state (2026-08-02, continues below)
+## #747 session-3 state: groundwork COMMITTED, flip is 3 local hunks
+
+The de-Copy groundwork (139 seed errors to 0) is COMMITTED and both-
+worlds-valid; the drop glue is in-tree but DORMANT. The flip itself is
+now exactly 3 hunks to re-apply in src/Sema.w: (1) remove TY_STR from
+the is_copy prim line, (2) add explicit `if tk == TY_STR: return 0`
+below it (the tail DEFAULTS TO COPY), (3) add `if tk == TY_STR: return
+1` in type_needs_drop after `let tk`. With those applied and :dev
+rebuilt, stage1 check src = **5,694 errors** (4,378 use-of-moved,
+333 field-through-borrow, 110 Vec.push, dominated by CImport 1652 /
+main.w 507 / ComptimeEval 358 / ConanClient 262 / CCodegen 245).
+NO read-only-param fix-it exists yet — NEXT: build the param-borrow
+migrator (analyze parameter facts/effects -> rewrite read-only plain
+`str`/str-bearing-struct params to &T, D5 keeps call sites identical),
+run it over src, then hand-fix the residue. Then: battery on the
+groundwork commit FIRST (pending — de-Copies are ownership-adjacent:
+ALONE + :move-audit/:drop-audit), then the flip batch with its own
+bracketed audits, lib/std de-Copy tail (JsonView/Package/ProjectInfo/
+Diagnostics), corpora, un-pin, reseed, roundtrip.
+
+## #747 session-2 state (2026-08-02, superseded above)
 
 DONE since the census: (a) is_copy needed an EXPLICIT `TY_STR → 0`
 branch — removing it from the prim line fell through to the fn's
