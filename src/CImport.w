@@ -6808,19 +6808,16 @@ fn ci_init_child_designated_value(session: i64, child: i32) -> i32:
 fn ci_record_decl_idx_for_name(session: i64, ty_name: str) -> i32:
     if ty_name.len() == 0:
         return -1
-    let decl_count = with_cimport_decl_count(session)
-    var i = 0
-    while i < decl_count:
-        let kind = with_cimport_decl_kind(session, i)
-        let decl_name = with_cimport_decl_name(session, i)
-        if (kind == CK_STRUCT or kind == CK_UNION) and ci_decl_name_matches_type(decl_name, ty_name):
-            if with_cimport_struct_field_count(session, i) > 0:
-                return i
-        if kind == CK_TYPEDEF and ci_decl_name_matches_type(decl_name, ty_name):
-            let underlying = with_cimport_typedef_underlying_translated(session, i)
-            if underlying.len() > 0 and underlying != ty_name:
-                return ci_record_decl_idx_for_name(session, underlying)
-        i = i + 1
+    // #744/#749: indexed — replay the old scan's branch order against the
+    // first matching struct-with-fields and first matching typedef only.
+    let sidx = ci_record_index_struct(session, ty_name)
+    let tidx = ci_record_index_typedef(session, ty_name)
+    if tidx >= 0 and (sidx < 0 or tidx < sidx):
+        let underlying = with_cimport_typedef_underlying_translated(session, tidx)
+        if underlying.len() > 0 and underlying != ty_name:
+            return ci_record_decl_idx_for_name(session, underlying)
+    if sidx >= 0:
+        return sidx
     -1
 
 // C's `{0}` / `{}` whole-record zero idiom: every child is an undesignated
@@ -8243,6 +8240,65 @@ fn ci_fn_decl_index_reset:
     g_ci_fn_decl_by_raw = HashMap.new()
     g_ci_fn_decl_index_session = 0
     g_ci_fn_decl_index_generation = 0
+    ci_record_index_reset()
+
+// #744/#749: record/typedef name lookups were the remaining full-scan class —
+// each probe paid O(decls) libclang spelling queries, every one a session
+// strdup, and the #749 member-access hop asks per lowered member expression
+// (the emitted compiler C crossed 2^30 session strings). One pass indexes the
+// FIRST struct/union-with-fields and FIRST typedef per name, under raw and
+// escaped keys to reproduce ci_decl_name_matches_type; queries replay the
+// scan-order branch logic against those two decls only.
+var g_ci_record_struct_by_name: HashMap[str, i32] = HashMap.new()
+var g_ci_record_typedef_by_name: HashMap[str, i32] = HashMap.new()
+var g_ci_record_index_session: i64 = 0
+var g_ci_record_index_generation: i64 = 0
+
+fn ci_record_index_ensure(session: i64):
+    if g_ci_record_index_session == session and g_ci_record_index_generation == with_cimport_parse_generation():
+        return
+    var by_struct: HashMap[str, i32] = HashMap.new()
+    var by_typedef: HashMap[str, i32] = HashMap.new()
+    let count = with_cimport_decl_count(session)
+    var i = 0
+    while i < count:
+        let kind = with_cimport_decl_kind(session, i)
+        if kind == CK_STRUCT or kind == CK_UNION:
+            if with_cimport_struct_field_count(session, i) > 0:
+                let sname = with_cimport_decl_name(session, i)
+                if sname.len() > 0:
+                    if not by_struct.contains(sname):
+                        by_struct.insert(ci_ir_owned_text(sname), i)
+                    let sesc = ci_escape_reserved(sname)
+                    if sesc != sname and not by_struct.contains(sesc):
+                        by_struct.insert(ci_ir_owned_text(sesc), i)
+        else if kind == CK_TYPEDEF:
+            let tname = with_cimport_decl_name(session, i)
+            if tname.len() > 0:
+                if not by_typedef.contains(tname):
+                    by_typedef.insert(ci_ir_owned_text(tname), i)
+                let tesc = ci_escape_reserved(tname)
+                if tesc != tname and not by_typedef.contains(tesc):
+                    by_typedef.insert(ci_ir_owned_text(tesc), i)
+        i = i + 1
+    g_ci_record_struct_by_name = by_struct
+    g_ci_record_typedef_by_name = by_typedef
+    g_ci_record_index_session = session
+    g_ci_record_index_generation = with_cimport_parse_generation()
+
+fn ci_record_index_reset:
+    g_ci_record_struct_by_name = HashMap.new()
+    g_ci_record_typedef_by_name = HashMap.new()
+    g_ci_record_index_session = 0
+    g_ci_record_index_generation = 0
+
+fn ci_record_index_struct(session: i64, ty_name: str) -> i32:
+    ci_record_index_ensure(session)
+    if g_ci_record_struct_by_name.contains(ty_name): g_ci_record_struct_by_name.get(ty_name).unwrap() else: -1
+
+fn ci_record_index_typedef(session: i64, ty_name: str) -> i32:
+    ci_record_index_ensure(session)
+    if g_ci_record_typedef_by_name.contains(ty_name): g_ci_record_typedef_by_name.get(ty_name).unwrap() else: -1
 
 fn ci_lookup_c_function_decl_idx(session: i64, name: str) -> i32:
     if session == 0 or name.len() == 0:
@@ -14943,100 +14999,78 @@ fn ci_struct_field_emitted_name(session: i64, idx: i32, fi: i32) -> str:
     let actual_name = if fname.len() == 0: f"unnamed_{fi}" else: fname
     ci_escape_reserved(actual_name)
 
+// #744/#749: the record-lookup family below replays the old scan's branch
+// order against the indexed first struct-with-fields and first typedef —
+// the full scans paid O(decls) session strdups per probe and the #749
+// member-access hop asks per lowered member expression.
 fn ci_type_field_count(session: i64, ty_name: str) -> i32:
     if ty_name.len() == 0:
         return 0
-    let decl_count = with_cimport_decl_count(session)
-    var i = 0
-    while i < decl_count:
-        let kind = with_cimport_decl_kind(session, i)
-        let decl_name = with_cimport_decl_name(session, i)
-        if (kind == CK_STRUCT or kind == CK_UNION) and ci_decl_name_matches_type(decl_name, ty_name):
-            let count = with_cimport_struct_field_count(session, i)
-            if count > 0:
-                return count
-        if kind == CK_TYPEDEF and ci_decl_name_matches_type(decl_name, ty_name):
-            let anon_count = with_cimport_typedef_anon_record_field_count(session, i)
-            if anon_count > 0:
-                return anon_count
-            let underlying = with_cimport_typedef_underlying_translated(session, i)
-            if underlying.len() > 0 and underlying != ty_name:
-                return ci_type_field_count(session, underlying)
-            // typedef struct X X; — the typedef usually precedes the struct
-            // decl, so keep scanning: the struct with the same name later in
-            // the list carries the fields (#746).
-            i = i + 1
-            continue
-        i = i + 1
+    let sidx = ci_record_index_struct(session, ty_name)
+    let tidx = ci_record_index_typedef(session, ty_name)
+    if tidx >= 0 and (sidx < 0 or tidx < sidx):
+        let anon_count = with_cimport_typedef_anon_record_field_count(session, tidx)
+        if anon_count > 0:
+            return anon_count
+        let underlying = with_cimport_typedef_underlying_translated(session, tidx)
+        if underlying.len() > 0 and underlying != ty_name:
+            return ci_type_field_count(session, underlying)
+        // typedef struct X X; — the struct with the same name carries the
+        // fields (#746); fall through to it.
+    if sidx >= 0:
+        return with_cimport_struct_field_count(session, sidx)
     0
 
 fn ci_type_field_name(session: i64, ty_name: str, field_idx: i32) -> str:
     if ty_name.len() == 0 or field_idx < 0:
         return ""
-    let decl_count = with_cimport_decl_count(session)
-    var i = 0
-    while i < decl_count:
-        let kind = with_cimport_decl_kind(session, i)
-        let decl_name = with_cimport_decl_name(session, i)
-        if (kind == CK_STRUCT or kind == CK_UNION) and ci_decl_name_matches_type(decl_name, ty_name):
-            let count = with_cimport_struct_field_count(session, i)
-            if count == 0:
-                i = i + 1
-                continue
-            if field_idx >= count:
+    let sidx = ci_record_index_struct(session, ty_name)
+    let tidx = ci_record_index_typedef(session, ty_name)
+    if tidx >= 0 and (sidx < 0 or tidx < sidx):
+        let anon_count = with_cimport_typedef_anon_record_field_count(session, tidx)
+        if anon_count > 0:
+            if field_idx >= anon_count:
                 return ""
-            return ci_struct_field_emitted_name(session, i, field_idx)
-        if kind == CK_TYPEDEF and ci_decl_name_matches_type(decl_name, ty_name):
-            let anon_count = with_cimport_typedef_anon_record_field_count(session, i)
-            if anon_count > 0:
-                if field_idx >= anon_count:
-                    return ""
-                let fname = with_cimport_typedef_anon_field_name(session, i, field_idx)
-                let actual_fname = if fname.len() == 0: f"unnamed_{field_idx}" else: fname
-                return ci_escape_reserved(actual_fname)
-            let underlying = with_cimport_typedef_underlying_translated(session, i)
-            if underlying.len() > 0 and underlying != ty_name:
-                return ci_type_field_name(session, underlying, field_idx)
-            // typedef struct X X; — keep scanning for the struct decl (#746).
-            i = i + 1
-            continue
-        i = i + 1
+            let fname = with_cimport_typedef_anon_field_name(session, tidx, field_idx)
+            let actual_fname = if fname.len() == 0: f"unnamed_{field_idx}" else: fname
+            return ci_escape_reserved(actual_fname)
+        let underlying = with_cimport_typedef_underlying_translated(session, tidx)
+        if underlying.len() > 0 and underlying != ty_name:
+            return ci_type_field_name(session, underlying, field_idx)
+        // typedef struct X X; — the struct decl carries the fields (#746).
+    if sidx >= 0:
+        let count = with_cimport_struct_field_count(session, sidx)
+        if field_idx >= count:
+            return ""
+        return ci_struct_field_emitted_name(session, sidx, field_idx)
     ""
 
 fn ci_type_field_type(session: i64, ty_name: str, field_idx: i32) -> str:
     if ty_name.len() == 0 or field_idx < 0:
         return ""
-    let decl_count = with_cimport_decl_count(session)
-    var i = 0
-    while i < decl_count:
-        let kind = with_cimport_decl_kind(session, i)
-        let decl_name = with_cimport_decl_name(session, i)
-        if (kind == CK_STRUCT or kind == CK_UNION) and ci_decl_name_matches_type(decl_name, ty_name):
-            let count = with_cimport_struct_field_count(session, i)
-            if count == 0:
-                i = i + 1
-                continue
-            if field_idx >= count:
+    let sidx = ci_record_index_struct(session, ty_name)
+    let tidx = ci_record_index_typedef(session, ty_name)
+    if tidx >= 0 and (sidx < 0 or tidx < sidx):
+        let anon_count = with_cimport_typedef_anon_record_field_count(session, tidx)
+        if anon_count > 0:
+            if field_idx >= anon_count:
                 return ""
-            if with_cimport_struct_field_is_anonymous_record(session, i, field_idx) != 0:
-                let fname = with_cimport_struct_field_name(session, i, field_idx)
-                if fname.len() > 0:
-                    return ci_escape_reserved(decl_name ++ "_" ++ fname)
-                return ci_escape_reserved(decl_name ++ "_anon_" ++ i64_to_string(field_idx as i64))
-            return with_cimport_struct_field_type_translated(session, i, field_idx)
-        if kind == CK_TYPEDEF and ci_decl_name_matches_type(decl_name, ty_name):
-            let anon_count = with_cimport_typedef_anon_record_field_count(session, i)
-            if anon_count > 0:
-                if field_idx >= anon_count:
-                    return ""
-                return with_cimport_typedef_anon_field_type(session, i, field_idx)
-            let underlying = with_cimport_typedef_underlying_translated(session, i)
-            if underlying.len() > 0 and underlying != ty_name:
-                return ci_type_field_type(session, underlying, field_idx)
-            // typedef struct X X; — keep scanning for the struct decl (#746).
-            i = i + 1
-            continue
-        i = i + 1
+            return with_cimport_typedef_anon_field_type(session, tidx, field_idx)
+        let underlying = with_cimport_typedef_underlying_translated(session, tidx)
+        if underlying.len() > 0 and underlying != ty_name:
+            return ci_type_field_type(session, underlying, field_idx)
+        // typedef struct X X; — the struct decl carries the fields (#746).
+    if sidx >= 0:
+        let count = with_cimport_struct_field_count(session, sidx)
+        if field_idx >= count:
+            return ""
+        if with_cimport_struct_field_is_anonymous_record(session, sidx, field_idx) != 0:
+            let decl_name = with_cimport_decl_name(session, sidx)
+            let fname = with_cimport_struct_field_name(session, sidx, field_idx)
+            if fname.len() > 0:
+                return ci_escape_reserved(decl_name ++ "_" ++ fname)
+            return ci_escape_reserved(decl_name ++ "_anon_" ++ i64_to_string(field_idx as i64))
+        return with_cimport_struct_field_type_translated(session, sidx, field_idx)
     ""
 
 fn ci_coerce_init_value_for_type(value: str, ty: str) -> str:

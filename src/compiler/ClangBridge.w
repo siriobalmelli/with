@@ -362,8 +362,10 @@ type CImportSession:
     err_msg: *mut u8
     tmp_path: *mut u8
     strings: *mut *mut u8
-    str_count: i32
-    str_cap: i32
+    // i64: the session registry once crossed 2^30 entries on the emitted
+    // compiler C (#749 field-name queries), and i32 `cap * 2` overflowed.
+    str_count: i64
+    str_cap: i64
     header_file: *mut u8
     // Phase 1: AST traversal
     cursors: *mut CXCursor
@@ -501,14 +503,14 @@ unsafe fn session_strdup(s: *mut CImportSession, p: *const u8) -> *mut u8:
     if dup as i64 == 0: return 0 as *mut u8
     if (*s).str_count >= (*s).str_cap:
         (*s).str_cap = if (*s).str_cap > 0: (*s).str_cap * 2 else: 64
-        let new_size = (*s).str_cap as i64 * 8
+        let new_size = (*s).str_cap * 8
         let new_buf = with_alloc(new_size)
         if (*s).strings as i64 != 0 and (*s).str_count > 0:
-            with_memcpy(new_buf, (*s).strings as *const u8, (*s).str_count as i64 * 8)
+            with_memcpy(new_buf, (*s).strings as *const u8, (*s).str_count * 8)
         if (*s).strings as i64 != 0:
             with_free((*s).strings as *mut u8)
         (*s).strings = new_buf as *mut *mut u8
-    *(((*s).strings as i64 + (*s).str_count as i64 * 8) as *mut *mut u8) = dup
+    *(((*s).strings as i64 + (*s).str_count * 8) as *mut *mut u8) = dup
     (*s).str_count = (*s).str_count + 1
     dup
 
@@ -1282,9 +1284,9 @@ pub fn with_cimport_dispose(session: i64) -> Unit:
                 i = i + 1
             with_free((*s).caches as *mut u8)
         // Free tracked strings
-        var si: i32 = 0
+        var si: i64 = 0
         while si < (*s).str_count:
-            let entry = *(((*s).strings as i64 + si as i64 * 8) as *const *mut u8)
+            let entry = *(((*s).strings as i64 + si * 8) as *const *mut u8)
             with_free(entry)
             si = si + 1
         if (*s).strings as i64 != 0:
