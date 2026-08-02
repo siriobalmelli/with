@@ -258,13 +258,17 @@ impl Regex:
         while cursor <= text.len() as i32:
             match self.find_at(text, cursor):
                 Some(found) => {
+                    // #747: Match is non-Copy — read the span before the push
+                    // transfers ownership into the result vector.
+                    let f_start = found.start
+                    let f_end = found.end
                     out.push(found)
-                    if found.end == found.start:
-                        if found.end >= text.len() as i32:
+                    if f_end == f_start:
+                        if f_end >= text.len() as i32:
                             break
-                        cursor = found.end + 1
+                        cursor = f_end + 1
                     else:
-                        cursor = found.end
+                        cursor = f_end
                 }
                 None => break
         out
