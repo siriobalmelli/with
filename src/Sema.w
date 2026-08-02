@@ -5156,6 +5156,9 @@ impl Sema:
         if self.type_has_drop_impl(resolved as i32) != 0:
             return 1
         let tk = self.get_type_kind(resolved)
+        // #747 / D28 ruling 1: an owned str frees its buffer at scope end.
+        if tk == TypeKind.TY_STR:
+            return 1
         if tk == TypeKind.TY_GENERIC_INST:
             let base_sym = self.get_generic_inst_base(resolved as i32)
             // #691/D18 and D22 Stage 6: compiler-modeled collection handles own
@@ -6881,8 +6884,12 @@ impl Sema:
             return 1
         let resolved = self.resolve_alias(tid)
         let tk = self.get_type_kind(resolved)
-        if tk == TypeKind.TY_ERR or tk == TypeKind.TY_INT or tk == TypeKind.TY_FLOAT or tk == TypeKind.TY_BOOL or tk == TypeKind.TY_VOID or tk == TypeKind.TY_NEVER or tk == TypeKind.TY_STR:
+        if tk == TypeKind.TY_ERR or tk == TypeKind.TY_INT or tk == TypeKind.TY_FLOAT or tk == TypeKind.TY_BOOL or tk == TypeKind.TY_VOID or tk == TypeKind.TY_NEVER:
             return 1
+        // #747 / D28 ruling 1: str owns its buffer — moves, not copies.
+        // The explicit arm matters: this function's tail DEFAULTS to Copy.
+        if tk == TypeKind.TY_STR:
+            return 0
         if tk == TypeKind.TY_PTR or tk == TypeKind.TY_REF or tk == TypeKind.TY_FN or tk == TypeKind.TY_EXTERN_FN or tk == TypeKind.TY_GENERIC_FN:
             return 1
         if tk == TypeKind.TY_STRUCT:
