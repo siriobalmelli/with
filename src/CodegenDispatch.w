@@ -4646,11 +4646,13 @@ impl Codegen:
         if tk == TypeKind.TY_ARRAY:
             self.mir_emit_drop_array_ptr(ptr, ty, resolved)
             return
-        // #747 (#691 second half): dropping a str frees its buffer through the
-        // runtime's payload-start ownership check (literals/views are no-ops).
-        if tk == TypeKind.TY_STR:
-            self.mir_emit_str_free_ptr(ptr)
-            return
+        // #747 (#691 second half): the str drop dispatch is NOT wired yet.
+        // Sema still classifies str as Copy/no-drop, but this dispatcher is
+        // reached KIND-FIRST by struct-field glue — freeing str fields while
+        // every str is a shared view was the battery-7 bridge-object UAF
+        // (source text munmapped mid-compile, defs vec remapped the hole).
+        // Wire `if tk == TY_STR: self.mir_emit_str_free_ptr(ptr)` here ONLY
+        // together with the is_copy/type_needs_drop flip.
         // #606 (A5 narrow): a std Vec[T] with a Drop element drops each element then
         // frees the buffer. POD-element Vecs return false here and fall through.
         if tk == TypeKind.TY_GENERIC_INST and self.mir_emit_drop_vec_ptr(ptr, drop_sema_ty):
