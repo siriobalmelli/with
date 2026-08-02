@@ -135,7 +135,7 @@ pub fn InternPool.resolve_type(self: &Self, id: TypeId) -> TypeKey:
     let raw = type_id_raw(id)
     if raw <= 0 or raw >= self.state.type_keys.len() as i32:
         return type_key_invalid()
-    self.state.type_keys.get(raw as i64)
+    type_key_clone(self.state.type_keys.get(raw as i64))
 
 pub fn InternPool.intern_value(self: &Self, key: ValueKey) -> ValueId:
     let st = self.state
@@ -155,7 +155,7 @@ pub fn InternPool.resolve_value(self: &Self, id: ValueId) -> ValueKey:
     let raw = value_id_raw(id)
     if raw <= 0 or raw >= self.state.value_keys.len() as i32:
         return value_key_invalid()
-    self.state.value_keys.get(raw as i64)
+    value_key_clone(self.state.value_keys.get(raw as i64))
 
 pub fn InternPool.symbol_count(self: &Self) -> i32:
     (self.state.symbol_texts.len() as i32) - 1
