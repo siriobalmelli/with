@@ -3217,6 +3217,18 @@ impl Sema:
             let text = self.source_text_for_file_id(file_id)
             if text.len() > 0:
                 return text
+        // Body nodes never match a top-level decl, so the lookup above fails
+        // for every local binding. Falling straight through to the primary
+        // source silently slices ANOTHER file at this node's span — whenever
+        // the bytes there happen to read `let <ident>`, set_pretty_symbol
+        // poisons that symbol's name compiler-wide (a std module's locals
+        // renamed to whatever the user file has at the same offsets). Use the
+        // checker's per-decl context, which update_decl_source_context /
+        // update_fn_source_context keep current for diagnostics.
+        if self.local_file_id != 0:
+            let text = self.source_text_for_file_id(self.local_file_id)
+            if text.len() > 0:
+                return text
         self.source_text
 
     fn extract_decl_name_after(node: i32, keyword: str) -> str:
