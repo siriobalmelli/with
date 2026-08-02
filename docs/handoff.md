@@ -1,49 +1,48 @@
 # Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
 
-## #743 IS THE BLOCKER — UAF, predates everything (see issue for full diagnosis + fix recipe)
+## Battery-7 red RESOLVED: two bugs, one signature (daf9fc56 fixed mine)
 
-Batteries 6/7 reds, bridge objects, toolfs, :last-green: ALL one latent
-UAF (str view outliving its buffer; read via compute_method_origins →
-extract_name_after_keyword_in_text; lldb backtrace on the issue).
-Pre-groundwork worktree + untouched seed panics identically → #747
-groundwork EXONERATED. Nondeterministic by address luck; MallocScribble
-+MallocGuardEdges makes it fault reliably. NEXT: MallocStackLogging +
-malloc_history on the fault address → the freeing stack IS the fix
-site. Fix #743 FIRST — no battery is trustworthy until it lands.
+lldb rt_munmap tracing pinned the deterministic :llvm-bridge-object
+rc=139: the #747 groundwork's "dormant" TY_STR drop dispatch in
+mir_emit_drop_ptr_for_sema_type was reachable KIND-FIRST via
+struct-field drop glue (no classifier re-check), so an ~80KB
+source-text str — a shared view — was munmapped mid-frontend and
+double-freed (backtrace: with_str_free_drop_origin ←
+Zcu.compile_source_frontend_mode). FIXED in daf9fc56 by unwiring the
+dispatch; the runtime hooks + mir_emit_str_free_ptr stay as inert
+infrastructure to wire ONLY with the is_copy/type_needs_drop flip.
+Bridge repro now 5/5 green, fresh :llvm-bridge-object green.
 
-## #747 session-3b: BATTERY 7 RED (superseded by the above) — bridge-object worker hits #743-class corruption
+#743 proper (action-error teardown corrupt-vec panic) is REAL and
+pre-existing — it reproduces on the pre-flip seed in a worktree with
+no #747 code (repro on the issue). It is confined to the failed-action
+teardown path and does not block green batteries. Correction posted on
+the issue.
 
-Battery 6 red was regex find_all (fixed, committed with the migration
-tools). Battery 7 red: llvm-bridge-object AND clang-bridge-object
-workers die rc=139 — worker.stderr shows the exact #743 signature
-(corrupt vec header, origin=drop#struct __drop_struct_220, ASCII
-garbage cap/elem) ~4s in. Batteries 1-5 ran these lanes green, so the
-groundwork batch (ComptimeValue clones / borrowed evaluator helpers /
-InternPool clone-returns) either shifted the latent #743 allocation
-alignment or introduced a REAL teardown double-free in the comptime
-action machinery.
+#755 filed: Vec[str].get(i) element view passed unmarshalled (raw
+place ptr) to a str-consuming param → invalid LLVM IR. check passes,
+codegen misses the D22 materializing load. Blocks migration one-liners;
+same class gets heavy exercise under the flip — land before/with #747.
 
-NEXT (in order):
-1. Repro standalone: `with build :llvm-bridge-object` (worker mode —
-   the crash is in the spawned worker; run the worker command from
-   out/command/llvm-bridge-object args if needed).
-2. DIFFERENTIAL first: git worktree at the pre-groundwork commit (the
-   one before "compiler/std: #747 groundwork"), run the same step —
-   green there = my regression, red = #743 alignment luck. If mine:
-   WITH_DEBUG_ALLOC=1 + tools/debug_drop.w on the repro; suspect list =
-   comptime_value_clone at slot/extras sites (double-ownership of
-   extra_start/extra_count-referenced payloads is the obvious hazard:
-   clone copies the EXTRA RANGE INDICES, so two values now claim the
-   same extras — if extras teardown frees per-value, that is the
-   double-free).
-3. Fix, both-worlds check, RERUN battery 7. Then the worktree flip +
-   fixpoint driver per the plan below.
-
-NOTE the suspicion in 2: comptime_value_clone is a SHALLOW clone of a
-value whose extra_start/extra_count reference shared extras storage —
-review every site where the ORIGINAL and the CLONE both live at
-teardown; the fix may be that extras teardown must not free through
-value handles at all (or clones must not duplicate range claims).
+RESEEDED on g43df7f0d8 (seed + installed): battery 10 fully green
+(build/fixpoint/move-audit/drop-audit/test) + test-green/last-green.
+Three fixes landed across batteries 8-10:
+- daf9fc56: the UAF unwiring above.
+- 0fd69d43: pretty-name extraction sliced the PRIMARY file at std
+  body-node spans (find_decl_index knows only top-level decls);
+  set_pretty_symbol poisoned syms compiler-wide when the bytes read
+  `let <ident>` — regex.w's locals printed as val/ca/view and failed
+  dump_typed_d22_contextual_copy. Fix: fall back through
+  local_file_id (the checker's per-decl context). #756 filed for the
+  sibling compute_method_origins cross-module span-containment
+  adoption (pre-existing, needs its own battery).
+- 43df7f0d: groundwork's clone-returns missed the FOUNDATION
+  InternPool twin (only internals-tests compile it; no battery had
+  reached that lane since the de-Copy). type_key_clone/
+  value_key_clone at both resolve tails.
+Lane-abort lesson: a battery that dies at lane N leaves every later
+lane UNPROVEN — after fixing lane N's red, flush the whole :test
+before the next battery instead of discovering one lane per battery.
 
 ## #747 session-3 state: groundwork COMMITTED, flip is 3 local hunks
 
