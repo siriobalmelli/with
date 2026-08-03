@@ -685,7 +685,121 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-03): everything an agent needs
+## SESSION-RESUME (2026-08-03b): #747 census 571 -> 0* (zero UNPROVEN — see caveat)
+
+MAIN LINE: healthy. Seed + installed = v0.15.1-g0f663361e. Before ANY
+future reseed: probe candidate as ORCHESTRATOR (#757).
+
+#747 STATE: branch `747-flip` @ 76c5bde0 (8 commits this session).
+Census 571 -> 66 verified by COMPLETED check runs with full
+diagnostics at every step. The final batch (66 -> 0) has a caveat:
+after it, every `with-stage1 check src/main.w` attempt (4 tries)
+emitted ZERO diagnostics through a full-length pass (~150 s user)
+but was SIGKILLED by the OS under memory pressure before the `ok`
+exit — the check's footprint (RSS ~90 GB, VSZ 600+ GB reserved,
+swap 60+ GB) now exceeds what this 128 GB box tolerates. So census
+ZERO is PROBABLE (zero diagnostics ever emitted, and the wrapper
+plans no edits) but no run has produced rc=0 + `ok`. FIRST TASK NEXT
+SESSION: verify on a quiet box, or trim check-path clone volume
+first (see below), or bisect which final-batch edit inflated the
+check footprint. census8 (66 errors) at c57eca73 was the last
+provably-completing check. moveprobe still shows exactly the
+intentional move error (rc=1, no crash); HashMap/concat/observer
+probes all compile AND RUN correctly under the flipped stage1.
+Worktree recipe unchanged (git worktree add /tmp/wt-flip 747-flip +
+.deps symlink; rebuild stage1 via `src/main build :stage1`, ~3 min).
+
+Census trajectory: 571 -> 351 (wrapper round 3: `return <expr>` +
+complex single-line return spans) -> 331 (round 4: borrowed else-arms)
+-> 294 (COMPILER FIX: D22 observer keys) -> 271 (wrapper kind 7:
+&str args at consuming str params) -> 119 (hand-fix ~45 use-of-moved
+MOVERS + concat codegen fix) -> 66 (wrapper kinds 8/9: if-copy arms,
+D22 assignment/typed-binding) -> 0 (struct-literal heads + Lsp
+doc_text snapshots + residue).
+
+TWO REAL COMPILER BUGS found by probing (both fixed on the branch):
+- 24f38e97: HashMap.get/contains + Vec.contains keys — checker
+  demanded owned K (masked pre-flip by Copy materialization) AND
+  MirLower lowered the key as a consuming move: under the flip the
+  first m.get(k) BLANKED k (second lookup missed, k.len()==0).
+  Now: checker expects &K (owned args auto-ref), MirLower
+  lower_observer_probe_arg emits a non-consuming OK_COPY share
+  (deref for &K args; rvalues become registered statement temps —
+  --debug-alloc leak count=0). remove keeps owned K (D22 transfer).
+- 1f679268: `s ++ "!"` with s: &str concatenated the POINTER bytes
+  as a str header (garbage). Both concat paths (RK_BIN_OP dispatch,
+  STR_CONCAT_N chain emitter) now run operands through
+  mir_coerce_compare_operand — the #293 "&str reads its pointee"
+  coercion comparisons already used.
+
+STAGE2 PROBE (flipped stage1 building the compiler): BLOCKED by the
+seed-built-stage1 memory wall, NOT debugged further (per plan).
+- default cap: `memory limit exceeded` at 64 GiB, ~84 s, rc=125.
+- WITH_MEMORY_LIMIT_BYTES=0 on the 128 GB box: OS-killed after
+  ~15 min wall (VSZ 600+ GB committed, swap ~66 GB, ~98% CPU but
+  mostly paging), no compiler output, no artifact.
+This is the EXPECTED #744 class: stage1 is SEED-BUILT, so its own
+transient strings never free (pre-flip semantics are baked into the
+binary), and the campaign's clone insertions amplify the volume.
+Heals only at reseed, when a flipped compiler (whose clones DO free)
+builds itself. Chicken-and-egg: the reseed candidate must first be
+BUILT by the leaky stage1. Options for next session: (a) reduce
+clone volume in the hottest paths before the stage2 attempt —
+convert Ast.get_string / InternPool.resolve_symbol / CiIR.get_string
+to &str returns and fix their consuming callers (bounded set, worth
+it), (b) per-module/chunked compilation to bound peak, (c) a bigger
+box. Option (a) is the most with-y and also the #748 direction.
+
+NEXT (Phase C tail per plan): lib/std de-Copy leftovers (build.w
+Package/ProjectInfo/Diagnostics/Workspace; JsonView = design question
+for Eric), corpus sweep, un-pin emitc_migrate cap, then the
+stage1->stage2 attempt AFTER a strategy for the seed-built-stage1
+memory wall (options: run cap-off on a big box / chunked build /
+accept and reseed via the direct compile+link path like the g43df7f0d8
+recovery), :move-audit/:drop-audit, battery ALONE, reseed. After
+reseed: respell rt str_ref_view/clone_ref honestly, re-audit
+consuming-str extern calls, revisit hot-accessor clones (#748):
+Ast.get_string, InternPool.resolve_symbol, CiIR.get_string,
+Lexer/Parser/Source full-text clones, intern_symbol map-key clone.
+
+REVIEW ITEMS FOR ERIC (semantic calls made this session):
+- D22 observer-key compiler fix (above) — semantics change landed
+  without a brief; conforms to the ruling's get/contains-&K text.
+- std API flips: sha256_hash_str, sha256_hash_str_pair -> &str
+  (lib/std/crypto/sha256.w), str_copy_bytes -> &str
+  (lib/std/internal/str_abi.w). Pure observers per D5.
+- print/eprint(s: str) in std.builtins stay CONSUMING; two compiler
+  call sites clone at the arg. Flip-to-&str is a lib/std de-Copy-tail
+  design question.
+- CImport.w:10671 global save/restore snapshot now CLONES (a move
+  left the global moved for every reader on the success path).
+- Lsp handlers take an owned snapshot of doc text per request.
+
+TRAPS (new this session, on top of the standing list):
+- NEVER run `with` one-liners (-e/-n/-p) with cwd INSIDE the
+  worktree: the one-liner binary links the worktree's flipped rt and
+  reads/writes garbage (an 18k-line `with -p` pass emitted all-blank
+  lines; same command from outside is correct). This is the known
+  seed-vs-worktree linking trap in a new spelling. `with run tool.w`
+  with absolute paths from OUTSIDE the worktree is safe.
+- fish pipe-status: `cmd | head` reports head's rc — never pipe a
+  verdict-bearing check (bit again this session).
+- The census check's footprint grew with each clone batch: at
+  c57eca73 it completed in ~165 s CPU; at 76c5bde0 it emits all
+  diagnostics but gets OS-killed near the end on this box. Budget
+  memory/time accordingly (or trim clones first).
+
+TOOLS: tools/wrap_diag_spans.w now handles kinds: Vec.push, D22
+call-arg/struct-field, struct-literal mismatch, assignment, return
+(incl. `return <expr>` statements + complex single-line spans),
+wrong-arg (&str at consuming str, label-gated), if-copy arms, D22
+assignment/typed-let-binding, typed-binding RHS. Build it OUTSIDE the
+worktree; run with cwd inside. It planned zero edits against the last
+diagnostics that exist (census8).
+
+<!-- SESSION-RESUME-747-FLIP-HAND-FIX inserted below; older resume follows (superseded) -->
+
+## SESSION-RESUME (2026-08-03): everything an agent needs (SUPERSEDED by 2026-08-03b above)
 
 MAIN LINE: healthy. Seed + installed = v0.15.1-g0f663361e (battery 11
 green, orchestration-probed). Before ANY future reseed: probe candidate
