@@ -4773,7 +4773,23 @@ impl MirBuilder:
                 let autoderef_place = self.lower_recorded_autoderef_place(base_expr)
                 let field_ty = self.expr_type(node)
                 return self.new_projected_field_place(autoderef_place, field_sym, field_ty)
-            let base_place = self.lower_binding_alias_place(base_expr)
+            var base_place = self.lower_binding_alias_place(base_expr)
+            // #747: a field of a NAMED local (the method receiver included) is
+            // a pure place projection — "a binding names what's there" (D27).
+            // While str was Copy this case byte-copied; under owned str the
+            // fallback became a FIELD MOVE that reset the base's field and
+            // freed the value at scope exit — stage2's lexer read a blanked
+            // self.source and lexed instant EOF for every file. The checker
+            // already models these bindings as views (the census annotated
+            // every site that mutates the base while one lives), so lowering
+            // must alias, not move.
+            if base_place < 0 and self.ast.kind(base_expr) == NodeKind.NK_IDENT:
+                let base_sym = self.ast.get_data0(base_expr)
+                let base_local = self.lookup_local(base_sym)
+                if base_local >= 0:
+                    base_place = self.place_for_local(base_local)
+                else:
+                    base_place = self.lookup_alias_place(base_sym)
             if base_place < 0:
                 return -1
             var field_base = base_place
