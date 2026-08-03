@@ -1987,8 +1987,7 @@ pub fn with_str_clone_ref(s: &str) -> str:
     let slen = s.len()
     if slen == 0:
         return make_str("" as *const u8, 0)
-    let sp = s as *const str
-    let data = unsafe *(sp as *const *const u8)
+    let data = unsafe *(&s as *const *const u8)
     let out = rt_alloc(slen + 1)
     rt_memcpy(out, data, slen)
     unsafe *((out as i64 + slen) as *mut u8) = 0
@@ -2026,8 +2025,7 @@ pub fn with_str_slice_ref(s: &str, start_arg: i64, end_arg: i64) -> str:
     if end > slen: end = slen
     if start >= end:
         return make_str("" as *const u8, 0)
-    let sp = s as *const str
-    let data = unsafe *(sp as *const *const u8)
+    let data = unsafe *(&s as *const *const u8)
     make_str((data as i64 + start) as *const u8, end - start)
 
 pub fn with_str_substr(s: str, start_arg: i64, length_arg: i64) -> str:
