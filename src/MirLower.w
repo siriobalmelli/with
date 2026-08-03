@@ -157,6 +157,10 @@ type MirBuilder = ephemeral {
 
     string_alias_local_ids: Vec[i32],
     string_alias_flags: Vec[i32],
+    // #747 (03g): set by lower_if when the just-lowered value-producing if had
+    // only view/constant result arms — the result is a VIEW of storage owned
+    // elsewhere, so neither the result temp nor a binding of it may drop.
+    last_if_result_view: i32,
     string_field_alias_base_locals: Vec[i32],
     string_field_alias_path_starts: Vec[i32],
     string_field_alias_path_counts: Vec[i32],
@@ -238,6 +242,7 @@ fn MirBuilder.init(sema: &Sema, ast: AstPool, pool: InternPool, fn_sym: i32) -> 
         regex_capture_opt_places: Vec.new(),
         string_alias_local_ids: Vec.new(),
         string_alias_flags: Vec.new(),
+        last_if_result_view: 0,
         string_field_alias_base_locals: Vec.new(),
         string_field_alias_path_starts: Vec.new(),
         string_field_alias_path_counts: Vec.new(),
@@ -3594,6 +3599,30 @@ impl MirBuilder:
             return 0
         if self.body.local_names.get(base_local as i64) != 0: 1 else: 0
 
+    // #747 (03g): an if-arm result operand that merely READS named storage —
+    // a constant, or a copy/move of a PROJECTED place (a field/deref path
+    // rooted in a named local/param) — yields a view, not a fresh owned
+    // value (D27: a binding names what's there). Field reads of non-Copy
+    // types lower as OK_MOVE even when sema models the binding as a view
+    // (the base stays live and readable afterwards), so projected moves
+    // count as views here. A bare named local is an ownership TRANSFER
+    // (`let x = y` moves) and a copy/move of an anonymous temp is a fresh
+    // value the statement owns — neither counts.
+    fn operand_is_view_read(operand_id: i32) -> i32:
+        if operand_id < 0 or operand_id >= self.body.operand_kinds.len() as i32:
+            return 0
+        let kind = self.body.operand_kinds.get(operand_id as i64)
+        if kind == OperandKind.OK_CONSTANT:
+            return 1
+        if kind != OperandKind.OK_COPY and kind != OperandKind.OK_MOVE:
+            return 0
+        let place = self.body.operand_d0.get(operand_id as i64)
+        if place < 0 or place >= self.body.place_proj_counts.len() as i32:
+            return 0
+        if self.body.place_proj_counts.get(place as i64) == 0:
+            return 0
+        self.place_source_is_named(place)
+
     fn transfer_string_field_facts_between_bases(source_base: i32, dest_base: i32, force_alias: i32):
         if source_base < 0 or dest_base < 0:
             return
@@ -5407,6 +5436,7 @@ impl MirBuilder:
             if is_discard_binding == 0:
                 self.schedule_drop(local_id, scheduled_drop_kind)
 
+        var rhs_is_view_if = 0
         if rhs_expr != 0:
             let place = self.place_for_local(local_id)
             let saved_expected = self.expected_type
@@ -5418,8 +5448,16 @@ impl MirBuilder:
             // binding. Cancel the source's value drop after the value has been
             // captured; projected moves also queue their D17 reset below.
             self.cancel_scheduled_value_drop_for_receiver_expr(rhs_expr)
+            // #747 (03g): a pure-view if-result (all result arms place-reads
+            // of named storage or constants) binds as a VIEW — cancel the
+            // scheduled scope-exit drop so the binding does not free storage
+            // its arms merely read.
+            if mutable == 0 and self.ast.kind(rhs_expr) == NodeKind.NK_IF_EXPR and self.last_if_result_view != 0:
+                rhs_is_view_if = 1
+                if self.sema.is_copy_frozen(bind_ty) == 0 and is_discard_binding == 0:
+                    self.cancel_scheduled_value_drop_for_local(local_id)
         if is_discard_binding != 0:
-            if self.sema.is_copy_frozen(bind_ty) == 0:
+            if self.sema.is_copy_frozen(bind_ty) == 0 and rhs_is_view_if == 0:
                 self.emit_drop_entry(local_id, scheduled_drop_kind)
             else:
                 self.body.push_stmt(self.cur_bb, StmtKind.StorageDead, local_id, 0, self.ast.get_start(node))
@@ -5793,7 +5831,22 @@ impl MirBuilder:
         self.switch_to(join_bb)
         self.forget_string_flow_facts()
         if want_result == 0:
+            self.last_if_result_view = 0
             return self.unit_operand()
+        // #747 (03g): D27 "a binding names what's there" — an if whose result
+        // arms are all place-reads of named storage (or constants) yields a
+        // VIEW. The result temp used to register a stmt-temp drop and return
+        // OK_MOVE; dropping the bit-copied header freed the arm's base
+        // storage (Sema.record_named_type_with_pub's
+        // `let path = if ...: self.current_module_path else: ""` freed the
+        // module-path buffer once per call — the 03g double free). A view
+        // result registers no drop and reads as a copy; lower_let_binding
+        // cancels a binding's scheduled drop via last_if_result_view. Mixed
+        // owned/view arms keep owned typing (residual: the view arm still
+        // bit-copies; see handoff 03g).
+        self.last_if_result_view = if self.sema.is_copy_frozen(result_ty) == 0 and self.operand_is_view_read(then_op) != 0 and self.operand_is_view_read(else_op) != 0: 1 else: 0
+        if self.last_if_result_view != 0:
+            return self.body.new_operand(OperandKind.OK_COPY, result_place)
         self.register_stmt_temp(result_local, result_ty)
         if self.sema.is_copy_frozen(result_ty) != 0:
             return self.body.new_operand(OperandKind.OK_COPY, result_place)
