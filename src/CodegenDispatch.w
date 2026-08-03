@@ -2385,7 +2385,13 @@ impl Codegen:
         if op == BinaryOp.OP_AND or op == BinaryOp.OP_BIT_AND: return wl_build_and(self.builder, l, r)
         if op == BinaryOp.OP_OR or op == BinaryOp.OP_BIT_OR: return wl_build_or(self.builder, l, r)
         if op == BinaryOp.OP_BIT_XOR: return wl_build_xor(self.builder, l, r)
-        if op == BinaryOp.OP_CONCAT: return self.mir_str_concat(lhs, rhs)
+        // A `&str` operand concatenates as the str it points at, not as a bare
+        // pointer — same view read as comparisons (#293). Under #747 a borrowed
+        // param concatenated its POINTER bytes as a header (garbage output).
+        if op == BinaryOp.OP_CONCAT:
+            let cc_lhs = self.mir_coerce_compare_operand(lhs, lhs_sema)
+            let cc_rhs = self.mir_coerce_compare_operand(rhs, rhs_sema)
+            return self.mir_str_concat(cc_lhs, cc_rhs)
         with_eprint("error: unsupported MIR binary op '" ++ mir_binop_name(op) ++ "' reached LLVM codegen")
         self.had_error = 1
         wl_get_undef(wl_i32_type(self.context))
@@ -2462,7 +2468,10 @@ impl Codegen:
         let arr_alloca = self.create_entry_alloca(arr_ty)
         for i in 0..arg_count:
             let op_id = body.call_arg_operands.get((arg_start + i) as i64)
-            let value = self.mir_eval_operand(body, op_id, str_ty)
+            let value_raw = self.mir_eval_operand(body, op_id, str_ty)
+            // #293/#747: a &str part loads its pointee header, not the pointer.
+            let value_sema = self.mir_operand_sema_type(body, op_id)
+            let value = self.mir_coerce_compare_operand(value_raw, value_sema)
             let indices: Vec[i64] = Vec.new()
             indices.push(wl_const_int(wl_i32_type(self.context), 0, 0))
             indices.push(wl_const_int(wl_i32_type(self.context), i as i64, 0))
