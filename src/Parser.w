@@ -106,12 +106,16 @@ fn Parser.init(tokens: TokenList, source: &str, file_id: i32, intern: InternPool
     Parser.init_with_pool(move tokens, source, file_id, intern, move diags, AstPool.new())
 
 fn Parser.init_with_pool(tokens: TokenList, source: &str, file_id: i32, intern: InternPool, diags: DiagnosticList, pool: AstPool) -> Parser:
+    // #747: store the pool that HOLDS the file id. `var file_pool = pool`
+    // MOVES the pool under owned semantics; the literal previously stored the
+    // moved-from `pool` (blank) while the real pool dropped with file_pool at
+    // exit. The Copy world aliased the two headers, which hid both defects.
     var file_pool = pool
     file_pool.set_current_file_id(AstFileId(file_id))
     Parser {
         tokens,
         pos: 0,
-        pool,
+        pool: file_pool,
         intern,
         diags,
         source: with_str_clone_ref(source),
