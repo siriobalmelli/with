@@ -685,7 +685,112 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-03c): #747 sema census 0 PROVEN (rc=0); MirLower is the wall
+## SESSION-RESUME (2026-08-03d): #747 CHECK rc=0 AT 48 GB; STAGE2 BUILDS rc=0; stage2 EXECUTION has a diagnosed defect class
+
+MAIN LINE: healthy, untouched (docs-only commit here). Before ANY
+reseed: probe candidate as ORCHESTRATOR (#757).
+
+#747 STATE: branch `747-flip` @ 840476d6 (3 commits this session:
+5b8f086c sema reuse, c5ae2982 interner scan diet, 840476d6 CLI clone
+wraps). Worktree recipe unchanged. Seed gate rc=0 after each commit.
+
+THE MEMORY WALL IS DOWN. Two root causes, both found by profiling the
+live process (WITH_PROFILE=1 phase lines + lldb bt at the allocators —
+`sample`(1) cannot unwind With frames; lldb can):
+1. Full `check` ran sema TWICE. run_mir_lower built a fresh
+   Sema.init+check_module after the frontend already ran frontend.sema
+   on the same pool (the "died INSIDE run_mir_lower" from 03c was the
+   SECOND check_module, not lower_module). Fix: run_mir_lower now
+   reuses zcu.last_sema via the emit_typed guard (decl_count match +
+   types_frozen==0 fallback; diags continuity = takes zcu.diagnostics
+   exactly like Sema.init did). MIR-phase sema profile: 55 s full
+   recheck -> 3.6 s preregister-only. Seed-checker lesson: after
+   `sema = move self.zcu.last_sema` you must REINITIALIZE the field
+   (placeholder) before any later read; sync-inside-a-method does not
+   satisfy the checker.
+2. intern_str/pool_intern miss-scan cloned EVERY existing symbol text
+   per miss (flip wrapper had put with_str_clone_ref INSIDE the scan
+   loop; every NEW symbol is a miss; emit_drop_stmt interns a UNIQUE
+   `drop#<id> ...` origin per drop stmt). O(N^2) leaked bytes in the
+   seed-built stage1 = the real firehose, in frontend.resolve, sema,
+   AND lower_module. Fix: compare through element views (the eq
+   helpers take &str), clone only for the map insert on the at-most-one
+   match — pool_lookup_symbol's scan was already this shape.
+   frontend.resolve fell 72 s -> 1.6 s.
+
+NUMBERS (cap WITH_MEMORY_LIMIT_BYTES=118111600640 unless noted):
+- baseline check: rc=125 committed=118 GiB at t=146 s (peak footprint
+  127.8 GB and still climbing; 03c uncapped runs OS-killed ~90 GB RSS).
+- after fix 1: rc=125, death moved into real lower_module.
+- after fix 1+2: `with-stage1 check src/main.w` rc=0 "ok" in 76 s,
+  peak footprint 48.2 GB, mir.lower 21 s bodies=7146, all MIR/async
+  validators green, ZERO diagnostics (census still 0 through the new
+  code).
+- STAGE2 BUILDS: `with-stage1 build src/main.w -O1` rc=0 in 137 s,
+  peak 57.6 GB, 16 llvm units + link + dsymutil complete. First
+  flipped stage1->stage2 binary ever: /tmp/flip-stage2-probe.
+
+STAGE2 EXECUTION: --version ok; everything that touches strings hits a
+DIAGNOSED systemic defect class: consuming-str externs that kept their
+pre-flip ABI (with_str_byte_at/slice/starts_with/contains/eq per the
+step-1 carve-out) MOVE their argument and reset the caller's slot, but
+the flipped CHECKER NEVER DIAGNOSES these use-after-move sites —
+census-zero does NOT cover consuming extern args. lldb proof:
+find_source_arg passed arg to with_str_byte_at then kept using it ->
+reset slot -> source="" ("check requires a source file"). Also
+left-to-right arg evaluation makes with_str_slice(arg, 9,
+with_str_len(arg)) read the reset slot. Fixed the CLI-critical sites
+by with_str_clone_ref wraps (commit 840476d6; `run FILE` now finds and
+reads the file). Remaining instances immediately behind it: parser
+returns an empty module for any source ('-e' and file builds), and
+stage2 `check src/main.w` panics "str to C string conversion: interior
+NUL byte" at t=0.01 s. Known same-class residue: ComptimeEval string
+intrinsics (recv_value.text passed consuming then reused, ~7 sites),
+main.w test-harness starts_with chains (~20), misc (29 raw
+byte_at/slice sites grepped total; starts_with/contains/eq not yet
+counted).
+
+NEXT (in order):
+1. FIX THE CHECKER GAP: consuming extern-fn str args must produce
+   use-of-moved diagnostics like any other move. Then re-census (it
+   will be >0 again — that is the point), and let wrap_diag_spans
+   mechanically wrap the new bucket. Do NOT whack-a-mole stage2 sites
+   by hand: each iteration costs a stage1+stage2 rebuild (~6 min).
+   Decision for Eric: per-site clone wraps vs flipping those extern
+   decls to &str (dedup trap: codegen EMITS these symbols for method
+   spellings — one symbol, two ABIs) vs teaching codegen to emit _ref
+   twins. The wrap is the safe both-worlds default.
+2. Then re-smoke stage2 (-e, run, check src/main.w — expect the
+   drastically lower footprint claim to finally be measurable), then
+   stage2->stage3 fixpoint attempt.
+3. Then the 03c tail: lib/std de-Copy leftovers, corpus sweep, un-pin
+   emitc cap, :move-audit/:drop-audit, battery ALONE, reseed (as
+   ORCHESTRATOR per #757).
+
+REVIEW ITEMS FOR ERIC (this session):
+- run_mir_lower sema reuse (5b8f086c): architectural change, both
+  worlds — check/build now run ONE sema pass. Frontend sema had
+  emit_config_warnings=1 + ci_omitted_symbols set; the reused sema
+  keeps them (fresh path had 0/empty). Main-line wins the same ~50 s
+  and the same peak-memory halving when this lands.
+- Interner scan (c5ae2982): the miss-scan itself is O(N) compares per
+  NEW symbol (quadratic overall) even clone-free, and exists only as
+  insurance against a symbol_map that is never actually stale
+  (intern_type/intern_value trust their maps with no scan). Deleting
+  the scan is a main-line candidate; not done on the flip branch.
+- rt with_arg_at/with_getenv_str return make_str-wrapped FOREIGN
+  pointers (OS argv/environ) typed as owned str; flipped callers drop
+  them (free skipped defensively by rt_payload_start_is_owned=0, so
+  no crash, but the type is a lie). Honest fix post-reseed: return
+  fresh clones or &str.
+
+TRAPS confirmed again: macOS `sample` cannot unwind With frames (flat
+towers under the entry frame) — use lldb breakpoint sampling for
+attribution. zsh harness (not fish). WITH_PROFILE=1 phase lines are
+the cheap phase-attribution tool; the memory-limit trip line self-
+reports committed bytes.
+
+## SESSION-RESUME (2026-08-03c, SUPERSEDED by 03d above): #747 sema census 0 PROVEN (rc=0); MirLower is the wall
 
 MAIN LINE: healthy, untouched. Before ANY reseed: probe candidate as
 ORCHESTRATOR (#757).
