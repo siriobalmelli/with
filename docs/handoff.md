@@ -18,6 +18,83 @@ Probe any future seed candidate as ORCHESTRATOR before :update-seed
 (rm out/lib/rt_core.o; candidate build :rt-core-object) until #757's
 gate lands.
 
+## #747 Phase C steps 1+2 DONE: census 1232 -> 571 (747-flip @ 76d4bf1c)
+
+Trajectory: 1232 -> 1059 (step 1, extern flips, 7d8d085e) -> 578
+(wrapper round 1, 2e135933) -> 571 (round 2, 76d4bf1c; wrapper DRY).
+Every round passed the seed gate (`src/main build :stage1` in wt-flip);
+moveprobe still shows exactly the intentional move error. Skip-list was
+never needed (no wrap ever broke the seed build).
+
+Step 1 (extern ABI flips, the whole with_* wrong-argument bucket dry):
+fs family (17)/getenv/setenv/exec family (7)/eprint/write/write_stdout/
+ewrite/print_str/println_str/str_len/str_hash now take &str; rt bodies
+read through a str_ref_view shim (BOOTSTRAP INTERIM slot spelling, see
+with_str_clone_ref). Learned the hard way:
+- The frontend dedups extern decls PER SYMBOL — every decl everywhere
+  (src, lib, rt-internal, tools, test) must flip together. SemaCheck.w's
+  stale consuming with_regex_compile decl was the "regex.w:162" census
+  error.
+- Codegen-EMITTED symbols (str byte_at/contains/starts_with/eq/concat/
+  slice, fmt_buf_write_str, str_clone) keep their ABI; erroring call
+  sites respelled to method/operator form; CCodegen COut.write got a
+  with_fmt_buf_write_str_ref rt twin (clone would leak per write).
+- SEED-BUILT + WORKSPACE-LINKED binaries (with-sha256, stage1) must not
+  call runtime symbols the seed's frozen embedded prelude also declares:
+  prelude decl wins dedup with pre-flip ABI against flipped rt = silent
+  garbage I/O. with-sha256 now uses own-decl with_write_stdout +
+  with_libc_write. INVERSELY: a tool with flipped decls built by `src/
+  main build/run` INSIDE the worktree links the worktree's flipped
+  out/lib rt only in the build-system path; a plain seed build links the
+  seed's embedded (unflipped) rt — build wrapper/driver tool binaries
+  from OUTSIDE the worktree, run them with cwd inside it.
+- The seed cannot auto-borrow an if-expression temporary at a &str arg
+  (one hoist in SemaDiag.w:600); literals and call-result temporaries
+  auto-borrow fine in both worlds (probed).
+
+Step 2: tools/wrap_diag_spans.w (in wt-flip) parses flipped-stage1 text
+diagnostics (kind + --> span + caret run length) and wraps spans in
+with_str_clone_ref(...) back-to-front per file, inserting the extern
+decl once per touched file. Kinds: Vec.push (label-gated &str), D22
+call-arg (with_str_clone(span) is RENAMED to clone_ref, not double-
+cloned), D22 struct-field, struct-literal/assignment mismatch (RHS
+only), return mismatch (bare ident/field only). 376 edits total.
+Seed-era traps inside the tool (all commented): #755-class Vec[str]
+element reads feeding consuming positions (annotated bindings + splice
+helper), unannotated element binding = live view (slot-swap needs
+`let tmp: i32`), and NEVER pass a $var file list unquoted in this
+fish shell — it arrives as ONE newline-joined argument (this, not a
+compiler bug, was every "tool silently did nothing on N files" mystery;
+use `... | tr '\n' ' ' | xargs`).
+
+Census 571 residue (stage1 check src/main.w in wt-flip, census8.txt in
+the session scratchpad): 234 return-type (complex tails the wrapper
+correctly skips — 61 CImport, 14 ProjectConfig, 11 ComptimeEval, 11
+CiMigrate, 10 Link, 10 Codegen, 10 CiIR, 9 SemaCheck; mostly
+`xs.get(i)` view tails in `-> str` fns and multiline if/match tails),
+149 use-of-moved, 50 struct-literal mismatch (multiline literal heads +
+shorthand fields the wrapper skips), 22 if-copy, 47 HashMap get/
+contains/insert (&K observer flips or clone-at-call), 10 typed-binding
+mismatch, 10 D22 assignment, 8 mutate-while-view (Lsp doc_text), ~30
+misc (compiler_analysis_run/sha256_hash_str/Vec.contains args, eprint,
+loop-carried moves).
+
+NEXT SESSION (Phase C step 3, hand-fix in this order):
+1. Return tails: clone the view tail (`with_str_clone_ref(xs.get(i))`)
+   or respell accessor fns to return &str where callers only observe.
+   The 61 CImport + 14 ProjectConfig are bulk-similar shapes.
+2. HashMap.get/contains/insert &K observer flips (D22 says get/contains
+   take &K — check whether the collections flip from 457b7233 already
+   covers the K=str case, else clone at call).
+3. use-of-moved: read-before-move reorder or clone at the move site;
+   the two loop-carried classes (`prefix`, `path`) first.
+4. Then the Phase C tail per the plan below: lib/std de-Copy leftovers,
+   corpus sweep, un-pin emitc cap, flipped stage1->stage2, audits,
+   battery ALONE, reseed. After reseed: respell rt str_ref_view/
+   clone_ref honestly (`s as *const str`), and re-audit consuming-str
+   extern calls with owned args for the leak class (extern callees
+   never free; flipped decls remove the leak for read-only params).
+
 ## #747 blocker RESOLVED: cast fixed, stage1 healthy, census 1232 (03267bb1)
 
 The "mixed-convention extern ABI" was not an ABI bug. Two real causes,
