@@ -9234,18 +9234,28 @@ impl Codegen:
             result = self.call_internal_runtime_fn("with_str_byte_at", param_types, args, 2, i32_ty)
 
         else if intrinsic == MirIntrinsic.STR_SLICE:
+            // #747: slice returns an OWNED str, and MIR schedules a drop for
+            // it. The old zero-copy view (gep + len) was a Copy-world relic:
+            // dropping the view freed a pointer INTO the receiver's live
+            // buffer (for start=0, the receiver's own block — the stage2
+            // lexer freed its source out from under itself and the allocator
+            // recycled it into the token vecs). Call the copying runtime
+            // slice instead; #748 view tokens can recover the zero-copy form.
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let str_ptr = wl_build_extract_value(self.builder, recv, 0)
             let start = self.mir_intrinsic_arg(body, args_id, 1)
             let end = self.mir_intrinsic_arg(body, args_id, 2)
             let start64 = self.coerce_int(start, i64_ty)
             let end64 = self.coerce_int(end, i64_ty)
-            let i8_ty = wl_i8_type(self.context)
-            let indices: Vec[i64] = Vec.new()
-            indices.push(start64)
-            let new_ptr = wl_build_gep(self.builder, i8_ty, str_ptr, vec_data_i64(&indices), 1)
-            let new_len = wl_build_sub(self.builder, end64, start64)
-            result = self.build_str_value(new_ptr, new_len)
+            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let param_types: Vec[i64] = Vec.new()
+            param_types.push(str_ty)
+            param_types.push(i64_ty)
+            param_types.push(i64_ty)
+            let args: Vec[i64] = Vec.new()
+            args.push(recv)
+            args.push(start64)
+            args.push(end64)
+            result = self.call_internal_runtime_fn("with_str_slice", param_types, args, 3, str_ty)
 
         else if intrinsic == MirIntrinsic.STR_CONTAINS:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
