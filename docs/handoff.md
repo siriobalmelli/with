@@ -685,7 +685,101 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-03e): #747 extern-arg class CLOSED (observer semantics end-to-end); stage2 lexes+parses; NEXT WALL: TokenList blanked through Parser.init struct literal
+## SESSION-RESUME (2026-08-03f): #747 STR_SLICE view-drop ROOT-CAUSED+FIXED (stage2 parses whole modules); NEXT WALL: fn_meta_map table freed-while-live + a FALSE-GREEN check exit
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ ef0e9422 (one commit this session,
+seed-gated rc=0 158s). stage1 rebuilt; /tmp/flip-stage2-probe rebuilt
+(rc=0, 57.9 GB peak). Census: rc=0, 48.34 GB (unchanged).
+
+ROOT CAUSE #1 (fixed, ef0e9422): src/CodegenDispatch.w STR_SLICE
+intrinsic (was ~:9236) emitted the Copy-world ZERO-COPY VIEW
+(gep recv.ptr+start, sub end-start, build_str_value) while flip MIR
+types slice results OWNED and schedules drop(text). Dropping the view
+freed a pointer INTO the receiver's live buffer; start=0 frees the
+receiver's own block. Full instruction-level chain in the OLD probe:
+Lexer.lex_ident `let text = src.slice(start, pos)` freed the lexer's
+SOURCE payload on the first ident token (with_str_free_drop_origin
+inlined in lex_ident; `let src` itself was correctly alias-bound — the
+1fca9200 fix held); the tags Vec's first grow freelist-popped the same
+block (prelude: break after push 1 = first 16B-class alloc; tiny.w:
+after push 9 = the 8->16 realloc); the lexer then lexed ITS OWN TAG
+BYTES as source — every hallucinated tag matched byte-for-byte (tag 10
+int-bytes read as '\n' -> NEWLINE, 108 as 'l' -> IDENT, 62 as '>' ->
+TK_GT). bddbda6f's rt-side slice copy never applied on this path —
+the intrinsic bypasses rt. Fix: lower STR_SLICE through with_str_slice
+(alloc_str copy), same shape as STR_BYTE_AT. Only other raw
+build_str_value sites: FIXED_STRING_AS_VIEW (owned-typed view of an
+inline buffer — free is a no-op via is_owned, but same doctrinal
+family; see review items) and two empty-str constants (safe).
+
+03e CORRECTION: the "TokenList blanked {0,0,0,4}" reading was the
+RECYCLED tags buffer state, not a blank struct — in this session's
+lldb runs the TokenList headers arrived INTACT at parse_module (ptr/
+len/cap/elem all correct); the CONTENT was garbage. init_with_pool,
+Parser.init, and the csfm caller all marshal tokens correctly at the
+machine level (verified store-by-store in disasm). The struct-literal/
+return/store chain was NEVER the bug.
+
+VERIFIED THIS SESSION:
+- repro_slice.w (slice-drop shape) + repro_v3/v4 (Parser-shaped byval/
+  literal/return chains): correct output, --debug-alloc leak 0 under
+  the fixed stage1.
+- with_vec_get_str is NOT in the stage2 binary (nm: only
+  with_vec_get_ptr) — the flagged alias-return is unreachable; no fix
+  needed there for stage3.
+- New stage2 smoke: --version ok; parse now WORKS (WITH_PROFILE shows
+  751 decls parsed from src/main.w; imported std modules parse past
+  the old wall).
+
+NEXT WALL (evidence recorded, NOT root-caused):
+1. Remaining premature-free instance(s), prelude/std path only:
+   `-e` panics invalid free (plain) / debug-alloc reports DOUBLE FREE
+   size=64 origin=Vec; detection bt both modes: hm_grow freeing
+   AstPool.fn_meta_map's old table during add_fn_meta <-
+   Parser.parse_extern_decl <- parse_module <- resolve_from_root
+   (module loop). `check tiny.w` crashes rc=139 at TokenList.get_start
+   (starts.ptr into unmapped page) inside the SAME resolve-loop module
+   parses. WITH_DEBUG_ALLOC=1 masks the tiny.w crash (alloc-pattern
+   dependent). A 9-hit free trace of one 64B block is in the session
+   log: the suspicious free is a with_str_free of stack slot sp+0x30
+   in parse_module (right before add_decl, MIR drop(_109) region =
+   parser_active_arch() result which should be RODATA — suspect LLVM
+   stack-slot coalescing + our unconditional drop emission freeing a
+   slot whose live occupant is a different str, or another view-typed-
+   owned producer). parse_module MIR has exactly three drops: _1.f707,
+   _109, _1.f704 — start there.
+2. FALSE-GREEN TRAP — do NOT trust `check src/main.w rc=0` from the
+   stage2 probe: it "passes" in 0.09s/16MB because the pipeline
+   SILENTLY STOPS after frontend.parse (WITH_PROFILE shows no resolve/
+   sema lines; corrupted diagnostics path truncates and still exits
+   0). A real gate must show ~48GB/70s+ and all profile phases. The
+   self-check gate is NOT passed; stage3 not attempted.
+
+TRAPS this session: lldb bp/wp addresses drift BETWEEN runs when the
+breakpoint set changes (heap layout) — never carry a literal address
+across runs; verify in-session. Conditions with C casts
+('*(unsigned long*)$x0') can fail evaluation SILENTLY = no stops;
+plain $-register conditions are safe. Watchpoint reports a phantom
+first hit at creation. Batch lldb: nested DONE blocks break; use
+run-then-add-watchpoint two-stage scripts. Debug-info filenames all
+collapse to main.w with PER-ORIGINAL-FILE line numbers, and inline
+frame names can be flat-out wrong ("todo", "regex_expand_replacement"
+in parse paths) — trust only symbol names + MIR + disasm.
+
+REVIEW ITEMS FOR ERIC (adds to 03e list):
+- STR_SLICE now always copies (perf cost on every slice until #748
+  view tokens land) — same interim-copy policy as bddbda6f rt fns.
+- FixedString.as_view returns ty_str (owned-typed view of the inline
+  buffer, SemaCheck ~:18247); drop is a no-op only because is_owned
+  rejects non-heap pointers. Same owned-alias family; wants a view
+  type under #748.
+- Seed bug (pre-flip, installed compiler): str.find(needle) through a
+  &str PARAM returns -1 while the same call on an owned local works
+  (repro: findtest2.w pattern). Worth an issue after the flip lands.
+
+## SESSION-RESUME (2026-08-03e, SUPERSEDED by 03f above): #747 extern-arg class CLOSED (observer semantics end-to-end); stage2 lexes+parses; NEXT WALL: TokenList blanked through Parser.init struct literal
 
 MAIN LINE: healthy, untouched (docs-only commit here). Before ANY
 reseed: probe candidate as ORCHESTRATOR (#757).
