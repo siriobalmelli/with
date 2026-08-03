@@ -14,6 +14,10 @@ extern fn with_arg_at(idx: i32) -> str
 extern fn with_getenv_str(name: &str) -> str
 extern fn with_setenv_str(name: &str, value: &str) -> i32
 extern fn with_vec_new_out(v: *mut c_void, elem_size: i64) -> Unit
+// The vec RETAINS the pushed header — ownership transfers, unlike every
+// read-only str extern (§16.3d declared effect; the bit-copy default would
+// leave two owners).
+@[effect(val: escape_value)]
 extern fn with_vec_push_str(v: *mut c_void, val: str) -> Unit
 extern fn with_str_len(s: &str) -> i64
 

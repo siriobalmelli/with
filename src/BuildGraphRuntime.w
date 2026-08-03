@@ -26,8 +26,10 @@ extern fn with_getpid() -> i32
 extern fn with_clock_nanos() -> i64
 extern fn with_write(s: &str) -> Unit
 extern fn with_eprint(s: &str) -> Unit
-extern fn wl_assemble_to_object(source_path: str, output_path: str) -> i32
-extern fn wl_compile_ir_to_object(source_path: str, output_path: str) -> i32
+// #747: the LlvmBridge definitions take &str; a `str` decl here was an ABI
+// mismatch (by-value {ptr,len} pair against a header pointer).
+extern fn wl_assemble_to_object(source_path: &str, output_path: &str) -> i32
+extern fn wl_compile_ir_to_object(source_path: &str, output_path: &str) -> i32
 
 pub fn build_graph_rt_exec_argv(args: &str) -> i32:
     with_exec_argv(args)
