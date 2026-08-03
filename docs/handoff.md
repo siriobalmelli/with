@@ -18,6 +18,38 @@ Probe any future seed candidate as ORCHESTRATOR before :update-seed
 (rm out/lib/rt_core.o; candidate build :rt-core-object) until #757's
 gate lands.
 
+## #747 blocker RESOLVED: cast fixed, stage1 healthy, census 1232 (03267bb1)
+
+The "mixed-convention extern ABI" was not an ABI bug. Two real causes,
+both fixed in 03267bb1 on 747-flip:
+(1) CodegenDispatch's RK_CAST TY_STR branch extracted the str DATA
+pointer for ANY pointer target; after auto-deref of a &str source,
+`s as *const str` returned the text bytes as a header address. Now a
+*const str/*mut str target is address-preserving (operand place
+address via mir_try_place_ptr_for_ref); *const u8 targets keep the
+data pointer. Verified by running: seed-built repro SIGBUSes,
+stage1-built prints the data byte. The FROZEN SEED still has this bug
+— it also miscompiles unflipped programs (any `(s: &str) as *const
+str`); heals at reseed once the flip branch lands.
+(2) The flip left the owned-era read `*(&s as *const *const u8)` at 34
+&str-param sites (InternPool.store = every interned symbol!, Sema,
+Llvm/ClangBridge, std regex, rt clone_ref/slice_ref). For &str, `&s`
+is the SLOT address, so single deref = header ptr as data — interning
+memcpy'd pointer bytes, hence interior-NUL/SIGSEGV per site. All
+respelled to the both-worlds `**(&s as *const *const *const u8)`;
+owned-local sites (tmpl/probe_line, rt str_data family) correctly keep
+single deref. rt clone_ref/slice_ref carry a BOOTSTRAP INTERIM
+comment: respell honestly via `s as *const str` AFTER reseed (rt
+objects are seed-built; the seed miscompiles the honest spelling).
+moveprobe: exactly the intentional move error, rc=1, no crash. First
+true census (stage1 check src/main.w): **1232 errors** — 286
+return-type, 184 Vec.push, 154 use-of-moved, 109 D22
+field-through-borrow, 67 struct-literal, 47 fs externs, 43 assignment,
+34 HashMap get/contains, 31+ view-origin, 25 if-copy. NEXT: Phase C
+per the plan below — (1) flip fs/str extern decls (~47 errs), (2)
+build tools/wrap_diag_spans.w wrapper tool (~700 errs), (3) hand-fix
+residue.
+
 ## #747 flip: std CLEAN, src residue 1319 (branch 747-flip @ 7d3e754b)
 
 Phase A done: embedded std checks CLEAN under the flip (probe: only the
