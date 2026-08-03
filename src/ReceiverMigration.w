@@ -22,8 +22,8 @@ use compiler.Compilation
 use Lexer
 use Token
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
 
 // 0-based column of a byte offset (distance from the start of its line, 10 = '\n').
 fn col_of(text: &str, offset: i32):

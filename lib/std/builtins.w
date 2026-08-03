@@ -8,14 +8,14 @@
 // Provided here so c_import users don't depend on symbol scoping.
 pub type c_void = opaque
 
-extern fn with_println_str(s: str) -> Unit
+extern fn with_println_str(s: &str) -> Unit
 extern fn with_println_i32(n: i32) -> Unit
 extern fn with_println_i64(n: i64) -> Unit
 extern fn with_println_bool(v: bool) -> Unit
-extern fn with_print_str(s: str) -> Unit
-extern fn with_eprint(s: str) -> Unit
-extern fn with_write(s: str) -> Unit
-extern fn with_ewrite(s: str) -> Unit
+extern fn with_print_str(s: &str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
+extern fn with_write(s: &str) -> Unit
+extern fn with_ewrite(s: &str) -> Unit
 extern fn with_panic(msg: str, file: str, line: i32) -> Never
 extern fn with_i32_to_str(n: i32) -> str
 extern fn with_i64_to_str(n: i64) -> str

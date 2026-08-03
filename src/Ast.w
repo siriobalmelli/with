@@ -11,7 +11,7 @@ use Token
 use InternPool
 use std.collections.HashMap
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn abort() -> Unit
 

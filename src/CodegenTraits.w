@@ -9,7 +9,7 @@ use Overflow
 use AnalysisTypes
 use compiler.TrackedInputs
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 
 // ── Collect trait info ────────────────────────────────────────────
 

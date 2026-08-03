@@ -2,7 +2,7 @@
 //
 // Validates that all required logical modules exist in the project.
 
-extern fn with_fs_read_file(path: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
 
 type ModuleSpec {
     logical_name: str,

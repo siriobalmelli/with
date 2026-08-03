@@ -20,14 +20,15 @@ use Overflow
 use AnalysisTypes
 
 extern fn exit(code: i32) -> Unit
-extern fn with_fs_read_file(path: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
 extern fn with_vec_free(v: *mut u8) -> Unit
 extern fn with_hashmap_free(map: *mut u8) -> Unit
 extern fn with_parse_float(s: str) -> f64
-extern fn with_eprint(s: str) -> Unit
-extern fn with_getenv_str(name: str) -> str
-extern fn with_str_hash(s: str) -> i64
+extern fn with_eprint(s: &str) -> Unit
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_str_hash(s: &str) -> i64
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn str_from_byte(b: i32) -> str
 extern fn with_codegen_loop_set_break(idx: i32, bb: i64) -> Unit
 extern fn with_codegen_loop_set_continue(idx: i32, bb: i64) -> Unit
@@ -74,7 +75,7 @@ enum AtomicOrdering: i32:
 // Runtime helpers
 extern fn with_str_concat(a: str, b: str) -> str
 extern fn with_str_eq(a: str, b: str) -> i32
-extern fn with_write(s: str) -> Unit
+extern fn with_write(s: &str) -> Unit
 extern fn with_sysinfo_os() -> str
 extern fn with_sysinfo_arch() -> str
 
@@ -2510,7 +2511,7 @@ fn vec_copy_i64(src: &Vec[i64]) -> Vec[i64]:
 fn codegen_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
-    with_str_clone(text)
+    with_str_clone_ref(text)
 
 impl Codegen:
     mut fn capture_sema_symbol_texts():

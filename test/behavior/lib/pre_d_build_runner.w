@@ -1,7 +1,7 @@
 use std.fs
 use std.process
 
-extern fn with_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str) -> i32
+extern fn with_exec_argv_capture_cwd(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> i32
 
 pub type P7Run {
     rc: i32,

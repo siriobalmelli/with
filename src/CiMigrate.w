@@ -12,9 +12,9 @@ use CiPrint
 use CImport
 use std.string.StringBuilder
 
-extern fn with_write_stdout(s: str) -> Unit
+extern fn with_write_stdout(s: &str) -> Unit
 extern fn with_flush_stdout() -> Unit
-extern fn with_fs_list_files(path: str) -> str
+extern fn with_fs_list_files(path: &str) -> str
 extern fn with_str_clone_ref(s: &str) -> str
 
 // Width-slice mode: when > 0, skip declarations belonging to

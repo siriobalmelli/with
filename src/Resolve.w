@@ -14,9 +14,9 @@ use compiler.Runtime
 use std.collections.HashMap
 use std.string.StringBuilder
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_write(s: str) -> Unit
-extern fn with_getenv_str(name: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_write(s: &str) -> Unit
+extern fn with_getenv_str(name: &str) -> str
 extern fn with_str_clone_ref(s: &str) -> str
 
 fn resolve_owned_text(text: &str) -> str:

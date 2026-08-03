@@ -38,39 +38,39 @@ extern fn with_arg_count() -> i32
 extern fn with_str_clone(s: str) -> str
 extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_arg_at(idx: i32) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
-extern fn with_fs_mkdir_p(path: str) -> i32
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_file_exists(path: str) -> i32
-extern fn with_fs_is_dir(path: str) -> i32
-extern fn with_fs_chmod(path: str, mode: i32) -> i32
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_fs_mkdir_p(path: &str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_file_exists(path: &str) -> i32
+extern fn with_fs_is_dir(path: &str) -> i32
+extern fn with_fs_chmod(path: &str, mode: i32) -> i32
 extern fn with_read_bytes_stdin(count: i32) -> str
 extern fn with_str_eq(a: str, b: str) -> i32
 extern fn with_str_from_cstr(s: *const u8) -> str
-extern fn with_str_len(s: str) -> i64
+extern fn with_str_len(s: &str) -> i64
 extern fn with_str_byte_at(s: str, index: i64) -> i32
 extern fn with_str_starts_with(s: str, prefix: str) -> i32
 extern fn with_str_contains(s: str, needle: str) -> i32
 extern fn with_str_slice(s: str, start: i64, end: i64) -> str
-extern fn with_eprint(s: str) -> Unit
-extern fn with_ewrite(s: str) -> Unit
-extern fn with_exec_argv(args: str) -> i32
-extern fn with_exec_argv_capture(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32
-extern fn with_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str) -> i32
-extern fn with_fs_remove_file(path: str) -> i32
-extern fn with_fs_remove_dir(path: str) -> i32
-extern fn with_fs_remove_tree(path: str) -> i32
-extern fn with_fs_rename_file(old_path: str, new_path: str) -> i32
-extern fn with_getenv_str(name: str) -> str
-extern fn with_setenv_str(name: str, value: str) -> i32
+extern fn with_eprint(s: &str) -> Unit
+extern fn with_ewrite(s: &str) -> Unit
+extern fn with_exec_argv(args: &str) -> i32
+extern fn with_exec_argv_capture(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32
+extern fn with_exec_argv_capture_cwd(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> i32
+extern fn with_fs_remove_file(path: &str) -> i32
+extern fn with_fs_remove_dir(path: &str) -> i32
+extern fn with_fs_remove_tree(path: &str) -> i32
+extern fn with_fs_rename_file(old_path: &str, new_path: &str) -> i32
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_setenv_str(name: &str, value: &str) -> i32
 extern fn with_set_memory_limit_bytes(limit: i64) -> Unit
 // Used for unique temp paths in one-liners, build.w runner binaries,
 // graph-tool captures, and native test captures.
 extern fn with_clock_nanos() -> i64
 extern fn with_getpid() -> i32
 extern fn with_process_alive(pid: i32) -> i32
-extern fn with_fs_mkdir(path: str) -> i32
-extern fn with_write(s: str) -> Unit
+extern fn with_fs_mkdir(path: &str) -> i32
+extern fn with_write(s: &str) -> Unit
 extern fn with_read_line_stdin() -> str
 extern fn exit(code: i32) -> Unit
 extern fn with_install_interrupt_handlers() -> Unit
@@ -238,7 +238,7 @@ fn cli_has_flag(argc: i32, flag: &str) -> bool:
 fn cli_has_prefix(argc: i32, prefix: &str) -> bool:
     var i = 2
     while i < argc:
-        if with_str_starts_with(with_arg_at(i), prefix) != 0:
+        if with_arg_at(i).starts_with(prefix):
             return true
         i = i + 1
     false
@@ -249,7 +249,7 @@ fn cli_value_or_prefix(argc: i32, flag: &str, prefix: &str) -> str:
         let arg = with_arg_at(i)
         if arg == flag and i + 1 < argc:
             return with_arg_at(i + 1)
-        if with_str_starts_with(arg, prefix) != 0:
+        if arg.starts_with(prefix):
             return arg.slice(prefix.len(), arg.len())
         i = i + 1
     ""
@@ -976,12 +976,12 @@ fn main -> Unit:
 // ── Command implementations ──────────────────────────────────────
 
 fn str_eq_text(a: &str, b: &str) -> bool:
-    with_str_eq(a, b) != 0
+    a == b
 
 fn has_output_prefix(arg: &str) -> bool:
     if with_str_len(arg) < 9:
         return false
-    with_str_starts_with(arg, "--output=") != 0
+    arg.starts_with("--output=")
 
 // Everything on the command line after the source `.w` is forwarded to the
 // program as its argv, so `with run tool.w a b` runs the program with a, b
@@ -1155,7 +1155,7 @@ fn reduce_candidate_matches(argc: i32, dashdash: i32, candidate_path: &str, cont
         return false
     if contains.len() > 0:
         let combined = with_fs_read_file(out_path) ++ "\n" ++ with_fs_read_file(err_path)
-        if with_str_contains(combined, contains) == 0:
+        if not combined.contains(contains):
             return false
     true
 
@@ -2765,7 +2765,7 @@ fn discover_bench_functions(text: &str) -> BenchDiscovery:
 fn synthesize_bench_main_source(text: &str, bench_names: &Vec[str]) -> str:
     var out = StringBuilder.with_capacity(text.len())
     out.push_str(text)
-    if text.len() > 0 and with_str_byte_at(text, with_str_len(text) - 1) != 10:
+    if text.len() > 0 and text.byte_at(text.len() - 1) != 10:
         out.push_str("\n")
     out.push_str("\nuse std.process\n")
     out.push_str("use test.bench\n")
@@ -2788,7 +2788,7 @@ fn synthesize_bench_main_source(text: &str, bench_names: &Vec[str]) -> str:
 fn synthesize_test_main_source(text: &str, test_names: &Vec[str]) -> str:
     var out = StringBuilder.with_capacity(text.len())
     out.push_str(text)
-    if text.len() > 0 and with_str_byte_at(text, with_str_len(text) - 1) != 10:
+    if text.len() > 0 and text.byte_at(text.len() - 1) != 10:
         out.push_str("\n")
     out.push_str("\nuse std.process\n")
     out.push_str("\nfn __with_test_eq(a: str, b: str) -> bool:\n")
@@ -2972,7 +2972,7 @@ fn run_test_compiler_command(target: &str, command_name: &str, directives: &Test
     TestRunResult { rc, stdout, stderr }
 
 fn test_output_contains_expected(actual: &str, expected: &str) -> bool:
-    expected.len() == 0 or with_str_contains(actual, expected) != 0
+    expected.len() == 0 or actual.contains(expected)
 
 fn run_test_directive_command(target: &str, directives: &TestDirectives, quiet: bool) -> i32:
     if directives.skip:
@@ -3010,7 +3010,7 @@ fn run_test_directive_command(target: &str, directives: &TestDirectives, quiet: 
                 return 1
         for i in 0..directives.expect_check_stdout_not.len() as i32:
             let forbidden = directives.expect_check_stdout_not.get(i as i64)
-            if forbidden.len() > 0 and with_str_contains(result.stdout, forbidden) != 0:
+            if forbidden.len() > 0 and result.stdout.contains(forbidden):
                 emit_test_stage_error("unexpected check stdout: " ++ forbidden, target, "check", "")
                 return 1
         return 0
@@ -3132,7 +3132,7 @@ fn run_test_process(bin_path: &str, test_name: &str, quiet: bool) -> TestRunResu
 fn test_validate_output(stream_name: &str, actual: &str, expected_values: &Vec[str], target: &str, test_name: &str) -> bool:
     for ei in 0..expected_values.len() as i32:
         let expected = expected_values.get(ei as i64)
-        if with_str_contains(actual, expected) == 0:
+        if not actual.contains(expected):
             emit_test_stage_error(stream_name ++ " mismatch; missing expected output: " ++ expected, target, "run", test_name)
             return false
     true
@@ -3218,7 +3218,7 @@ fn run_test_file_with_build_settings_inner(target: &str, opt_level: i32, no_std:
         var failed = 0
         for ti in 0..discovery.test_names.len() as i32:
             let test_name = discovery.test_names.get(ti as i64)
-            if filter.len() > 0 and with_str_contains(test_name, filter) == 0:
+            if filter.len() > 0 and not test_name.contains(filter):
                 continue
             var run_quiet = quiet
             if verbose:

@@ -9,7 +9,7 @@ use CapabilityRegistry
 use render
 use std.collections.HashMap
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_eq(a: str, b: str) -> i32
 
 // ── Pass 1: Declaration collection ───────────────────────────────

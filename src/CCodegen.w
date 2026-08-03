@@ -14,14 +14,15 @@ use Overflow
 use std.collections.HashMap
 use std.string.StringBuilder
 
-extern fn with_fs_read_file(path: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
 extern fn with_i64_to_str(n: i64) -> str
 extern fn str_from_byte(b: i32) -> str
 extern fn with_interrupt_requested() -> i32
 extern fn with_fmt_buf_new() -> *mut u8
 extern fn with_fmt_buf_write_str(buf: *mut u8, s: str)
+extern fn with_fmt_buf_write_str_ref(buf: *mut u8, s: &str)
 extern fn with_fmt_buf_finish(buf: *mut u8) -> str
-extern fn with_str_hash(s: str) -> i64
+extern fn with_str_hash(s: &str) -> i64
 
 type COut {
     buf: *mut u8,
@@ -33,7 +34,7 @@ fn COut.new -> COut:
 
 impl COut:
     fn write(text: &str):
-        with_fmt_buf_write_str(self.buf, text)
+        with_fmt_buf_write_str_ref(self.buf, text)
 
     fn finish() -> str:
         with_fmt_buf_finish(self.buf)

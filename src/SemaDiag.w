@@ -8,8 +8,8 @@ use InternPool
 use render
 use std.string.StringBuilder
 
-extern fn with_eprint(s: str) -> Unit
-extern fn with_getenv_str(name: str) -> str
+extern fn with_eprint(s: &str) -> Unit
+extern fn with_getenv_str(name: &str) -> str
 
 fn d22_join_arm_kind_name(kind: i32) -> str:
     if kind == 1: return "owned-anchor"
@@ -597,7 +597,8 @@ impl Sema:
                     with_write(self.type_name(self.sig_return_type(sig_idx)))
                     with_write("\n")
                     let inferred_ret = if meta >= 0 and self.ast.fn_meta_ret(meta) == 0: self.sig_return_type(sig_idx) else: 0
-                    with_write(if inferred_ret != 0 and inferred_ret != self.ty_void: "  inferred_return: " ++ self.type_name(inferred_ret) ++ "\n" else: "")
+                    let inferred_ret_line = if inferred_ret != 0 and inferred_ret != self.ty_void: "  inferred_return: " ++ self.type_name(inferred_ret) ++ "\n" else: ""
+                    with_write(inferred_ret_line)
                 else:
                     with_write("  fn ")
                     with_write(fn_name)

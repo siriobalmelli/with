@@ -1816,7 +1816,7 @@ fn ct_supported_derive_target(intern: InternPool, derive_sym: i32) -> i32:
 fn ct_derive_target_fn_name(name: &str) -> str:
     if name.len() == 0:
         return "derive_"
-    let first = with_str_byte_at(name, 0)
+    let first = name.byte_at(0)
     let lower =
         if first >= 65 and first <= 90:
             str_from_byte(first + 32)

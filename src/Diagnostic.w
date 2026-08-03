@@ -4,8 +4,9 @@ use Span
 use Source
 use DiagnosticRender
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 enum DiagSeverity: i32:
     Error = 1
@@ -39,7 +40,7 @@ type Diagnostic {
 }
 
 fn diagnostic_owned_text(text: &str) -> str:
-    with_str_clone(text)
+    with_str_clone_ref(text)
 
 fn diagnostic_error(message: &str, primary: Span) -> Diagnostic:
     Diagnostic {

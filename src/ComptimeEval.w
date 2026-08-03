@@ -16,26 +16,26 @@ use CiMigrate
 use Overflow
 use std.string.StringBuilder
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_clone(s: str) -> str
 extern fn with_str_clone_ref(s: &str) -> str
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_file_exists(path: str) -> i32
-extern fn with_fs_is_dir(path: str) -> i32
-extern fn with_fs_mkdir_p(path: str) -> i32
-extern fn with_fs_chmod(path: str, mode: i32) -> i32
-extern fn with_fs_copy_tree(src: str, dst: str) -> i32
-extern fn with_fs_list_files(path: str) -> str
-extern fn with_fs_remove_file(path: str) -> i32
-extern fn with_fs_remove_tree(path: str) -> i32
-extern fn with_fs_rename_file(old_path: str, new_path: str) -> i32
-extern fn with_fs_symlink(target: str, link_path: str) -> i32
-extern fn with_fs_write_file(path: str, data: str) -> i32
-extern fn with_exec_argv(args: str) -> i32
-extern fn with_exec_argv_capture(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32
-extern fn with_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str) -> i32
-extern fn with_exec_argv_capture_input(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, stdin_path: str) -> i32
-extern fn with_exec_argv_capture_spawn(args: str, stdout_path: str, stderr_path: str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_file_exists(path: &str) -> i32
+extern fn with_fs_is_dir(path: &str) -> i32
+extern fn with_fs_mkdir_p(path: &str) -> i32
+extern fn with_fs_chmod(path: &str, mode: i32) -> i32
+extern fn with_fs_copy_tree(src: &str, dst: &str) -> i32
+extern fn with_fs_list_files(path: &str) -> str
+extern fn with_fs_remove_file(path: &str) -> i32
+extern fn with_fs_remove_tree(path: &str) -> i32
+extern fn with_fs_rename_file(old_path: &str, new_path: &str) -> i32
+extern fn with_fs_symlink(target: &str, link_path: &str) -> i32
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_exec_argv(args: &str) -> i32
+extern fn with_exec_argv_capture(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32
+extern fn with_exec_argv_capture_cwd(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> i32
+extern fn with_exec_argv_capture_input(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, stdin_path: &str) -> i32
+extern fn with_exec_argv_capture_spawn(args: &str, stdout_path: &str, stderr_path: &str) -> i32
 extern fn with_exec_wait(pid: i32, timeout_ms: i32) -> i32
 extern fn with_arg_at(idx: i32) -> str
 @[effect(fn_ptr: escape_value, ctx: escape_value)]
@@ -49,17 +49,17 @@ extern fn rt_read(fd: i32, buf: *mut u8, len: u64) -> i64
 extern fn rt_write(fd: i32, buf: *const u8, len: u64) -> i64
 extern fn rt_close(fd: i32) -> i32
 extern fn rt_seek(fd: i32, offset: i64, whence: i32) -> i64
-extern fn with_println_str(s: str) -> Unit
+extern fn with_println_str(s: &str) -> Unit
 extern fn with_println_i32(n: i32) -> Unit
 extern fn with_println_i64(n: i64) -> Unit
 extern fn with_println_bool(v: bool) -> Unit
-extern fn with_print_str(s: str) -> Unit
-extern fn with_write(s: str) -> Unit
-extern fn with_ewrite(s: str) -> Unit
-extern fn with_getenv_str(name: str) -> str
-extern fn with_setenv_str(name: str, value: str) -> i32
+extern fn with_print_str(s: &str) -> Unit
+extern fn with_write(s: &str) -> Unit
+extern fn with_ewrite(s: &str) -> Unit
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_setenv_str(name: &str, value: &str) -> i32
 extern fn with_parse_i64(s: str) -> i64
-extern fn with_str_len(s: str) -> i64
+extern fn with_str_len(s: &str) -> i64
 extern fn with_str_byte_at(s: str, index: i64) -> i32
 extern fn with_str_slice(s: str, start: i64, end: i64) -> str
 extern fn with_str_contains(haystack: str, needle: str) -> i32
@@ -2392,7 +2392,7 @@ impl ComptimeEvaluator:
         let total = lhs.len() + rhs.len()
         if self.reserve_string_bytes(node, total) == 0:
             return comptime_control_error()
-        comptime_control_value(comptime_value_str(with_str_concat(lhs, rhs)))
+        comptime_control_value(comptime_value_str(lhs ++ rhs))
 
     mut fn concat_comptime_string_parts(node: i32, parts: &Vec[str]) -> ComptimeControl:
         var total: i64 = 0
@@ -4768,7 +4768,7 @@ impl ComptimeEvaluator:
             for si in 0..out.string_names.len() as i32:
                 source_paths.push(self.workspace_path(capability.project_root, out.string_names.get(si as i64)))
                 source_texts.push(out.string_sources.get(si as i64))
-            source_name = with_str_clone(source_paths.get(0))
+            source_name = with_str_clone_ref(source_paths.get(0))
             pool = comp.compile_entry_source_texts(source_paths, source_texts)
         else:
             let absolute_source = self.workspace_path(capability.project_root, source_path)

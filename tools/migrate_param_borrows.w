@@ -11,8 +11,8 @@ use std.process
 use Lexer
 use Token
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
 extern fn with_str_clone(s: str) -> str
 
 

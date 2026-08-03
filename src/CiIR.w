@@ -24,8 +24,9 @@
 // Unsupported constructs fail by returning the null sentinel from
 // lowering, rather than escaping through verbatim raw-string nodes.
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 extern fn abort() -> Unit
@@ -37,7 +38,7 @@ fn ci_ir_phase_bug(message: &str):
 fn ci_ir_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
-    with_str_clone(text)
+    with_str_clone_ref(text)
 
 fn ci_ir_free_vec_i32(v: &Vec[i32]):
     if v.cap > 0 and v.ptr as i64 != 0:

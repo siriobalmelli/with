@@ -3,7 +3,7 @@
 //
 // This replaces the handwritten support_runtime.c panic implementation.
 
-extern fn with_ewrite(s: str) -> Unit
+extern fn with_ewrite(s: &str) -> Unit
 extern fn with_i64_to_str(n: i64) -> str
 extern fn with_fiber_in_fiber() -> i32
 extern fn with_fiber_panic_capture(msg: *const u8, msg_len: i32) -> Unit

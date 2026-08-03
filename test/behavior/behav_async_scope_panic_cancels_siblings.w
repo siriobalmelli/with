@@ -2,7 +2,7 @@
 //! expect-stderr: sibling cleanup
 //! expect-stderr: scope child panic
 
-extern fn with_ewrite(s: str) -> Unit
+extern fn with_ewrite(s: &str) -> Unit
 
 async fn tick() -> i32:
     1

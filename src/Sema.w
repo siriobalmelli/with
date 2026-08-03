@@ -16,11 +16,12 @@ use compiler.TrackedInputs
 use std.collections.HashMap
 use std.collections.HashSet
 
-extern fn with_write(s: str) -> Unit
-extern fn with_eprint(s: str) -> Unit
+extern fn with_write(s: &str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_eq(a: str, b: str) -> i32
-extern fn with_getenv_str(name: str) -> str
+extern fn with_getenv_str(name: &str) -> str
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_hashmap_new(key_size: i64, val_size: i64) -> *i8
 extern fn i64_to_string(n: i64) -> str
 extern fn abort() -> Unit
@@ -1455,7 +1456,7 @@ fn sema_new_vec_i32 -> Vec[i32]:
 fn sema_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
-    with_str_clone(text)
+    with_str_clone_ref(text)
 
 fn sema_clone_str_vec(values: &Vec[str]) -> Vec[str]:
     let out = sema_new_vec_str()

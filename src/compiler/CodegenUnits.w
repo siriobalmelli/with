@@ -23,7 +23,7 @@ use compiler.CodegenUnitsPolicy
 use Mir
 use std.string.parse
 
-extern fn with_fs_remove_file(path: str) -> i32
+extern fn with_fs_remove_file(path: &str) -> i32
 @[effect(fn_ptr: escape_value, ctx: escape_value)]
 extern fn with_thread_spawn(fn_ptr: *mut u8, ctx: *mut u8) -> i64
 extern fn with_thread_join(handle: i64) -> i32

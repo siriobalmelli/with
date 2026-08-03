@@ -8,8 +8,8 @@ use Mir
 use Sema
 use SemaCheck
 use Overflow
-extern fn with_eprint(s: str) -> Unit
-extern fn with_fs_read_file(path: str) -> str
+extern fn with_eprint(s: &str) -> Unit
+extern fn with_fs_read_file(path: &str) -> str
 
 // ── Builder state ────────────────────────────────────────────────
 

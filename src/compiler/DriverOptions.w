@@ -1,12 +1,13 @@
 // Structured CLI option values for compiler-driver commands.
 
 extern fn with_arg_at(idx: i32) -> str
-extern fn with_getenv_str(name: str) -> str
+extern fn with_getenv_str(name: &str) -> str
 extern fn with_str_starts_with(s: str, prefix: str) -> i32
-extern fn with_str_len(s: str) -> i64
+extern fn with_str_len(s: &str) -> i64
 extern fn with_str_byte_at(s: str, index: i64) -> i32
 extern fn with_str_slice(s: str, start: i64, end: i64) -> str
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 use Overflow
 
@@ -123,7 +124,7 @@ pub fn build_command_options_default -> BuildCommandOptions:
 pub fn driver_clone_str(s: &str) -> str:
     if s.len() == 0:
         return ""
-    with_str_clone(s)
+    with_str_clone_ref(s)
 
 pub fn driver_clone_str_vec(values: &Vec[str]) -> Vec[str]:
     let out: Vec[str] = Vec.new()
@@ -188,10 +189,10 @@ pub fn migrate_command_options_default -> MigrateCommandOptions:
 fn driver_has_output_prefix(arg: &str) -> bool:
     if with_str_len(arg) < 9:
         return false
-    with_str_starts_with(arg, "--output=") != 0
+    arg.starts_with("--output=")
 
 fn driver_is_build_target_selector(arg: &str) -> bool:
-    with_str_len(arg) > 1 and with_str_byte_at(arg, 0) == 58
+    arg.len() > 1 and arg.byte_at(0) == 58
 
 fn driver_has_flag(argc: i32, flag: &str) -> bool:
     var i = 2

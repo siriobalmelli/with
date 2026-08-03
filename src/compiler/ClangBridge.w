@@ -20,10 +20,10 @@ extern fn readdir(dirp: *mut u8) -> *mut u8
 extern fn closedir(dirp: *mut u8) -> i32
 extern fn strtod(str: *const u8, endptr: *mut *mut u8) -> f64
 extern fn realpath(path: *const u8, resolved_name: *mut u8) -> *mut u8
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_remove_file(path: str) -> i32
-extern fn with_fs_file_exists(path: str) -> i32
-extern fn with_getenv_str(name: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_remove_file(path: &str) -> i32
+extern fn with_fs_file_exists(path: &str) -> i32
+extern fn with_getenv_str(name: &str) -> str
 extern fn with_sysinfo_os() -> str
 
 // ── libclang types ──────────────────────────────────────────────

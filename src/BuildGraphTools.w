@@ -1,6 +1,6 @@
 // BuildGraphTools -- typed host tool resolution for build graph nodes.
 
-extern fn with_getenv_str(name: str) -> str
+extern fn with_getenv_str(name: &str) -> str
 extern fn with_sysinfo_os() -> str
 extern fn with_sysinfo_arch() -> str
 

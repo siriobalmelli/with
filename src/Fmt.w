@@ -6,7 +6,7 @@
 use Lexer
 use Token
 
-extern fn with_str_len(s: str) -> i64
+extern fn with_str_len(s: &str) -> i64
 extern fn with_str_byte_at(s: str, index: i64) -> i32
 extern fn with_str_slice(s: str, start: i64, end: i64) -> str
 
@@ -352,7 +352,7 @@ fn format_source_styled(source: &str, style: i32) -> str:
         if tag == TokenKind.TK_L_BRACE:
             block_kw_active = false
 
-        let text = with_str_slice(source, start as i64, end as i64)
+        let text = source.slice(start as i64, end as i64)
         out = out ++ text
         prev_tag = tag
         i = i + 1

@@ -4,18 +4,18 @@
 // No c_import — all operations go through with_fs_* runtime functions
 // which are backed by rt_* platform calls.
 
-extern fn with_fs_write_file(path: str, data: str) -> i32
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_file_exists(path: str) -> i32
-extern fn with_fs_remove_file(path: str) -> i32
-extern fn with_fs_rename_file(old_path: str, new_path: str) -> i32
-extern fn with_fs_create_dir(path: str) -> i32
-extern fn with_fs_remove_dir(path: str) -> i32
-extern fn with_fs_remove_tree(path: str) -> i32
-extern fn with_fs_copy_tree(src: str, dst: str) -> i32
-extern fn with_fs_symlink(target: str, link_path: str) -> i32
-extern fn with_fs_list_files(path: str) -> str
-extern fn with_fs_mkdir_p(path: str) -> i32
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_file_exists(path: &str) -> i32
+extern fn with_fs_remove_file(path: &str) -> i32
+extern fn with_fs_rename_file(old_path: &str, new_path: &str) -> i32
+extern fn with_fs_create_dir(path: &str) -> i32
+extern fn with_fs_remove_dir(path: &str) -> i32
+extern fn with_fs_remove_tree(path: &str) -> i32
+extern fn with_fs_copy_tree(src: &str, dst: &str) -> i32
+extern fn with_fs_symlink(target: &str, link_path: &str) -> i32
+extern fn with_fs_list_files(path: &str) -> str
+extern fn with_fs_mkdir_p(path: &str) -> i32
 
 /// Check if a file exists at the given path.
 pub fn file_exists(path: str) -> bool:

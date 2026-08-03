@@ -11,10 +11,10 @@ extern fn with_sysinfo_os() -> str
 extern fn with_sysinfo_arch() -> str
 extern fn with_sysinfo_hostname() -> str
 extern fn with_getpid() -> i32
-extern fn with_getenv_str(name: str) -> str
-extern fn with_setenv_str(name: str, value: str) -> i32
-extern fn with_fs_file_exists(path: str) -> i32
-extern fn with_str_len(s: str) -> i64
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_setenv_str(name: &str, value: &str) -> i32
+extern fn with_fs_file_exists(path: &str) -> i32
+extern fn with_str_len(s: &str) -> i64
 
 pub enum OsKind: i32:
     Macos

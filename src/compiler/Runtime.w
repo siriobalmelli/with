@@ -1,28 +1,29 @@
 // Compiler runtime boundary. Raw runtime exports are declared here; compiler
 // modules should depend on these typed wrappers instead of redeclaring externs.
 
-extern fn with_eprint(s: str) -> Unit
-extern fn with_exec_binary(path: str) -> i32
-extern fn with_exec_argv(args: str) -> i32
-extern fn with_exec_argv_cwd(args: str, cwd: str) -> i32
-extern fn with_exec_argv_capture(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32
+extern fn with_eprint(s: &str) -> Unit
+extern fn with_exec_binary(path: &str) -> i32
+extern fn with_exec_argv(args: &str) -> i32
+extern fn with_exec_argv_cwd(args: &str, cwd: &str) -> i32
+extern fn with_exec_argv_capture(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32
 extern fn with_arg_at(idx: i32) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_file_exists(path: str) -> i32
-extern fn with_fs_is_dir(path: str) -> i32
-extern fn with_fs_list_files(path: str) -> str
-extern fn with_fs_remove_file(path: str) -> i32
-extern fn with_fs_remove_dir(path: str) -> i32
-extern fn with_fs_remove_tree(path: str) -> i32
-extern fn with_fs_mkdir_p(path: str) -> i32
-extern fn with_fs_rename_file(old_path: str, new_path: str) -> i32
-extern fn with_getenv_str(name: str) -> str
-extern fn with_setenv_str(name: str, value: str) -> i32
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_file_exists(path: &str) -> i32
+extern fn with_fs_is_dir(path: &str) -> i32
+extern fn with_fs_list_files(path: &str) -> str
+extern fn with_fs_remove_file(path: &str) -> i32
+extern fn with_fs_remove_dir(path: &str) -> i32
+extern fn with_fs_remove_tree(path: &str) -> i32
+extern fn with_fs_mkdir_p(path: &str) -> i32
+extern fn with_fs_rename_file(old_path: &str, new_path: &str) -> i32
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_setenv_str(name: &str, value: &str) -> i32
 extern fn with_clock_nanos() -> i64
 extern fn with_getpid() -> i32
 extern fn with_str_clone(s: str) -> str
-extern fn with_str_hash(s: str) -> i64
+extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_str_hash(s: &str) -> i64
 extern fn with_nanosleep(ns: i64) -> i32
 extern fn with_sysinfo_os() -> str
 extern fn with_sysinfo_arch() -> str
@@ -90,7 +91,7 @@ pub fn runtime_getpid() -> i32:
     with_getpid()
 
 pub fn runtime_str_clone(s: &str) -> str:
-    with_str_clone(s)
+    with_str_clone_ref(s)
 
 pub fn runtime_str_hash(s: &str) -> i64:
     with_str_hash(s)

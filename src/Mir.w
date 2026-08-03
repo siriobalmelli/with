@@ -13,10 +13,10 @@ impl Copy for BlockId
 impl Copy for TermKind
 
 extern fn with_i64_to_str(n: i64) -> str
-extern fn with_getenv_str(name: str) -> str
-extern fn with_eprint(s: str) -> Unit
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_eprint(s: &str) -> Unit
 extern fn str_from_byte(b: i32) -> str
-extern fn with_write(s: str) -> Unit
+extern fn with_write(s: &str) -> Unit
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_str_contains(s: str, needle: str) -> i32
 
@@ -2358,7 +2358,7 @@ fn mir_debug_body_matches(body: &MirBody, pool: &InternPool, wanted_fn: &str) ->
     false
 
 fn mir_debug_mentions(text: &str, target: &str) -> bool:
-    target.len() == 0 or with_str_contains(text, target) != 0
+    target.len() == 0 or text.contains(target)
 
 fn trace_place_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec: &str) -> str:
     let wanted_fn = mir_debug_spec_fn(spec)

@@ -12,11 +12,11 @@
 
 use compiler.EmbeddedClangResourceData
 
-extern fn with_fs_write_file(path: str, data: str) -> i32
-extern fn with_fs_file_exists(path: str) -> i32
-extern fn with_fs_mkdir_p(path: str) -> i32
-extern fn with_getenv_str(name: str) -> str
-extern fn with_str_hash(s: str) -> i64
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_fs_file_exists(path: &str) -> i32
+extern fn with_fs_mkdir_p(path: &str) -> i32
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_str_hash(s: &str) -> i64
 
 fn ecr_dirname(path: &str) -> str:
     var last = -1

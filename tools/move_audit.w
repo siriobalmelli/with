@@ -41,10 +41,10 @@
 
 use std.process
 
-extern fn with_exec_argv_capture(argv: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
-extern fn with_fs_mkdir_p(path: str) -> i32
+extern fn with_exec_argv_capture(argv: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_fs_mkdir_p(path: &str) -> i32
 
 fn exec_capture(argv: str, outp: str, errp: str, timeout: i32) -> i32:
     unsafe:

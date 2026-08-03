@@ -20,13 +20,13 @@ use std.builtins.int_to_string
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_read_line_stdin() -> str
 extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_read_bytes_stdin(count: i32) -> str
-extern fn with_write_stdout(s: str) -> Unit
+extern fn with_write_stdout(s: &str) -> Unit
 extern fn with_flush_stdout() -> Unit
-extern fn with_fs_read_file(path: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
 
 // ── JSON-RPC framing ─────────────────────────────────────────
 

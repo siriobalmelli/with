@@ -21,7 +21,7 @@
 use std.collections
 extern fn with_lines_out(out: *mut c_void, s: str) -> Unit
 extern fn with_parse_i64(s: str) -> i64
-extern fn with_str_len(s: str) -> i64
+extern fn with_str_len(s: &str) -> i64
 extern fn with_str_eq(a: str, b: str) -> i32
 extern fn with_str_from_vec_u8(bytes: *const Vec[u8]) -> str
 extern fn with_alloc(size: i64) -> *mut u8

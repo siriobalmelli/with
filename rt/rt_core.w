@@ -295,6 +295,16 @@ fn cstr_len(s: *const u8) -> i64:
         n = n + 1
     n
 
+// #747 ref shim: rebuild a view str from a BORROWED str so flipped &str
+// entry points can reuse the consuming helpers (str_to_cstr, str_data).
+// BOOTSTRAP INTERIM: rt objects are seed-built and the frozen seed
+// miscompiles the honest `s as *const str` cast (see with_str_clone_ref);
+// `&s` is the binding's slot address in both worlds: slot -> header -> data.
+// Respell via `*(s as *const str)` after a reseed carries the RK_CAST fix.
+fn str_ref_view(s: &str) -> str:
+    let data = unsafe **(&s as *const *const *const u8)
+    make_str(data, s.len())
+
 // ── Memory helpers ─────────────────────────────────────────────────
 
 fn rt_memcpy(dst: *mut u8, src: *const u8, n: i64):
@@ -1371,15 +1381,15 @@ pub fn with_runtime_set_argv(argc: i32, argv: *const *const u8) -> Unit:
 
 // ── Print functions ────────────────────────────────────────────────
 
-pub fn with_print_str(s: str) -> Unit:
-    let p = str_data(s)
-    let n = str_length(s)
+pub fn with_print_str(s: &str) -> Unit:
+    let p = str_data(str_ref_view(s))
+    let n = s.len()
     if p as i64 != 0 and n > 0:
         write_all(1, p, n)
 
-pub fn with_println_str(s: str) -> Unit:
-    let p = str_data(s)
-    let n = str_length(s)
+pub fn with_println_str(s: &str) -> Unit:
+    let p = str_data(str_ref_view(s))
+    let n = s.len()
     if p as i64 != 0 and n > 0:
         write_all(1, p, n)
     let _ = rt_write(1, "\n" as *const u8, 1)
@@ -1402,12 +1412,12 @@ pub fn with_println_bool(b: i32) -> Unit:
     else:
         write_all(1, "false\n" as *const u8, 6)
 
-pub fn with_write(s: str) -> Unit:
+pub fn with_write(s: &str) -> Unit:
     with_print_str(s)
 
-pub fn with_ewrite(s: str) -> Unit:
-    let p = str_data(s)
-    let n = str_length(s)
+pub fn with_ewrite(s: &str) -> Unit:
+    let p = str_data(str_ref_view(s))
+    let n = s.len()
     if p as i64 != 0 and n > 0:
         write_all(2, p, n)
 
@@ -1418,8 +1428,8 @@ pub fn with_eprintln(s: str) -> Unit:
         write_all(2, p, n)
     let _ = rt_write(2, "\n" as *const u8, 1)
 
-pub fn with_eprint(s: str) -> Unit:
-    with_eprintln(s)
+pub fn with_eprint(s: &str) -> Unit:
+    with_eprintln(str_ref_view(s))
 
 // ── Panic / assert ─────────────────────────────────────────────────
 
@@ -1623,6 +1633,12 @@ pub fn with_fmt_buf_write_str(b: *mut u8, s: str) -> Unit:
     let slen = str_length(s)
     if slen > 0:
         fb_append(b, str_data(s), slen)
+
+// #747: append through a BORROWED str — the &str spelling for callers whose
+// text params borrow (CCodegen COut.write). Codegen keeps emitting the
+// consuming form for format strings; this one is source wiring only.
+pub fn with_fmt_buf_write_str_ref(b: *mut u8, s: &str) -> Unit:
+    with_fmt_buf_write_str(b, str_ref_view(s))
 
 pub fn with_fmt_buf_write_i64(b: *mut u8, val: i64) -> Unit:
     var tmp: [24]u8 = [0 as u8; 24]
@@ -2000,8 +2016,8 @@ pub fn with_str_clone_ref(s: &str) -> str:
     unsafe *((out as i64 + slen) as *mut u8) = 0
     make_str(out as *const u8, slen)
 
-pub fn with_str_len(s: str) -> i64:
-    str_length(s)
+pub fn with_str_len(s: &str) -> i64:
+    s.len()
 
 pub fn with_str_byte_at(s: str, idx: i64) -> i32:
     let slen = str_length(s)
@@ -2215,8 +2231,9 @@ pub fn with_str_from_vec_u8(v: *const u8) -> str:
         return make_str("" as *const u8, 0)
     alloc_str(vec_get_ptr_field(vp), len)
 
-pub fn with_str_hash(s: str) -> u64:
-    fnv_hash(str_data(s), str_length(s))
+pub fn with_str_hash(s: &str) -> u64:
+    let v = str_ref_view(s)
+    fnv_hash(str_data(v), str_length(v))
 
 // ── Conversion functions ───────────────────────────────────────────
 
@@ -2335,8 +2352,8 @@ pub fn with_arg_at(idx: i32) -> str:
     let s = unsafe *((saved_argv_raw + idx as i64 * 8) as *const *const u8)
     make_str(s, cstr_len(s))
 
-pub fn with_getenv_str(name: str) -> str:
-    let cname = str_to_cstr(name)
+pub fn with_getenv_str(name: &str) -> str:
+    let cname = str_to_cstr(str_ref_view(name))
     let val = rt_getenv(cname)
     if val as i64 == 0:
         return make_str("" as *const u8, 0)
@@ -3176,8 +3193,8 @@ fn fs_mkdir_component(path: *const u8, mode: i32) -> i32:
         return 0
     rc
 
-pub fn with_fs_read_file(path: str) -> str:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_read_file(path: &str) -> str:
+    let cpath = str_to_cstr(str_ref_view(path))
     if fs_path_is_dir_c(cpath):
         return make_str("" as *const u8, 0)
     let fd = rt_open(cpath, 0, 0)  // O_RDONLY
@@ -3201,13 +3218,14 @@ pub fn with_fs_read_file(path: str) -> str:
     unsafe *((buf as i64 + total) as *mut u8) = 0
     make_str(buf as *const u8, total)
 
-pub fn with_fs_write_file(path: str, data: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_write_file(path: &str, data: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     // O_WRONLY=1, O_CREAT=0x200, O_TRUNC=0x400
     let fd = rt_open(cpath, 1 | 0x200 | 0x400, 0o644)
     if fd < 0: return fd
-    let dp = str_data(data)
-    let dl = str_length(data)
+    let dv = str_ref_view(data)
+    let dp = str_data(dv)
+    let dl = str_length(dv)
     var written: i64 = 0
     while written < dl:
         let r = rt_write(fd, (dp as i64 + written) as *const u8, (dl - written) as u64)
@@ -3216,22 +3234,22 @@ pub fn with_fs_write_file(path: str, data: str) -> i32:
     let _ = rt_close(fd)
     0
 
-pub fn with_fs_file_exists(path: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_file_exists(path: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     if rt_access(cpath, 0) != 0:
         return 0
     1
 
-pub fn with_fs_is_dir(path: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_is_dir(path: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     if fs_path_is_dir_c(cpath):
         return 1
     0
 
-pub fn with_fs_mkdir_p(path: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_mkdir_p(path: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     // Create each directory component
-    let slen = str_length(path)
+    let slen = path.len()
     var i: i64 = 1
     while i < slen:
         if unsafe *((cpath as i64 + i) as *const u8) == 47:  // '/'
@@ -3243,8 +3261,8 @@ pub fn with_fs_mkdir_p(path: str) -> i32:
         i = i + 1
     fs_mkdir_component(cpath, 493)
 
-pub fn with_fs_remove_file(path: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_remove_file(path: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     rt_unlink(cpath)
 
 pub fn with_libc_open(path: *const i8, flags: i32, mode: i32) -> i32:
@@ -3271,47 +3289,47 @@ pub fn with_libc_unlink(path: *const i8) -> i32:
     let r = rt_unlink(path)
     if r < 0: -1 else: r
 
-pub fn with_fs_chmod(path: str, mode: i32) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_chmod(path: &str, mode: i32) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     rt_chmod(cpath, mode)
 
-pub fn with_fs_file_mode(path: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_file_mode(path: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     rt_file_mode(cpath)
 
-pub fn with_fs_readlink(path: str) -> str:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_readlink(path: &str) -> str:
+    let cpath = str_to_cstr(str_ref_view(path))
     rt_readlink(cpath)
 
-pub fn with_fs_rename_file(old_path: str, new_path: str) -> i32:
-    let cold = str_to_cstr(old_path)
-    let cnew = str_to_cstr(new_path)
+pub fn with_fs_rename_file(old_path: &str, new_path: &str) -> i32:
+    let cold = str_to_cstr(str_ref_view(old_path))
+    let cnew = str_to_cstr(str_ref_view(new_path))
     rt_rename(cold, cnew)
 
-pub fn with_fs_create_dir(path: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_create_dir(path: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     rt_mkdir(cpath, 493)  // 0755
 
-pub fn with_fs_remove_dir(path: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_remove_dir(path: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     rt_rmdir(cpath)
 
-pub fn with_fs_remove_tree(path: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_remove_tree(path: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     rt_remove_tree(cpath)
 
-pub fn with_fs_copy_tree(src: str, dst: str) -> i32:
-    let csrc = str_to_cstr(src)
-    let cdst = str_to_cstr(dst)
+pub fn with_fs_copy_tree(src: &str, dst: &str) -> i32:
+    let csrc = str_to_cstr(str_ref_view(src))
+    let cdst = str_to_cstr(str_ref_view(dst))
     rt_copy_tree(csrc, cdst)
 
-pub fn with_fs_symlink(target: str, link_path: str) -> i32:
-    let ctarget = str_to_cstr(target)
-    let clink = str_to_cstr(link_path)
+pub fn with_fs_symlink(target: &str, link_path: &str) -> i32:
+    let ctarget = str_to_cstr(str_ref_view(target))
+    let clink = str_to_cstr(str_ref_view(link_path))
     rt_symlink(ctarget, clink)
 
-pub fn with_fs_list_files(path: str) -> str:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_list_files(path: &str) -> str:
+    let cpath = str_to_cstr(str_ref_view(path))
     rt_list_files(cpath)
 
 // ── stdin I/O ──────────────────────────────────────────────────────
@@ -3340,7 +3358,7 @@ pub fn with_read_bytes_stdin(count: i32) -> str:
     unsafe *((buf as i64 + total) as *mut u8) = 0
     make_str(buf as *const u8, total)
 
-pub fn with_write_stdout(s: str) -> Unit:
+pub fn with_write_stdout(s: &str) -> Unit:
     with_print_str(s)
 
 pub fn with_flush_stdout() -> Unit:
@@ -3493,8 +3511,8 @@ pub fn with_process_alive(pid: i32) -> i32:
     let rc = rt_kill(pid, 0)
     if rc == 0: 1 else: 0
 
-pub fn with_fs_mkdir(path: str) -> i32:
-    let cpath = str_to_cstr(path)
+pub fn with_fs_mkdir(path: &str) -> i32:
+    let cpath = str_to_cstr(str_ref_view(path))
     rt_mkdir(cpath, 493)
 
 pub fn with_str_from_byte(byte: i32) -> str:

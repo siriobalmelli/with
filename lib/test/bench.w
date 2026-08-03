@@ -11,7 +11,7 @@
 
 use std.time
 
-extern fn with_str_len(s: str) -> i32
+extern fn with_str_len(s: &str) -> i32
 
 type Bench {
     target_ns: i64,
