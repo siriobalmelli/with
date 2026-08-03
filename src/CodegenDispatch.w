@@ -3653,6 +3653,32 @@ impl Codegen:
                     if src_tk == 0 and src_resolved >= self.mir_type_kinds_len() as i32 and src_resolved > 0:
                         src_tk = self.sema.get_type_kind(self.sema.resolve_alias(src_resolved as TypeId) as i32)
                 if src_tk == TypeKind.TY_STR:
+                    // #747: a cast to `*const str`/`*mut str` is address-
+                    // preserving. Sema auto-derefs a &str source, so the
+                    // operand place IS the referenced str and its address is
+                    // the reference value unchanged; extracting the data
+                    // pointer here handed callers the text bytes as a header.
+                    // Byte-pointer targets (`*const u8`) keep the data pointer.
+                    var tgt_pointee_tk = 0
+                    if d1 > 0:
+                        let tgt_resolved = self.mir_resolve_alias_at(d1)
+                        var tgt_tk = self.mir_type_kind_at(tgt_resolved)
+                        var tgt_pointee = self.mir_type_d0_at(tgt_resolved)
+                        if tgt_tk == 0 and tgt_resolved >= self.mir_type_kinds_len() as i32 and tgt_resolved > 0:
+                            let tgt_sema = self.sema.resolve_alias(tgt_resolved as TypeId) as i32
+                            tgt_tk = self.sema.get_type_kind(tgt_sema)
+                            tgt_pointee = self.sema.get_type_d0(tgt_sema)
+                        if tgt_tk == TypeKind.TY_PTR and tgt_pointee > 0:
+                            let pointee_resolved = self.mir_resolve_alias_at(tgt_pointee)
+                            tgt_pointee_tk = self.mir_type_kind_at(pointee_resolved)
+                            if tgt_pointee_tk == 0 and pointee_resolved >= self.mir_type_kinds_len() as i32 and pointee_resolved > 0:
+                                tgt_pointee_tk = self.sema.get_type_kind(self.sema.resolve_alias(pointee_resolved as TypeId) as i32)
+                    if tgt_pointee_tk == TypeKind.TY_STR:
+                        let str_place_ptr = self.mir_try_place_ptr_for_ref(body, d0)
+                        if str_place_ptr != 0:
+                            if wl_type_of(str_place_ptr) != cast_ty:
+                                return wl_build_bitcast(self.builder, str_place_ptr, cast_ty)
+                            return str_place_ptr
                     let str_val = self.mir_eval_operand(body, d0, 0)
                     let str_ptr = self.extract_str_ptr(str_val)
                     if str_ptr != 0:

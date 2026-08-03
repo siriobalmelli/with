@@ -215,7 +215,7 @@ impl Regex:
     pub fn captures_match_op(text: &str) -> Option[Captures]:
         if not self.is_global() or self.global_pos as i64 == 0 or self.global_subject_ptr as i64 == 0 or self.global_subject_len as i64 == 0:
             return self.captures(text)
-        let subject_ptr = unsafe *(&text as *const *const u8) as i64
+        let subject_ptr = unsafe **(&text as *const *const *const u8) as i64
         let subject_len = text.len()
         if unsafe *self.global_subject_ptr != subject_ptr or unsafe *self.global_subject_len != subject_len:
             unsafe *self.global_subject_ptr = subject_ptr

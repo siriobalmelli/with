@@ -1987,7 +1987,14 @@ pub fn with_str_clone_ref(s: &str) -> str:
     let slen = s.len()
     if slen == 0:
         return make_str("" as *const u8, 0)
-    let data = unsafe *(&s as *const *const u8)
+    // BOOTSTRAP INTERIM (#747): the honest read is `s as *const str` (the
+    // address-preserving reference value), but this object is seed-built and
+    // the frozen seed miscompiles that cast — its RK_CAST TY_STR branch
+    // extracts the DATA pointer, so the deref below reads text bytes as an
+    // address (SIGSEGV at 0x…"/private"). Fixed in CodegenDispatch.w on this
+    // branch; respell honestly once a reseed carries the fix. `&s` is the
+    // binding's slot address in both worlds: slot -> header -> data.
+    let data = unsafe **(&s as *const *const *const u8)
     let out = rt_alloc(slen + 1)
     rt_memcpy(out, data, slen)
     unsafe *((out as i64 + slen) as *mut u8) = 0
@@ -2025,7 +2032,8 @@ pub fn with_str_slice_ref(s: &str, start_arg: i64, end_arg: i64) -> str:
     if end > slen: end = slen
     if start >= end:
         return make_str("" as *const u8, 0)
-    let data = unsafe *(&s as *const *const u8)
+    // BOOTSTRAP INTERIM (#747): see with_str_clone_ref.
+    let data = unsafe **(&s as *const *const *const u8)
     make_str((data as i64 + start) as *const u8, end - start)
 
 pub fn with_str_substr(s: str, start_arg: i64, length_arg: i64) -> str:
