@@ -1,5 +1,35 @@
 # Handoff: D27/#740 emit-C roundtrip — generic intrinsics, fat fn values, allocator scan
 
+## SEED BROKE AND RECOVERED: g43df7f0d8 could not orchestrate (0f663361 fixed it)
+
+The g43df7f0d8 reseed shipped a binary that blows the 64 GiB limit on
+ANY `with build` — groundwork made evaluator READ paths deep-clone
+(lookup_value/extra_value_at → comptime_value_clone → with_str_clone),
+quadratic on the embedded-stdlib generator's string accumulator. The
+hole (#757): batteries only ever run the release binary as a spawned
+pure-compiler child; its FIRST act as build.w orchestrator is after
+reseed. Recovery: the direct compile+link path was unaffected —
+`with build src/main.w -O1 -o with-fixed` bootstrapped a fixed binary,
+which orchestrated battery 11 (fully green) → RESEEDED g0f663361e
+(seed + installed, orchestration-probed). comptime_value_share copies
+the value struct WITHOUT cloning text (pre-#747 Copy read semantics;
+store sites still clone; flagged loudly under the flipped classifier).
+Probe any future seed candidate as ORCHESTRATOR before :update-seed
+(rm out/lib/rt_core.o; candidate build :rt-core-object) until #757's
+gate lands.
+
+## #747 flip branch LIVE: scratchpad/wt-flip @ 747-flip
+
+Worktree wt-flip (branch 747-flip) = 1f47f706 + flip commit 4406d2f6
+(3 Sema hunks + re-wired TY_STR drop dispatch) + share fix cherry-pick.
+Flipped stage1 building; then tools/drive_param_borrow_fixpoint.w with
+flip_files.txt (209 files src+lib), empty denylist, flip_scratch —
+all in the session scratchpad. Residue after fixpoint = hand-fix list;
+then lib/std de-Copy tail (build.w Package/ProjectInfo/Diagnostics/
+Workspace at 259-301; JsonView is D27-ruled Copy — flip-time design
+question, not mechanical), corpus sweep, un-pin emitc_migrate cap,
+:move-audit/:drop-audit bracketing, battery ALONE, reseed, roundtrip.
+
 ## Battery-7 red RESOLVED: two bugs, one signature (daf9fc56 fixed mine)
 
 lldb rt_munmap tracing pinned the deterministic :llvm-bridge-object
