@@ -1681,6 +1681,11 @@ impl Zcu:
             runtime_eprint("error: parser returned an empty module without diagnostics for '" ++ name ++ "'")
             return AstPool.new()
 
+        // Positive completion evidence for the no-silent-fallbacks guard:
+        // only this return has run sema. Every earlier bail leaves the
+        // marker unset, so a success verdict downstream cannot be minted
+        // from a pipeline that silently stopped after parse (03f false-green).
+        self.frontend_sema_completed = 1
         pool
 
     // Make every resolved module's source text findable by file id for

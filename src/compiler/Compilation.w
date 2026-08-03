@@ -864,6 +864,9 @@ impl Compilation:
     mut fn check_pool(pool: AstPool, source_path: &str) -> bool:
         if pool.decl_count() == 0:
             return false
+        if self.zcu.frontend_sema_completed == 0:
+            runtime_eprint("internal error: frontend stopped before sema for '" ++ source_path ++ "' yet produced a module — refusing to report success (no-silent-fallbacks guard)")
+            return false
         let prepared_pool = self.prepare_pool_after_typecheck_hooks(pool, source_path)
         if prepared_pool.decl_count() == 0:
             return false

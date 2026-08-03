@@ -92,6 +92,11 @@ type Zcu {
     // Analysis commands preserve diagnostics but may continue past preliminary
     // semantic errors to produce a partial final-Sema fact snapshot.
     analysis_partial_semantics: i32,
+    // No-silent-fallbacks guard: set only when compile_source_frontend_mode
+    // ran sema to completion. Success verdicts (check_pool) require this
+    // POSITIVE evidence — a pipeline that stops before sema must never map
+    // to exit 0, whatever state produced the stop.
+    frontend_sema_completed: i32,
     prelude_mode: i32,
     cli_diag_gen_starts: Vec[i32],
     cli_diag_gen_ends: Vec[i32],
@@ -148,6 +153,7 @@ fn Zcu.init -> Zcu:
         project_config: project_config_default(),
         trace_c_import_cache: 0,
         analysis_partial_semantics: 0,
+        frontend_sema_completed: 0,
         prelude_mode: PRELUDE_FULL(),
         cli_diag_gen_starts: Vec.new(),
         cli_diag_gen_ends: Vec.new(),
@@ -368,6 +374,7 @@ impl Zcu:
 
     mut fn reset_for_new_invocation(source_dir: &str, path: &str, text: &str):
         self.set_current_source(source_dir, path, text)
+        self.frontend_sema_completed = 0
         self.extra_source_names = Vec.new()
         self.extra_source_texts = Vec.new()
         self.reset_import_state()
