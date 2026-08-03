@@ -685,7 +685,91 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-03b): #747 census 571 -> 0* (zero UNPROVEN — see caveat)
+## SESSION-RESUME (2026-08-03c): #747 sema census 0 PROVEN (rc=0); MirLower is the wall
+
+MAIN LINE: healthy, untouched. Before ANY reseed: probe candidate as
+ORCHESTRATOR (#757).
+
+#747 STATE: branch `747-flip` @ 7d8544fe (2 commits this session:
+d4828774 accessor flips, 7d8544fe census fixes). Worktree recipe
+unchanged.
+
+HOT-ACCESSOR CONVERSIONS (all -> &str, seed gate rc=0 after each round):
+- Ast.get_string, CiIR get_string (all 4 pools), InternPool
+  .resolve_symbol + .resolve, Sema.pool_resolve_symbol + .pool_resolve,
+  MirLower.symbol_text. Tails return pool storage directly.
+- cc_intern_resolve (CCodegen) kept `-> str` + explicit clone: it takes
+  InternPool BY VALUE, and the seed rejects a view returned out of a
+  consumed param ("returned view may outlive its origin").
+- Seed lesson: `let st = self.state` then view-from-st is rejected
+  (origin = local); inline `self.state.xs.get(...)` is accepted.
+- Seed's mutate-while-view rule then fired wherever an unannotated
+  binding held a view into self across a `self.emit_*`/mut call: 99
+  bindings (88 wave-1 + 11 wave-2) + ~14 owned-into-view-binding
+  assigns, all rewritten to `let/var X: str = with_str_clone_ref(...)`
+  (scratch tool clone_bindings.w, session scratchpad). These ~110
+  clones sit on cold diagnostic/bounded mangling paths; #748 view
+  tokens can recover them later.
+
+CENSUS (flipped stage1, check src/main.w): 185 errors post-conversion
+-> 0. 149 wrapper edits (wrap_diag_spans; kinds return/if-copy/
+assignment/wrong-arg/vec-push) + hand fixes: SemaDecl primitive-type
+lookup respelled `with_str_eq(clone(name),"i8")` -> `name == "i8"`
+(18 sites, zero-clone), main.w test_/bench_ filters -> .starts_with,
+3 mixed-arm `let name = if ...` clones (Codegen/Analysis), MirLower
+generic_call_symbol_text tail, SemaCheck collect_target_type arm.
+
+SEMA CENSUS ZERO IS PROVEN, rc=0: `with-stage1 check src/main.w
+--dump-typed >/dev/null` exits 0 with ZERO diagnostics (128 s, peak
+RSS 91.8 GB). emit_typed_file = compile_file (full sema pipeline that
+emitted every census error 1232->0) + serialization, NO MirLower. This
+is the completion proof the 03b session could not get.
+
+FULL `check` STILL DIES — and the wall is now precisely located:
+use-of-moved is a SEMA diagnostic, so every erroring census only ever
+exercised compile_file; run_mir_lower has NEVER completed under the
+flip. Evidence this session: 3 uncapped full checks OS-killed at
+90-90.5 GB peak RSS (251-388 s wall, zero diagnostics); capped run
+WITH_MEMORY_LIMIT_BYTES=96GiB exits rc=125 at committed=96 GiB at
+t=123 s INSIDE run_mir_lower. Demand is >96 GiB with the sema phase
+alone fitting fine (~92 GB incl. typed dump). MirLower-phase
+allocation volume is the next trim target, not sema accessors.
+
+STAGE2 PROBE (flipped stage1 build src/main.w -O1): rc=125 both
+attempts, pure memory failure, no crash/codegen error.
+- default cap: committed=64 GiB at 79 s.
+- WITH_MEMORY_LIMIT_BYTES=96GiB: committed=96 GiB at 128 s, and the
+  trip site matches the capped check EXACTLY (requested=730784, same
+  committed within 65 KB) — stage2 dies at the same run_mir_lower
+  allocation as check, before codegen starts. Same wall, not a new
+  failure mode.
+
+NEXT: (a) trim MirLower/prepare-hook clone volume the way sema
+accessors were trimmed (find the per-body allocation hogs; note the
+seed-built stage1 leaks every transient str, so volume == footprint),
+(b) or run the roundtrip on a bigger box (>96 GiB committed needed;
+total unknown — measure with a higher cap there), (c) or chunked
+compilation. Then: lib/std de-Copy leftovers, corpus sweep, un-pin
+emitc cap, :move-audit/:drop-audit, battery ALONE, reseed (as
+ORCHESTRATOR per #757).
+
+REVIEW ITEMS FOR ERIC (this session):
+- Observer accessors returning &str (list above) — API-shape call
+  made without a brief; conforms to D5 observers + the #748 direction.
+- SemaDecl primitive-name lookup now uses str == (operator lowers to
+  the same STR_EQ path; removes 18 per-lookup clones).
+- ~110 annotated `: str = with_str_clone_ref(...)` bindings restore
+  one clone each at diagnostic/mangling sites; flagged for #748.
+
+TRAPS confirmed again: `with` one-liners with cwd inside the worktree
+emit garbage (bit once more via a `with -p` respell attempt — output
+went to scratchpad, source untouched; redo from /Users/eric/with was
+correct). The harness shell here is zsh, not fish — `set x (cmd)`
+fails; use POSIX syntax. RSS sampling under memory pressure is
+misleading (compressor): use /usr/bin/time -l peak + the allocator's
+own committed= trip line for verdicts.
+
+## SESSION-RESUME (2026-08-03b, SUPERSEDED by 03c above): #747 census 571 -> 0* (zero UNPROVEN — see caveat)
 
 MAIN LINE: healthy. Seed + installed = v0.15.1-g0f663361e. Before ANY
 future reseed: probe candidate as ORCHESTRATOR (#757).
