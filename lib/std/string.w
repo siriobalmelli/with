@@ -48,7 +48,7 @@ pub fn StringBuilder.with_capacity(capacity: i64) -> Self:
 
 /// Append raw UTF-8 bytes from a string.
 impl StringBuilder:
-    pub mut fn push_str(s: str) -> Unit:
+    pub mut fn push_str(s: &str) -> Unit:
         for i in 0..s.len():
             self.bytes.push(s.byte_at(i) as u8)
         return
