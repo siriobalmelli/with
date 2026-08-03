@@ -684,3 +684,52 @@ Battery and reseed: DONE on `d3d55c6a`.
 - normal build/fixpoint/test and ownership audits — pending final battery
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
+
+## SESSION-RESUME (2026-08-03): everything an agent needs
+
+MAIN LINE: healthy. Seed + installed = v0.15.1-g0f663361e (battery 11
+green, orchestration-probed). Before ANY future reseed: probe candidate
+as ORCHESTRATOR (rm out/lib/rt_core.o; candidate build :rt-core-object)
+— #757.
+
+#747 STATE: branch `747-flip` (in the main repo's git; commits safe).
+The WORKTREE DIRECTORY lives in a session scratchpad under /private/tmp
+and may be GARBAGE-COLLECTED — if missing, recreate:
+  git worktree add /tmp/wt-flip 747-flip && ln -s /Users/eric/with/.deps /tmp/wt-flip/.deps
+Rebuild flipped stage1 (also the unflipped-world gate, must exit 0):
+  cd <wt> && /Users/eric/with/src/main build :stage1   (~3 min)
+Census: out/bootstrap/bin/with-stage1 check src/main.w  → currently
+571 errors. Probe flip-active: a trivial `let b = a; print(a)` str
+program must give exactly one use-of-moved error, rc=1, NO crash.
+
+NEXT WORK (hand-fix, in order): (1) 234 return-type tails — mostly
+`xs.get(i)` view tails and multiline if/match tails, CImport-heavy
+(61); wrap tail in with_str_clone_ref or return &str where the fn is
+an observer; (2) 47 HashMap get/contains/insert sites; (3) 149
+use-of-moved (read-before-move reorder or clone at move site); (4) 50
+struct-literal multiline heads; then lib/std de-Copy tail (build.w
+Package/ProjectInfo/Diagnostics/Workspace; JsonView = design question
+for Eric), corpus sweep, un-pin emitc_migrate cap, flipped
+stage1→stage2, :move-audit/:drop-audit, battery ALONE, reseed,
+roundtrip (#5 emit-C roundtrip task resumes then).
+
+TOOLS ON THE BRANCH: tools/wrap_diag_spans.w (diag-span clone wrapper,
+dry), tools/migrate_param_borrows.w + drive_param_borrow_fixpoint.w
+(param migration, fixpointed), denylist keyed fn\tparam.
+
+TRAPS (learned hard, do not relearn): every edit must be BOTH-worlds
+valid (seed compiles it AND flipped stage1 accepts); extern decl
+flips are global-per-symbol (one stale decl = phantom error); tool
+binaries with flipped decls must be built OUTSIDE the worktree (seed's
+embedded rt wins linking inside); frozen seed miscompiles
+`(s:&str) as *const str` (#758 — heals at post-flip reseed; rt
+clone_ref/slice_ref carry BOOTSTRAP INTERIM spelling `**(&s as *const
+*const *const u8)` — respell honestly after reseed); if-expression
+temporaries cannot auto-borrow at &str args (hoist to a binding);
+fish unquoted $files passes ONE arg (quote or use listfiles).
+
+OPEN ISSUES FILED THIS SESSION: #755 element-view marshalling
+miscompile (land before/with flip), #756 cross-module method adoption,
+#757 reseed orchestration gate, #758 seed &str cast miscompile.
+#743 (failed-action teardown corrupt-vec) got two more data points —
+still open, failure-path only.
