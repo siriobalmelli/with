@@ -12880,7 +12880,7 @@ fn ci_translate_c_initializer_for_cursor_type(session: i64, init_src: &str, ty: 
                             mi = mi + 1
                         expanded_any = true
             if not expanded_any:
-                expanded_items.push(raw_item)
+                expanded_items.push(with_str_clone_ref(raw_item))
             expand_i = expand_i + 1
         var rendered_parts: Vec[str] = Vec.new()
         rendered_parts.push("[")

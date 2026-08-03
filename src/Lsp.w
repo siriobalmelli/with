@@ -1384,7 +1384,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
         if tail != 0:
             let inner = lsp_collect_bindings_rec(pool, intern, tail, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         return result
 
     if kind == NodeKind.NK_IF_EXPR:
@@ -1398,7 +1398,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
         if else_body != 0 and offset >= pool.get_start(else_body as NodeId) and offset <= pool.get_end(else_body as NodeId):
             let inner = lsp_collect_bindings_rec(pool, intern, else_body, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         return result
 
     if kind == NodeKind.NK_WHILE:

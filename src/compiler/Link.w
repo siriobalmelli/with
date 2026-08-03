@@ -317,7 +317,7 @@ fn link_stage_make_link_command(linker: &str, obj_path: &str, bin_path: &str, ex
         for j in 0..cc_la.len() as i32:
             args.push(with_str_clone_ref(cc_la.get(j as i64)))
     for i in 0..link_args.len() as i32:
-        args.push(link_args.get(i as i64))
+        args.push(with_str_clone_ref(link_args.get(i as i64)))
     if runtime_sysinfo_os() == "Linux":
         args.push("-lm")
     let cleanup_files = link_stage_collect_cleanup_files(extras)
@@ -402,7 +402,7 @@ fn link_stage_make_darwin_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_p
         for j in 0..dw_la.len() as i32:
             args.push(with_str_clone_ref(dw_la.get(j as i64)))
     for i in 0..link_args.len() as i32:
-        args.push(link_args.get(i as i64))
+        args.push(with_str_clone_ref(link_args.get(i as i64)))
     args.push("-lSystem")
     let cleanup_files = link_stage_collect_cleanup_files(extras)
     LinkStageCommand { linker: with_str_clone_ref(llvm_ld), args, cwd: "", env, inputs, outputs, cleanup_files }
