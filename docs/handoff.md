@@ -41,7 +41,20 @@ field-through-borrow, 67 struct-literal, 43 assignment, 34 owned-to-
 ref-binding (diagnostic suggests exact fix), 33 with_fs_read_file-class
 externs, 25 if-copy, 19 HashMap.get.
 
-Phase C next (in order):
+GATE discovered after the WIP commit: the MIGRATED src is not yet
+UNFLIPPED-valid — the seed build of stage1 from it fails at 39 unique
+sites (`if expression of type str cannot produce &str`, owned-to-ref
+bindings): &str params now join owned strs in if-expressions and
+rvalue-borrow demands. These overlap the 1319 flip residue; every fix
+must be BOTH-worlds-valid. Fix these 39 FIRST (site list captured in
+the flip session's scratchpad unflipped_80.txt; regenerate any time
+via `src/main build :stage1` in the worktree — the seed's own errors
+ARE the list). Collections observer flips (HashMap/BTreeMap get+
+contains &K, HashSet contains &T, StringBuilder.push_str &str)
+committed as 457b7233; their std-body fallout is unknown until stage1
+next builds.
+
+Phase C next (in order, after the 39):
 1. Flip fs/str extern decls in src + rt signatures (with_fs_read_file
    etc., read-only paths) — same recipe as the regex four (~50 errors).
 2. Build tools/wrap_diag_spans.w: parse flipped-checker diagnostics
