@@ -1092,7 +1092,7 @@ impl Codegen:
         // Must do this before the raw range check, because a symbol value (e.g. 132 for "ast")
         // can accidentally pass field_token < elem_count on large structs.
         var normalized_field = field_token
-        var field_text = self.intern.resolve(field_token)
+        var field_text: str = with_str_clone_ref(self.intern.resolve(field_token))
         if field_text.len() == 0:
             field_text = self.sema_symbol_text(field_token)
         if field_text.len() > 0:
@@ -2876,7 +2876,7 @@ impl Codegen:
         var fi = 0
         while fi < f_count:
             let f_name_sym = self.struct_field_names.get((f_start + fi) as i64)
-            let f_name = self.intern.resolve(f_name_sym)
+            let f_name: str = with_str_clone_ref(self.intern.resolve(f_name_sym))
 
             // Separator
             if fi > 0:
@@ -3908,7 +3908,7 @@ impl Codegen:
         self.current_drop_origin_len = 0
         if origin_sym == 0:
             return
-        let text = self.intern.resolve(origin_sym)
+        let text: str = with_str_clone_ref(self.intern.resolve(origin_sym))
         if text.len() == 0:
             return
         self.current_drop_origin_ptr = self.const_c_string_pointer(text, wl_ptr_type(self.context))
@@ -6298,7 +6298,7 @@ impl Codegen:
             let elem_count = self.mir_type_d1_at(resolved)
             var tuple_idx = field_token
             if tuple_idx < 0 or tuple_idx >= elem_count:
-                var field_text = self.intern.resolve(field_token)
+                var field_text: str = with_str_clone_ref(self.intern.resolve(field_token))
                 if field_text.len() == 0:
                     field_text = self.sema_symbol_text(field_token)
                 var valid_index = if field_text.len() > 0: 1 else: 0
@@ -6437,7 +6437,7 @@ impl Codegen:
                 let live_enum_sym = self.generic_enum_inst_syms.get(live_resolved)
                 if live_enum_sym.is_some():
                     return live_enum_sym.unwrap()
-                var live_mangled = self.intern.resolve(live_base_sym)
+                var live_mangled: str = with_str_clone_ref(self.intern.resolve(live_base_sym))
                 let live_arg_count = self.sema.get_generic_inst_arg_count(live_resolved)
                 for ai in 0..live_arg_count:
                     let arg_tid = self.sema.get_generic_inst_arg(live_resolved, ai)
@@ -6473,7 +6473,7 @@ impl Codegen:
             let enum_sym = self.generic_enum_inst_syms.get(resolved)
             if enum_sym.is_some():
                 return enum_sym.unwrap()
-            var mangled = self.intern.resolve(base_sym)
+            var mangled: str = with_str_clone_ref(self.intern.resolve(base_sym))
             let arg_count = self.mir_type_d2_at(resolved)
             let te_start = self.mir_type_d1_at(resolved)
             for ai in 0..arg_count:
@@ -6525,7 +6525,7 @@ impl Codegen:
         if arg_count != tp_count:
             return 0
 
-        var mangled = self.intern.resolve(base_sym)
+        var mangled: str = with_str_clone_ref(self.intern.resolve(base_sym))
         let pending_syms: Vec[i32] = Vec.new()
         let pending_types: Vec[i64] = Vec.new()
         let pending_sema_types: Vec[i32] = Vec.new()
@@ -7027,7 +7027,7 @@ impl Codegen:
                 let tk = self.sema.get_type_kind(resolved as TypeId)
                 if tk == TypeKind.TY_REF or tk == TypeKind.TY_PTR:
                     resolved = self.sema.resolve_alias(self.sema.get_type_d0(resolved as TypeId) as TypeId) as i32
-                var field_text = self.intern.resolve(field)
+                var field_text: str = with_str_clone_ref(self.intern.resolve(field))
                 if field_text.len() == 0:
                     field_text = self.sema_symbol_text(field)
                 let sema_field = if field_text.len() > 0: self.sema.pool_lookup_symbol(field_text) else: 0
@@ -14216,7 +14216,7 @@ impl Codegen:
                     let gc_static_recv_type = self.ast_static_type_expr(gc_static_type_expr)
                     if gc_static_recv_type > 0:
                         let gc_static_type_name = self.sema.type_name(gc_static_recv_type)
-                        let gc_static_method_name = self.intern.resolve(gc_static_method_sym)
+                        let gc_static_method_name: str = with_str_clone_ref(self.intern.resolve(gc_static_method_sym))
                         let gc_static_fn_sym = self.intern.intern(gc_static_type_name ++ "." ++ gc_static_method_name)
                         let gc_static_fv = self.fn_values.get(gc_static_fn_sym)
                         let gc_static_ft = self.fn_fn_types.get(gc_static_fn_sym)
@@ -16641,7 +16641,7 @@ impl Codegen:
             return mono_sym
 
         let base_name = self.intern.resolve(owner_sym)
-        var mangled = base_name
+        var mangled: str = with_str_clone_ref(base_name)
         for ti in 0..tp_syms.len() as i32:
             let tp_sym = tp_syms.get(ti as i64)
             let bty = self.find_binding_type(bind_syms, bind_tys, tp_sym)
@@ -16714,7 +16714,7 @@ impl Codegen:
         let base_sym = self.sema.get_type_d0(resolved)
         if base_sym == 0:
             return ""
-        var mangled = self.intern.resolve(base_sym)
+        var mangled: str = with_str_clone_ref(self.intern.resolve(base_sym))
         let arg_count = self.sema.get_generic_inst_arg_count(resolved as i32)
         for ai in 0..arg_count:
             let arg_tid = self.sema.get_generic_inst_arg(resolved as i32, ai)

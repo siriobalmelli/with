@@ -157,8 +157,8 @@ impl CiTypePool:
     fn get_extra(idx: i32) -> i32:
         self.state.extra.get(idx as i64)
 
-    fn get_string(idx: i32) -> str:
-        with_str_clone_ref(self.state.strings.get(idx as i64))
+    fn get_string(idx: i32) -> &str:
+        self.state.strings.get(idx as i64)
 
     // Type constructor helpers.
     fn ty_void() -> CiTypeId:
@@ -401,8 +401,8 @@ impl CiExprPool:
     fn get_extra(idx: i32) -> i32:
         self.state.extra.get(idx as i64)
 
-    fn get_string(idx: i32) -> str:
-        with_str_clone_ref(self.state.strings.get(idx as i64))
+    fn get_string(idx: i32) -> &str:
+        self.state.strings.get(idx as i64)
 
     fn extra_len() -> i32:
         self.state.extra.len() as i32
@@ -570,8 +570,8 @@ impl CiStmtPool:
     fn get_extra(idx: i32) -> i32:
         self.state.extra.get(idx as i64)
 
-    fn get_string(idx: i32) -> str:
-        with_str_clone_ref(self.state.strings.get(idx as i64))
+    fn get_string(idx: i32) -> &str:
+        self.state.strings.get(idx as i64)
 
     // Statement constructor helpers.
     fn expr_stmt(expr: CiExprId) -> CiStmtId:
@@ -761,8 +761,8 @@ impl CiDeclPool:
     fn get_extra(idx: i32) -> i32:
         self.state.extra.get(idx as i64)
 
-    fn get_string(idx: i32) -> str:
-        with_str_clone_ref(self.state.strings.get(idx as i64))
+    fn get_string(idx: i32) -> &str:
+        self.state.strings.get(idx as i64)
 
     // Decl constructor helpers.
     fn fn_decl(name_sym: i32, ret_ty: CiTypeId, body: CiStmtId, flags: i32) -> CiDeclId:

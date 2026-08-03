@@ -731,7 +731,7 @@ impl Sema:
             self.record_named_type_with_pub(name, tid as i32, decl_is_pub)
             self.record_type_decl_tid(node, tid as i32)
             // Re-register variants with actual enum TypeId (bare + qualified names)
-            let plain_type_name_str = self.pool_resolve(name)
+            let plain_type_name_str: str = with_str_clone_ref(self.pool_resolve(name))
             var vpos = te_start
             for vi in 0..variant_count:
                 let v_name: i32 = self.type_extra.get(vpos as i64)
@@ -809,7 +809,7 @@ impl Sema:
             // Re-register variants with actual enum TypeId and store disc values.
             // Register BOTH bare name (for unqualified pattern matching) and
             // qualified name "TypeName.Variant" (for explicit EnumType.Variant access).
-            let type_name_str = self.pool_resolve(name)
+            let type_name_str: str = with_str_clone_ref(self.pool_resolve(name))
             var vpos = te_start
             for vi in 0..variant_count:
                 let v_name: i32 = self.type_extra.get(vpos as i64)
@@ -1750,7 +1750,7 @@ impl Sema:
         0
 
     mut fn extension_method_unique_symbol_at(decl_index: i32, qualified_sym: i32) -> i32:
-        let qualified = self.pool_resolve(qualified_sym)
+        let qualified: str = with_str_clone_ref(self.pool_resolve(qualified_sym))
         if qualified.len() == 0:
             return qualified_sym
         self.pool_intern(qualified ++ "$ext$" ++ f"{sema_extension_path_hash(self.decl_source_path_for_index(decl_index))}")
@@ -1936,8 +1936,8 @@ impl Sema:
             if self.trait_default_method_sig_exists(impl_type_sym, method_sym) != 0:
                 continue
 
-            let type_name = self.pool_resolve(impl_type_sym)
-            let method_name = self.pool_resolve(method_sym)
+            let type_name: str = with_str_clone_ref(self.pool_resolve(impl_type_sym))
+            let method_name: str = with_str_clone_ref(self.pool_resolve(method_sym))
             let fn_sym = self.pool_intern(type_name ++ "." ++ method_name)
             let param_start = self.trait_method_param_starts.get(mt_idx as i64)
             let param_count = self.trait_method_param_counts.get(mt_idx as i64)
@@ -2138,7 +2138,7 @@ impl Sema:
                 if self.select_trait_impl(type_name, bound_trait) == 0:
                     all_ok = 0
             if all_ok != 0:
-                let tn = self.pool_resolve(trait_sym)
+                let tn: str = with_str_clone_ref(self.pool_resolve(trait_sym))
                 self.emit_error_code("overlapping implementations of '" ++ tn ++ "'", node, "E1201")
 
     // Check if a new blanket impl overlaps with any existing direct impl
@@ -2165,7 +2165,7 @@ impl Sema:
                 if self.select_trait_impl(t_sym, bound_trait) == 0:
                     all_ok = 0
             if all_ok != 0:
-                let tn = self.pool_resolve(trait_sym)
+                let tn: str = with_str_clone_ref(self.pool_resolve(trait_sym))
                 self.emit_error_code("overlapping implementations of '" ++ tn ++ "'", node, "E1201")
 
     mut fn warn_large_copy_type(type_name: i32, type_tid: i32, node: i32):
@@ -2302,8 +2302,8 @@ impl Sema:
                                         for bi in 0..ab_count:
                                             let bound_sym = self.trait_assoc_bound_syms.get((ab_start + bi) as i64)
                                             if self.select_trait_impl(impl_at_type_sym, bound_sym) == 0:
-                                                let tname = self.pool_resolve(at_name_sym)
-                                                let bname = self.pool_resolve(bound_sym)
+                                                let tname: str = with_str_clone_ref(self.pool_resolve(at_name_sym))
+                                                let bname: str = with_str_clone_ref(self.pool_resolve(bound_sym))
                                                 self.emit_error("associated type '" ++ tname ++ "' does not satisfy bound '" ++ bname ++ "'", node)
                                                 return
 
@@ -2440,8 +2440,8 @@ impl Sema:
         0 as NodeId
 
     mut fn emit_trait_object_safety_error(trait_sym: i32, method_sym: i32, reason: &str, node: i32):
-        let trait_name = self.pool_resolve(trait_sym)
-        let method_name = self.pool_resolve(method_sym)
+        let trait_name: str = with_str_clone_ref(self.pool_resolve(trait_sym))
+        let method_name: str = with_str_clone_ref(self.pool_resolve(method_sym))
         self.emit_error("trait '" ++ trait_name ++ "' is not object-safe: method '" ++ method_name ++ "' " ++ reason, node)
 
     fn type_node_mentions_self(type_node: i32) -> i32:
@@ -2598,12 +2598,12 @@ impl Sema:
             let bound_count = self.ast.get_extra(pos + 1)
             // Validate type param references a known type parameter
             if self.type_param_exists(tp_start, tp_count, wp_name) == 0:
-                let wp_str = self.pool_resolve(wp_name)
+                let wp_str: str = with_str_clone_ref(self.pool_resolve(wp_name))
                 self.emit_error("where clause references unknown type parameter '" ++ wp_str ++ "'", fn_node)
             // Validate each bound references a known trait
             for bi in 0..bound_count:
                 let trait_sym = self.ast.get_extra(pos + 2 + bi)
-                let trait_name = self.pool_resolve(trait_sym)
+                let trait_name: str = with_str_clone_ref(self.pool_resolve(trait_sym))
                 if trait_name == "type":
                     continue
                 if not self.lang_trait_syms.contains(trait_sym) and not self.trait_lookup.contains(trait_sym):
@@ -2712,7 +2712,7 @@ impl Sema:
         for hi in 0..self.ast.compiler_hook_count():
             let hook_node = self.ast.compiler_hook_node(hi)
             let phase_sym = self.ast.compiler_hook_phase_at(hi)
-            let phase_name = self.pool_resolve_symbol(phase_sym)
+            let phase_name: str = with_str_clone_ref(self.pool_resolve_symbol(phase_sym))
             if phase_name != "after_typecheck":
                 self.emit_error("unknown compiler_hook phase '" ++ phase_name ++ "'", hook_node)
             let meta = self.ast.find_fn_meta(hook_node)

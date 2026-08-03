@@ -367,7 +367,7 @@ impl ResolveState:
 
             if kind == NodeKind.NK_C_IMPORT:
                 let header_sym = pool.get_data0(decl)
-                let header = self.pool.resolve(header_sym)
+                let header: str = with_str_clone_ref(self.pool.resolve(header_sym))
                 self.result.imports.push(ResolvedImport {
                     module_id,
                     index_in_module: import_index,

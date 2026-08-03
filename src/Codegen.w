@@ -3674,7 +3674,7 @@ impl Codegen:
         let extra_start = self.pool.get_data1(type_node)
         let field_count = self.pool.get_extra(extra_start)
 
-        let name_str = self.intern.resolve(name_sym)
+        let name_str: str = with_str_clone_ref(self.intern.resolve(name_sym))
         if not self.struct_type_map.get(name_sym).is_some():
             self.predeclare_struct_type(name_sym)
         let idx: i32 = self.struct_type_map.get(name_sym).unwrap()
@@ -3824,7 +3824,7 @@ impl Codegen:
         // Field access uses bitcast of pointer to field type.
         let extra_start = self.pool.get_data1(type_node)
         let field_count = self.pool.get_extra(extra_start)
-        let name_str = self.intern.resolve(name_sym)
+        let name_str: str = with_str_clone_ref(self.intern.resolve(name_sym))
 
         if not self.struct_type_map.get(name_sym).is_some():
             self.predeclare_struct_type(name_sym)
@@ -3893,7 +3893,7 @@ impl Codegen:
     mut fn declare_enum_type(name_sym: i32, type_node: i32):
         let extra_start = self.pool.get_data1(type_node)
         let variant_count = self.pool.get_extra(extra_start)
-        let enum_name = self.intern.resolve(name_sym)
+        let enum_name: str = with_str_clone_ref(self.intern.resolve(name_sym))
 
         // Find the largest payload to determine enum struct size.
         // Enum is { i32 tag, [N x i8] payload }.
@@ -5596,7 +5596,7 @@ impl Codegen:
             arg_types.push(fallback_ty)
             arg_sema_types.push(self.llvm_type_to_sema_type(fallback_ty))
 
-        let base_name = self.intern.resolve(name_sym)
+        let base_name: str = with_str_clone_ref(self.intern.resolve(name_sym))
         var mangled = with_str_clone_ref(base_name)
         for ti in 0..tp_count:
             let arg_ty = arg_types.get(ti as i64)

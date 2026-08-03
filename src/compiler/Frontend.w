@@ -306,7 +306,7 @@ impl Zcu:
             ordered_ci.push(0)
 
             let header_sym = out.get_data0(decl)
-            let header_spec = self.pool.resolve(header_sym)
+            let header_spec: str = with_str_clone_ref(self.pool.resolve(header_sym))
             let decl_dir = self.decl_source_dir_frontend(i)
             let resolved_header_spec = project_config_resolve_c_import_header(self.project_config, decl_dir, header_spec)
             self.record_frontend_tracked_input(c_import_absolute_quoted_path(resolved_header_spec))

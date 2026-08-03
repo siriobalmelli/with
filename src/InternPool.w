@@ -146,11 +146,10 @@ impl InternPool:
         st.symbol_texts.push(owned)
         id
 
-    fn resolve_symbol(sym: Symbol) -> str:
-        let st = self.state
-        if sym <= 0 or sym >= st.symbol_texts.len() as i32:
+    fn resolve_symbol(sym: Symbol) -> &str:
+        if sym <= 0 or sym >= self.state.symbol_texts.len() as i32:
             return ""
-        with_str_clone_ref(st.symbol_texts.get(sym as i64))
+        self.state.symbol_texts.get(sym as i64)
 
     fn intern_type(key: TypeKey) -> TypeId:
         let st = self.state
@@ -201,5 +200,5 @@ impl InternPool:
     fn intern(s: &str) -> Symbol:
         self.intern_str(s)
 
-    fn resolve(sym: Symbol) -> str:
+    fn resolve(sym: Symbol) -> &str:
         self.resolve_symbol(sym)

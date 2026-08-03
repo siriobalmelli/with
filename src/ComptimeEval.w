@@ -2527,7 +2527,7 @@ fn comptime_string_builder_constructor_method(name: &str) -> str:
 
 impl ComptimeEvaluator:
     mut fn eval_string_builder_method_call(recv_node: i32, recv_value: ComptimeValue, field: i32, extra_start: i32, arg_count: i32, node: i32) -> ComptimeControl:
-        let method = self.pool.resolve(field)
+        let method: str = with_str_clone_ref(self.pool.resolve(field))
         let builder = self.string_builder_from_value(recv_value, node)
         if builder.kind != ComptimeValueKind.CV_STRING_BUILDER:
             return comptime_control_error()
@@ -2694,7 +2694,7 @@ fn comptime_reverse_bits(value: i64, width: i32) -> i64:
 
 impl ComptimeEvaluator:
     mut fn eval_int_method_call(recv_value: ComptimeValue, recv_type_raw: i32, field: i32, extra_start: i32, arg_count: i32, node: i32) -> ComptimeControl:
-        let method = self.pool.resolve(field)
+        let method: str = with_str_clone_ref(self.pool.resolve(field))
         var recv_type = recv_type_raw
         if recv_type == 0:
             recv_type = recv_value.type_id
@@ -6106,7 +6106,7 @@ impl ComptimeEvaluator:
         self.fail(node, "Workspace capability method '" ++ method ++ "' is not implemented yet")
 
     mut fn eval_capability_method_call(recv_value: ComptimeValue, field: i32, extra_start: i32, arg_count: i32, node: i32) -> ComptimeControl:
-        let method = self.pool.resolve(field)
+        let method: str = with_str_clone_ref(self.pool.resolve(field))
         let kind = recv_value.data0 as i32
         if kind == CapabilityKind.CK_BUILD_CTX:
             return self.eval_buildctx_capability_method(recv_value, method, arg_count, node)
@@ -7087,7 +7087,7 @@ impl ComptimeEvaluator:
         let arg_count = self.ast.get_data2(node)
         let typeinfo_field = self.sema.typeinfo_module_field(callee)
         if typeinfo_field != 0:
-            let method_name = self.pool.resolve(typeinfo_field)
+            let method_name: str = with_str_clone_ref(self.pool.resolve(typeinfo_field))
             if self.sema.typeinfo_module_type_arg_count(callee) != 1:
                 return self.fail(node, "TypeInfo." ++ method_name ++ " takes exactly one type argument")
             let type_node = self.sema.typeinfo_module_type_arg_node(callee, 0)
@@ -7098,7 +7098,7 @@ impl ComptimeEvaluator:
         if self.ast.kind(callee) == NodeKind.NK_FIELD_ACCESS:
             let recv_node = self.ast.get_data0(callee)
             let field = self.ast.get_data1(callee)
-            let method_name = self.pool.resolve(field)
+            let method_name: str = with_str_clone_ref(self.pool.resolve(field))
             if self.ast.kind(recv_node) == NodeKind.NK_IDENT and self.pool.resolve(self.ast.get_data0(recv_node)) == "StringBuilder" and (method_name == "new" or method_name == "with_capacity"):
                 var result_type = self.node_type_or(node, 0)
                 if result_type == 0:
@@ -7341,7 +7341,7 @@ impl ComptimeEvaluator:
     mut fn eval_fn_symbol_call_values_with_type_args(fn_sym: i32, arg_values: &Vec[ComptimeValue], node: i32, tp_syms: &Vec[i32], tp_tys: &Vec[i32]) -> ComptimeControl:
         self.last_call_has_mut_receiver = 0
         self.last_call_mut_receiver = comptime_value_invalid()
-        let fn_name = self.pool.resolve(fn_sym)
+        let fn_name: str = with_str_clone_ref(self.pool.resolve(fn_sym))
         if fn_name == "parallel":
             return self.eval_parallel_workspaces_call(arg_values, node)
         let string_builder_constructor = comptime_string_builder_constructor_method(fn_name)

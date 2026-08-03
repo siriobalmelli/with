@@ -1166,10 +1166,10 @@ impl Sema:
         let named = if self.named_types.contains(sym): 1 else: 0
         with_eprint(f"[unknown-type] {context} sym={sym} name={name} prim={prim} named={named} collecting={self.collecting_types} node_kind={self.ast.kind(node)}")
 
-    fn pool_resolve_symbol(sym: i32) -> str:
+    fn pool_resolve_symbol(sym: i32) -> &str:
         self.pool.resolve_symbol(sym)
 
-    fn pool_resolve(sym: i32) -> str:
+    fn pool_resolve(sym: i32) -> &str:
         self.pool_resolve_symbol(sym)
 
     fn pool_lookup_symbol(name: &str) -> i32:
@@ -1418,7 +1418,7 @@ impl Sema:
             return 1
         if self.symbol_requires_alloc_tier(sym) == 0:
             return 1
-        let name = self.pool_resolve_symbol(sym)
+        let name: str = with_str_clone_ref(self.pool_resolve_symbol(sym))
         self.emit_error(name ++ " requires alloc; use --alloc or set alloc = true with std = false", node)
         0
 
@@ -1429,7 +1429,7 @@ impl Sema:
             return 1
         if self.symbol_requires_std_tier(sym) == 0:
             return 1
-        let name = self.pool_resolve_symbol(sym)
+        let name: str = with_str_clone_ref(self.pool_resolve_symbol(sym))
         self.emit_error(name ++ " requires std", node)
         0
 
@@ -2667,7 +2667,7 @@ impl Sema:
         "; candidates: " ++ listed
 
     mut fn emit_private_symbol_error(sym: i32, node: i32) -> Unit:
-        let name = self.pool_resolve(sym)
+        let name: str = with_str_clone_ref(self.pool_resolve(sym))
         let gate_note = self.std_gated_import_note(sym)
         if gate_note.len() > 0:
             self.emit_error("'" ++ name ++ "' requires an explicit import (§18.1)" ++ gate_note, node)
@@ -3791,7 +3791,7 @@ impl Sema:
                     return 0
                 if self.require_std_tier_for_symbol(gi_base_sym, node) == 0:
                     return 0
-                let gi_name = self.pool_resolve_symbol(gi_base_sym)
+                let gi_name: str = with_str_clone_ref(self.pool_resolve_symbol(gi_base_sym))
                 self.emit_error("unknown type: " ++ gi_name, node)
                 return 0
         if self.require_alloc_tier_for_symbol(gi_base_sym, node) == 0:
@@ -4190,7 +4190,7 @@ impl Sema:
         self.scope_starts.push(self.bind_names.len() as i32)
 
     mut fn emit_pending_generic_binding_error(sym: i32):
-        let binding_name = self.pool_resolve(sym)
+        let binding_name: str = with_str_clone_ref(self.pool_resolve(sym))
         var node = 0
         if self.pending_generic_binding_decl.contains(sym):
             node = self.pending_generic_binding_decl.get(sym).unwrap()
@@ -4269,7 +4269,7 @@ impl Sema:
         if self.is_discard_binding_symbol(sym) != 0:
             return
         if self.scope_lookup(sym) >= 0:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("shadowing is not allowed for '" ++ name ++ "'", node)
             return
         self.scope_insert_at(sym, tid, is_mut)
@@ -4284,7 +4284,7 @@ impl Sema:
         let idx: i32 = existing.unwrap()
         let current_start = if self.scope_starts.len() > 0: self.scope_starts.get((self.scope_starts.len() - 1) as i64) else: 0
         if idx < current_start or self.bind_states.get(idx as i64) != VarState.MOVED:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("shadowing is not allowed for '" ++ name ++ "'", node)
             return 0
         self.bind_types.set_i32(idx as i64, tid)
@@ -4328,24 +4328,24 @@ impl Sema:
         let existing_idx: i32 = existing_opt.unwrap()
         let existing_kind = self.global_value_decl_kind(sym)
         if existing_kind == 0:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("shadowing is not allowed for '" ++ name ++ "'", node)
             return
 
         if existing_kind == GLOBAL_VALUE_DECL_DEF and decl_kind == GLOBAL_VALUE_DECL_DEF:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("shadowing is not allowed for '" ++ name ++ "'", node)
             return
 
         let existing_mut = self.bind_muts.get(existing_idx as i64)
         if existing_mut != is_mut:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("conflicting global declaration for '" ++ name ++ "'", node)
             return
 
         let existing_tid = self.bind_types.get(existing_idx as i64)
         if self.global_value_decl_types_compatible(existing_tid, tid) == 0:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("conflicting global declaration for '" ++ name ++ "'", node)
             return
 
@@ -4766,7 +4766,7 @@ impl Sema:
 
     mut fn emit_loop_carried_move_error(bind_idx: i32, loop_node: i32):
         let sym = self.bind_names.get(bind_idx as i64)
-        let name = self.pool_resolve(sym)
+        let name: str = with_str_clone_ref(self.pool_resolve(sym))
         self.emit_error_with_help("use of moved value: `" ++ name ++ "` is moved inside a loop and not reinitialized before the loop repeats", loop_node, "reinitialize `" ++ name ++ "` on every path before the loop repeats, or move it only on a path that exits the loop")
 
     // Allocate this loop's break-flag region in loop_break_flat (called by each loop
@@ -5278,8 +5278,8 @@ impl Sema:
                 if view_has_drop != 0:
                     self.emit_implicit_drop_view_use_error(view_sym, origin_sym, err_node)
                     return
-                let view_name = self.pool_resolve(view_sym)
-                let origin_name = self.pool_resolve(origin_sym)
+                let view_name: str = with_str_clone_ref(self.pool_resolve(view_sym))
+                let origin_name: str = with_str_clone_ref(self.pool_resolve(origin_sym))
                 self.emit_error("view '" ++ view_name ++ "' may outlive its origin '" ++ origin_name ++ "'", err_node)
                 return
 
@@ -6188,7 +6188,7 @@ impl Sema:
         1
 
     mut fn fn_clause_body_symbol_at(dispatch_sym: i32, decl_index: i32) -> i32:
-        let base = self.pool_resolve(dispatch_sym)
+        let base: str = with_str_clone_ref(self.pool_resolve(dispatch_sym))
         self.pool_intern(base ++ "$clause$" ++ f"{decl_index}")
 
     fn fn_clause_group_index(dispatch_sym: i32) -> i32:

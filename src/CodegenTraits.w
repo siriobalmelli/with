@@ -957,10 +957,10 @@ impl Codegen:
         self.vtable_globals.insert(key, vg)
 
     fn trait_vtable_global_name(impl_type_sym: i32, trait_sym: i32) -> str:
-        var type_name = self.intern.resolve(impl_type_sym)
+        var type_name: str = with_str_clone_ref(self.intern.resolve(impl_type_sym))
         if type_name.len() == 0:
             type_name = self.sema_symbol_text(impl_type_sym)
-        var trait_name = self.intern.resolve(trait_sym)
+        var trait_name: str = with_str_clone_ref(self.intern.resolve(trait_sym))
         if trait_name.len() == 0:
             trait_name = self.sema_symbol_text(trait_sym)
         if type_name.len() == 0 or trait_name.len() == 0:
@@ -1053,7 +1053,7 @@ impl Codegen:
         let method_start = self.trait_method_starts.get(trait_idx as i64)
         let method_count = self.trait_method_counts.get(trait_idx as i64)
         let vtable_ty = self.trait_vtable_types.get(trait_idx as i64)
-        let type_name = self.intern.resolve(impl_type_sym)
+        let type_name: str = with_str_clone_ref(self.intern.resolve(impl_type_sym))
         let entries: Vec[i64] = Vec.new()
         var used_row = 0
         for mi in 0..method_count:
@@ -1065,7 +1065,7 @@ impl Codegen:
             let consumes_self =
                 if param_count > 0 and fn_param_is_move_self(self.pool.fn_param_flags(param_start, 0)) != 0: 1
                 else: 0
-            let method_text = self.intern.resolve(method_sym)
+            let method_text: str = with_str_clone_ref(self.intern.resolve(method_sym))
             let row = self.sema.dyn_impl_method_row(concrete_sema_ty, trait_text, method_text)
             var fv: i64 = 0
             var ft: i64 = 0

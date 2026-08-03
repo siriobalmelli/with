@@ -41,7 +41,7 @@ impl COut:
         with_fmt_buf_finish(self.buf)
 
 fn cc_intern_resolve(intern: InternPool, sym: i32) -> str:
-    intern.resolve_symbol(sym)
+    with_str_clone_ref(intern.resolve_symbol(sym))
 
 
 fn cc_lbrace -> str:
@@ -1332,7 +1332,7 @@ impl CCodegen:
 
     mut fn payload_enum_variant_format_expr(enum_tid: i32, expr: &str, variant_index: i32, context: &str) -> str:
         let name_sym = self.sema.type_reflection_variant_name(enum_tid, variant_index)
-        let variant_name = self.sema.pool_resolve(name_sym)
+        let variant_name: str = with_str_clone_ref(self.sema.pool_resolve(name_sym))
         var out = "WITH_STR_LIT(\"" ++ cc_escape_c_string(variant_name) ++ "\")"
         let payload_count = self.sema.type_reflection_variant_payload_count(enum_tid, variant_index)
         if payload_count <= 0:

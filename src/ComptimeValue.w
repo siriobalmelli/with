@@ -319,7 +319,7 @@ fn comptime_value_format(value: &ComptimeValue, extras: &Vec[ComptimeValue], sem
     if value.kind == ComptimeValueKind.CV_FN:
         return "<fn " ++ sema.pool_resolve(value.data0 as i32) ++ ">"
     if value.kind == ComptimeValueKind.CV_ENUM:
-        var out = sema.pool_resolve(value.data0 as i32)
+        var out: str = with_str_clone_ref(sema.pool_resolve(value.data0 as i32))
         if value.extra_count > 0:
             out = out ++ "("
             for i in 0..value.extra_count:

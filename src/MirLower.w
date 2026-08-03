@@ -1354,7 +1354,7 @@ impl MirBuilder:
         self.alias_places.push(place)
         self.alias_types.push(ty)
 
-    fn symbol_text(sym: i32) -> str:
+    fn symbol_text(sym: i32) -> &str:
         let pool_text = self.pool.resolve_symbol(sym)
         if pool_text.len() > 0:
             return pool_text
@@ -1611,7 +1611,7 @@ impl MirBuilder:
             if base_ty == 0 or base_ty == self.sema.ty_void as i32:
                 base_ty = self.type_receiver_type(base)
             if base_ty != 0 and base_ty != self.sema.ty_void as i32:
-                let method_name = self.pool.resolve_symbol(method_sym)
+                let method_name: str = with_str_clone_ref(self.pool.resolve_symbol(method_sym))
                 let iret = self.intrinsic_return_type(base_ty, method_name)
                 if iret != 0 and iret != self.sema.ty_void as i32:
                     return iret
@@ -2606,7 +2606,7 @@ impl MirBuilder:
                 else if node_kind == NodeKind.NK_FIELD_ACCESS:
                     let base = self.ast.get_data0(self.cur_node)
                     let field_sym = self.ast.get_data1(self.cur_node)
-                    let field_name = self.pool.resolve(field_sym)
+                    let field_name: str = with_str_clone_ref(self.pool.resolve(field_sym))
                     let sema_field_sym = self.sema.pool_lookup_symbol(field_name)
                     let base_ty = self.expr_type(base)
                     let field_ty = self.expr_type(self.cur_node)
