@@ -8181,7 +8181,7 @@ impl CiExprPool:
         let peeled = ci_peel_transparent(session, value_cursor)
         if with_ci_cursor_kind(session, peeled) == CXK_STRING_LITERAL and self.kind(value_id) == CiExprKind.CIE_STRING_LIT and ci_cimport_type_is_const_c_string_input(ci_print_type(types, target_ty_id)):
             let lit_text = self.get_string(self.get_d0(value_id))
-            let c_lit_text = if ci_starts_with(lit_text, "c\""): lit_text else: "c" ++ lit_text
+            let c_lit_text = if ci_starts_with(lit_text, "c\""): with_str_clone_ref(lit_text) else: "c" ++ lit_text
             let c_lit_idx = self.add_string(c_lit_text)
             let c_lit_id = self.add(CiExprKind.CIE_STRING_LIT, c_lit_idx, 0, 0, 0 as CiTypeId)
             let ptr_idx = self.add_string("ptr")
@@ -8615,7 +8615,7 @@ fn ci_record_name_from_ci_type(types: &CiTypePool, ty: CiTypeId) -> str:
     if (cur as i32) == 0:
         return ""
     if types.kind(cur) == CiTypeKind.CT_STRUCT or types.kind(cur) == CiTypeKind.CT_NAMED:
-        return types.get_string(types.get_d0(cur))
+        return with_str_clone_ref(types.get_string(types.get_d0(cur)))
     ""
 
 impl CiTypePool:
@@ -11321,7 +11321,7 @@ impl CiStmtPool:
                     if types.kind(vty_id) == CiTypeKind.CT_ARRAY and exprs.kind(init_id) == CiExprKind.CIE_STRING_LIT:
                         var literal_init = source_init_expr
                         if not ci_is_string_literal(literal_init) and not ci_is_concatenated_string(literal_init):
-                            literal_init = exprs.get_string(exprs.get_d0(init_id))
+                            literal_init = with_str_clone_ref(exprs.get_string(exprs.get_d0(init_id)))
                         let array_init = exprs.char_array_init_from_string_literal(types, vty_id, literal_init)
                         if (array_init as i32) != 0:
                             init_id = array_init

@@ -2723,13 +2723,13 @@ fn discover_test_functions(text: &str) -> TestDiscovery:
         let fn_name = intern.resolve(pool.get_data0(decl))
         if fn_name == "main":
             has_main = true
-        if with_str_starts_with(fn_name, "test_") != 0:
-            test_names.push(fn_name)
+        if fn_name.starts_with("test_"):
+            test_names.push(with_str_clone_ref(fn_name))
         else:
             // Check @[test] attribute via fn metadata flags
             let meta = pool.find_fn_meta(decl)
             if meta >= 0 and (pool.fn_meta_flags(meta) % 8192) / 4096 == 1:
-                test_names.push(fn_name)
+                test_names.push(with_str_clone_ref(fn_name))
     TestDiscovery { parse_ok: true, has_main, test_names }
 
 fn discover_bench_functions(text: &str) -> BenchDiscovery:
@@ -2754,12 +2754,12 @@ fn discover_bench_functions(text: &str) -> BenchDiscovery:
         let fn_name = intern.resolve(pool.get_data0(decl))
         if fn_name == "main":
             has_main = true
-        if with_str_starts_with(fn_name, "bench_") != 0:
-            bench_names.push(fn_name)
+        if fn_name.starts_with("bench_"):
+            bench_names.push(with_str_clone_ref(fn_name))
         else:
             let meta = pool.find_fn_meta(decl)
             if meta >= 0 and (pool.fn_meta_flags(meta) % 65536) / 32768 == 1:
-                bench_names.push(fn_name)
+                bench_names.push(with_str_clone_ref(fn_name))
     BenchDiscovery { parse_ok: true, has_main, bench_names }
 
 fn synthesize_bench_main_source(text: &str, bench_names: &Vec[str]) -> str:

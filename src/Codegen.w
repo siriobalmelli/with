@@ -662,7 +662,7 @@ impl Codegen:
                 fact.type_id = self.sema.sig_param_type(si, pi)
                 fact.effects = self.sema.sig_param_effect(si, pi)
                 fact.flags = 1 | (if ref_table: 2 else: 0) | (if llvm_pointer: 4 else: 0) | (if function != 0: 8 else: 0)
-                fact.name = self.sema.pool_resolve(sema_sym)
+                fact.name = with_str_clone_ref(self.sema.pool_resolve(sema_sym))
                 fact.detail = f"share-place declaration emitted={function != 0} ref-table={ref_table} llvm-pointer={llvm_pointer}"
                 let selected = self.analysis_fact_selected(&fact)
                 self.analysis_add(move fact)
@@ -703,7 +703,7 @@ impl Codegen:
             fact.symbol = sema_sym
             fact.type_id = sema_ret
             fact.flags = 16 | (if sema_returns_value: 32 else: 0) | (if llvm_is_void: 64 else: 0) | (if has_sret: 128 else: 0)
-            fact.name = self.sema.pool_resolve(sema_sym)
+            fact.name = with_str_clone_ref(self.sema.pool_resolve(sema_sym))
             fact.detail = f"return-shape sema-ret={sema_ret} llvm-void={llvm_is_void} sret={has_sret}"
             let selected = self.analysis_fact_selected(&fact)
             self.analysis_add(move fact)
@@ -733,7 +733,7 @@ impl Codegen:
                 let count = body.call_arg_counts.get(args_id as i64)
                 for ai in 0..count:
                     if not self.analysis_has_call_argument(body.fn_sym, args_id, ai):
-                        let name = if body.call_mono_sym(args_id) != 0: self.sema.pool_resolve(body.call_mono_sym(args_id)) else: "<unresolved>"
+                        let name = if body.call_mono_sym(args_id) != 0: with_str_clone_ref(self.sema.pool_resolve(body.call_mono_sym(args_id))) else: "<unresolved>"
                         self.analysis_fail(f"call {name} body={body.fn_sym} bb={bb} args={args_id} param={ai}: no Codegen marshalling fact")
 
     mut fn record_codegen_call_argument(body: &MirBody, args_id: i32, operand: i32, param_index: i32, strategy: AnalysisMarshalStrategy, raw: i64, marshaled: i64):
@@ -741,7 +741,7 @@ impl Codegen:
             return
         let sig = body.call_sig_index(args_id)
         let mono = body.call_mono_sym(args_id)
-        let name = if mono != 0: self.sema.pool_resolve(mono) else if sig >= 0 and sig < self.sema.sig_names.len() as i32: self.sema.pool_resolve(self.sema.sig_names.get(sig as i64)) else: "<unresolved>"
+        let name = if mono != 0: with_str_clone_ref(self.sema.pool_resolve(mono)) else if sig >= 0 and sig < self.sema.sig_names.len() as i32: with_str_clone_ref(self.sema.pool_resolve(self.sema.sig_names.get(sig as i64))) else: "<unresolved>"
         let op_kind = if operand >= 0 and operand < body.operand_kinds.len() as i32: body.operand_kinds.get(operand as i64) else: -1
         let share = sig >= 0 and param_index >= 0 and param_index < self.sema.sig_get_param_count(sig) and self.sema.sig_param_uses_value_ref_abi(sig, param_index) != 0
         // Extern "C" callees marshal per the C ABI, not the With ref-table
@@ -2525,7 +2525,7 @@ impl Codegen:
             return with_str_clone_ref(self.sema_symbol_texts.get(sym as i64))
         if sym > 0 and sym < self.sema.pool.state.symbol_texts.len() as i32:
             return with_str_clone_ref(self.sema.pool.state.symbol_texts.get(sym as i64))
-        self.sema.pool_resolve(sym)
+        with_str_clone_ref(self.sema.pool_resolve(sym))
 
     // ── Resolve type expression → LLVM type ───────────────────────────
 
@@ -2721,8 +2721,8 @@ impl Codegen:
         // enclosing function and method owner: an out-of-context node id is
         // undiagnosable (this fires for cross-pool id leaks, where the kind is
         // whatever happens to live at that id in the backend pool).
-        let ctx_fn = if self.current_function_name_sym != 0: self.intern.resolve(self.current_function_name_sym) else: "<module>"
-        let ctx_owner = if self.current_method_owner_sym != 0: self.intern.resolve(self.current_method_owner_sym) else: ""
+        let ctx_fn = if self.current_function_name_sym != 0: with_str_clone_ref(self.intern.resolve(self.current_function_name_sym)) else: "<module>"
+        let ctx_owner = if self.current_method_owner_sym != 0: with_str_clone_ref(self.intern.resolve(self.current_method_owner_sym)) else: ""
         with_eprint(f"warning: [type-resolve] unhandled type node kind={kind} node={type_node} span={self.pool.get_start(type_node)}..{self.pool.get_end(type_node)} in={ctx_fn} owner={ctx_owner}")
         self.type_fallback()
 
@@ -2778,8 +2778,8 @@ impl Codegen:
             let binding_sym = self.type_binding_syms.get(i as i64)
             let want_text = self.intern.resolve(sym)
             let binding_text = self.intern.resolve(binding_sym)
-            let sema_want_text = if want_text.len() > 0: want_text else: self.sema_symbol_text(sym)
-            let sema_binding_text = if binding_text.len() > 0: binding_text else: self.sema_symbol_text(binding_sym)
+            let sema_want_text = if want_text.len() > 0: with_str_clone_ref(want_text) else: self.sema_symbol_text(sym)
+            let sema_binding_text = if binding_text.len() > 0: with_str_clone_ref(binding_text) else: self.sema_symbol_text(binding_sym)
             if binding_sym == sym or (sema_want_text.len() > 0 and sema_want_text == sema_binding_text):
                 return self.type_binding_types.get(i as i64)
         // Unsupported
@@ -2958,7 +2958,7 @@ impl Codegen:
             return 0
 
         let base_name = self.sema_symbol_text(base_sym)
-        let enum_name = if base_name.len() > 0: base_name else: self.intern.resolve(cg_base_sym)
+        let enum_name = if base_name.len() > 0: base_name else: with_str_clone_ref(self.intern.resolve(cg_base_sym))
         let mono_name = f"{enum_name}__enuminst_{resolved}"
         let mono_sym = self.intern.intern(mono_name)
         let enum_type = wl_struct_create_named(self.context, mono_name)
@@ -3654,9 +3654,9 @@ impl Codegen:
             let decl_sym = self.pool.get_data0(decl)
             if decl_sym != type_sym:
                 let decl_name_raw = self.intern.resolve(decl_sym)
-                let decl_name = if decl_name_raw.len() > 0: decl_name_raw else: self.sema_symbol_text(decl_sym)
+                let decl_name = if decl_name_raw.len() > 0: with_str_clone_ref(decl_name_raw) else: self.sema_symbol_text(decl_sym)
                 let type_name_raw = self.intern.resolve(type_sym)
-                let type_name = if type_name_raw.len() > 0: type_name_raw else: self.sema_symbol_text(type_sym)
+                let type_name = if type_name_raw.len() > 0: with_str_clone_ref(type_name_raw) else: self.sema_symbol_text(type_sym)
                 if decl_name.len() == 0 or type_name.len() == 0 or decl_name != type_name:
                     continue
             let sub_kind = type_decl_sub_kind(self.pool.get_data2(decl))
@@ -4055,7 +4055,7 @@ impl Codegen:
     fn function_symbol_name(sym: i32) -> str:
         let name = self.intern.resolve(sym)
         if name.len() > 0:
-            return name
+            return with_str_clone_ref(name)
         f"__fn_{sym}"
 
 fn codegen_hash_name_component(value: i64) -> str:
@@ -4225,7 +4225,7 @@ impl Codegen:
         let name_sym = self.sema.fn_decl_semantic_symbol_at(fn_node, self.pool.get_data0(fn_node), decl_index)
         let raw_name_str = self.intern.resolve(name_sym)
         let sema_name_str = self.sema_symbol_text(name_sym)
-        let name_str = if sema_name_str.len() > 0: sema_name_str else: raw_name_str
+        let name_str = if sema_name_str.len() > 0: sema_name_str else: with_str_clone_ref(raw_name_str)
         if name_sym == 0:
             return
         let parsed_name = if sema_name_str.len() == 0 and name_str.len() == 0: self.fn_decl_name_from_node(fn_node) else: ""
@@ -4717,7 +4717,7 @@ impl Codegen:
         if name_sym <= 0:
             return false
         let raw_name = self.intern.resolve(name_sym)
-        let name_str = if raw_name.len() > 0: raw_name else: self.sema_symbol_text(name_sym)
+        let name_str = if raw_name.len() > 0: with_str_clone_ref(raw_name) else: self.sema_symbol_text(name_sym)
         if name_str.len() == 0:
             return false
         for di in 0..name_str.len() as i32:
@@ -4808,7 +4808,7 @@ impl Codegen:
         let cc_name = self.intern.resolve(cc_sym)
         if cc_name.len() >= 2 and cc_name.byte_at(0) == 34 and cc_name.byte_at(cc_name.len() - 1) == 34:
             return cc_name.slice(1, cc_name.len() - 1)
-        cc_name
+        with_str_clone_ref(cc_name)
 
     fn fn_uses_c_abi(cc_name: &str) -> bool:
         cc_name == "c" or (cc_name.len() > 9 and cc_name.slice(0, 9) == "c_export:")

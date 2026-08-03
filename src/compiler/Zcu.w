@@ -474,7 +474,7 @@ impl Zcu:
             let lib_sym = result.link_libs.get(li as i64)
             if lib_sym <= 0:
                 continue
-            let lib_name: str = pool.resolve(lib_sym)
+            let lib_name: str = with_str_clone_ref(pool.resolve(lib_sym))
             if lib_name.len() > 0:
                 self.last_link_lib_names.push(lib_name)
 

@@ -3068,7 +3068,7 @@ impl CCodegen:
         if kind == NodeKind.NK_FLOAT_LIT:
             let str_idx = self.ast.get_data0(expr)
             if str_idx >= 0 and str_idx < self.ast.state.strings.len() as i32:
-                return self.ast.get_string(str_idx)
+                return with_str_clone_ref(self.ast.get_string(str_idx))
             return "0.0"
         if kind == NodeKind.NK_STRING_LIT:
             let text = self.string_literal_node_payload_from_source(expr, source_text)
@@ -3114,7 +3114,7 @@ impl CCodegen:
             return "0"
         if ck == ConstKind.CK_FLOAT:
             if cd != 0:
-                let lit = if cd >= 0 and cd < self.ast.state.strings.len() as i32: self.ast.get_string(cd) else: ""
+                let lit = if cd >= 0 and cd < self.ast.state.strings.len() as i32: with_str_clone_ref(self.ast.get_string(cd)) else: ""
                 if lit.len() > 0:
                     return lit
             return "0.0"

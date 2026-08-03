@@ -6199,7 +6199,7 @@ impl ComptimeEvaluator:
             let loc = comptime_source_loc(caller_text, self.ast.get_start(call_node))
             return comptime_control_value(comptime_value_int(self.sema.ty_u32 as i32, loc.line as i64))
         if kind == SemaMagicIdentKind.FN:
-            let name = if caller_fn_sym != 0: self.pool.resolve(caller_fn_sym) else: ""
+            let name = if caller_fn_sym != 0: with_str_clone_ref(self.pool.resolve(caller_fn_sym)) else: ""
             return comptime_control_value(comptime_value_str(name))
         comptime_control_error()
 

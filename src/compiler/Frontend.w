@@ -727,7 +727,7 @@ impl Zcu:
         pool.get_extra(self.c_import_select_base_frontend(pool, decl) + 1)
 
     fn c_import_only_name_frontend(pool: AstPool, decl: i32, idx: i32) -> str:
-        self.pool.resolve(pool.get_extra(self.c_import_select_base_frontend(pool, decl) + 2 + idx))
+        with_str_clone_ref(self.pool.resolve(pool.get_extra(self.c_import_select_base_frontend(pool, decl) + 2 + idx)))
 
     // #357 ownership-annotation record: [owns_count, owns..., borrows_count,
     // borrows...] follows the selective-import record [strict, only_count, only...].
@@ -739,7 +739,7 @@ impl Zcu:
         pool.get_extra(self.c_import_ann_base_frontend(pool, decl))
 
     fn c_import_owns_entry_frontend(pool: AstPool, decl: i32, idx: i32) -> str:
-        self.pool.resolve(pool.get_extra(self.c_import_ann_base_frontend(pool, decl) + 1 + idx))
+        with_str_clone_ref(self.pool.resolve(pool.get_extra(self.c_import_ann_base_frontend(pool, decl) + 1 + idx)))
 
     fn c_import_borrows_count_frontend(pool: AstPool, decl: i32) -> i32:
         let ab = self.c_import_ann_base_frontend(pool, decl)
@@ -747,13 +747,13 @@ impl Zcu:
 
     fn c_import_borrows_entry_frontend(pool: AstPool, decl: i32, idx: i32) -> str:
         let ab = self.c_import_ann_base_frontend(pool, decl)
-        self.pool.resolve(pool.get_extra(ab + 2 + pool.get_extra(ab) + idx))
+        with_str_clone_ref(self.pool.resolve(pool.get_extra(ab + 2 + pool.get_extra(ab) + idx)))
 
     // A produced declaration's bound name (fn/type/const/extern all store the
     // name symbol in d0). For `Type.method` names, the leading segment before the
     // dot is the type a selective import would have requested.
     fn c_import_decl_bound_name_frontend(pool: AstPool, decl: i32) -> str:
-        self.pool.resolve(pool.get_data0(decl))
+        with_str_clone_ref(self.pool.resolve(pool.get_data0(decl)))
 
 // Foundational scaffolding a selective import must always keep: the unnamed
 // helper decls and the `c_*` C-primitive typedefs (c_int, c_char, …) that the

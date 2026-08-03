@@ -184,7 +184,7 @@ impl Codegen:
             fact.symbol = trait_sym
             fact.index = collected_start
             fact.flags = 256
-            fact.name = trait_name
+            fact.name = with_str_clone_ref(trait_name)
             fact.detail = f"trait-table methods={collected_count} ast-methods={ast_method_count} vtable-slots={vtable_slots}"
             self.analysis_add(move fact)
             canonical_method_start = canonical_method_start + ast_method_count
@@ -2135,7 +2135,7 @@ impl Codegen:
             let str_idx = self.pool.get_data0(float_node)
             if str_idx < 0 or str_idx >= self.pool.state.strings.len() as i32:
                 return 0
-            var fval = with_parse_float(self.pool.get_string(str_idx))
+            var fval = with_parse_float(with_str_clone_ref(self.pool.get_string(str_idx)))
             if float_negate:
                 fval = -fval
             let llvm_ty = self.sema_type_to_llvm(resolved)
@@ -2201,7 +2201,7 @@ impl Codegen:
         var const_binding_ty = if resolved_binding_ty != 0: resolved_binding_ty else: inferred_value_ty
         if const_binding_ty == 0 and self.pool.kind(value_node) == NodeKind.NK_STRUCT_LIT:
             let lit_sym = self.pool.get_data0(value_node)
-            let lit_name = if lit_sym != 0: self.intern.resolve(lit_sym) else: ""
+            let lit_name = if lit_sym != 0: with_str_clone_ref(self.intern.resolve(lit_sym)) else: ""
             let sema_lit_sym = if lit_name.len() > 0: self.sema.pool_lookup_symbol(lit_name) else: 0
             if sema_lit_sym != 0 and self.sema.named_types.contains(sema_lit_sym):
                 const_binding_ty = self.sema.resolve_alias(self.sema.named_types.get(sema_lit_sym).unwrap() as TypeId)
@@ -2307,7 +2307,7 @@ impl Codegen:
             if str_idx >= 0 and str_idx < self.pool.state.strings.len() as i32:
                 let float_text = self.pool.get_string(str_idx)
                 if float_text.len() > 0:
-                    fval = with_parse_float(float_text)
+                    fval = with_parse_float(with_str_clone_ref(float_text))
             if float_negate:
                 fval = -fval
             var global_ty = wl_f64_type(self.context)

@@ -4,6 +4,7 @@
 // boundaries produced after MIR/borrow phases.
 
 use InternPool
+extern fn with_str_clone_ref(s: &str) -> str
 
 // Async body flavors.
 enum AsyncBodyKind: i32:
@@ -141,7 +142,7 @@ fn dump_async_mir_module(mod: &AsyncMirModule, pool: InternPool) -> str:
         if bi > 0:
             out = out ++ "\n"
 
-        let fn_name = if body.fn_sym != 0: pool.resolve(body.fn_sym) else: "<anon>"
+        let fn_name = if body.fn_sym != 0: with_str_clone_ref(pool.resolve(body.fn_sym)) else: "<anon>"
         out = out ++ "fn " ++ fn_name
         out = out ++ " flavor=" ++ async_body_flavor_name(body.flavor)
         out = out ++ f" states={body.state_count}"

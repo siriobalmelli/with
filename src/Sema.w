@@ -4118,7 +4118,7 @@ impl Sema:
         if kind == TypeKind.TY_BOOL:
             return "bool"
         if kind == TypeKind.TY_STRUCT or kind == TypeKind.TY_ENUM or kind == TypeKind.TY_ALIAS or kind == TypeKind.TY_GENERIC_INST:
-            return self.pool_resolve(self.type_d0.get(tid as i64))
+            return with_str_clone_ref(self.pool_resolve(self.type_d0.get(tid as i64)))
         ""
 
     fn get_type_d0(tid: TypeId) -> i32:
@@ -6054,7 +6054,7 @@ impl Sema:
 
         var fn_name = self.extract_decl_name_after(node, "fn")
         if fn_name.len() == 0:
-            fn_name = self.pool_resolve_symbol(parsed)
+            fn_name = with_str_clone_ref(self.pool_resolve_symbol(parsed))
         for ci in 0..fn_name.len() as i32:
             if fn_name.byte_at(ci as i64) == 46:
                 let owner_name = fn_name.slice(0, ci as i64)
@@ -6328,7 +6328,7 @@ impl Sema:
                 let d = sema_levenshtein(target, name, max_dist)
                 if d < best_dist:
                     best_dist = d
-                    best_name = name
+                    best_name = with_str_clone_ref(name)
         // Search function signatures
         for si in 0..self.sig_names.len():
             let sym = self.sig_names.get(si)
@@ -6338,7 +6338,7 @@ impl Sema:
                     let d = sema_levenshtein(target, name, max_dist)
                     if d < best_dist:
                         best_dist = d
-                        best_name = name
+                        best_name = with_str_clone_ref(name)
         best_name
 
     fn suggest_type_name(target: &str, node: i32) -> str:
@@ -6358,7 +6358,7 @@ impl Sema:
                         let d = sema_levenshtein(target, name, max_dist)
                         if d < best_dist:
                             best_dist = d
-                            best_name = name
+                            best_name = with_str_clone_ref(name)
         best_name
 
     mut fn emit_error_with_suggestion(msg: &str, node: i32, suggestion: &str, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):

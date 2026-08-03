@@ -294,7 +294,7 @@ impl Sema:
                 return with_str_clone_ref(pretty)
         let pooled = self.pool_resolve(sym)
         if pooled.len() > 0:
-            return pooled
+            return with_str_clone_ref(pooled)
         f"sym{sym}"
 
     fn impl_owner_type_name_for_decl(decl: i32) -> str:

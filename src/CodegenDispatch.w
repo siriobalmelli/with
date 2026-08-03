@@ -361,8 +361,8 @@ impl Codegen:
         let pat_sym = body.const_d0.get(const_id as i64)
         let flags_sym = body.const_d1.get(const_id as i64)
         let node = body.const_d2.get(const_id as i64)
-        let raw_pattern = if pat_sym != 0: self.intern.resolve(pat_sym) else: ""
-        let raw_flags = if flags_sym != 0: self.intern.resolve(flags_sym) else: ""
+        let raw_pattern = if pat_sym != 0: with_str_clone_ref(self.intern.resolve(pat_sym)) else: ""
+        let raw_flags = if flags_sym != 0: with_str_clone_ref(self.intern.resolve(flags_sym)) else: ""
         let pattern = self.decode_string_escapes(raw_pattern)
         let flags = self.decode_string_escapes(raw_flags)
         let options = codegen_regex_flag_options(flags)
@@ -1658,7 +1658,7 @@ impl Codegen:
             if cd >= 0 and cd < self.pool.state.strings.len() as i32:
                 let float_text = self.pool.get_string(cd)
                 if float_text.len() > 0:
-                    fval = with_parse_float(float_text)
+                    fval = with_parse_float(with_str_clone_ref(float_text))
             return wl_const_real(float_ty, fval)
 
         if ck == ConstKind.CK_ZERO_SIZED:
@@ -7075,13 +7075,13 @@ impl Codegen:
     fn codegen_method_symbol_text(method_sym: i32) -> str:
         let text = self.intern.resolve(method_sym)
         if text.len() > 0:
-            return text
+            return with_str_clone_ref(text)
         self.sema_symbol_text(method_sym)
 
     fn codegen_ast_method_symbol_text(method_sym: i32) -> str:
         let text = self.sema.pool_resolve_symbol(method_sym)
         if text.len() > 0:
-            return text
+            return with_str_clone_ref(text)
         self.codegen_method_symbol_text(method_sym)
 
     fn trait_decl_has_method_named(trait_sym: i32, method_name: &str) -> bool:
@@ -7212,7 +7212,7 @@ impl Codegen:
             return MirIntrinsic.NONE
         var type_name = self.sema_symbol_text(type_name_sym)
         if type_name.len() == 0:
-            type_name = self.intern.resolve(type_name_sym)
+            type_name = with_str_clone_ref(self.intern.resolve(type_name_sym))
         if type_name == "Vec":
             if method_name == "new": return MirIntrinsic.VEC_NEW
             if method_name == "with_capacity": return MirIntrinsic.VEC_WITH_CAPACITY
@@ -11446,7 +11446,7 @@ impl Codegen:
         let base_sym = self.mir_type_d0_at(resolved)
         let cg_sym = self.sema_sym_to_codegen_sym(base_sym)
         if cg_sym != 0:
-            return self.intern.resolve(cg_sym)
+            return with_str_clone_ref(self.intern.resolve(cg_sym))
         self.sema_symbol_text(base_sym)
 
     mut fn mir_type_name(sema_ty: i32) -> str:
@@ -11471,11 +11471,11 @@ impl Codegen:
             if raw_cg_sym != 0:
                 let raw_text = self.intern.resolve(raw_cg_sym)
                 if raw_text.len() > 0:
-                    return raw_text
+                    return with_str_clone_ref(raw_text)
             return self.sema_symbol_text(raw_sym)
         let text = self.intern.resolve(sym)
         if text.len() > 0:
-            return text
+            return with_str_clone_ref(text)
         self.sema_symbol_text(sym)
 
     fn mir_llvm_type_is_scoped_join_handle(ty: i64) -> bool:
@@ -13673,7 +13673,7 @@ impl Codegen:
                         if self.pool.kind(gc_builtin_base) == NodeKind.NK_IDENT:
                             let gc_builtin_ast_name = self.intern.resolve(self.pool.get_data0(gc_builtin_base))
                             if gc_builtin_ast_name.len() > 0:
-                                gc_builtin_name = gc_builtin_ast_name
+                                gc_builtin_name = with_str_clone_ref(gc_builtin_ast_name)
                 let gc_name = if gc_callee_sym > 0: self.codegen_symbol_text(gc_callee_sym) else: "?"
                 if gc_name == "track":
                     if self.mir_emit_async_scope_track_call(body, args_id, dest_place, next_bb):
@@ -14617,7 +14617,7 @@ impl Codegen:
                     if self.pool.kind(gc_cur_recv) == NodeKind.NK_IDENT:
                         let gc_cur_method_sym = self.pool.get_data1(gc_callee_field)
                         let gc_cur_method = self.codegen_ast_method_symbol_text(gc_cur_method_sym)
-                        let gc_cur_name = if gc_cur_method.len() > 0: gc_cur_method else: if gc_callee_sym > 0: self.intern.resolve(gc_callee_sym) else: ""
+                        let gc_cur_name = if gc_cur_method.len() > 0: gc_cur_method else: if gc_callee_sym > 0: with_str_clone_ref(self.intern.resolve(gc_callee_sym)) else: ""
                         if gc_cur_name.len() > 0:
                             var gc_cur_base_sym = 0
                             let gc_cur_base_opt = self.mono_struct_base.get(self.current_method_owner_sym)
@@ -14888,7 +14888,7 @@ impl Codegen:
                                 self.pool.get_data1(fatal_recv)
                             else:
                                 0
-                        with_eprint(f"[generic-call-unhandled] recv_ast_ty={self.ast_static_type_expr(fatal_recv)} recv_mir_ty={fatal_recv_ty} base_ast_ty={fatal_base_ty} base_local_ty={fatal_base_local_ty} owner={self.function_symbol_name(self.current_method_owner_sym)} field_sym={fatal_field} field_text={if fatal_field != 0: self.intern.resolve(fatal_field) else: \"\"}")
+                        with_eprint(f"[generic-call-unhandled] recv_ast_ty={self.ast_static_type_expr(fatal_recv)} recv_mir_ty={fatal_recv_ty} base_ast_ty={fatal_base_ty} base_local_ty={fatal_base_local_ty} owner={self.function_symbol_name(self.current_method_owner_sym)} field_sym={fatal_field} field_text={if fatal_field != 0: with_str_clone_ref(self.intern.resolve(fatal_field)) else: \"\"}")
                     with_eprint(f"FATAL: unhandled MirIntrinsic.GENERIC_CALL sym={gc_name} node_kind={self.pool.kind(gc_node)} recv_ty={fatal_recv_ty} recv_kind={if fatal_recv != 0: self.pool.kind(fatal_recv) else: -1} arg_count={fatal_mir_count}")
                     self.had_error = 1
                     return false
@@ -15438,7 +15438,7 @@ impl Codegen:
         let name_sym = body.fn_sym
         let resolved_name = self.intern.resolve(name_sym)
         let sema_name = self.sema_symbol_text(name_sym)
-        let name_str = if resolved_name.len() > 0: resolved_name else: if sema_name.len() > 0: sema_name else: self.fn_decl_name_from_node(fn_node)
+        let name_str = if resolved_name.len() > 0: with_str_clone_ref(resolved_name) else: if sema_name.len() > 0: sema_name else: self.fn_decl_name_from_node(fn_node)
         if name_sym == 0:
             return
         self.generated_mir_body_syms.insert(name_sym, 1)
@@ -15865,7 +15865,7 @@ impl Codegen:
     mut fn gen_function_mir_mono(mono_sym: i32, fn_node: i32, body: &MirBody):
         let intern_name = self.intern.resolve(mono_sym)
         let sema_name = self.sema_symbol_text(mono_sym)
-        let name_str = if intern_name.len() > 0: intern_name else: sema_name
+        let name_str = if intern_name.len() > 0: with_str_clone_ref(intern_name) else: sema_name
         let fv = self.fn_values.get(mono_sym)
         if not fv.is_some():
             with_eprint("error: no fn_value for MIR mono function: " ++ name_str)
@@ -16391,7 +16391,7 @@ impl Codegen:
     fn codegen_symbol_text(sym: i32) -> str:
         let text = self.intern.resolve(sym)
         if text.len() > 0:
-            return text
+            return with_str_clone_ref(text)
         self.sema_symbol_text(sym)
 
     fn codegen_symbols_match(a: i32, b: i32) -> bool:
@@ -16418,7 +16418,7 @@ impl Codegen:
             return semantic_text
         let ast_text = self.intern.resolve(parsed)
         if ast_text.len() > 0:
-            return ast_text
+            return with_str_clone_ref(ast_text)
         self.sema_symbol_text(parsed)
 
     fn fn_decl_semantic_text(decl: i32) -> str:
@@ -16679,12 +16679,12 @@ impl Codegen:
         if tk == TypeKind.TY_STRUCT:
             let name_sym = self.sema.get_type_d0(resolved)
             if name_sym != 0:
-                return self.intern.resolve(name_sym)
+                return with_str_clone_ref(self.intern.resolve(name_sym))
             return "struct"
         if tk == TypeKind.TY_ENUM:
             let name_sym = self.sema.get_type_d0(resolved)
             if name_sym != 0:
-                return self.intern.resolve(name_sym)
+                return with_str_clone_ref(self.intern.resolve(name_sym))
             return "enum"
         if tk == TypeKind.TY_PTR or tk == TypeKind.TY_REF:
             return "ptr"
@@ -16699,7 +16699,7 @@ impl Codegen:
         if tk == TypeKind.TY_GENERIC_INST:
             let name_sym = self.sema.get_type_d0(resolved)
             if name_sym != 0:
-                return self.intern.resolve(name_sym)
+                return with_str_clone_ref(self.intern.resolve(name_sym))
             return "generic"
         if tk == TypeKind.TY_NEVER:
             return "never"
@@ -16747,10 +16747,10 @@ impl Codegen:
         if tk == wl_struct_type_kind():
             let st_sym = self.find_struct_type_by_llvm(ty)
             if st_sym != 0:
-                return self.intern.resolve(st_sym)
+                return with_str_clone_ref(self.intern.resolve(st_sym))
             let es = self.enum_by_llvm.get(ty)
             if es.is_some():
-                return self.intern.resolve(es.unwrap())
+                return with_str_clone_ref(self.intern.resolve(es.unwrap()))
             // An anonymous struct as bare "struct" made #731's mismatch
             // unactionable; render one level of element structure.
             var anon = "struct{"
@@ -16762,7 +16762,7 @@ impl Codegen:
                 let ek = wl_get_type_kind(ety)
                 if ek == wl_struct_type_kind():
                     let esym = self.find_struct_type_by_llvm(ety)
-                    anon = anon ++ (if esym != 0: self.intern.resolve(esym) else: f"struct#{wl_count_struct_elem_types(ety)}")
+                    anon = anon ++ (if esym != 0: with_str_clone_ref(self.intern.resolve(esym)) else: f"struct#{wl_count_struct_elem_types(ety)}")
                 else if ek == wl_integer_type_kind():
                     anon = anon ++ f"i{wl_get_int_type_width(ety)}"
                 else if ek == wl_pointer_type_kind():
@@ -18032,7 +18032,7 @@ impl Codegen:
         // Get the type name from the AST node
         var type_name = ""
         if self.pool.kind(tp_node) == NodeKind.NK_IDENT or self.pool.kind(tp_node) == NodeKind.NK_TYPE_NAMED:
-            type_name = self.intern.resolve(self.pool.get_data0(tp_node))
+            type_name = with_str_clone_ref(self.intern.resolve(self.pool.get_data0(tp_node)))
         else:
             type_name = "unknown"
         self.gen_string_literal_raw(type_name)

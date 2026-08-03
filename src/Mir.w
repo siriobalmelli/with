@@ -2340,7 +2340,7 @@ fn mir_debug_spec_target(spec: &str) -> str:
 
 fn mir_debug_body_name(body: &MirBody, pool: &InternPool) -> str:
     if body.fn_sym != 0:
-        return pool.resolve(body.fn_sym)
+        return with_str_clone_ref(pool.resolve(body.fn_sym))
     "<anon>"
 
 fn mir_debug_body_label(body: &MirBody, pool: &InternPool) -> str:
@@ -2505,7 +2505,7 @@ fn validate_use_after_kill_body(body: &MirBody, pool: &InternPool) -> str:
     for _i in 0..local_count:
         killed.push(0)
         killed_bb.push(-1)
-    let fn_name = if body.fn_sym != 0: pool.resolve(body.fn_sym) else: "<anon>"
+    let fn_name = if body.fn_sym != 0: with_str_clone_ref(pool.resolve(body.fn_sym)) else: "<anon>"
     for bb in 0..body.block_count():
         let stmt_start = body.bb_stmt_starts.get(bb as i64)
         let stmt_count = body.bb_stmt_counts.get(bb as i64)

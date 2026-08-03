@@ -732,7 +732,7 @@ impl AstPool:
         let digit_idx = self.int_literal_digit_idx(idx)
         if digit_idx < 0:
             return ""
-        self.get_string(digit_idx)
+        with_str_clone_ref(self.get_string(digit_idx))
 
 const AST_INT_PART_BASE: i64 = 2097152
 const AST_INT_PART_BASE2: i64 = 4398046511104

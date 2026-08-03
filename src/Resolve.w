@@ -1327,7 +1327,7 @@ fn print_resolved(result: &ResolveResult, pool: InternPool, root_path: &str):
 
     for di in 0..result.defs.len() as i32:
         let d = result.defs.get(di as i64)
-        let name = if d.name_sym > 0: pool.resolve(d.name_sym) else: ""
+        let name = if d.name_sym > 0: with_str_clone_ref(pool.resolve(d.name_sym)) else: ""
         with_write(f"def[{d.def_id}] module={d.module_id} parent={d.parent_def} kind={resolved_def_kind_name(d.kind)} name={name} span={d.span_start}..{d.span_end}\n")
 
     for bi in 0..result.bindings.len() as i32:
@@ -1365,7 +1365,7 @@ fn dump_resolved(result: &ResolveResult, pool: InternPool, root_path: &str) -> s
 
     for di in 0..result.defs.len() as i32:
         let d = result.defs.get(di as i64)
-        let name = if d.name_sym > 0: pool.resolve(d.name_sym) else: ""
+        let name = if d.name_sym > 0: with_str_clone_ref(pool.resolve(d.name_sym)) else: ""
         out = out ++ f"def[{d.def_id}] module={d.module_id} parent={d.parent_def} kind={resolved_def_kind_name(d.kind)} name={name} span={d.span_start}..{d.span_end}\n"
 
     for bi in 0..result.bindings.len() as i32:

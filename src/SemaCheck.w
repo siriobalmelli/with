@@ -1572,7 +1572,7 @@ impl Sema:
                         let fn_name_sym = self.ast.get_data0(decl)
                         var fn_name_str = self.extract_decl_name_after(decl, "fn")
                         if fn_name_str.len() == 0 or sema_str_contains_char(fn_name_str, 46) == 0:
-                            fn_name_str = self.pool_resolve_symbol(fn_name_sym)
+                            fn_name_str = with_str_clone_ref(self.pool_resolve_symbol(fn_name_sym))
                         var is_generic_struct_method = false
                         for gsm_i in 0..fn_name_str.len() as i32:
                             if fn_name_str.byte_at(gsm_i as i64) == 46:
@@ -1918,7 +1918,7 @@ impl Sema:
     fn impl_method_bare_name(node: i32, fn_name: i32) -> str:
         var name = self.extract_decl_name_after(node, "fn")
         if name.len() == 0:
-            name = self.pool_resolve(fn_name)
+            name = with_str_clone_ref(self.pool_resolve(fn_name))
         let dot = sema_str_find_char(name, 46)
         if dot >= 0:
             return name.slice((dot + 1) as i64, name.len() as i64)
@@ -3021,7 +3021,7 @@ impl Sema:
                 let nm = cc.slice(9, cc.len())
                 if nm.len() > 0:
                     return nm
-        self.pool_resolve(self.ast.get_data0(fn_node))
+        with_str_clone_ref(self.pool_resolve(self.ast.get_data0(fn_node)))
 
 fn cheader_vec_has(v: &Vec[i32], x: i32) -> bool:
     for i in 0..v.len() as i32:
@@ -3116,7 +3116,7 @@ impl Sema:
                 if pi > 0:
                     params = params ++ ", "
                 let pname_sym = if meta >= 0: self.ast.fn_param_name(param_start, pi) else: 0
-                var pname = if pname_sym != 0: self.pool_resolve(pname_sym) else: ""
+                var pname = if pname_sym != 0: with_str_clone_ref(self.pool_resolve(pname_sym)) else: ""
                 if pname.len() == 0:
                     pname = f"arg{pi}"
                 params = params ++ self.cheader_decl_with_name(self.sig_param_type(sig, pi), pname)
@@ -6901,10 +6901,10 @@ impl Sema:
         0
 
     fn regex_literal_pattern(node: i32) -> str:
-        self.pool_resolve(self.ast.get_data0(node))
+        with_str_clone_ref(self.pool_resolve(self.ast.get_data0(node)))
 
     fn regex_literal_flags(node: i32) -> str:
-        self.pool_resolve(self.ast.get_data1(node))
+        with_str_clone_ref(self.pool_resolve(self.ast.get_data1(node)))
 
 fn sema_regex_hex_digit_value(ch: i32) -> i32:
     if ch >= 48 and ch <= 57:
@@ -14056,9 +14056,9 @@ impl Sema:
         let kind = self.ast.kind(callee)
         let gi_base = self.ast.get_data0(callee)
         if kind == NodeKind.NK_TYPE_GENERIC:
-            return self.pool_resolve(gi_base)
+            return with_str_clone_ref(self.pool_resolve(gi_base))
         if kind == NodeKind.NK_INDEX and gi_base > 0 and gi_base < self.ast.node_count() and self.ast.kind(gi_base) == NodeKind.NK_IDENT:
-            return self.pool_resolve(self.ast.get_data0(gi_base))
+            return with_str_clone_ref(self.pool_resolve(self.ast.get_data0(gi_base)))
         ""
 
     fn sizeof_alignof_type_arg_node(callee: i32) -> i32:
@@ -14967,7 +14967,7 @@ impl Sema:
             return ret
 
         if callable_value_tid != 0:
-            let call_name = if self.ast.kind(callee) == NodeKind.NK_IDENT: self.pool_resolve(fn_sym) else: ""
+            let call_name = if self.ast.kind(callee) == NodeKind.NK_IDENT: with_str_clone_ref(self.pool_resolve(fn_sym)) else: ""
             return self.check_callable_value_call(call_name, callable_value_tid, callable_closure_node, node, resolved_extra_start, resolved_arg_count, param_offset, has_resolved, arg_types)
 
         // Local variable (not callable)
@@ -18020,10 +18020,10 @@ impl Sema:
             return 0
         let target_name =
             if self.ast.kind(type_node) == NodeKind.NK_IDENT or self.ast.kind(type_node) == NodeKind.NK_TYPE_NAMED:
-                self.pool_resolve(self.ast.get_data0(type_node))
+                with_str_clone_ref(self.pool_resolve(self.ast.get_data0(type_node)))
             else if self.ast.kind(type_node) == NodeKind.NK_INDEX:
                 let base = self.ast.get_data0(type_node)
-                if self.ast.kind(base) == NodeKind.NK_IDENT: self.pool_resolve(self.ast.get_data0(base)) else: ""
+                if self.ast.kind(base) == NodeKind.NK_IDENT: with_str_clone_ref(self.pool_resolve(self.ast.get_data0(base))) else: ""
             else:
                 ""
         if target_name == "Vec":

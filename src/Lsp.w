@@ -533,11 +533,11 @@ impl LspDocument:
                             let msym = sema.trait_method_names.get((mstart + mi) as i64)
                             let mname = sema.pool_resolve(msym)
                             if mname.len() > 0:
-                                methods.push(mname)
+                                methods.push(with_str_clone_ref(mname))
                             mi = mi + 1
                 ti = ti + 1
             if methods.len() > 0:
-                self.cached_trait_methods.insert(type_name, move methods)
+                self.cached_trait_methods.insert(with_str_clone_ref(type_name), move methods)
         self.cached_text_len = self.text.len() as i32
         self.cache_valid = true
 
@@ -1075,7 +1075,7 @@ fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: &str, 
                     if vk == NodeKind.NK_STRUCT_LIT:
                         let struct_sym = pool.get_data0(value as NodeId)
                         if struct_sym != 0:
-                            return intern.resolve(struct_sym)
+                            return with_str_clone_ref(intern.resolve(struct_sym))
                     if vk == NodeKind.NK_STRING_LIT or vk == NodeKind.NK_FSTRING:
                         return "str"
                     if vk == NodeKind.NK_CALL:
@@ -1086,7 +1086,7 @@ fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: &str, 
                             if ck == NodeKind.NK_FIELD_ACCESS:
                                 let base = pool.get_data0(callee as NodeId)
                                 if base != 0 and pool.kind(base as NodeId) == NodeKind.NK_IDENT:
-                                    return intern.resolve(pool.get_data0(base as NodeId))
+                                    return with_str_clone_ref(intern.resolve(pool.get_data0(base as NodeId)))
                             // fn_name() — look up function return type
                             if ck == NodeKind.NK_IDENT:
                                 let call_name = intern.resolve(pool.get_data0(callee as NodeId))
@@ -1113,7 +1113,7 @@ fn lsp_fn_return_type(pool: AstPool, intern: InternPool, fn_name: &str) -> str:
 fn lsp_type_node_to_name(pool: AstPool, intern: InternPool, type_node: i32) -> str:
     let tk = pool.kind(type_node as NodeId)
     if tk == NodeKind.NK_TYPE_NAMED:
-        return intern.resolve(pool.get_data0(type_node as NodeId))
+        return with_str_clone_ref(intern.resolve(pool.get_data0(type_node as NodeId)))
     if tk == NodeKind.NK_TYPE_REF:
         let inner = pool.get_data0(type_node as NodeId)
         if inner > 0:
@@ -1121,7 +1121,7 @@ fn lsp_type_node_to_name(pool: AstPool, intern: InternPool, type_node: i32) -> s
     if tk == NodeKind.NK_TYPE_GENERIC or tk == NodeKind.NK_INDEX:
         let base = pool.get_data0(type_node as NodeId)
         if base > 0 and pool.kind(base as NodeId) == NodeKind.NK_IDENT:
-            return intern.resolve(pool.get_data0(base as NodeId))
+            return with_str_clone_ref(intern.resolve(pool.get_data0(base as NodeId)))
     ""
 
 // (helpers removed — items built inline due to pass-by-value)
@@ -1229,16 +1229,16 @@ fn LspState.completion(mut self: LspState, id: i32, uri: &str, text: &str, line:
         var label = ""
         var ck = 0
         if kind == NodeKind.NK_FN_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             ck = 3
         else if kind == NodeKind.NK_TYPE_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             ck = 22
         else if kind == NodeKind.NK_TRAIT_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             ck = 8
         else if kind == NodeKind.NK_LET_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             ck = 6
         if label.len() > 0:
             if not first:
@@ -1327,7 +1327,7 @@ fn lsp_collect_fn_params(pool: AstPool, intern: InternPool, fn_node: NodeId) -> 
         if psym != 0:
             let pname = intern.resolve(psym)
             if pname != "self" and pname.len() > 0:
-                names.push(pname)
+                names.push(with_str_clone_ref(pname))
     names
 
 fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset: i32) -> Vec[str]:
@@ -1346,7 +1346,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
                 let name = intern.resolve(sym)
                 if name.len() > 0:
                     let result: Vec[str] = Vec.new()
-                    result.push(name)
+                    result.push(with_str_clone_ref(name))
                     return result
         return empty
 
@@ -1363,7 +1363,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
             if sym != 0:
                 let name = intern.resolve(sym)
                 if name.len() > 0 and name != "_":
-                    result.push(name)
+                    result.push(with_str_clone_ref(name))
         let for_body = pool.get_data2(nid)
         if for_body != 0:
             let inner = lsp_collect_bindings_rec(pool, intern, for_body, offset)
@@ -1562,12 +1562,12 @@ fn LspState.signature_help(mut self: LspState, id: i32, uri: &str, text: &str, l
             if ptype_node > 0:
                 let ptk = parsed.pool.kind(ptype_node as NodeId)
                 if ptk == NodeKind.NK_TYPE_NAMED:
-                    ptype_str = parsed.intern.resolve(parsed.pool.get_data0(ptype_node as NodeId))
+                    ptype_str = with_str_clone_ref(parsed.intern.resolve(parsed.pool.get_data0(ptype_node as NodeId)))
                 else if ptk == NodeKind.NK_TYPE_REF:
                     let inner = parsed.pool.get_data0(ptype_node as NodeId)
                     if inner > 0 and parsed.pool.kind(inner as NodeId) == NodeKind.NK_TYPE_NAMED:
                         ptype_str = "&" ++ parsed.intern.resolve(parsed.pool.get_data0(inner as NodeId))
-            let param_text = if ptype_str.len() > 0: pname ++ ": " ++ ptype_str else: pname
+            let param_text = if ptype_str.len() > 0: pname ++ ": " ++ ptype_str else: with_str_clone_ref(pname)
             if pi > 0:
                 label = label ++ ", "
             label = label ++ param_text
@@ -1729,19 +1729,19 @@ fn LspState.document_symbols(mut self: LspState, id: i32, uri: &str, text: &str)
         var label = ""
         var sk = 0
         if kind == NodeKind.NK_FN_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 12
         else if kind == NodeKind.NK_TYPE_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 23
         else if kind == NodeKind.NK_TRAIT_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 11
         else if kind == NodeKind.NK_LET_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 13
         else if kind == NodeKind.NK_EXTERN_FN:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 12
         if label.len() > 0:
             let ds = pool.get_start(decl)

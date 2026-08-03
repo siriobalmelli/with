@@ -723,7 +723,7 @@ fn render_expr(pool: AstPool, intern: InternPool, node: NodeId, indent: i32) -> 
             if pool.comprehension_binding_is_pattern(node, binding):
                 binding_text = render_pattern(pool, intern, (binding) as NodeId)
             else:
-                binding_text = intern.resolve(binding)
+                binding_text = with_str_clone_ref(intern.resolve(binding))
             let iterable_text = render_expr(pool, intern, (iterable) as NodeId, 0)
             out = f"{out} for {binding_text} in {iterable_text}"
             let filter = pool.get_extra(base + 2)
@@ -748,7 +748,7 @@ fn render_expr(pool: AstPool, intern: InternPool, node: NodeId, indent: i32) -> 
             if pool.comprehension_binding_is_pattern(node, binding):
                 binding_text = render_pattern(pool, intern, (binding) as NodeId)
             else:
-                binding_text = intern.resolve(binding)
+                binding_text = with_str_clone_ref(intern.resolve(binding))
             let iterable_text = render_expr(pool, intern, (iterable) as NodeId, 0)
             out = f"{out} for {binding_text} in {iterable_text}"
             let filter = pool.get_extra(base + 2)
@@ -913,7 +913,7 @@ fn render_pattern(pool: AstPool, intern: InternPool, node: NodeId) -> str:
         return "_"
 
     if kind == NodeKind.NK_PAT_IDENT:
-        return intern.resolve(pool.get_data0(node))
+        return with_str_clone_ref(intern.resolve(pool.get_data0(node)))
 
     if kind == NodeKind.NK_PAT_INT:
         return f"{pool.int_lit_value(node)}"
@@ -931,7 +931,7 @@ fn render_pattern(pool: AstPool, intern: InternPool, node: NodeId) -> str:
         let qualifier = pool.pattern_qualifier(node)
         let extra_start = pool.get_data1(node)
         let binding_count = pool.get_data2(node)
-        var out = if qualifier != 0: intern.resolve(qualifier) ++ "." ++ name else: name
+        var out = if qualifier != 0: intern.resolve(qualifier) ++ "." ++ name else: with_str_clone_ref(name)
         if binding_count > 0:
             out = out ++ "("
             for bi in 0..binding_count:
@@ -1044,7 +1044,7 @@ fn render_type_expr(pool: AstPool, intern: InternPool, node: NodeId) -> str:
     let kind = pool.kind(node)
 
     if kind == NodeKind.NK_TYPE_NAMED:
-        return intern.resolve(pool.get_data0(node))
+        return with_str_clone_ref(intern.resolve(pool.get_data0(node)))
 
     if kind == NodeKind.NK_TYPE_GENERIC:
         let name = intern.resolve(pool.get_data0(node))

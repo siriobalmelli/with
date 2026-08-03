@@ -414,16 +414,16 @@ fn ci_print_type(types: CiTypePool, id: CiTypeId) -> str:
             return "[]" ++ ci_print_type(types, elem)
         return "[" ++ i32_to_string(size) ++ "]" ++ ci_print_type(types, elem)
     if kind == CiTypeKind.CT_STRUCT:
-        return types.get_string(types.get_d0(id))
+        return with_str_clone_ref(types.get_string(types.get_d0(id)))
     if kind == CiTypeKind.CT_ENUM:
-        return types.get_string(types.get_d0(id))
+        return with_str_clone_ref(types.get_string(types.get_d0(id)))
     if kind == CiTypeKind.CT_NAMED:
         let name = types.get_string(types.get_d0(id))
         if name == "void":
             return "Unit"
         if ci_str_contains(name, "-> void"):
             return ci_str_replace(name, "-> void", "-> Unit")
-        return name
+        return with_str_clone_ref(name)
     if kind == CiTypeKind.CT_FN_PTR:
         let ret = (types.get_d0(id)) as CiTypeId
         let ps = types.get_d1(id)
@@ -565,13 +565,13 @@ fn ci_print_expr(exprs: CiExprPool, types: CiTypePool, id: CiExprId, parent_prec
     // is responsible for producing identical bytes to the legacy
     // path; the printer is verbatim.
     if kind == CiExprKind.CIE_INT_LIT:
-        return exprs.get_string(exprs.get_d0(id))
+        return with_str_clone_ref(exprs.get_string(exprs.get_d0(id)))
     if kind == CiExprKind.CIE_FLOAT_LIT:
-        return exprs.get_string(exprs.get_d0(id))
+        return with_str_clone_ref(exprs.get_string(exprs.get_d0(id)))
     if kind == CiExprKind.CIE_CHAR_LIT:
-        return exprs.get_string(exprs.get_d0(id))
+        return with_str_clone_ref(exprs.get_string(exprs.get_d0(id)))
     if kind == CiExprKind.CIE_STRING_LIT:
-        return exprs.get_string(exprs.get_d0(id))
+        return with_str_clone_ref(exprs.get_string(exprs.get_d0(id)))
     if kind == CiExprKind.CIE_BOOL_LIT:
         if exprs.get_d0(id) != 0:
             return "true"
@@ -581,7 +581,7 @@ fn ci_print_expr(exprs: CiExprPool, types: CiTypePool, id: CiExprId, parent_prec
 
     // References
     if kind == CiExprKind.CIE_IDENT:
-        return exprs.get_string(exprs.get_d0(id))
+        return with_str_clone_ref(exprs.get_string(exprs.get_d0(id)))
 
     // Arithmetic / logical. For unsigned wrap arithmetic
     // (+%, -%, *%) where BOTH operands are bare decimal literals,

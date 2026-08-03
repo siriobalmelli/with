@@ -11542,8 +11542,8 @@ impl MirBuilder:
     fn generic_call_symbol_text(sym: i32) -> str:
         let text = self.pool.resolve(sym)
         if text.len() > 0:
-            return text
-        self.sema.pool_resolve(sym)
+            return with_str_clone_ref(text)
+        with_str_clone_ref(self.sema.pool_resolve(sym))
 
     fn generic_call_uses_codegen_dispatch(method_sym: i32, self_expr: i32, has_recorded_sig: bool, recv_ty: i32, recv_kind: i32) -> bool:
         if recv_ty != 0:
