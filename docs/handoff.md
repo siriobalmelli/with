@@ -18,6 +18,52 @@ Probe any future seed candidate as ORCHESTRATOR before :update-seed
 (rm out/lib/rt_core.o; candidate build :rt-core-object) until #757's
 gate lands.
 
+## #747 flip: std CLEAN, src residue 1319 (branch 747-flip @ 7d3e754b)
+
+Phase A done: embedded std checks CLEAN under the flip (probe: only the
+intentional move error). regex.w was the whole prelude fallout — 32
+params borrowed; Regex.compile/compile_flags DENYLISTED as consuming
+(D5: they retain); clone() + Captures.subject + borrowed tails use
+with_str_clone_ref; 18 slice calls → with_str_slice_ref. rt additions
+(both-worlds-valid): with_str_clone_ref(&str), with_str_slice_ref(&str)
+in rt_core.w (read header via `s as *const str` double-deref — probed
+spelling); with_regex_{compile,match_spans_alloc_at,group_name_to_index,
+substitute} flipped to &str WITH matching std extern decls (std-only
+wiring; with_str_slice is codegen-emitted — ABI kept, ref twin added).
+rt objects are seed-built (unflipped) so rt bodies only need unflipped
+validity this campaign.
+
+Phase B done: driver fixpoint 5685 → 1319 in one mechanical round
+(denylist never engaged — residue is not consumer-shaped). Residue
+buckets: 311 return-type (borrowed tails in `-> str` fns), 185
+Vec.push(&str), 154 use-of-moved, 88 view-origin §21.1, 76+34 D22
+field-through-borrow, 67 struct-literal, 43 assignment, 34 owned-to-
+ref-binding (diagnostic suggests exact fix), 33 with_fs_read_file-class
+externs, 25 if-copy, 19 HashMap.get.
+
+Phase C next (in order):
+1. Flip fs/str extern decls in src + rt signatures (with_fs_read_file
+   etc., read-only paths) — same recipe as the regex four (~50 errors).
+2. Build tools/wrap_diag_spans.w: parse flipped-checker diagnostics
+   (error kind + primary span), wrap the spanned expression in
+   with_str_clone_ref(...) by byte edit for kinds: Vec.push arg, D22
+   call-arg/struct-literal-field, assignment/literal mismatch, borrowed
+   return tails (~700 errors). Iterate to dry. Clones are CORRECT;
+   #748 view tokens recover perf later. Model: tools/
+   migrate_method_arg_moves.w (diagnostics+spans).
+3. Hand-fix: use-of-moved (read-before-move reorder or clone at move),
+   view-origin escapes, if-copy joins (clone one branch).
+4. Then: lib/std de-Copy tail (build.w Package/ProjectInfo/Diagnostics/
+   Workspace; JsonView = flip-time design ?), corpus sweep, un-pin
+   emitc_migrate cap, flipped stage1→stage2 attempt, :move-audit/
+   :drop-audit, battery ALONE on the flip merge, reseed, roundtrip.
+
+Worktree: scratchpad wt-flip, branch 747-flip (flip 4406d2f6 + share
+cherry-pick + WIP 7d3e754b). Driver artifacts in scratchpad:
+flip_files_src.txt (94), flip_denylist.txt, flip_scratch/round.txt
+(the 1319 residue diagnostics). Flipped stage1: wt-flip/out/bootstrap/
+bin/with-stage1 (rebuild ~2.5min via `src/main build :stage1` in wt).
+
 ## #747 flip branch LIVE: scratchpad/wt-flip @ 747-flip
 
 Worktree wt-flip (branch 747-flip) = 1f47f706 + flip commit 4406d2f6
