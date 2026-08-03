@@ -8262,7 +8262,7 @@ impl MirBuilder:
         // #747: the resolved callee symbol feeds lower_call_arg's extern
         // bit-copy rule (a call not in comp_resolved lowers conservatively).
         let bc_resolved = self.sema.comp_resolved.get(node)
-        let bc_callee_sym = if bc_resolved.is_some(): bc_resolved.unwrap() else: 0
+        let bc_callee_sym: i32 = if bc_resolved.is_some(): bc_resolved.unwrap() else: 0
 
         let args: Vec[i32] = Vec.new()
         // Use sema-resolved arg order for named-arg and implicit-arg calls
@@ -8587,7 +8587,7 @@ impl MirBuilder:
             if not arg_is_copy and arg_kind != NodeKind.NK_MOVE_ARG and callee_sym != 0 and self.body.operand_kinds.get(lowered as i64) == OperandKind.OK_MOVE:
                 let bc_sym = self.sema_symbol_for_ast_symbol(callee_sym)
                 if self.sema.extern_param_is_bit_copy(bc_sym, sig_idx, arg_i) != 0:
-                    let bc_place = self.body.operand_d0.get(lowered as i64)
+                    let bc_place: i32 = self.body.operand_d0.get(lowered as i64)
                     if self.place_type_is_str(bc_place) != 0:
                         self.mark_string_place_copied(bc_place)
                     return self.body.new_operand(OperandKind.OK_COPY, bc_place)
