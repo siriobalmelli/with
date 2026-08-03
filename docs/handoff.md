@@ -54,7 +54,28 @@ contains &K, HashSet contains &T, StringBuilder.push_str &str)
 committed as 457b7233; their std-body fallout is unknown until stage1
 next builds.
 
-Phase C next (in order, after the 39):
+BLOCKER (worktree, branch @ 1416af84): `&str` ACROSS THE EXTERN
+BOUNDARY IS MIXED-CONVENTION. The 39 both-worlds sites are FIXED
+(agent commit a614d2fa: 35 var-init clones + 4 if-hoists; note the
+seed cannot auto-borrow an if-expression temporary at a &str arg — 
+hoist to a binding). Seed stage1 build is GREEN. But the built stage1
+CRASHES running the clone_ref calls: reading the &str param as
+pointer-to-header faults with string bytes as the address; reading it
+as the fat pair panics interior-NUL — caller marshalling and callee
+prologue disagree PER SITE. This is D6's per-path ABI divergence, in
+compute_fn_abi/PassMode for &T-of-str on extern fns. NEXT SESSION:
+(1) `with check --dump-abi` on a clone_ref caller + the rt definition
+in the worktree, compare verdicts; (2) fix in compute_fn_abi ONCE (or
+rule that extern fns cannot take &str and switch the ref-variant
+surface to `*const str` + `&raw const` call sites); (3) re-verify
+moveprobe shows the intentional move error, then census. The
+pre-crash residue trajectory: 1319 before the collections observer
+flips (get/contains &K, push_str &str) — true current residue UNKNOWN
+(the '0 errors' census was a crash artifact, rc=139/1).
+Also: the frozen seed panicked corrupt-vec on its DIAGNOSTIC path
+during agent round 1 — one more #743 failure-path data point.
+
+Phase C next (in order, after the ABI blocker):
 1. Flip fs/str extern decls in src + rt signatures (with_fs_read_file
    etc., read-only paths) — same recipe as the regex four (~50 errors).
 2. Build tools/wrap_diag_spans.w: parse flipped-checker diagnostics
