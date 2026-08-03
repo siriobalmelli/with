@@ -124,12 +124,12 @@ impl Diagnostic:
         var pend = self.primary.end - gen_start
         if pend <= pstart:
             pend = pstart + 1
-        let code: str = self.code
-        let message: str = self.message
+        let code: str = with_str_clone_ref(self.code)
+        let message: str = with_str_clone_ref(self.message)
         with_eprint(render_diag_header(self.severity, code, message))
 
         let loc = source.offset_to_location(pstart)
-        let source_path: str = source.path
+        let source_path: str = with_str_clone_ref(source.path)
         with_eprint(render_diag_location(source_path, loc.line, loc.col))
 
         let line_text: str = source.line_text(loc.line)
@@ -138,7 +138,7 @@ impl Diagnostic:
 
         for i in 0..self.labels.len() as i32:
             let lab = &self.labels[i as i64]
-            let label_message: str = lab.message
+            let label_message: str = with_str_clone_ref(lab.message)
             var label_path = ""
             if i < label_paths.len() as i32:
                 label_path = with_str_clone_ref(label_paths.get(i as i64))
@@ -151,10 +151,10 @@ impl Diagnostic:
                 with_eprint(render_diag_label_line(lloc.line, lloc.col, label_message))
 
         for i in 0..self.notes.len() as i32:
-            let note: str = self.notes.get(i as i64)
+            let note: str = with_str_clone_ref(self.notes.get(i as i64))
             with_eprint(render_diag_note_line(note))
         for i in 0..self.helps.len() as i32:
-            let help: str = self.helps.get(i as i64)
+            let help: str = with_str_clone_ref(self.helps.get(i as i64))
             with_eprint(render_diag_help_line(help))
 
 pub type DiagnosticList {

@@ -23,6 +23,7 @@ use compiler.CodegenUnitsPolicy
 use Mir
 use std.string.parse
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_fs_remove_file(path: &str) -> i32
 @[effect(fn_ptr: escape_value, ctx: escape_value)]
 extern fn with_thread_spawn(fn_ptr: *mut u8, ctx: *mut u8) -> i64
@@ -96,7 +97,7 @@ pub fn codegen_units_apply_global_ownership(unit_module: i64, k: i32) -> Unit:
 
 // Unit object path: unit 0 owns the canonical object path.
 pub fn codegen_unit_object_path(obj_path: &str, k: i32) -> str:
-    if k == 0: obj_path else: f"{obj_path}.u{k}.o"
+    if k == 0: with_str_clone_ref(obj_path) else: f"{obj_path}.u{k}.o"
 
 // #681 per-unit generation: assign MIR bodies to units BEFORE any LLVM
 // exists. Cost proxy = total MIR statements per body; greedy least-loaded

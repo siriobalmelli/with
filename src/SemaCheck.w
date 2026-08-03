@@ -1444,7 +1444,7 @@ impl Sema:
 
     mut fn update_module_context(di: i32):
         if di < self.decl_source_paths.len() as i32:
-            let path: str = self.decl_source_paths.get(di as i64)
+            let path: str = with_str_clone_ref(self.decl_source_paths.get(di as i64))
             if path != self.current_module_path:
                 self.current_module_path = with_str_clone_ref(path)
                 if self.scoping_active != 0:
@@ -1503,7 +1503,7 @@ impl Sema:
                 let idx = start + ii
                 if idx < 0 or idx >= self.module_import_paths.len() as i32:
                     continue
-                let import_path: str = self.module_import_paths.get(idx as i64)
+                let import_path: str = with_str_clone_ref(self.module_import_paths.get(idx as i64))
                 if sema_tier_std_only_module(import_path) != 0:
                     self.emit_error(import_path ++ " requires std", fallback_node)
 
@@ -6877,7 +6877,7 @@ impl Sema:
         let target_name = self.pool_resolve(sym)
         if self.ci_omitted_symbols.contains(target_name):
             // Value is "location|category|reason" (§16.2 structured manifest).
-            let record: str = self.ci_omitted_symbols.get(target_name).unwrap()
+            let record: str = with_str_clone_ref(self.ci_omitted_symbols.get(target_name).unwrap())
             let loc = ci_omitted_field(record, 0)
             let category = ci_omitted_field(record, 1)
             let reason_raw = ci_omitted_field(record, 2)

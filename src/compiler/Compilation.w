@@ -243,7 +243,7 @@ fn compilation_decl_index_for_node(pool: AstPool, node: NodeId) -> i32:
 fn compilation_relative_source_path(root: &str, path: &str) -> str:
     if root.len() == 0:
         return with_str_clone_ref(path)
-    let prefix = if root.ends_with("/"): root else: root ++ "/"
+    let prefix = if root.ends_with("/"): with_str_clone_ref(root) else: root ++ "/"
     if path.starts_with(prefix):
         return path.slice(prefix.len(), path.len())
     with_str_clone_ref(path)
@@ -1321,7 +1321,7 @@ fn analysis_request_is_semantic_snapshot(request: &str) -> bool:
 
 fn analysis_request_after_mir(request: &str): request.starts_with("after-mir:")
 fn analysis_request_inner(request: &str):
-    if analysis_request_after_mir(request): request.slice(10, request.len()) else: request
+    if analysis_request_after_mir(request): request.slice(10, request.len()) else: with_str_clone_ref(request)
 
 impl Compilation:
     pub mut fn analyze_file(source_path: &str, request: &str) -> CompilerAnalysisResult:

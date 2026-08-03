@@ -23,7 +23,7 @@ pub fn build_graph_test_target_files(root: &str, entry: &str) -> Vec[str]:
 
     let entry_dir = build_graph_dirname(entry)
     let pattern = build_graph_path_basename(entry)
-    let search_dir = if entry_dir == ".": root else: build_graph_resolve_project_path(root, entry_dir)
+    let search_dir = if entry_dir == ".": with_str_clone_ref(root) else: build_graph_resolve_project_path(root, entry_dir)
     let candidates = collect_test_files(search_dir)
     for ci in 0..candidates.len() as i32:
         let candidate = candidates.get(ci as i64)

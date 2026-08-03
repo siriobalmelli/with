@@ -1200,7 +1200,7 @@ impl Sema:
 
         var i = 1
         while i < self.pool.state.symbol_texts.len() as i32:
-            let existing_text: str = self.pool.state.symbol_texts.get(i as i64)
+            let existing_text: str = with_str_clone_ref(self.pool.state.symbol_texts.get(i as i64))
             if sema_str_eq(existing_text, name) != 0:
                 self.pool.state.symbol_map.insert(existing_text, i)
                 return i
@@ -2561,7 +2561,7 @@ impl Sema:
                 for ei in 0..edge_count:
                     let idx = edge_start + ei
                     if idx >= 0 and idx < self.module_import_paths.len() as i32:
-                        let ip: str = self.module_import_paths.get(idx as i64)
+                        let ip: str = with_str_clone_ref(self.module_import_paths.get(idx as i64))
                         if ip == "std.prelude" or ip == "std.prelude_core" or ip == "std.prelude_alloc":
                             continue
                         stack.push(self.module_import_targets.get(idx as i64))

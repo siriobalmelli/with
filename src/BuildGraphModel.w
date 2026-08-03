@@ -260,7 +260,7 @@ pub fn parse_build_graph(text: &str) -> BuildGraph:
                 return graph
             if has_current:
                 graph.targets.push(move current)
-            let output = if graph_version == 2: fields.get(6) else: ""
+            let output = if graph_version == 2: with_str_clone_ref(fields.get(6)) else: ""
             current = build_graph_target_new(
                 build_graph_parse_i32(fields.get(1)),
                 fields.get(2),
@@ -376,11 +376,11 @@ fn build_graph_target_deep_copy(t: &BuildGraphTarget) -> BuildGraphTarget:
 pub fn build_graph_filter_target(graph: &BuildGraph, target_name: &str) -> BuildGraph:
     var out = empty_build_graph()
     out.ok = graph.ok
-    out.error_msg = graph.error_msg
-    out.raw_text = graph.raw_text
-    out.package_name = graph.package_name
-    out.package_version = graph.package_version
-    out.default_target = graph.default_target
+    out.error_msg = with_str_clone_ref(graph.error_msg)
+    out.raw_text = with_str_clone_ref(graph.raw_text)
+    out.package_name = with_str_clone_ref(graph.package_name)
+    out.package_version = with_str_clone_ref(graph.package_version)
+    out.default_target = with_str_clone_ref(graph.default_target)
     for gi in 0..graph.generated_sources.len() as i32:
         let bgm_gen = &graph.generated_sources[gi as i64]
         out.generated_sources.push(BuildGraphGeneratedSource { path: with_str_clone_ref(bgm_gen.path), contents: with_str_clone_ref(bgm_gen.contents) })
@@ -402,11 +402,11 @@ pub fn build_graph_filter_target(graph: &BuildGraph, target_name: &str) -> Build
 pub fn build_graph_filter_single_target(graph: &BuildGraph, target_name: &str) -> BuildGraph:
     var out = empty_build_graph()
     out.ok = graph.ok
-    out.error_msg = graph.error_msg
-    out.raw_text = graph.raw_text
-    out.package_name = graph.package_name
-    out.package_version = graph.package_version
-    out.default_target = graph.default_target
+    out.error_msg = with_str_clone_ref(graph.error_msg)
+    out.raw_text = with_str_clone_ref(graph.raw_text)
+    out.package_name = with_str_clone_ref(graph.package_name)
+    out.package_version = with_str_clone_ref(graph.package_version)
+    out.default_target = with_str_clone_ref(graph.default_target)
     for gi in 0..graph.generated_sources.len() as i32:
         let bgm_gen = &graph.generated_sources[gi as i64]
         out.generated_sources.push(BuildGraphGeneratedSource { path: with_str_clone_ref(bgm_gen.path), contents: with_str_clone_ref(bgm_gen.contents) })

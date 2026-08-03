@@ -134,7 +134,7 @@ impl InternPool:
 
         var i = 1
         while i < st.symbol_texts.len() as i32:
-            let existing_text: str = st.symbol_texts.get(i as i64)
+            let existing_text: str = with_str_clone_ref(st.symbol_texts.get(i as i64))
             if intern_text_eq(existing_text, s):
                 st.symbol_map.insert(existing_text, i)
                 return i

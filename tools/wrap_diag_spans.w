@@ -59,7 +59,13 @@ fn classify(line: &str) -> i32:
     if line.starts_with("error: cannot take ownership of a non-Copy field through a borrow"):
         if line.ends_with("— call argument"): return 2
         if line.ends_with("— struct literal field"): return 3
+        // assignment / typed-let-binding spans cover just the borrowed
+        // field read — the default wrap applies.
+        if line.ends_with("— assignment"): return 8
+        if line.ends_with("— typed let binding"): return 8
         return 0
+    if line.starts_with("error: if would need to copy a `str`"): return 8
+    if line == "error: type mismatch in binding": return 9
     if line == "error: type mismatch in struct literal field": return 4
     if line == "error: type mismatch in assignment": return 5
     if line == "error: return type mismatch": return 6
@@ -109,6 +115,8 @@ fn kind_name(kind: i32) -> str:
     if kind == 4: return "struct-field-mismatch"
     if kind == 5: return "assignment"
     if kind == 7: return "wrong-arg"
+    if kind == 8: return "borrowed-read"
+    if kind == 9: return "typed-binding"
     "return"
 
 fn load_skips(skip_path: &str) -> Vec[str]:
@@ -253,7 +261,7 @@ fn plan_edits(path: &str, text: &str, sites: &Vec[Site], skips: &Vec[str]) -> Ed
             ed_start = start - 15
             ed_end = start
             new_text = "with_str_clone_ref("
-        else if site.kind == 5:
+        else if site.kind == 5 or site.kind == 9:
             let eq = find_assign_eq(span)
             if eq < 0:
                 print("skip-no-assign " ++ tag)

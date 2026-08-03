@@ -92,7 +92,7 @@ fn tracked_inside_root(path: &str, root: &str) -> bool:
     // prefix from the path, so the prefix comparison below would miss).
     if root == "." and path.len() > 0 and path.byte_at(0) != 47:
         return true
-    let prefix = if root.ends_with("/"): root else: root ++ "/"
+    let prefix = if root.ends_with("/"): with_str_clone_ref(root) else: root ++ "/"
     path.starts_with(prefix)
 
 // Lexically collapse '.' and '..' segments so containment is checked against

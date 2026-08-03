@@ -2079,7 +2079,7 @@ impl ComptimeEvaluator:
             return ""
         let exe = parts.get(0)
         let resolved = comptime_effect_resolve_executable(exe)
-        let key = if resolved.len() > 0: resolved else: exe
+        let key = if resolved.len() > 0: resolved else: with_str_clone_ref(exe)
         for i in 0..self.tool_identity_paths.len() as i32:
             if self.tool_identity_paths.get(i as i64) == key:
                 return with_str_clone_ref(self.tool_identity_values.get(i as i64))
@@ -2112,7 +2112,7 @@ fn comptime_effect_resolve_executable(exe: &str) -> str:
     while i <= path.len() as i32:
         if i == path.len() as i32 or path.byte_at(i as i64) == 58:
             let dir = path.slice(start as i64, i as i64)
-            let candidate = if dir.len() == 0: exe else: dir ++ "/" ++ exe
+            let candidate = if dir.len() == 0: with_str_clone_ref(exe) else: dir ++ "/" ++ exe
             if with_fs_file_exists(candidate) != 0:
                 return candidate
             start = i + 1
@@ -3867,7 +3867,7 @@ impl ComptimeEvaluator:
             return with_str_clone_ref(path)
         if path.byte_at(0) == 47:
             return with_str_clone_ref(path)
-        let clean_root = if root.ends_with("/"): root.slice(0, root.len() - 1) else: root
+        let clean_root = if root.ends_with("/"): root.slice(0, root.len() - 1) else: with_str_clone_ref(root)
         clean_root ++ "/" ++ path
 
     fn workspace_str_vec_field(options: ComptimeValue, field_name: &str) -> Vec[str]:
@@ -3968,7 +3968,7 @@ fn comptime_workspace_compile_invalid() -> ComptimeWorkspaceCompileResult:
 
 fn comptime_module_name_for_path(root: &str, path: &str) -> str:
     var rel = with_str_clone_ref(path)
-    let prefix = if root.ends_with("/"): root else: root ++ "/"
+    let prefix = if root.ends_with("/"): with_str_clone_ref(root) else: root ++ "/"
     if root.len() > 0 and path.starts_with(prefix):
         rel = path.slice(prefix.len(), path.len())
     if rel.ends_with(".w"):

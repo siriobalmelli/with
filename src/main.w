@@ -557,7 +557,7 @@ fn c_header_path_for(artifact_path: &str) -> str:
         if c == 46: dot = i
         if c == 47: dot = -1
         i = i + 1
-    let stem = if dot < 0: artifact_path else: artifact_path.slice(0, dot as i64)
+    let stem = if dot < 0: with_str_clone_ref(artifact_path) else: artifact_path.slice(0, dot as i64)
     stem ++ ".h"
 
 // A valid, unique C include-guard derived from the header's basename.
@@ -1542,7 +1542,7 @@ fn load_build_graph_from_build_w(root: &str, cfg: &ProjectConfig, options: &Buil
     BuildGraphLoadResult { graph: materialized.graph, sema: materialized.sema }
 
 fn build_graph_find_build_root(start_dir: &str) -> str:
-    var cur = if start_dir.len() > 0: start_dir else: "."
+    var cur = if start_dir.len() > 0: with_str_clone_ref(start_dir) else: "."
     while true:
         let manifest = resolve_join(cur, "with.toml")
         let build_file = resolve_join(cur, "build.w")
@@ -3598,7 +3598,7 @@ fn doc_path_is_project_source(path: &str, root: &str, requested: &str) -> bool:
             return true
     if root.len() == 0:
         return false
-    let prefix = if root.ends_with("/"): root else: root ++ "/"
+    let prefix = if root.ends_with("/"): with_str_clone_ref(root) else: root ++ "/"
     path.starts_with(prefix)
 
 fn doc_source_line_at(text: &str, offset: i32) -> str:

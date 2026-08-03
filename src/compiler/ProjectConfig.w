@@ -120,7 +120,7 @@ fn project_config_file_exists(path: &str) -> bool:
     runtime_read_file(path).len() > 0
 
 fn project_config_find_root(start_dir: &str) -> str:
-    var cur = if start_dir.len() > 0: start_dir else: "."
+    var cur = if start_dir.len() > 0: with_str_clone_ref(start_dir) else: "."
     while true:
         let manifest = resolve_join(cur, "with.toml")
         if project_config_file_exists(manifest):

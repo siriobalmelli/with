@@ -907,7 +907,7 @@ fn link_stage_source_stem(source_path: &str) -> str:
     let base = if last_slash >= 0:
         source_path.slice((last_slash + 1) as i64, source_path.len() as i64)
     else:
-        source_path
+        with_str_clone_ref(source_path)
     if base.len() > 2 and base.ends_with(".w"):
         return base.slice(0, (base.len() - 2) as i64)
     base

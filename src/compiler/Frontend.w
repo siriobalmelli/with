@@ -705,7 +705,7 @@ impl Zcu:
         self.c_import_emit_header_error_detail_frontend(decl, header_spec, "")
 
     mut fn c_import_emit_untranslated_error_frontend(pool: AstPool, decl: i32, kind: &str, name: &str):
-        let display_name = if name.len() > 0: name else: "<unknown>"
+        let display_name = if name.len() > 0: with_str_clone_ref(name) else: "<unknown>"
         let span = Span {
             file: 0,
             start: pool.get_start(decl),
@@ -1493,7 +1493,7 @@ impl Zcu:
             self.diagnostics = parser.diags
             self.seed_decl_source_paths(pool, name, file_id)
         for extra_i in 0..self.extra_source_names.len() as i32:
-            let extra_name: str = self.extra_source_names.get(extra_i as i64)
+            let extra_name: str = with_str_clone_ref(self.extra_source_names.get(extra_i as i64))
             let extra_text = frontend_normalize_source_text(self.extra_source_texts.get(extra_i as i64))
             let extra_file_id = self.next_file_id
             self.next_file_id = self.next_file_id + 1
@@ -2332,7 +2332,7 @@ impl Zcu:
                     return embedded_fallback
             // Not embedded — fall through to filesystem resolution
 
-        let source_dir = if source_dir_raw.len() > 0: source_dir_raw else: self.source_dir
+        let source_dir = if source_dir_raw.len() > 0: with_str_clone_ref(source_dir_raw) else: self.source_dir
         let has_root_fallback = source_dir != self.source_dir
 
         let primary = frontend_resolve_module_rel(source_dir, rel_primary)

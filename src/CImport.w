@@ -291,7 +291,7 @@ fn ci_build_define_prefix(defines: &Vec[str]) -> str:
     for i in 0..defines.len() as i32:
         let define = defines.get(i as i64)
         if define.len() > 0:
-            var rendered: str = define
+            var rendered: str = with_str_clone_ref(define)
             for di in 0..define.len() as i32:
                 if define.byte_at(di as i64) == 61:
                     rendered = define.slice(0, di as i64) ++ " " ++ define.slice((di + 1) as i64, define.len())
@@ -10777,7 +10777,7 @@ fn ci_try_eval_var_init_for_type(session: i64, idx: i32, target_type: &str) -> s
     let var_cursor = with_cimport_decl_cursor(session, idx)
     if var_cursor >= 0:
         let cursor_type = with_ci_type_translated(session, with_ci_cursor_type(session, var_cursor))
-        let init_type = if target_type.len() > 0: target_type else: cursor_type
+        let init_type = if target_type.len() > 0: with_str_clone_ref(target_type) else: cursor_type
         let init_cursor = ci_find_var_init_cursor(session, var_cursor)
         if init_cursor >= 0:
             let init_peeled = ci_peel_transparent(session, init_cursor)
@@ -13237,7 +13237,7 @@ fn ci_var_init_expr_from_preprocessed_cursor_for_type(session: i64, var_cursor: 
     if preprocessed.len() == 0:
         return ""
     let cursor_ty_str = with_ci_type_translated(session, with_ci_cursor_type(session, var_cursor))
-    let vty_str = if target_type.len() > 0: target_type else: cursor_ty_str
+    let vty_str = if target_type.len() > 0: with_str_clone_ref(target_type) else: cursor_ty_str
     let var_cxtype = with_ci_cursor_type(session, var_cursor)
     let translated = ci_translate_c_initializer_for_cursor_type(session, preprocessed, vty_str, var_cxtype)
     if ci_var_init_translation_is_valid(vty_str, translated):
@@ -13278,7 +13278,7 @@ fn ci_var_init_expr_from_decl_source_for_type(session: i64, var_cursor: i32, tar
     if init_src.len() == 0:
         return ""
     let cursor_ty_str = with_ci_type_translated(session, with_ci_cursor_type(session, var_cursor))
-    let vty_str = if target_type.len() > 0: target_type else: cursor_ty_str
+    let vty_str = if target_type.len() > 0: with_str_clone_ref(target_type) else: cursor_ty_str
     let var_cxtype = with_ci_cursor_type(session, var_cursor)
     let preprocessed = ci_preprocess_initializer_text(session, var_cursor, raw_decl_src)
     if preprocessed.len() > 0:
@@ -13348,7 +13348,7 @@ fn ci_var_init_expr_for_type(session: i64, var_cursor: i32, scope: CiScope, targ
         exprs.deinit()
         types.deinit()
         let cursor_ty_str = with_ci_type_translated(session, with_ci_cursor_type(session, var_cursor))
-        let vty_str = if target_type.len() > 0: target_type else: cursor_ty_str
+        let vty_str = if target_type.len() > 0: with_str_clone_ref(target_type) else: cursor_ty_str
         // Array-to-pointer decay in initializer context: when the
         // var's type is a pointer and the init is an array-typed
         // expression, insert the explicit `&init[0] as *T` decay.
