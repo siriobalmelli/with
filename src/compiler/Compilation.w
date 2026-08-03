@@ -1437,33 +1437,57 @@ impl Compilation:
         let do_profile = profile_enabled()
         let active_pool = pool
         compilation_debug_pool_flow("run_mir_lower:start", self.zcu.pool, active_pool, self.zcu.last_sema)
-        var sema = self.zcu.configure_tracked_input_sema(Sema.init(self.zcu.pool, move self.zcu.diagnostics, active_pool))
+        // Reuse the frontend's checked sema when it matches this pool (the
+        // emit_typed guard at emit_typed): re-running check_module over the
+        // same pool is a second full sema pass for zero new facts, and under
+        // #747's seed-built stage1 it doubles peak memory. The reused sema
+        // takes the Zcu diagnostics exactly like Sema.init does on the fresh
+        // path, so diagnostic continuity is unchanged.
+        // types_frozen guard: a prior run_mir_lower in this same invocation
+        // already consumed and froze last_sema; lowering must start from a
+        // still-mutable sema, so that rare flow keeps the fresh-check path.
+        let reuse_checked_sema = self.zcu.last_sema.ast.decl_count() == active_pool.decl_count() and active_pool.decl_count() > 0 and self.zcu.last_sema.types_frozen == 0
+        var sema = Sema.placeholder(InternPool.init(), DiagnosticList.init(), AstPool.new())
+        if reuse_checked_sema:
+            sema = move self.zcu.last_sema
+            // Reinitialize the moved-out slot immediately: every exit path
+            // below syncs the final sema back, but the checker (rightly)
+            // wants the field valid on this path before any read.
+            self.zcu.last_sema = Sema.placeholder(InternPool.init(), DiagnosticList.init(), AstPool.new())
+            sema.diags = move self.zcu.diagnostics
+            sema.set_tracked_input_context(self.zcu.tracked_input_root(), &self.zcu.tracked_input_paths)
+            // The frontend sema already emitted config warnings; the MIR-phase
+            // sema never re-emits them (the fresh path's default is 0 too).
+            sema.emit_config_warnings = 0
+        else:
+            sema = self.zcu.configure_tracked_input_sema(Sema.init(self.zcu.pool, move self.zcu.diagnostics, active_pool))
+            sema.source_text = self.zcu.current_source_text
+            // Clone like Frontend's seam: a bare assignment moves the table out of
+            // the Zcu (single-owner Vec), and the backend's module-object pruning
+            // then sees empty decl paths and emits every imported module's bodies.
+            sema.decl_source_paths = sema_clone_str_vec(&self.zcu.decl_source_paths)
+            sema.decl_source_file_ids = sema_clone_i32_vec(&self.zcu.decl_source_file_ids)
+            sema.decl_is_c_import = sema_clone_i32_vec(&self.zcu.decl_is_c_import)
+            sema.source_text_file_ids = sema_clone_i32_vec(&self.zcu.source_text_file_ids)
+            sema.source_text_names = sema_clone_str_vec(&self.zcu.source_text_names)
+            sema.source_texts = sema_clone_str_vec(&self.zcu.source_texts)
+            sema.tool_mode_entry_path = self.zcu.tool_mode_entry_path
+            sema.runtime_available = if self.zcu.project_config.runtime_available: 1 else: 0
+            sema.runtime_fiber_stack_size = self.zcu.project_config.runtime_fiber_stack_size
+            sema.runtime_fiber_pool_size = self.zcu.project_config.runtime_fiber_pool_size
+            sema.runtime_fiber_worker_count = self.zcu.project_config.runtime_fiber_worker_count
+            sema.copy_warn_threshold = self.zcu.project_config.copy_warn_threshold
+            sema.lint_partial_statement_match = if self.zcu.project_config.lint_partial_statement_match: 1 else: 0
+            sema.overflow_mode = self.zcu.project_config.overflow_mode
+            sema.init_module_graph(&self.zcu.last_resolved)
+            if self.zcu.project_config.no_std or self.config.no_std:
+                sema.no_std = 1
+            if self.zcu.project_config.alloc_mode or self.config.alloc_mode:
+                sema.alloc = 1
         compilation_debug_pool_flow("run_mir_lower:after_init", self.zcu.pool, active_pool, sema)
-        sema.source_text = self.zcu.current_source_text
-        // Clone like Frontend's seam: a bare assignment moves the table out of
-        // the Zcu (single-owner Vec), and the backend's module-object pruning
-        // then sees empty decl paths and emits every imported module's bodies.
-        sema.decl_source_paths = sema_clone_str_vec(&self.zcu.decl_source_paths)
-        sema.decl_source_file_ids = sema_clone_i32_vec(&self.zcu.decl_source_file_ids)
-        sema.decl_is_c_import = sema_clone_i32_vec(&self.zcu.decl_is_c_import)
-        sema.source_text_file_ids = sema_clone_i32_vec(&self.zcu.source_text_file_ids)
-        sema.source_text_names = sema_clone_str_vec(&self.zcu.source_text_names)
-        sema.source_texts = sema_clone_str_vec(&self.zcu.source_texts)
-        sema.tool_mode_entry_path = self.zcu.tool_mode_entry_path
-        sema.runtime_available = if self.zcu.project_config.runtime_available: 1 else: 0
-        sema.runtime_fiber_stack_size = self.zcu.project_config.runtime_fiber_stack_size
-        sema.runtime_fiber_pool_size = self.zcu.project_config.runtime_fiber_pool_size
-        sema.runtime_fiber_worker_count = self.zcu.project_config.runtime_fiber_worker_count
-        sema.copy_warn_threshold = self.zcu.project_config.copy_warn_threshold
-        sema.lint_partial_statement_match = if self.zcu.project_config.lint_partial_statement_match: 1 else: 0
-        sema.overflow_mode = self.zcu.project_config.overflow_mode
-        sema.init_module_graph(&self.zcu.last_resolved)
-        if self.zcu.project_config.no_std or self.config.no_std:
-            sema.no_std = 1
-        if self.zcu.project_config.alloc_mode or self.config.alloc_mode:
-            sema.alloc = 1
         let t_sema = profile_now()
-        sema.check_module()
+        if not reuse_checked_sema:
+            sema.check_module()
         // Prime the query tables for ordinary MIR lowering. Concrete generic
         // specializations are rechecked/lowered below and refresh these tables if
         // they add types. The hard freeze belongs after all MIR exists, not before:
