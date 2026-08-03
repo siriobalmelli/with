@@ -218,7 +218,7 @@ fn driver_build_source_arg(argc: i32) -> str:
             skip = true
         if not skip:
             if with_str_len(arg) > 0:
-                if with_str_byte_at(with_str_clone_ref(arg), 0) != 45 and not driver_is_build_target_selector(arg):
+                if with_str_byte_at(arg, 0) != 45 and not driver_is_build_target_selector(arg):
                     return arg
         i = i + step
     ""
@@ -232,7 +232,7 @@ fn driver_output_arg(argc: i32) -> str:
                 return with_arg_at(i + 1)
             return ""
         if driver_has_output_prefix(arg):
-            return with_str_slice(with_str_clone_ref(arg), 9, with_str_len(arg))
+            return with_str_slice(arg, 9, with_str_len(arg))
         i = i + 1
     ""
 
@@ -286,8 +286,8 @@ fn driver_parse_build_target(argc: i32) -> DriverTargetParseResult:
             value = with_arg_at(i + 1)
             seen = true
             i = i + 2
-        else if with_str_starts_with(with_str_clone_ref(arg), "--target=") != 0:
-            value = with_str_slice(with_str_clone_ref(arg), 9, with_str_len(arg))
+        else if with_str_starts_with(arg, "--target=") != 0:
+            value = with_str_slice(arg, 9, with_str_len(arg))
             seen = true
             i = i + 1
         else:
@@ -305,7 +305,7 @@ fn driver_build_target_arg(argc: i32) -> str:
     while i < argc:
         let arg = with_arg_at(i)
         if driver_is_build_target_selector(arg):
-            return with_str_slice(with_str_clone_ref(arg), 1, with_str_len(arg))
+            return with_str_slice(arg, 1, with_str_len(arg))
         i = i + 1
     ""
 
@@ -349,8 +349,8 @@ fn driver_parse_prelude_mode(argc: i32) -> DriverPreludeParseResult:
             mode = DriverPreludeMode.None
         else if arg == "--freestanding":
             mode = DriverPreludeMode.Core
-        else if with_str_starts_with(with_str_clone_ref(arg), "--prelude=") != 0:
-            let value = with_str_slice(with_str_clone_ref(arg), 10, with_str_len(arg))
+        else if with_str_starts_with(arg, "--prelude=") != 0:
+            let value = with_str_slice(arg, 10, with_str_len(arg))
             if value == "core":
                 mode = DriverPreludeMode.Core
             else if value == "alloc":
@@ -369,8 +369,8 @@ fn driver_parse_overflow_mode(argc: i32) -> DriverOverflowParseResult:
     var i = 2
     while i < argc:
         let arg = with_arg_at(i)
-        if with_str_starts_with(with_str_clone_ref(arg), "--overflow=") != 0:
-            let value = with_str_slice(with_str_clone_ref(arg), 11, with_str_len(arg))
+        if with_str_starts_with(arg, "--overflow=") != 0:
+            let value = with_str_slice(arg, 11, with_str_len(arg))
             let parsed = overflow_mode_parse(value)
             if not overflow_mode_valid(parsed):
                 return DriverOverflowParseResult { false, -1, value }
