@@ -13,6 +13,7 @@ use TypeLayout
 use render
 use std.builtins.int_to_string
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_write(s: &str) -> Unit
 extern fn with_eprint(s: &str) -> Unit
 extern fn with_getenv_str(name: &str) -> str
@@ -1468,7 +1469,7 @@ impl Sema:
                     self.local_file_id = self.decl_source_file_ids.get(di as i64)
                 break
         if path != self.current_module_path:
-            self.current_module_path = path
+            self.current_module_path = with_str_clone_ref(path)
             if self.scoping_active != 0:
                 let path_sym = self.pool_lookup_symbol(path)
                 self.current_module_has_ci = if path_sym != 0 and self.ci_modules.contains(path_sym): 1 else: 0
@@ -1599,7 +1600,7 @@ impl Sema:
             return
         self.global_race_concurrency_node = node
         self.global_race_concurrency_file = self.local_file_id
-        self.global_race_concurrency_reason = reason
+        self.global_race_concurrency_reason = with_str_clone_ref(reason)
 
     fn global_symbol_is_synchronized(sym: i32) -> i32:
         let tid = self.scope_lookup(sym)
@@ -1626,7 +1627,7 @@ impl Sema:
         self.global_race_access_syms.push(sym)
         self.global_race_access_nodes.push(node)
         self.global_race_access_files.push(self.local_file_id)
-        self.global_race_access_paths.push(self.current_module_path)
+        self.global_race_access_paths.push(with_str_clone_ref(self.current_module_path))
         self.global_race_access_kinds.push(kind)
         self.global_race_access_unsafe.push(self.in_unsafe)
         if kind == GLOBAL_RACE_ACCESS_WRITE:
@@ -22702,9 +22703,9 @@ impl Sema:
         let alias = self.pool_resolve(alias_sym)
         if alias.len() == 0 or self.current_module_path.len() == 0:
             return ""
-        if not self.module_index_by_path.contains(self.current_module_path):
+        if not self.module_index_by_path.contains(with_str_clone_ref(self.current_module_path)):
             return ""
-        let current = self.module_index_by_path.get(self.current_module_path).unwrap()
+        let current = self.module_index_by_path.get(with_str_clone_ref(self.current_module_path)).unwrap()
         if current < 0 or current >= self.module_import_starts.len() as i32:
             return ""
         let start = self.module_import_starts.get(current as i64)
@@ -22728,9 +22729,9 @@ impl Sema:
             return 1
         if self.current_module_path.len() == 0:
             return 1
-        if not self.module_index_by_path.contains(self.current_module_path) or not self.module_index_by_path.contains(path):
+        if not self.module_index_by_path.contains(with_str_clone_ref(self.current_module_path)) or not self.module_index_by_path.contains(path):
             return self.module_is_visible_from_current(path)
-        let current = self.module_index_by_path.get(self.current_module_path).unwrap()
+        let current = self.module_index_by_path.get(with_str_clone_ref(self.current_module_path)).unwrap()
         let target = self.module_index_by_path.get(path).unwrap()
         if current == target:
             return 1

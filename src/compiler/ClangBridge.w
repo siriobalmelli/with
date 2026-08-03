@@ -5,6 +5,7 @@
 // No C headers needed — resolves at link time.
 
 // ── Runtime helpers (from rt_core.w) ────────────────────────────
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 extern fn with_memcpy(dst: *mut u8, src: *const u8, len: i64) -> Unit
@@ -586,7 +587,7 @@ var g_cimport_include_count: i32 = 0
 var g_cimport_sdk_path: str = ""
 
 pub fn with_cimport_set_sdk_path(path: &str) -> Unit:
-    g_cimport_sdk_path = path
+    g_cimport_sdk_path = with_str_clone_ref(path)
 
 var sdk_path_buf: [1024]u8 = [0 as u8; 1024]
 var sdk_path_resolved: i32 = 0

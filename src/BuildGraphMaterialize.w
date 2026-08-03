@@ -5,6 +5,7 @@ use BuildGraphModel
 use BuildGraphRuntime
 use ComptimeValue
 use Sema
+extern fn with_str_clone_ref(s: &str) -> str
 
 type BuildGraphMaterializer {
     sema: Sema,
@@ -58,7 +59,7 @@ impl BuildGraphMaterializer:
         for i in 0..field.extra_count:
             let item = self.extras.get((field.extra_start + i) as i64)
             if item.kind == ComptimeValueKind.CV_STR:
-                out.push(item.text)
+                out.push(with_str_clone_ref(item.text))
         out
 
 fn build_graph_materialized_target(kind: i32, name: &str, entry: &str, target_kind: i32, optimize_mode: i32, output: &str) -> BuildGraphTarget:
@@ -208,7 +209,7 @@ impl BuildGraphMaterializer:
                     queue.push(t)
         let paths: Vec[str] = Vec.new()
         for i in 0..visited.len() as i32:
-            paths.push(self.sema.module_paths.get(visited.get(i as i64) as i64))
+            paths.push(with_str_clone_ref(self.sema.module_paths.get(visited.get(i as i64) as i64)))
         paths
 
     fn materialize_generated_source(value: &ComptimeValue, graph: BuildGraph) -> BuildGraph:

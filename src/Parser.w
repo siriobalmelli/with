@@ -10,6 +10,7 @@ use Lexer
 use InternPool
 use Diagnostic
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_parse_i64(s: str) -> i64
 extern fn str_from_byte(b: i32) -> str
 extern fn with_sysinfo_arch() -> str
@@ -2783,7 +2784,7 @@ impl Parser:
 fn parser_error_from_variant_name(source_name: &str) -> str:
     if source_name.len() > 5 and source_name.ends_with("Error"):
         return source_name.slice(0, source_name.len() - 5)
-    source_name
+    with_str_clone_ref(source_name)
 
 impl Parser:
     mut fn parse_error_decl(is_pub: i32, start: i32) -> NodeId:

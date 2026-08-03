@@ -36,7 +36,7 @@ fn analysis_column_for_offset(source: &str, offset: i32) -> i32:
 fn analysis_with_node_location(fact: AnalysisFact, sema: &Sema, node: i32, source_path: &str, source_text: &str) -> AnalysisFact:
     var located = fact
     located.node = node
-    located.path = source_path
+    located.path = with_str_clone_ref(source_path)
     if node <= 0 or node >= sema.ast.node_count():
         return located
     let start = sema.ast.get_start(node)
@@ -52,11 +52,11 @@ fn analysis_sig_path(sema: &Sema, sym: i32, fallback: &str) -> str:
 
 fn analysis_decl_path(sema: &Sema, decl_index: i32, fallback: &str) -> str:
     let path = sema.decl_source_path_for_index(decl_index)
-    if path.len() > 0: path else: fallback
+    if path.len() > 0: path else: with_str_clone_ref(fallback)
 
 fn analysis_decl_source(sema: &Sema, decl_index: i32, fallback: &str) -> str:
     let source = sema.source_text_for_file_id(sema.decl_source_file_id_for_index(decl_index))
-    if source.len() > 0: source else: fallback
+    if source.len() > 0: source else: with_str_clone_ref(fallback)
 
 fn analysis_receiver_mode_name(mode: ReceiverMode) -> str:
     if mode == ReceiverMode.Read: return "read"
@@ -427,7 +427,7 @@ fn analysis_node_subject(sema: &Sema, node: i32, fallback_path: &str, fallback_s
                 path = sema.source_text_names.get(si as i64)
                 break
         break
-    result.push(path)
+    result.push(with_str_clone_ref(path))
     result.push(source)
     result
 
@@ -674,7 +674,7 @@ fn analysis_collect_diagnostics(report: &AnalysisReport, sema: &Sema):
         var subject = ""
         for si in 0..sema.source_text_file_ids.len() as i32:
             if sema.source_text_file_ids.get(si as i64) == diag.primary.file:
-                subject = sema.source_text_names.get(si as i64)
+                subject = with_str_clone_ref(sema.source_text_names.get(si as i64))
                 break
         if subject.len() == 0:
             for di in 0..sema.decl_source_file_ids.len() as i32:
@@ -1570,7 +1570,7 @@ fn analysis_seam_sites(sema: &Sema, mir_mod: &MirModule, source_path: &str, sour
         let fn_path = analysis_sig_path(sema, body.fn_sym, source_path)
         let ret_rows = analysis_seam_retention_rows(sema, body, fn_name, fn_path)
         for ri in 0..ret_rows.len() as i32:
-            report_lines.push(ret_rows.get(ri as i64))
+            report_lines.push(with_str_clone_ref(ret_rows.get(ri as i64)))
             counts.set_i32(5, counts.get(5) + 1)
         // Statements: an operand inside an aggregate or a plain assign is
         // RETAINED by the destination; anything else is a transient read.
@@ -1761,7 +1761,7 @@ fn analysis_fact_explain_query(kind: &str, wanted: &str) -> str:
     if kind == "node": return "kind=ast-node"
     if kind == "method": return "kind=method-registration,name~" ++ wanted
     if kind == "resolution": return "kind=method-resolution,name~" ++ wanted
-    wanted
+    with_str_clone_ref(wanted)
 
 fn analysis_explain_request(request: &str) -> str:
     let first = analysis_find_from(request, ":", 0)
@@ -1785,7 +1785,7 @@ fn analysis_lldb_recipe(report: &AnalysisReport, query: &str) -> str:
             continue
         if fact.kind == AnalysisFactKind.Diagnostic and fact.path.len() > 0 and fact.line > 0:
             lines.push("breakpoint set --file '")
-            lines.push(fact.path)
+            lines.push(with_str_clone_ref(fact.path))
             lines.push(f"' --line {fact.line}\n")
             hits = hits + 1
         else if fact.kind == AnalysisFactKind.Call or fact.kind == AnalysisFactKind.CallArgument:

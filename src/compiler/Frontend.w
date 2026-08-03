@@ -548,7 +548,7 @@ fn cimport_deps_sorted_unique_paths(files: &str) -> Vec[str]:
                     if not inserted and cimport_deps_str_compare(path, existing) < 0:
                         next.push(path)
                         inserted = true
-                    next.push(existing)
+                    next.push(with_str_clone_ref(existing))
                 if not inserted:
                     next.push(path)
                 out = next
@@ -1445,7 +1445,7 @@ impl Zcu:
         if zcu_debug_init_enabled() != 0:
             runtime_eprint("[frontend] compile_source:parse")
         let normalized_text = frontend_normalize_source_text(text)
-        self.current_source_path = name
+        self.current_source_path = with_str_clone_ref(name)
         self.current_source_text = normalized_text
 
         // Phase 1+2: Lex + Parse.  When prelude is enabled, parse the prelude
@@ -1582,7 +1582,7 @@ impl Zcu:
             if zcu_debug_init_enabled() != 0:
                 runtime_eprint("[frontend] compile_source:comptime-transform")
             var pre_sema = self.configure_tracked_input_sema(Sema.init(self.pool, move self.diagnostics, pool))
-            pre_sema.source_text = text
+            pre_sema.source_text = with_str_clone_ref(text)
             pre_sema.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
             pre_sema.decl_source_file_ids = sema_clone_i32_vec(&self.decl_source_file_ids)
             pre_sema.decl_is_c_import = sema_clone_i32_vec(&self.decl_is_c_import)
@@ -1641,7 +1641,7 @@ impl Zcu:
             runtime_eprint("[frontend] compile_source:sema")
         let t_sema = runtime_clock_nanos()
         var sema = self.configure_tracked_input_sema(Sema.init(self.pool, move self.diagnostics, pool))
-        sema.source_text = text
+        sema.source_text = with_str_clone_ref(text)
         sema.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
         sema.decl_source_file_ids = sema_clone_i32_vec(&self.decl_source_file_ids)
         sema.decl_is_c_import = sema_clone_i32_vec(&self.decl_is_c_import)
@@ -2202,7 +2202,7 @@ impl Zcu:
                 if imp.target_module < 0:
                     continue
                 let dep = self.last_resolved.modules.get(imp.target_module as i64)
-                if wanted_paths.contains(dep.path):
+                if wanted_paths.contains(with_str_clone_ref(dep.path)):
                     self.collect_module_dependency_order_frontend(dep.path, wanted_paths, accum)
         accum.state.order.push(frontend_owned_text(path))
 

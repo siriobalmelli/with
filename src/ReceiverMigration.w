@@ -22,6 +22,7 @@ use compiler.Compilation
 use Lexer
 use Token
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_fs_read_file(path: &str) -> str
 extern fn with_fs_write_file(path: &str, data: &str) -> i32
 
@@ -81,13 +82,13 @@ fn reindent(text: &str, pad: &str):
     while i < m:
         if (text.byte_at(i as i64) as i32) == 10:
             if i > line_start:
-                parts.push(pad)
+                parts.push(with_str_clone_ref(pad))
                 parts.push(slice(text, line_start, i))
             parts.push("\n")
             line_start = i + 1
         i = i + 1
     if m > line_start:
-        parts.push(pad)
+        parts.push(with_str_clone_ref(pad))
         parts.push(slice(text, line_start, m))
     parts.join("")
 
@@ -120,7 +121,7 @@ type RelocationFacts {
 
 fn local_source_path(path: &str) -> str:
     let embedded = "<embedded-std>/"
-    if path.starts_with(embedded): "lib/" ++ slice(path, embedded.len() as i32, path.len() as i32) else: path
+    if path.starts_with(embedded): "lib/" ++ slice(path, embedded.len() as i32, path.len() as i32) else: with_str_clone_ref(path)
 
 fn compiler_relocation_facts(entry: &str) -> RelocationFacts:
     let result = compiler_analyze_file(entry, "select:kind=declaration")
@@ -432,7 +433,7 @@ fn unique_relocation_paths(facts: &RelocationFacts, excludes: &Vec[str]) -> Vec[
             if paths.get(pi as i64) == path:
                 seen = true
                 break
-        if not seen: paths.push(path)
+        if not seen: paths.push(with_str_clone_ref(path))
     paths
 
 fn count_selected(facts: &RelocationFacts, excludes: &Vec[str]) -> i32:
@@ -474,12 +475,12 @@ pub fn run_receiver_migration -> i32:
                 print("error: --exclude requires a file path")
                 exit_code(1)
             arg = arg + 1
-            excludes.push(argv.get(arg as i64))
+            excludes.push(with_str_clone_ref(argv.get(arg as i64)))
         else:
             if entry.len() > 0:
                 print("error: exactly one semantic entry file is required")
                 exit_code(1)
-            entry = argv.get(arg as i64)
+            entry = with_str_clone_ref(argv.get(arg as i64))
         arg = arg + 1
     if entry.len() == 0:
         print("error: no semantic entry file supplied")

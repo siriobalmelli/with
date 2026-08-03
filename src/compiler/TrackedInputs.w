@@ -1,4 +1,5 @@
 use compiler.Runtime
+extern fn with_str_clone_ref(s: &str) -> str
 
 pub type TrackedReadResult {
     ok: bool,
@@ -39,11 +40,11 @@ pub fn tracked_input_insert_unique(paths: Vec[str], path: &str) -> Vec[str]:
         if cmp == 0:
             return paths
         if not inserted and cmp < 0:
-            out.push(path)
+            out.push(with_str_clone_ref(path))
             inserted = true
-        out.push(existing)
+        out.push(with_str_clone_ref(existing))
     if not inserted:
-        out.push(path)
+        out.push(with_str_clone_ref(path))
     out
 
 pub fn tracked_input_merge_unique(left: Vec[str], right: &Vec[str]) -> Vec[str]:

@@ -6,6 +6,7 @@ use BuildGraphOps
 use BuildGraphRuntime
 use BuildGraphSupport
 use BuildGraphTools
+extern fn with_str_clone_ref(s: &str) -> str
 
 pub type BuildGraphDispatchResult {
     handled: bool,
@@ -31,7 +32,7 @@ fn build_graph_output_is_new(outputs: &Vec[str], path: &str) -> bool:
 fn build_graph_record_output(outputs: Vec[str], path: &str) -> Vec[str]:
     var out = outputs
     if path.len() > 0:
-        out.push(path)
+        out.push(with_str_clone_ref(path))
     out
 
 pub fn build_graph_validate_outputs(root: &str, graph: &BuildGraph, output_path: &str) -> i32:

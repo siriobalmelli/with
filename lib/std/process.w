@@ -5,6 +5,7 @@
 
 use std.collections
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn rt_exit(code: i32) -> Never
 extern fn with_getpid() -> i32
 extern fn with_exec_argv(args: &str) -> i32
@@ -70,7 +71,7 @@ impl Command:
     pub fn arg(arg: str) -> Command:
         var argv: Vec[str] = Vec.new()
         for i in 0..self.args.len() as i32:
-            argv.push(self.args.get(i as i64))
+            argv.push(with_str_clone_ref(self.args.get(i as i64)))
         argv.push(arg)
         Command { args: argv }
 

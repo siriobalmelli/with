@@ -6,6 +6,7 @@
 use compiler.Runtime
 use compiler.ConanClient
 use std.crypto.sha256
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_str_clone(s: str) -> str
 
 type LockEntry {
@@ -455,4 +456,4 @@ pub fn lock_restore(project_root: &str) -> i32:
 
 // #747: explicit owned copy — LockEntry's fields are owned strs now.
 fn lock_entry_clone(e: &LockEntry) -> LockEntry:
-    LockEntry { name: with_str_clone(e.name), source: with_str_clone(e.source), version: with_str_clone(e.version), recipe_rev: with_str_clone(e.recipe_rev), package_id: with_str_clone(e.package_id), package_rev: with_str_clone(e.package_rev), sha256: with_str_clone(e.sha256) }
+    LockEntry { name: with_str_clone_ref(e.name), source: with_str_clone_ref(e.source), version: with_str_clone_ref(e.version), recipe_rev: with_str_clone_ref(e.recipe_rev), package_id: with_str_clone_ref(e.package_id), package_rev: with_str_clone_ref(e.package_rev), sha256: with_str_clone_ref(e.sha256) }

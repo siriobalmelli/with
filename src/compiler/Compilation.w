@@ -407,17 +407,17 @@ impl Compilation:
 
     mut fn set_tool_mode_entry_path(path: &str):
         var cfg = self.config
-        cfg.tool_mode_entry_path = path
+        cfg.tool_mode_entry_path = with_str_clone_ref(path)
         self.config = cfg
         var zcu = self.zcu
-        zcu.tool_mode_entry_path = path
+        zcu.tool_mode_entry_path = with_str_clone_ref(path)
         self.zcu = zcu
 
     fn add_cli_diag_mapping(gen_start: i32, gen_end: i32, source_name: &str, source_text: &str) -> Unit:
         self.cli_diag_gen_starts.push(gen_start)
         self.cli_diag_gen_ends.push(gen_end)
-        self.cli_diag_source_names.push(source_name)
-        self.cli_diag_source_texts.push(source_text)
+        self.cli_diag_source_names.push(with_str_clone_ref(source_name))
+        self.cli_diag_source_texts.push(with_str_clone_ref(source_text))
 
     fn apply_cli_diag_mappings(zcu: Zcu) -> Zcu:
         zcu.clear_cli_diag_mappings()
@@ -831,8 +831,8 @@ impl Compilation:
     mut fn compile_entry_source_text(source_path: &str, source_text: &str) -> AstPool:
         let source_paths: Vec[str] = Vec.new()
         let source_texts: Vec[str] = Vec.new()
-        source_paths.push(source_path)
-        source_texts.push(source_text)
+        source_paths.push(with_str_clone_ref(source_path))
+        source_texts.push(with_str_clone_ref(source_text))
         self.compile_entry_source_texts(source_paths, source_texts)
 
     mut fn compile_entry_source_texts(source_paths: &Vec[str], source_texts: &Vec[str]) -> AstPool:
@@ -853,8 +853,8 @@ impl Compilation:
         let extra_names: Vec[str] = Vec.new()
         let extra_texts: Vec[str] = Vec.new()
         for i in 1..source_paths.len() as i32:
-            extra_names.push(source_paths.get(i as i64))
-            extra_texts.push(source_texts.get(i as i64))
+            extra_names.push(with_str_clone_ref(source_paths.get(i as i64)))
+            extra_texts.push(with_str_clone_ref(source_texts.get(i as i64)))
         zcu.set_extra_sources(move extra_names, move extra_texts)
         zcu = self.apply_cli_diag_mappings(move zcu)
         let pool = zcu.compile_source_frontend_mode(source_text, source_path, 0, 1)
@@ -873,11 +873,11 @@ impl Compilation:
     mut fn check_file_with_build_settings(source_path: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> bool:
         var cfg = self.project_config_for_source(source_path)
         for ii in 0..include_paths.len() as i32:
-            cfg.c_import_include_paths.push(include_paths.get(ii as i64))
+            cfg.c_import_include_paths.push(with_str_clone_ref(include_paths.get(ii as i64)))
         for di in 0..defines.len() as i32:
-            cfg.c_import_defines.push(defines.get(di as i64))
+            cfg.c_import_defines.push(with_str_clone_ref(defines.get(di as i64)))
         for li in 0..link_libs.len() as i32:
-            cfg.link_libs.push(link_libs.get(li as i64))
+            cfg.link_libs.push(with_str_clone_ref(link_libs.get(li as i64)))
         let pool = self.compile_file_with_config(source_path, move cfg)
         self.check_pool(pool, source_path)
 
@@ -916,9 +916,9 @@ impl Compilation:
         // Merge direct and dependency link libraries from project config.
         var all_link_libs = self.zcu.last_link_lib_names
         for lli in 0..self.zcu.project_config.link_libs.len() as i32:
-            all_link_libs.push(self.zcu.project_config.link_libs.get(lli as i64))
+            all_link_libs.push(with_str_clone_ref(self.zcu.project_config.link_libs.get(lli as i64)))
         for dli in 0..self.zcu.project_config.dep_link_libs.len() as i32:
-            all_link_libs.push(self.zcu.project_config.dep_link_libs.get(dli as i64))
+            all_link_libs.push(with_str_clone_ref(self.zcu.project_config.dep_link_libs.get(dli as i64)))
         var _sp_dla = self.zcu.project_config.dep_link_args
         let unit_objects = codegen_unit_extra_objects(obj_path, self.zcu.last_codegen_unit_count)
         let link_plan = link_stage_link_object_to_binary_plan_with_units(obj_path, unit_objects, bin_path, all_link_libs, self.zcu.project_config.link_search_paths, move _sp_dla, requires_async_runtime)
@@ -988,7 +988,7 @@ impl Compilation:
         if backend_rc != 0:
             compilation_remove_file_best_effort(obj_path)
             return ""
-        obj_path
+        with_str_clone_ref(obj_path)
 
     mut fn emit_object_to_path_with_build_settings(source_path: &str, obj_path: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
         let output_dir = link_stage_dirname(obj_path)
@@ -997,11 +997,11 @@ impl Compilation:
 
         var cfg = self.project_config_for_source(source_path)
         for ii in 0..include_paths.len() as i32:
-            cfg.c_import_include_paths.push(include_paths.get(ii as i64))
+            cfg.c_import_include_paths.push(with_str_clone_ref(include_paths.get(ii as i64)))
         for di in 0..defines.len() as i32:
-            cfg.c_import_defines.push(defines.get(di as i64))
+            cfg.c_import_defines.push(with_str_clone_ref(defines.get(di as i64)))
         for li in 0..link_libs.len() as i32:
-            cfg.link_libs.push(link_libs.get(li as i64))
+            cfg.link_libs.push(with_str_clone_ref(link_libs.get(li as i64)))
         let pool = self.compile_file_with_config(source_path, move cfg)
         if pool.decl_count() == 0:
             return ""
@@ -1013,7 +1013,7 @@ impl Compilation:
         if backend_rc != 0:
             compilation_remove_file_best_effort(obj_path)
             return ""
-        obj_path
+        with_str_clone_ref(obj_path)
 
     mut fn emit_archive_to_path_with_build_settings(source_path: &str, ar_path: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
         if ar_path.len() == 0:
@@ -1052,11 +1052,11 @@ impl Compilation:
 
         var cfg = self.project_config_for_source(source_path)
         for ii in 0..include_paths.len() as i32:
-            cfg.c_import_include_paths.push(include_paths.get(ii as i64))
+            cfg.c_import_include_paths.push(with_str_clone_ref(include_paths.get(ii as i64)))
         for di in 0..defines.len() as i32:
-            cfg.c_import_defines.push(defines.get(di as i64))
+            cfg.c_import_defines.push(with_str_clone_ref(defines.get(di as i64)))
         for li in 0..link_libs.len() as i32:
-            cfg.link_libs.push(link_libs.get(li as i64))
+            cfg.link_libs.push(with_str_clone_ref(link_libs.get(li as i64)))
         let pool = self.compile_entry_file_with_config(source_path, move cfg)
         self.finish_binary_from_pool(pool, source_path, obj_path, bin_path)
 
@@ -1088,19 +1088,19 @@ impl Compilation:
 
         var cfg = self.project_config_for_source(source_path)
         for ii in 0..include_paths.len() as i32:
-            cfg.c_import_include_paths.push(include_paths.get(ii as i64))
+            cfg.c_import_include_paths.push(with_str_clone_ref(include_paths.get(ii as i64)))
         for di in 0..defines.len() as i32:
-            cfg.c_import_defines.push(defines.get(di as i64))
+            cfg.c_import_defines.push(with_str_clone_ref(defines.get(di as i64)))
         for li in 0..link_libs.len() as i32:
-            cfg.link_libs.push(link_libs.get(li as i64))
+            cfg.link_libs.push(with_str_clone_ref(link_libs.get(li as i64)))
         let pool = self.compile_source_text_with_config(source_path, source_text, move cfg)
         self.finish_binary_from_pool(pool, source_path, obj_path, bin_path)
 
     mut fn build_entry_binary_from_source_to_path(source_path: &str, source_text: &str, bin_path: &str) -> str:
         let source_paths: Vec[str] = Vec.new()
         let source_texts: Vec[str] = Vec.new()
-        source_paths.push(source_path)
-        source_texts.push(source_text)
+        source_paths.push(with_str_clone_ref(source_path))
+        source_texts.push(with_str_clone_ref(source_text))
         self.build_entry_binary_from_sources_to_path(source_paths, source_texts, bin_path)
 
     mut fn build_entry_binary_from_sources_to_path(source_paths: &Vec[str], source_texts: &Vec[str], bin_path: &str) -> str:
@@ -1424,7 +1424,7 @@ impl Compilation:
     fn tracked_input_paths() -> Vec[str]:
         var out: Vec[str] = Vec.new()
         for i in 0..self.zcu.tracked_input_paths.len() as i32:
-            out.push(self.zcu.tracked_input_paths.get(i as i64))
+            out.push(with_str_clone_ref(self.zcu.tracked_input_paths.get(i as i64)))
         out
 
     fn active_pool(pool: AstPool) -> AstPool:

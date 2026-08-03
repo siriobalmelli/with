@@ -619,8 +619,8 @@ fn cli_synthetic_source_new -> CliSyntheticSource:
 fn cli_synthetic_add_mapping(syn: CliSyntheticSource, start: i32, text: &str, source_name: &str) -> CliSyntheticSource:
     syn.gen_starts.push(start)
     syn.gen_ends.push(start + text.len() as i32 + 1)
-    syn.source_names.push(source_name)
-    syn.source_texts.push(text)
+    syn.source_names.push(with_str_clone_ref(source_name))
+    syn.source_texts.push(with_str_clone_ref(text))
     syn
 
 fn cli_build_synthetic_source(one: &CliOneLiner) -> CliSyntheticSource:
@@ -1226,7 +1226,7 @@ fn fixpoint_arg(argc: i32, index: i32, fallback: &str) -> str:
         let v = with_arg_at(index)
         if not v.starts_with("-"):
             return v
-    fallback
+    with_str_clone_ref(fallback)
 
 fn fixpoint_byte_at(text: &str, idx: i32) -> i32:
     if idx < 0 or idx >= text.len() as i32:
@@ -1757,7 +1757,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                 let retire_rc = retire.rc
                 if retire_rc != 0:
                     if survey:
-                        survey_failed.push(pool_names.get(pool_oldest as i64))
+                        survey_failed.push(with_str_clone_ref(pool_names.get(pool_oldest as i64)))
                     if not survey and pool_failed_rc == 0:
                         pool_failed_rc = retire_rc
                 pool_oldest = pool_oldest + 1
@@ -1765,14 +1765,14 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                 return pool_failed_rc
         if target.kind == 9:
             if not dep_rebuilt:
-                skipped_targets.push(target.name)
-            completed_targets.push(target.name)
+                skipped_targets.push(with_str_clone_ref(target.name))
+            completed_targets.push(with_str_clone_ref(target.name))
             continue
         if build_cache_is_cacheable(target.kind):
             if build_cache_check_fresh(root, target, dep_rebuilt):
                 if not force_action_worker_target:
-                    skipped_targets.push(target.name)
-                    completed_targets.push(target.name)
+                    skipped_targets.push(with_str_clone_ref(target.name))
+                    completed_targets.push(with_str_clone_ref(target.name))
                     continue
         let will_pool = target.kind == 23 and target.parallel != 0 and times_top_level
         if not will_pool and pool_oldest < pool_names.len() as i32:
@@ -1785,7 +1785,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                 let retire_rc = retire.rc
                 if retire_rc != 0:
                     if survey:
-                        survey_failed.push(pool_names.get(pool_oldest as i64))
+                        survey_failed.push(with_str_clone_ref(pool_names.get(pool_oldest as i64)))
                     if not survey and pool_failed_rc == 0:
                         pool_failed_rc = retire_rc
                 pool_oldest = pool_oldest + 1
@@ -1803,7 +1803,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                 pool_oldest = pool_oldest + 1
                 if retire_rc != 0:
                     if survey:
-                        survey_failed.push(retired_name)
+                        survey_failed.push(with_str_clone_ref(retired_name))
                     if not survey:
                         while pool_oldest < pool_names.len() as i32:
                             let drain = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
@@ -1829,7 +1829,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                         completed_targets.push(drain.name)
                     pool_oldest = pool_oldest + 1
                 return 1
-            pool_names.push(target.name)
+            pool_names.push(with_str_clone_ref(target.name))
             pool_pids.push(pid)
             pool_t0s.push(spawn_t0)
             pool_outs.push(worker_stdout)
@@ -1839,14 +1839,14 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
         if times_top_level:
             // #747: the timing label is retained across the iteration while
             // target keeps its name — an owned copy, not a field move.
-            timing_name = with_str_clone(target.name)
+            timing_name = with_str_clone_ref(target.name)
             timing_t0 = with_clock_nanos()
         let standard_result = build_graph_dispatch_standard_target(root, target, completed_targets)
         if standard_result.handled:
             if standard_result.rc != 0:
                 return standard_result.rc
             build_cache_record(root, target, no_strings, no_strings)
-            completed_targets.push(target.name)
+            completed_targets.push(with_str_clone_ref(target.name))
             continue
         if target.kind == 23:
             if survey and survey_failed.len() > 0 and (target.name == "test-green" or target.name == "last-green"):
@@ -1856,20 +1856,20 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                 let worker_rc = run_build_action_worker_process(target, options)
                 if worker_rc != 0:
                     if survey:
-                        survey_failed.push(target.name)
+                        survey_failed.push(with_str_clone_ref(target.name))
                         continue
                     return worker_rc
                 build_cache_forget_fingerprints()
-                completed_targets.push(target.name)
+                completed_targets.push(with_str_clone_ref(target.name))
                 continue
             let action_result = run_build_action_from_build_w(root, cfg, target, action_sema, options)
             if action_result.rc != 0:
                 if survey:
-                    survey_failed.push(target.name)
+                    survey_failed.push(with_str_clone_ref(target.name))
                     continue
                 return action_result.rc
             build_cache_record(root, target, no_strings, action_result.effects)
-            completed_targets.push(target.name)
+            completed_targets.push(with_str_clone_ref(target.name))
             continue
         let source_path = resolve_join(root, target.entry)
         let target_options = build_options_for_graph_target(root, options, target)
@@ -1896,10 +1896,10 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                     if test_worker_rc != 0:
                         if not survey:
                             return test_worker_rc
-                        survey_failed.push(target.name)
+                        survey_failed.push(with_str_clone_ref(target.name))
                         continue
                     build_cache_forget_fingerprints()
-                    completed_targets.push(target.name)
+                    completed_targets.push(with_str_clone_ref(target.name))
                     continue
                 build_test_clear_worker_env_for_children()
                 for fi in 0..test_files.len() as i32:
@@ -1913,12 +1913,12 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                             return test_rc
                         survey_target_failed = true
             if survey_target_failed:
-                survey_failed.push(target.name)
+                survey_failed.push(with_str_clone_ref(target.name))
                 continue
             if build_graph_path_has_glob(target.entry):
                 with_write(f"ok: {test_files.len()} files passed in build.w test target {target.name}\n")
             build_cache_record_test_success(root, target, test_files, test_compiler)
-            completed_targets.push(target.name)
+            completed_targets.push(with_str_clone_ref(target.name))
             continue
         if target.kind == 1:
             let ar_path = build_graph_library_output_path(root, target, options.output_path, graph.targets.len() as i32)
@@ -1934,7 +1934,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
             comp.print_warnings()
             emit_c_header_next_to(&comp, ar_path)
             build_cache_record(root, target, comp.tracked_input_paths(), no_strings)
-            completed_targets.push(target.name)
+            completed_targets.push(with_str_clone_ref(target.name))
             continue
         if target.kind == 3:
             let obj_path = build_graph_object_output_path(root, target, options.output_path, graph.targets.len() as i32)
@@ -1950,7 +1950,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
             comp.print_warnings()
             emit_c_header_next_to(&comp, obj_path)
             build_cache_record(root, target, comp.tracked_input_paths(), no_strings)
-            completed_targets.push(target.name)
+            completed_targets.push(with_str_clone_ref(target.name))
             continue
         if target.kind == 4:
             let ar_path = build_graph_library_output_path(root, target, options.output_path, graph.targets.len() as i32)
@@ -1966,7 +1966,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
             comp.print_warnings()
             emit_c_header_next_to(&comp, ar_path)
             build_cache_record(root, target, comp.tracked_input_paths(), no_strings)
-            completed_targets.push(target.name)
+            completed_targets.push(with_str_clone_ref(target.name))
             continue
         let bin_path = build_graph_output_path(root, target, options.output_path, graph.targets.len() as i32)
         if bin_path.len() == 0:
@@ -1980,7 +1980,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
             return 1
         comp.print_warnings()
         build_cache_record(root, target, comp.tracked_input_paths(), no_strings)
-        completed_targets.push(target.name)
+        completed_targets.push(with_str_clone_ref(target.name))
     while pool_oldest < pool_names.len() as i32:
         let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
         timed_names.push(retire.name)
@@ -1990,7 +1990,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
         let retire_rc = retire.rc
         if retire_rc != 0:
             if survey:
-                survey_failed.push(pool_names.get(pool_oldest as i64))
+                survey_failed.push(with_str_clone_ref(pool_names.get(pool_oldest as i64)))
             if not survey and pool_failed_rc == 0:
                 pool_failed_rc = retire_rc
         pool_oldest = pool_oldest + 1
@@ -2089,7 +2089,7 @@ fn explain_build_target(root: &str, graph: &BuildGraph, name: &str) -> i32:
 fn run_graph_target_command(target_name: &str) -> i32:
     let build_options = build_command_options_default()
     var graph_options = build_graph_command_options_default()
-    graph_options.selected_target = target_name
+    graph_options.selected_target = with_str_clone_ref(target_name)
     run_build_command(move build_options, graph_options)
 
 // Returns the INDEX, not a copy: returning the element bit-copied its
@@ -3697,7 +3697,7 @@ fn doc_module_paths(info: &str, root: &str, source_path: &str) -> Vec[str]:
         if not doc_path_seen(paths, path):
             paths.push(path)
     if paths.len() == 0:
-        paths.push(source_path)
+        paths.push(with_str_clone_ref(source_path))
     paths
 
 fn doc_collect_entries(info: &str, root: &str, source_path: &str, fallback_source_text: &str, wanted_kind: &str) -> str:
@@ -3714,7 +3714,7 @@ fn doc_collect_entries(info: &str, root: &str, source_path: &str, fallback_sourc
             continue
         var source_text = with_fs_read_file(path)
         if source_text.len() == 0 and doc_path_matches(path, source_path):
-            source_text = fallback_source_text
+            source_text = with_str_clone_ref(fallback_source_text)
         if source_text.len() == 0:
             continue
         let name = doc_field(line, "name")

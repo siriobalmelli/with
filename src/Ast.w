@@ -11,6 +11,7 @@ use Token
 use InternPool
 use std.collections.HashMap
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_eprint(s: &str) -> Unit
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn abort() -> Unit
@@ -676,7 +677,7 @@ impl AstPool:
         if self.state.frozen != 0:
             ast_pool_phase_bug("BUG: AstPool.add_string called after freeze")
         let idx = self.state.strings.len() as i32
-        self.state.strings.push(s)
+        self.state.strings.push(with_str_clone_ref(s))
         idx
 
     // The file a node was parsed from (0 = root/unknown). See the `files`

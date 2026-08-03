@@ -32,7 +32,7 @@ pub fn build_graph_test_target_files(root: &str, entry: &str) -> Vec[str]:
             continue
         let base = build_graph_path_basename(candidate)
         if build_graph_single_star_pattern_matches(pattern, base):
-            files.push(candidate)
+            files.push(with_str_clone_ref(candidate))
     files
 
 fn build_graph_test_compiler_arg(arg: &str) -> str:
@@ -152,7 +152,7 @@ pub fn build_graph_run_external_test_files(root: &str, target: &BuildGraphTarget
             pass_keys.push(key)
             pass_paths.push(build_cache_project_relative_path(root, test_path))
         else:
-            run_files.push(test_path)
+            run_files.push(with_str_clone_ref(test_path))
             run_keys.push(key)
 
     // Run every non-cached file; report every failure; never abort the
@@ -180,13 +180,13 @@ pub fn build_graph_run_external_test_files(root: &str, target: &BuildGraphTarget
                 build_graph_rt_eprint("error: build.w test target '" ++ target.name ++ "' could not spawn '" ++ test_path ++ "'")
                 return 1
             active.push(build_graph_external_test_job_new(test_path, stdout_path, stderr_path, pid))
-            active_keys.push(run_keys.get(next as i64))
+            active_keys.push(with_str_clone_ref(run_keys.get(next as i64)))
             next = next + 1
             continue
         let job_path = active.get(oldest as i64).test_path
         let rc = build_graph_wait_external_test_job(target, active.get(oldest as i64))
         if rc == 0:
-            pass_keys.push(active_keys.get(oldest as i64))
+            pass_keys.push(with_str_clone_ref(active_keys.get(oldest as i64)))
             pass_paths.push(build_cache_project_relative_path(root, job_path))
         else:
             failed_paths.push(job_path)

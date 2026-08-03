@@ -1,3 +1,4 @@
+extern fn with_str_clone_ref(s: &str) -> str
 // Shared compiler-analysis records. Sema, MIR, diagnostics, and codegen all
 // emit this one schema so analysis commands join live compiler state instead
 // of parsing human-oriented dumps.
@@ -202,8 +203,8 @@ impl AnalysisFact:
 
 impl AnalysisReport:
     fn add(fact: AnalysisFact): self.facts.push(move fact)
-    fn fail(message: &str): self.violations.push(message)
-    fn note(message: &str): self.notes.push(message)
+    fn fail(message: &str): self.violations.push(with_str_clone_ref(message))
+    fn note(message: &str): self.notes.push(with_str_clone_ref(message))
     fn ok(): self.violations.len() == 0
 
     fn merge(other: &AnalysisReport):
@@ -211,9 +212,9 @@ impl AnalysisReport:
             let fact = other.facts.get(i as i64)
             self.facts.push(fact.owned_copy())
         for i in 0..other.violations.len() as i32:
-            self.violations.push(copy other.violations.get(i as i64))
+            self.violations.push(with_str_clone_ref(copy other.violations.get(i as i64)))
         for i in 0..other.notes.len() as i32:
-            self.notes.push(copy other.notes.get(i as i64))
+            self.notes.push(with_str_clone_ref(copy other.notes.get(i as i64)))
 
 fn analysis_stage_name(stage: AnalysisStage) -> str:
     if stage == AnalysisStage.Ast: return "ast"
@@ -461,13 +462,13 @@ impl AnalysisReport:
         let lines: Vec[str] = Vec.new()
         for i in 0..self.notes.len() as i32:
             lines.push("note: ")
-            lines.push(self.notes.get(i as i64))
+            lines.push(with_str_clone_ref(self.notes.get(i as i64)))
             lines.push("\n")
         for i in 0..self.violations.len() as i32:
             lines.push("violation: ")
-            lines.push(self.violations.get(i as i64))
+            lines.push(with_str_clone_ref(self.violations.get(i as i64)))
             lines.push("\n")
-        lines.push(label)
+        lines.push(with_str_clone_ref(label))
         lines.push(f": facts={self.facts.len() as i32} violations={self.violations.len() as i32}")
         lines.push(if self.ok(): " ok\n" else: " FAILED\n")
         lines.join("")

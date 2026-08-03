@@ -37,7 +37,7 @@ fn ar_basename(path: &str) -> str:
             last_sep = i as i64
     if last_sep >= 0:
         return path.slice(last_sep + 1, path.len())
-    path
+    with_str_clone_ref(path)
 
 fn ar_pad_right(s: &str, width: i32, pad_byte: i32) -> str:
     var out = with_str_clone_ref(s)

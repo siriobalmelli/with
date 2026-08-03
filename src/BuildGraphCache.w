@@ -7,6 +7,7 @@ use compiler.TrackedInputs
 use std.crypto.sha256
 use std.collections.HashMap
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 
@@ -50,7 +51,7 @@ fn build_cache_project_relative(root: &str, path: &str) -> str:
     let prefix = root ++ "/"
     if path.starts_with(prefix):
         return path.slice(prefix.len(), path.len())
-    path
+    with_str_clone_ref(path)
 
 pub fn build_cache_is_cacheable(kind: i32) -> bool:
     if kind == 0: return true
@@ -229,7 +230,7 @@ fn build_cache_list_w_files(root: &str, dir: &str) -> Vec[str]:
     for i in 0..all_files.len() as i32:
         let path = all_files.get(i as i64)
         if path.ends_with(".w"):
-            w_files.push(path)
+            w_files.push(with_str_clone_ref(path))
     build_cache_sorted_strings(w_files)
 
 fn build_cache_split_lines(text: &str) -> Vec[str]:
@@ -275,11 +276,11 @@ fn build_cache_sorted_strings(items: &Vec[str]) -> Vec[str]:
         for j in 0..sorted.len() as i32:
             let existing = sorted.get(j as i64)
             if not inserted and build_cache_str_compare(item, existing) < 0:
-                out.push(item)
+                out.push(with_str_clone_ref(item))
                 inserted = true
-            out.push(existing)
+            out.push(with_str_clone_ref(existing))
         if not inserted:
-            out.push(item)
+            out.push(with_str_clone_ref(item))
         sorted = out
     sorted
 
@@ -350,7 +351,7 @@ fn build_cache_action_source_disk_path(root: &str, path: &str) -> str:
 fn build_cache_hash_action_sources(root: &str, paths: &Vec[str]) -> str:
     let unsorted: Vec[str] = Vec.new()
     for i in 0..paths.len() as i32:
-        unsorted.push(paths.get(i as i64))
+        unsorted.push(with_str_clone_ref(paths.get(i as i64)))
     let sorted = build_graph_sorted_strings(unsorted)
     var combined = ""
     for i in 0..sorted.len() as i32:

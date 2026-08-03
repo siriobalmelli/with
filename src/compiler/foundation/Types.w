@@ -3,6 +3,7 @@
 // Canonical keys are encoded to deterministic strings for HashMap lookups.
 
 use compiler.foundation.Ids
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_str_clone(s: str) -> str
 
 // (int_to_string removed — using f-strings)
@@ -124,7 +125,7 @@ pub fn type_key_pack3(a: TypeId, b: TypeId, c: TypeId) -> str:
 pub fn type_key_tuplen(elem_pack: &str, count: i32) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_TUPLEN(),
-        name: elem_pack,
+        name: with_str_clone_ref(elem_pack),
         arg0: count,
         arg1: 0,
         flags: 0,
@@ -133,7 +134,7 @@ pub fn type_key_tuplen(elem_pack: &str, count: i32) -> TypeKey:
 pub fn type_key_fn_sig(param_pack: &str, ret: TypeId, arity: i32, is_variadic: bool) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_FN_SIG(),
-        name: param_pack,
+        name: with_str_clone_ref(param_pack),
         arg0: type_id_raw(ret),
         arg1: arity,
         flags: if is_variadic: 1 else: 0,
@@ -142,7 +143,7 @@ pub fn type_key_fn_sig(param_pack: &str, ret: TypeId, arity: i32, is_variadic: b
 pub fn type_key_trait_object(trait_name: &str) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_TRAIT_OBJECT(),
-        name: trait_name,
+        name: with_str_clone_ref(trait_name),
         arg0: 0,
         arg1: 0,
         flags: 0,
@@ -151,7 +152,7 @@ pub fn type_key_trait_object(trait_name: &str) -> TypeKey:
 pub fn type_key_generic_param(param_name: &str, index: i32) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_GENERIC_PARAM(),
-        name: param_name,
+        name: with_str_clone_ref(param_name),
         arg0: index,
         arg1: 0,
         flags: 0,
@@ -160,7 +161,7 @@ pub fn type_key_generic_param(param_name: &str, index: i32) -> TypeKey:
 pub fn type_key_generic_apply2(base_name: &str, a0: TypeId, a1: TypeId, arg_count: i32) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_GENERIC_APPLY2(),
-        name: base_name,
+        name: with_str_clone_ref(base_name),
         arg0: type_id_raw(a0),
         arg1: type_id_raw(a1),
         flags: arg_count,
@@ -197,4 +198,4 @@ pub fn type_key_to_string(key: &TypeKey) -> str:
 
 // #747: explicit owned copy — TypeKey's name is an owned str now.
 pub fn type_key_clone(key: &TypeKey) -> TypeKey:
-    TypeKey { tag: key.tag, name: with_str_clone(key.name), arg0: key.arg0, arg1: key.arg1, flags: key.flags }
+    TypeKey { tag: key.tag, name: with_str_clone_ref(key.name), arg0: key.arg0, arg1: key.arg1, flags: key.flags }

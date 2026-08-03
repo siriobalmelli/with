@@ -11,6 +11,7 @@ use compiler.ProjectConfig
 use compiler.Runtime
 use compiler.TrackedInputs
 use std.collections.HashMap
+extern fn with_str_clone_ref(s: &str) -> str
 
 fn zcu_owned_text(text: &str) -> str:
     if text.len() == 0:
@@ -221,8 +222,8 @@ impl Zcu:
         ""
 
     fn c_import_cache_store(key: &str, value: &str) -> Unit:
-        self.c_import_cache_keys.push(key)
-        self.c_import_cache_values.push(value)
+        self.c_import_cache_keys.push(with_str_clone_ref(key))
+        self.c_import_cache_values.push(with_str_clone_ref(value))
 
     mut fn set_prelude_mode(mode: i32):
         self.prelude_mode = compilation_normalize_prelude_mode(mode)
@@ -236,8 +237,8 @@ impl Zcu:
     fn add_cli_diag_mapping(gen_start: i32, gen_end: i32, source_name: &str, source_text: &str) -> Unit:
         self.cli_diag_gen_starts.push(gen_start)
         self.cli_diag_gen_ends.push(gen_end)
-        self.cli_diag_source_names.push(source_name)
-        self.cli_diag_source_texts.push(source_text)
+        self.cli_diag_source_names.push(with_str_clone_ref(source_name))
+        self.cli_diag_source_texts.push(with_str_clone_ref(source_text))
 
     fn cli_diag_mapping_index(offset: i32) -> i32:
         for i in 0..self.cli_diag_gen_starts.len() as i32:
@@ -322,9 +323,9 @@ impl Zcu:
         self.reset_pending_warnings()
 
     mut fn set_current_source(source_dir: &str, path: &str, text: &str):
-        self.source_dir = source_dir
-        self.current_source_path = path
-        self.current_source_text = text
+        self.source_dir = with_str_clone_ref(source_dir)
+        self.current_source_path = with_str_clone_ref(path)
+        self.current_source_text = with_str_clone_ref(text)
 
     fn tracked_input_root() -> str:
         if self.project_config.root_dir.len() > 0:
@@ -451,14 +452,14 @@ impl Zcu:
         self.resolved_root_path = zcu_owned_text(root_path)
 
     mut fn set_typed_snapshot(typed_dump: &str, typed_pool: AstPool):
-        self.last_typed_dump = typed_dump
+        self.last_typed_dump = with_str_clone_ref(typed_dump)
         self.typed_pool_cache = typed_pool
 
     mut fn set_codegen_snapshot(mir_mod: MirModule, mir_dump: &str, async_mod: AsyncMirModule, async_dump: &str):
         self.last_mir_module = mir_mod
-        self.last_mir_dump = mir_dump
+        self.last_mir_dump = with_str_clone_ref(mir_dump)
         self.last_async_mir_module = async_mod
-        self.last_async_mir_dump = async_dump
+        self.last_async_mir_dump = with_str_clone_ref(async_dump)
 
     mut fn set_link_lib_names(names: Vec[str]):
         self.last_link_lib_names = names

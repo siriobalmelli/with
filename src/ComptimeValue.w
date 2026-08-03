@@ -1,6 +1,7 @@
 use Sema
 use CapabilityRegistry
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_str_eq(a: str, b: str) -> i32
 extern fn with_str_clone(s: str) -> str
 
@@ -84,7 +85,7 @@ fn comptime_value_str(value: &str) -> ComptimeValue:
         type_id: 0,
         data0: 0,
         data1: 0,
-        text: value,
+        text: with_str_clone_ref(value),
         extra_start: 0,
         extra_count: 0,
     }
@@ -194,7 +195,7 @@ fn comptime_value_bytes(type_id: i32, data: &str) -> ComptimeValue:
         type_id,
         data0: 0,
         data1: 0,
-        text: data,
+        text: with_str_clone_ref(data),
         extra_start: 0,
         extra_count: 0,
     }
@@ -216,7 +217,7 @@ fn comptime_value_string_chunk(prev: i32, data: &str) -> ComptimeValue:
         type_id: 0,
         data0: prev as i64,
         data1: 0,
-        text: data,
+        text: with_str_clone_ref(data),
         extra_start: 0,
         extra_count: 0,
     }
@@ -349,7 +350,7 @@ fn comptime_values_equal(lhs: &ComptimeValue, rhs: &ComptimeValue, extras: &Vec[
             return 1
         return 0
     if lhs.kind == ComptimeValueKind.CV_STR:
-        return with_str_eq(lhs.text, rhs.text)
+        return with_str_eq(with_str_clone_ref(lhs.text), with_str_clone_ref(rhs.text))
     if lhs.kind == ComptimeValueKind.CV_RANGE:
         if lhs.data0 == rhs.data0 and lhs.data1 == rhs.data1 and lhs.extra_start == rhs.extra_start:
             return 1
@@ -413,20 +414,20 @@ fn comptime_values_equal(lhs: &ComptimeValue, rhs: &ComptimeValue, extras: &Vec[
                 return 0
         return 1
     if lhs.kind == ComptimeValueKind.CV_BYTES:
-        return with_str_eq(lhs.text, rhs.text)
+        return with_str_eq(with_str_clone_ref(lhs.text), with_str_clone_ref(rhs.text))
     if lhs.kind == ComptimeValueKind.CV_STRING_BUILDER:
         if lhs.type_id == rhs.type_id and lhs.extra_start == rhs.extra_start and lhs.extra_count == rhs.extra_count and lhs.data0 == rhs.data0:
             return 1
         return 0
     if lhs.kind == ComptimeValueKind.CV_STRING_CHUNK:
         if lhs.data0 == rhs.data0:
-            return with_str_eq(lhs.text, rhs.text)
+            return with_str_eq(with_str_clone_ref(lhs.text), with_str_clone_ref(rhs.text))
         return 0
     0
 
 // #747: explicit owned copy — ComptimeValue's text is an owned str now.
 pub fn comptime_value_clone(v: &ComptimeValue) -> ComptimeValue:
-    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: with_str_clone(v.text), extra_start: v.extra_start, extra_count: v.extra_count }
+    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: with_str_clone_ref(v.text), extra_start: v.extra_start, extra_count: v.extra_count }
 
 // Read-path share: the evaluator hands out transient copies of stored values
 // on every identifier/field READ — deep-cloning there is quadratic on big
@@ -436,4 +437,4 @@ pub fn comptime_value_clone(v: &ComptimeValue) -> ComptimeValue:
 // helper is a migration site — the checker flags the owned-str field read
 // through the borrow, forcing true view typing here.
 pub fn comptime_value_share(v: &ComptimeValue) -> ComptimeValue:
-    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: v.text, extra_start: v.extra_start, extra_count: v.extra_count }
+    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: with_str_clone_ref(v.text), extra_start: v.extra_start, extra_count: v.extra_count }

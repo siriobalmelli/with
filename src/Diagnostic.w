@@ -141,7 +141,7 @@ impl Diagnostic:
             let label_message: str = lab.message
             var label_path = ""
             if i < label_paths.len() as i32:
-                label_path = label_paths.get(i as i64)
+                label_path = with_str_clone_ref(label_paths.get(i as i64))
             if label_path.len() > 0 and label_path != source_path:
                 let label_source = Source.from_string(label_path, label_texts.get(i as i64), lab.span.file)
                 let lloc2 = label_source.offset_to_location(lab.span.start)

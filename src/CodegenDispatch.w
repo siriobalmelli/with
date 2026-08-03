@@ -9,6 +9,7 @@ use Overflow
 use AnalysisTypes
 use std.builtins.int_to_string
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_eprint(s: &str) -> Unit
 
 // ── gen_function_dispatch: MIR-first, AST fallback for unsupported patterns ──
@@ -17688,7 +17689,7 @@ impl Codegen:
     fn gen_src_intrinsic(node: i32) -> i64:
         let span_start = self.pool.get_start(node)
         let source_path = if self.current_decl_source_file.len() > 0 and self.current_decl_source_file != "<unknown>":
-            with_str_clone(self.current_decl_source_file)
+            with_str_clone_ref(self.current_decl_source_file)
         else:
             self.source_file
         var source_text = self.source_text

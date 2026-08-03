@@ -102,7 +102,7 @@ pub fn build_graph_path_for_child_process(root: &str, path: &str) -> str:
     let prefix = normalized_root ++ "/"
     if path.starts_with(prefix):
         return path.slice(prefix.len(), path.len())
-    path
+    with_str_clone_ref(path)
 
 pub fn build_graph_generated_path_valid(path: &str) -> bool:
     if path.len() == 0:
@@ -268,11 +268,11 @@ pub fn build_graph_sorted_strings(items: &Vec[str]) -> Vec[str]:
         for j in 0..sorted.len() as i32:
             let existing = sorted.get(j as i64)
             if not inserted and build_graph_str_compare(item, existing) < 0:
-                out.push(item)
+                out.push(with_str_clone_ref(item))
                 inserted = true
-            out.push(existing)
+            out.push(with_str_clone_ref(existing))
         if not inserted:
-            out.push(item)
+            out.push(with_str_clone_ref(item))
         sorted = out
     sorted
 
@@ -285,7 +285,7 @@ pub fn collect_test_files(target_dir: &str) -> Vec[str]:
     for i in 0..all_files.len() as i32:
         let path = all_files.get(i as i64)
         if path.ends_with(".w"):
-            w_files.push(path)
+            w_files.push(with_str_clone_ref(path))
     build_graph_sorted_strings(w_files)
 
 fn build_graph_edge_find(paths: &Vec[str], path: &str) -> i64:
@@ -308,19 +308,19 @@ pub fn build_graph_audit_edges(graph: &BuildGraph) -> i32:
     for i in 0..graph.targets.len() as i32:
         let t = &graph.targets[i as i64]
         if t.output.len() > 0:
-            out_paths.push(t.output)
-            out_owners.push(t.name)
+            out_paths.push(with_str_clone_ref(t.output))
+            out_owners.push(with_str_clone_ref(t.name))
         for oi in 0..t.extra_outputs.len() as i32:
-            out_paths.push(t.extra_outputs.get(oi as i64))
-            out_owners.push(t.name)
+            out_paths.push(with_str_clone_ref(t.extra_outputs.get(oi as i64)))
+            out_owners.push(with_str_clone_ref(t.name))
     var missing = 0
     for i in 0..graph.targets.len() as i32:
         let t = &graph.targets[i as i64]
         let consumed: Vec[str] = Vec.new()
         if t.entry.len() > 0:
-            consumed.push(t.entry)
+            consumed.push(with_str_clone_ref(t.entry))
         for ii in 0..t.inputs.len() as i32:
-            consumed.push(t.inputs.get(ii as i64))
+            consumed.push(with_str_clone_ref(t.inputs.get(ii as i64)))
         for ci in 0..consumed.len() as i32:
             let path = consumed.get(ci as i64)
             let producer_idx = build_graph_edge_find(&out_paths, path)

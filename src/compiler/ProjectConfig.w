@@ -289,14 +289,14 @@ fn project_config_apply_entry(cfg: ProjectConfig, section: &str, key: &str, valu
     else if section == "features" and key == "default":
         out.feature_default = project_config_parse_string_array(value)
     else if section == "features":
-        out.feature_names.push(key)
+        out.feature_names.push(with_str_clone_ref(key))
         out.feature_values.push(project_config_trim(value))
     else if section == "target" and key == "default":
         out.target_default = project_config_strip_quotes(project_config_trim(value))
     else if section == "deps":
         let constraint = project_config_strip_quotes(project_config_trim(value))
         if key.len() > 0 and constraint.len() > 0:
-            out.dep_names.push(key)
+            out.dep_names.push(with_str_clone_ref(key))
             out.dep_constraints.push(constraint)
             if key.starts_with("c."):
                 // C package dependency: c.sqlite3 = "3.45"
@@ -320,7 +320,7 @@ fn project_config_apply_manual_c_dep_entry(cfg: ProjectConfig, dep_name: &str, k
             out.manifest_error = "dependency c." ++ dep_name ++ " is declared both as a Conan dependency and a manual [deps.c." ++ dep_name ++ "] table"
     if not project_config_vec_contains(out.manual_c_dep_names, dep_name):
         // Manual C deps are local manifest inputs, not fetched artifacts.
-        out.manual_c_dep_names.push(dep_name)
+        out.manual_c_dep_names.push(with_str_clone_ref(dep_name))
     if key == "include":
         if not project_config_is_quoted_string_value(value):
             if out.manifest_error.len() == 0:
@@ -340,7 +340,7 @@ fn project_config_apply_manual_c_dep_entry(cfg: ProjectConfig, dep_name: &str, k
         else:
             let libs = project_config_parse_string_array(value)
             for li in 0..libs.len() as i32:
-                out.dep_link_libs.push(libs.get(li as i64))
+                out.dep_link_libs.push(with_str_clone_ref(libs.get(li as i64)))
     else if key == "defines":
         if not project_config_is_string_array_value(value):
             if out.manifest_error.len() == 0:
@@ -348,7 +348,7 @@ fn project_config_apply_manual_c_dep_entry(cfg: ProjectConfig, dep_name: &str, k
         else:
             let defines = project_config_parse_string_array(value)
             for di in 0..defines.len() as i32:
-                out.c_import_defines.push(defines.get(di as i64))
+                out.c_import_defines.push(with_str_clone_ref(defines.get(di as i64)))
     else if out.manifest_error.len() == 0:
         out.manifest_error = "unknown key '" ++ key ++ "' in [deps.c." ++ dep_name ++ "]; expected include, lib, link, or defines"
     out
@@ -357,7 +357,7 @@ fn project_config_strip_quotes(value: &str) -> str:
     let len = value.len() as i32
     if len >= 2 and value.byte_at(0) == 34 and value.byte_at((len - 1) as i64) == 34:
         return value.slice(1, (len - 1) as i64)
-    value
+    with_str_clone_ref(value)
 
 fn project_config_parse_bool(value: &str) -> i32:
     let text = project_config_strip_quotes(project_config_trim(value))
@@ -427,17 +427,17 @@ fn project_config_load_dep_metadata(cfg: ProjectConfig, name: &str, version: &st
         out.c_import_include_paths.push(dep_dir ++ "/" ++ inc)
     let defines = project_config_json_str_array(meta, "defines")
     for i in 0..defines.len() as i32:
-        out.c_import_defines.push(defines.get(i as i64))
+        out.c_import_defines.push(with_str_clone_ref(defines.get(i as i64)))
     let lib_paths = project_config_json_str_array(meta, "lib_paths")
     for i in 0..lib_paths.len() as i32:
         let lp = lib_paths.get(i as i64)
         out.link_search_paths.push(dep_dir ++ "/" ++ lp)
     let libs = project_config_json_str_array(meta, "libs")
     for i in 0..libs.len() as i32:
-        out.dep_link_libs.push(libs.get(i as i64))
+        out.dep_link_libs.push(with_str_clone_ref(libs.get(i as i64)))
     let link_args = project_config_json_str_array(meta, "link_args")
     for i in 0..link_args.len() as i32:
-        out.dep_link_args.push(link_args.get(i as i64))
+        out.dep_link_args.push(with_str_clone_ref(link_args.get(i as i64)))
     let requires = project_config_json_str_array(meta, "requires")
     for i in 0..requires.len() as i32:
         let req = requires.get(i as i64)
@@ -751,7 +751,7 @@ fn project_config_strip_comment(line: &str) -> str:
         else if ch == 35 and in_string == 0:
             return line.slice(0, i as i64)
         i = i + 1
-    line
+    with_str_clone_ref(line)
 
 fn project_config_trim(text: &str) -> str:
     var start = 0

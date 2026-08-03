@@ -14,6 +14,7 @@ use Overflow
 use std.collections.HashMap
 use std.string.StringBuilder
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_fs_read_file(path: &str) -> str
 extern fn with_i64_to_str(n: i64) -> str
 extern fn str_from_byte(b: i32) -> str
@@ -398,7 +399,7 @@ impl CCodegen:
         if self.had_error != 0:
             return
         self.had_error = 1
-        self.err_msg = msg
+        self.err_msg = with_str_clone_ref(msg)
 
     mut fn check_interrupted() -> i32:
         if with_interrupt_requested() == 0:
@@ -673,7 +674,7 @@ fn cc_str_vec_contains(values: &Vec[str], needle: &str) -> bool:
 fn cc_push_unique_str(values: Vec[str], value: &str) -> Vec[str]:
     if cc_str_vec_contains(&values, value):
         return values
-    values.push(value)
+    values.push(with_str_clone_ref(value))
     values
 
 fn cc_sanitize_ident(raw: &str) -> str:
@@ -928,7 +929,7 @@ impl CCodegen:
                 j = j + 1
             if all_digits:
                 return name.slice(0, dot_pos as i64)
-        name
+        with_str_clone_ref(name)
 
     fn global_decl_node(sym: i32) -> NodeId:
         for di in 0..self.ast.decl_count():

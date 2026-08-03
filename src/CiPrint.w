@@ -16,6 +16,7 @@
 use CiIR
 use CiMigrate
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_write(s: &str) -> Unit
 extern fn with_eprint(s: &str) -> Unit
 
@@ -536,7 +537,7 @@ fn ci_print_sizeof_type_text(text: &str) -> str:
             i = i + 1
         if i < text.len() as i32:
             return text.slice(0, (i + 1) as i64) ++ ci_print_sizeof_type_text(text.slice((i + 1) as i64, text.len()))
-    text
+    with_str_clone_ref(text)
 
 fn i32_to_string(n: i32) -> str:
     i64_to_string(n as i64)

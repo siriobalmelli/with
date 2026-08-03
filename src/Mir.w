@@ -12,6 +12,7 @@ type BlockId = distinct i32
 impl Copy for BlockId
 impl Copy for TermKind
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_i64_to_str(n: i64) -> str
 extern fn with_getenv_str(name: &str) -> str
 extern fn with_eprint(s: &str) -> Unit
@@ -1507,7 +1508,7 @@ fn mir_drop_state_map_set(map: MirDropStateMap, key: &str, state: i32):
         return
     let h = mir_drop_state_key_hash(key)
     let new_idx = mir_drop_state_map_len(map)
-    unsafe { st.keys.push(key) }
+    unsafe { st.keys.push(with_str_clone_ref(key)) }
     unsafe { st.states.push(state) }
     unsafe { st.key_hashes.push(h) }
     let b = h % MIR_DROP_STATE_BUCKETS
@@ -1524,7 +1525,7 @@ fn mir_drop_state_map_clone(map: MirDropStateMap) -> MirDropStateMap:
     let count = mir_drop_state_map_len(map)
     for i in 0..count:
         unsafe:
-            dst.keys.push(src.keys.get(i as i64))
+            dst.keys.push(with_str_clone_ref(src.keys.get(i as i64)))
             dst.states.push(src.states.get(i as i64))
             dst.key_hashes.push(src.key_hashes.get(i as i64))
             dst.bucket_next.push(src.bucket_next.get(i as i64))
@@ -1600,7 +1601,7 @@ fn mir_drop_state_local_key(local_id: i32) -> str:
         mir_local_key_cache.push(f"_{n}")
     let key = mir_local_key_cache.get(local_id as i64)
     mir_local_key_cache_lock.store(0, .Release)
-    key
+    with_str_clone_ref(key)
 
 fn mir_drop_state_key_is_descendant(key: &str, local_key: &str) -> bool:
     if key == local_key:
@@ -2335,7 +2336,7 @@ fn mir_debug_spec_target(spec: &str) -> str:
     for i in 0..spec.len() as i32:
         if spec.byte_at(i as i64) == 58:
             return spec.slice((i + 1) as i64, spec.len())
-    spec
+    with_str_clone_ref(spec)
 
 fn mir_debug_body_name(body: &MirBody, pool: &InternPool) -> str:
     if body.fn_sym != 0:
@@ -2956,7 +2957,7 @@ fn mir_validation_fail(fn_sym: i32, span: i32, message: &str) -> MirValidationEr
     MirValidationError {
         fn_sym: fn_sym,
         span: span,
-        message: message,
+        message: with_str_clone_ref(message),
     }
 
 fn mir_validation_has_error(err: &MirValidationError) -> bool:

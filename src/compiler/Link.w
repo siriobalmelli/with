@@ -1,6 +1,7 @@
 use Archive
 use compiler.Runtime
 use std.collections.Atomic
+extern fn with_str_clone_ref(s: &str) -> str
 
 extern let with_embedded_cimport_stubs_o_start: u8
 extern let with_embedded_cimport_stubs_o_end: u8
@@ -199,7 +200,7 @@ fn link_stage_collect_cleanup_files(extras: &Vec[str]) -> Vec[str]:
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
         if link_stage_is_temp_archive_path(extra):
-            cleanup.push(extra)
+            cleanup.push(with_str_clone_ref(extra))
     cleanup
 
 fn link_stage_cleanup_files(files: &Vec[str]):
@@ -210,7 +211,7 @@ fn link_stage_register_temp_archive(path: &str):
     // Comptime parallel() links on concurrent threads; an unguarded push to this
     // shared registry races vec_grow (double free of the old buffer, #617).
     link_stage_temp_archives_lock_acquire()
-    link_stage_temp_archives.push(path)
+    link_stage_temp_archives.push(with_str_clone_ref(path))
     link_stage_temp_archives_lock_release()
 
 fn link_stage_basename(path: &str) -> str:
@@ -266,7 +267,7 @@ fn link_stage_apply_env(env: &Vec[LinkStageEnvVar]) -> LinkStageSavedEnv:
     let values: Vec[str] = Vec.new()
     for i in 0..env.len() as i32:
         let item = env.get(i as i64)
-        names.push(item.name)
+        names.push(with_str_clone_ref(item.name))
         values.push(runtime_getenv(item.name) ++ "")
         let _ = runtime_setenv(item.name, item.value)
     LinkStageSavedEnv { names, values }
@@ -294,12 +295,12 @@ fn link_stage_make_link_command(linker: &str, obj_path: &str, bin_path: &str, ex
     let env: Vec[LinkStageEnvVar] = Vec.new()
     let inputs: Vec[str] = Vec.new()
     let outputs: Vec[str] = Vec.new()
-    args.push(obj_path)
-    inputs.push(obj_path)
+    args.push(with_str_clone_ref(obj_path))
+    inputs.push(with_str_clone_ref(obj_path))
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
-        args.push(extra)
-        inputs.push(extra)
+        args.push(with_str_clone_ref(extra))
+        inputs.push(with_str_clone_ref(extra))
     if runtime_sysinfo_os() == "Macos":
         args.push("-Wl,-dead_strip")
     else if runtime_sysinfo_os() == "Linux":
@@ -308,13 +309,13 @@ fn link_stage_make_link_command(linker: &str, obj_path: &str, bin_path: &str, ex
         args.push("-Wl,--gc-sections")
         args.push("-Wl,--icf=all")
     args.push("-o")
-    args.push(bin_path)
-    outputs.push(bin_path)
+    args.push(with_str_clone_ref(bin_path))
+    outputs.push(with_str_clone_ref(bin_path))
     let cc_is_darwin = if runtime_sysinfo_os() == "Macos": 1 else: 0
     for i in 0..link_libs.len() as i32:
         let cc_la = link_stage_lib_args(link_libs.get(i as i64), cc_is_darwin)
         for j in 0..cc_la.len() as i32:
-            args.push(cc_la.get(j as i64))
+            args.push(with_str_clone_ref(cc_la.get(j as i64)))
     for i in 0..link_args.len() as i32:
         args.push(link_args.get(i as i64))
     if runtime_sysinfo_os() == "Linux":
@@ -388,23 +389,23 @@ fn link_stage_make_darwin_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_p
     args.push(platform_version)
     args.push("-dead_strip")
     args.push("-o")
-    args.push(bin_path)
-    outputs.push(bin_path)
-    args.push(obj_path)
-    inputs.push(obj_path)
+    args.push(with_str_clone_ref(bin_path))
+    outputs.push(with_str_clone_ref(bin_path))
+    args.push(with_str_clone_ref(obj_path))
+    inputs.push(with_str_clone_ref(obj_path))
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
-        args.push(extra)
-        inputs.push(extra)
+        args.push(with_str_clone_ref(extra))
+        inputs.push(with_str_clone_ref(extra))
     for i in 0..link_libs.len() as i32:
         let dw_la = link_stage_lib_args(link_libs.get(i as i64), 1)
         for j in 0..dw_la.len() as i32:
-            args.push(dw_la.get(j as i64))
+            args.push(with_str_clone_ref(dw_la.get(j as i64)))
     for i in 0..link_args.len() as i32:
         args.push(link_args.get(i as i64))
     args.push("-lSystem")
     let cleanup_files = link_stage_collect_cleanup_files(extras)
-    LinkStageCommand { linker: llvm_ld, args, cwd: "", env, inputs, outputs, cleanup_files }
+    LinkStageCommand { linker: with_str_clone_ref(llvm_ld), args, cwd: "", env, inputs, outputs, cleanup_files }
 
 fn link_stage_make_linux_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
@@ -431,8 +432,8 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_pa
     args.push("-dynamic-linker")
     args.push(dynamic_linker)
     args.push("-o")
-    args.push(bin_path)
-    outputs.push(bin_path)
+    args.push(with_str_clone_ref(bin_path))
+    outputs.push(with_str_clone_ref(bin_path))
 
     args.push(crt1)
     inputs.push(crt1)
@@ -442,12 +443,12 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_pa
     args.push(crtbegin)
     inputs.push(crtbegin)
 
-    args.push(obj_path)
-    inputs.push(obj_path)
+    args.push(with_str_clone_ref(obj_path))
+    inputs.push(with_str_clone_ref(obj_path))
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
-        args.push(extra)
-        inputs.push(extra)
+        args.push(with_str_clone_ref(extra))
+        inputs.push(with_str_clone_ref(extra))
 
     args.push("-L" ++ gcc_dir)
     args.push("-L/usr/lib/x86_64-linux-gnu")
@@ -466,7 +467,7 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_pa
             else:
                 args.push("-l" ++ lib)
     for i in 0..link_args.len() as i32:
-        args.push(link_args.get(i as i64))
+        args.push(with_str_clone_ref(link_args.get(i as i64)))
     args.push("-lc")
     args.push("-lgcc")
 
@@ -476,7 +477,7 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_pa
     args.push(crtn)
     inputs.push(crtn)
     let cleanup_files = link_stage_collect_cleanup_files(extras)
-    LinkStageCommand { linker: llvm_ld, args, cwd: "", env, inputs, outputs, cleanup_files }
+    LinkStageCommand { linker: with_str_clone_ref(llvm_ld), args, cwd: "", env, inputs, outputs, cleanup_files }
 
 fn link_stage_make_windows_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
@@ -494,26 +495,26 @@ fn link_stage_make_windows_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_
     args.push("/libpath:C:/Program Files (x86)/Windows Kits/10/Lib/10.0.19041.0/ucrt/x64")
     args.push("/libpath:C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.29.30133/lib/x64")
     args.push("/out:" ++ bin_path)
-    outputs.push(bin_path)
-    args.push(obj_path)
-    inputs.push(obj_path)
+    outputs.push(with_str_clone_ref(bin_path))
+    args.push(with_str_clone_ref(obj_path))
+    inputs.push(with_str_clone_ref(obj_path))
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
         if extra.starts_with("-L"):
             args.push("/libpath:" ++ extra.slice(2, extra.len()))
         else if extra.starts_with("@"):
-            args.push(extra)
+            args.push(with_str_clone_ref(extra))
         else:
-            args.push(extra)
-            inputs.push(extra)
+            args.push(with_str_clone_ref(extra))
+            inputs.push(with_str_clone_ref(extra))
     for i in 0..link_libs.len() as i32:
         let lib = link_libs.get(i as i64)
         if lib.ends_with(".lib"):
-            args.push(lib)
+            args.push(with_str_clone_ref(lib))
         else:
             args.push(lib ++ ".lib")
     for i in 0..link_args.len() as i32:
-        args.push(link_args.get(i as i64))
+        args.push(with_str_clone_ref(link_args.get(i as i64)))
     args.push("libcpmt.lib")
     args.push("libcmt.lib")
     args.push("oldnames.lib")
@@ -531,7 +532,7 @@ fn link_stage_make_windows_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_
     args.push("dbghelp.lib")
     args.push("ntdll.lib")
     let cleanup_files = link_stage_collect_cleanup_files(extras)
-    LinkStageCommand { linker: llvm_ld, args, cwd: "", env, inputs, outputs, cleanup_files }
+    LinkStageCommand { linker: with_str_clone_ref(llvm_ld), args, cwd: "", env, inputs, outputs, cleanup_files }
 
 fn link_stage_make_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let os = runtime_sysinfo_os()
@@ -853,7 +854,7 @@ fn link_stage_make_archive(obj_path: &str) -> str:
 
 fn link_stage_make_archive_to_path(obj_path: &str, ar_path: &str) -> str:
     let members: Vec[str] = Vec.new()
-    members.push(obj_path)
+    members.push(with_str_clone_ref(obj_path))
     let rc = create_static_archive(ar_path, members)
     if rc == 0:
         return ar_path
@@ -962,7 +963,7 @@ fn link_stage_link_object_to_binary_plan_with_units(obj_path: &str, extra_object
     // #650 codegen units: sibling .o files are full linker inputs like the
     // primary object (objects always load wholly, so position is irrelevant).
     for ui in 0..extra_objects.len() as i32:
-        extras.push(extra_objects.get(ui as i64))
+        extras.push(with_str_clone_ref(extra_objects.get(ui as i64)))
     for i in 0..link_search_paths.len() as i32:
         extras.push("-L" ++ link_search_paths.get(i as i64))
     var undef = link_stage_undefined_symbols_for_object(obj_path)

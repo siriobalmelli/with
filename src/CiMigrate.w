@@ -96,19 +96,19 @@ fn ci_migrate_text_is_blank(text: &str) -> bool:
     true
 
 pub fn migrate_set_shared_defs(prefix: &str) -> Unit:
-    g_migrate_shared_defs_prefix = prefix
+    g_migrate_shared_defs_prefix = with_str_clone_ref(prefix)
 
 pub fn migrate_set_directory_one_basename(basename: &str) -> Unit:
-    g_migrate_directory_one_basename = basename
+    g_migrate_directory_one_basename = with_str_clone_ref(basename)
 
 pub fn migrate_set_shared_fragment_path(path: &str) -> Unit:
-    g_migrate_shared_fragment_path = path
+    g_migrate_shared_fragment_path = with_str_clone_ref(path)
 
 pub fn migrate_add_include_path(path: &str) -> Unit:
-    g_migrate_include_paths.push(path)
+    g_migrate_include_paths.push(with_str_clone_ref(path))
 
 pub fn migrate_add_forced_include(path: &str) -> Unit:
-    g_migrate_forced_includes.push(path)
+    g_migrate_forced_includes.push(with_str_clone_ref(path))
 
 pub fn migrate_reset_options() -> Unit:
     g_migrate_width_slice = 0
@@ -887,7 +887,7 @@ fn ci_migrate_file_inner(input_path: &str, output_path: &str, project_active: bo
         eprint("migrate: cannot read " ++ input_path)
         return 1
     let source_prefix = ci_migrate_source_prefix()
-    g_migrate_current_input_path = input_path
+    g_migrate_current_input_path = with_str_clone_ref(input_path)
     g_migrate_raw_source = source
 
     // Pass to libclang via cimport_parse
@@ -1131,14 +1131,14 @@ fn ci_migrate_sorted_files(files: &Vec[str]) -> Vec[str]:
         while i < files.len() as i32:
             let path = files.get(i as i64)
             if ci_migrate_pcre2_order_rank(ci_migrate_path_basename(path)) == rank:
-                sorted.push(path)
+                sorted.push(with_str_clone_ref(path))
             i = i + 1
         rank = rank + 10
     var i = 0
     while i < files.len() as i32:
         let path = files.get(i as i64)
         if ci_migrate_pcre2_order_rank(ci_migrate_path_basename(path)) == 1000:
-            sorted.push(path)
+            sorted.push(with_str_clone_ref(path))
         i = i + 1
     sorted
 
@@ -1183,12 +1183,12 @@ fn ci_migrate_sorted_insert(files: &Vec[str], path: &str) -> Vec[str]:
     while i < files.len() as i32:
         let existing = files.get(i as i64)
         if not inserted and ci_str_compare(path, existing) < 0:
-            sorted.push(path)
+            sorted.push(with_str_clone_ref(path))
             inserted = true
-        sorted.push(existing)
+        sorted.push(with_str_clone_ref(existing))
         i = i + 1
     if not inserted:
-        sorted.push(path)
+        sorted.push(with_str_clone_ref(path))
     sorted
 
 fn ci_migrate_collect_c_files(input_dir: &str, exclude_basenames: &str) -> Vec[str]:
@@ -1244,7 +1244,7 @@ fn ci_migrate_directory_filewise(input_dir: &str, output_dir: &str, files: &Vec[
 // Translate a directory of .c files to .w files.
 pub fn migrate_c_directory(input_dir: &str, output_dir: &str, exclude_basenames: &str) -> i32:
     g_migrate_fn_translated_total = 0
-    g_migrate_directory_input_dir = input_dir
+    g_migrate_directory_input_dir = with_str_clone_ref(input_dir)
     if ci_migrate_shared_defs_active():
         ci_migrate_shared_defs_reset()
     // Create output directory
@@ -1497,7 +1497,7 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, pr
 // ── ci_migrate_var_* helpers (moved from CImport.w in D3) ─────
 fn ci_migrate_set_error(msg: &str):
     if g_migrate_file_error.len() == 0:
-        g_migrate_file_error = msg
+        g_migrate_file_error = with_str_clone_ref(msg)
 
 fn ci_migrate_fail_function(msg: &str) -> str:
     eprint(msg)

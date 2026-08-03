@@ -531,7 +531,7 @@ fn Codegen.init_with_opt_and_intern(module_name: &str, opt_level: i32, intern: I
     cg.tracked_input_root = with_str_clone(cg.sema.tracked_input_root)
     let tracked_paths: Vec[str] = Vec.new()
     for tpi in 0..cg.sema.tracked_input_paths.len() as i32:
-        tracked_paths.push(cg.sema.tracked_input_paths.get(tpi as i64))
+        tracked_paths.push(with_str_clone_ref(cg.sema.tracked_input_paths.get(tpi as i64)))
     cg.tracked_input_paths = tracked_paths
     cg.capture_sema_symbol_texts()
     // Pre-intern dispatch symbols for O(1) comparisons
@@ -588,7 +588,7 @@ fn Codegen.init_with_opt_and_intern(module_name: &str, opt_level: i32, intern: I
 impl Codegen:
     mut fn enable_analysis(query: &str):
         self.analysis_enabled = 1
-        self.analysis_query = query
+        self.analysis_query = with_str_clone_ref(query)
 
     fn analysis_add(fact: AnalysisFact):
         if self.analysis_enabled != 0:
@@ -5285,7 +5285,7 @@ impl Codegen:
                 j = j + 1
             if all_digits:
                 return name.slice(0, dot_pos as i64)
-        name
+        with_str_clone_ref(name)
 
     // ── Detect drop functions ─────────────────────────────────────────
 

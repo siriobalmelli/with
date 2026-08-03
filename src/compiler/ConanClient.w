@@ -5,6 +5,7 @@
 use Archive
 use compiler.Runtime
 use std.crypto.sha256
+extern fn with_str_clone_ref(s: &str) -> str
 
 fn CONAN_CENTER_URL -> str: "https://center2.conan.io"
 fn CONAN_INDEX_RAW -> str: "https://raw.githubusercontent.com/conan-io/conan-center-index/master/recipes"
@@ -106,11 +107,11 @@ fn conan_sorted_insert_unique(values: Vec[str], value: &str) -> Vec[str]:
     for i in 0..values.len() as i32:
         let existing = values.get(i as i64)
         if not inserted and conan_str_compare(value, existing) < 0:
-            out.push(value)
+            out.push(with_str_clone_ref(value))
             inserted = true
-        out.push(existing)
+        out.push(with_str_clone_ref(existing))
     if not inserted:
-        out.push(value)
+        out.push(with_str_clone_ref(value))
     out
 
 fn conan_trim(text: &str) -> str:
@@ -179,7 +180,7 @@ fn conan_relative_path(base: &str, path: &str) -> str:
     let prefix = base ++ "/"
     if path.starts_with(prefix):
         return path.slice(prefix.len(), path.len())
-    path
+    with_str_clone_ref(path)
 
 fn conan_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
@@ -433,7 +434,7 @@ fn conan_parse_requires_from_info(info: &str) -> Vec[str]:
             in_requires = line == "[requires]"
             continue
         if in_requires:
-            requires.push(line)
+            requires.push(with_str_clone_ref(line))
     requires
 
 fn conan_ref_name(req: &str) -> str:
@@ -732,9 +733,9 @@ pub fn conan_extract_recipe_link_metadata(recipe: &str, target_os: &str) -> Cona
             for i in 0..values.len() as i32:
                 let fw = values.get(i as i64)
                 if not conan_vec_contains(fw_seen, fw):
-                    fw_seen.push(fw)
+                    fw_seen.push(with_str_clone_ref(fw))
                     fw_args.push("-framework")
-                    fw_args.push(fw)
+                    fw_args.push(with_str_clone_ref(fw))
 
     ConanLibraryScan { lib_paths: fw_args, libs: sys_libs }
 
@@ -770,7 +771,7 @@ fn conan_link_metadata_with_recipe(name: &str, version: &str, libs: Vec[str], li
     for i in 0..extracted.libs.len() as i32:
         out_libs = conan_sorted_insert_unique(move out_libs, extracted.libs.get(i as i64))
     for i in 0..extracted.lib_paths.len() as i32:
-        out_args.push(extracted.lib_paths.get(i as i64))
+        out_args.push(with_str_clone_ref(extracted.lib_paths.get(i as i64)))
     ConanLibraryScan { lib_paths: out_args, libs: out_libs }
 
 fn conan_known_link_metadata(name: &str, version: &str, libs: Vec[str], link_args: Vec[str]) -> ConanLibraryScan:
@@ -799,7 +800,7 @@ fn conan_known_link_metadata(name: &str, version: &str, libs: Vec[str], link_arg
             frameworks.push("IOKit")
             for i in 0..frameworks.len() as i32:
                 out_args.push("-framework")
-                out_args.push(frameworks.get(i as i64))
+                out_args.push(with_str_clone_ref(frameworks.get(i as i64)))
         else if os == "Linux":
             out_libs = conan_sorted_insert_unique(move out_libs, "m")
             out_libs = conan_sorted_insert_unique(move out_libs, "pthread")
@@ -877,7 +878,7 @@ fn conan_write_binary_metadata(name: &str, version: &str, recipe_rev: &str, pack
     var lib_paths = scan.lib_paths
     var libs = scan.libs
     if libs.len() == 0:
-        libs.push(name)
+        libs.push(with_str_clone_ref(name))
         if runtime_is_dir(dep_dir ++ "/lib") != 0:
             lib_paths.push("lib")
     let defines: Vec[str] = Vec.new()
@@ -963,7 +964,7 @@ fn conan_install_binary(name: &str, version: &str, recipe_rev: &str, project_roo
         let _remove = runtime_remove_tree(dep_dir)
         return ""
     runtime_eprint("  installed to .with/deps/c/" ++ name ++ "/" ++ version ++ "/")
-    version
+    with_str_clone_ref(version)
 
 fn conan_recipe_config_url(name: &str) -> str:
     CONAN_INDEX_RAW() ++ "/" ++ name ++ "/config.yml"
@@ -1097,7 +1098,7 @@ fn conan_install_source_fallback(name: &str, version: &str, project_root: &str) 
     include_dirs_abs.push(source_dir)
     for i in 0..header_dirs_abs.len() as i32:
         let abs = header_dirs_abs.get(i as i64)
-        include_dirs_abs.push(abs)
+        include_dirs_abs.push(with_str_clone_ref(abs))
         include_paths = conan_sorted_insert_unique(move include_paths, conan_relative_path(dep_dir, abs))
     let objects: Vec[str] = Vec.new()
     for i in 0..c_files.len() as i32:
@@ -1115,7 +1116,7 @@ fn conan_install_source_fallback(name: &str, version: &str, project_root: &str) 
     let lib_paths: Vec[str] = Vec.new()
     lib_paths.push("lib")
     var libs: Vec[str] = Vec.new()
-    libs.push(name)
+    libs.push(with_str_clone_ref(name))
     let defines: Vec[str] = Vec.new()
     let link_args: Vec[str] = Vec.new()
     let known = conan_link_metadata_with_recipe(name, version, move libs, move link_args, recipe)
@@ -1125,7 +1126,7 @@ fn conan_install_source_fallback(name: &str, version: &str, project_root: &str) 
         let _remove = runtime_remove_tree(dep_dir)
         return ""
     runtime_eprint("  built source package at .with/deps/c/" ++ name ++ "/" ++ version ++ "/")
-    version
+    with_str_clone_ref(version)
 
 fn conan_install_internal(name: &str, version_hint: &str, project_root: &str, depth: i32, force_reinstall: bool) -> str:
     if depth > 8:

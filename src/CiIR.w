@@ -804,8 +804,8 @@ type CiModule {
 
 fn CiModule.new(name: &str, source_path: &str) -> CiModule:
     CiModule {
-        name: name,
-        source_path: source_path,
+        name: with_str_clone_ref(name),
+        source_path: with_str_clone_ref(source_path),
         types: CiTypePool.new(),
         exprs: CiExprPool.new(),
         stmts: CiStmtPool.new(),
@@ -819,7 +819,7 @@ impl CiModule:
         self.top_level_decls.push(decl as i32)
 
     mut fn add_import(path: &str):
-        self.imports.push(path)
+        self.imports.push(with_str_clone_ref(path))
 
 
 // ── CiProject ────────────────────────────────────────────────

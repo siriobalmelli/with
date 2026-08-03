@@ -634,7 +634,7 @@ impl LspState:
 fn uri_to_path(uri: &str) -> str:
     if uri.starts_with("file://"):
         return uri.slice(7, uri.len())
-    uri
+    with_str_clone_ref(uri)
 
 // ── Line/column utilities ────────────────────────────────────
 
@@ -1199,13 +1199,13 @@ fn LspState.completion(mut self: LspState, id: i32, uri: &str, text: &str, line:
     if enclosing_fn as i32 != 0:
         let params = lsp_collect_fn_params(parse_pool, parse_intern, enclosing_fn)
         for pi in 0..params.len() as i32:
-            scope_names.push(params.get(pi as i64))
+            scope_names.push(with_str_clone_ref(params.get(pi as i64)))
         // Walk body recursively to collect bindings visible at cursor.
         let body = parse_pool.get_data1(enclosing_fn)
         if body != 0:
             let bindings = lsp_collect_bindings_rec(parse_pool, parse_intern, body, offset)
             for bi in 0..bindings.len() as i32:
-                scope_names.push(bindings.get(bi as i64))
+                scope_names.push(with_str_clone_ref(bindings.get(bi as i64)))
     for si in 0..scope_names.len() as i32:
         let sname = scope_names.get(si as i64)
         if not first:
@@ -1368,7 +1368,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
         if for_body != 0:
             let inner = lsp_collect_bindings_rec(pool, intern, for_body, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         return result
 
     if kind == NodeKind.NK_BLOCK:
@@ -1380,7 +1380,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
             let stmt = pool.get_extra(extra_start + i)
             let inner = lsp_collect_bindings_rec(pool, intern, stmt, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         if tail != 0:
             let inner = lsp_collect_bindings_rec(pool, intern, tail, offset)
             for ii in 0..inner.len() as i32:
@@ -1394,7 +1394,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
         if then_body != 0 and offset >= pool.get_start(then_body as NodeId) and offset <= pool.get_end(then_body as NodeId):
             let inner = lsp_collect_bindings_rec(pool, intern, then_body, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         if else_body != 0 and offset >= pool.get_start(else_body as NodeId) and offset <= pool.get_end(else_body as NodeId):
             let inner = lsp_collect_bindings_rec(pool, intern, else_body, offset)
             for ii in 0..inner.len() as i32:

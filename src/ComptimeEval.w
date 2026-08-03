@@ -465,13 +465,13 @@ fn comptime_tool_path_push_part(parts: Vec[str], part: &str, is_absolute: bool) 
     if part == ".":
         return out
     if part != "..":
-        out.push(part)
+        out.push(with_str_clone_ref(part))
         return out
     if out.len() > 0 and out.get(out.len() - 1) != "..":
         out.pop()
         return out
     if not is_absolute:
-        out.push(part)
+        out.push(with_str_clone_ref(part))
     out
 
 fn comptime_tool_path_normalize(path: &str) -> str:
@@ -674,7 +674,7 @@ fn comptime_tar_link_name(target: &str) -> str:
         return ""
     if not comptime_tool_path_is_project_relative(target):
         return ""
-    target
+    with_str_clone_ref(target)
 
 fn comptime_tar_link_target_safe(output_dir: &str, output_path: &str, target: &str) -> bool:
     if target.len() == 0:
@@ -1090,11 +1090,11 @@ fn comptime_glob_sort(items: &Vec[str]) -> Vec[str]:
         for j in 0..sorted.len() as i32:
             let existing = sorted.get(j as i64)
             if not inserted and comptime_glob_str_compare(item, existing) < 0:
-                out.push(item)
+                out.push(with_str_clone_ref(item))
                 inserted = true
-            out.push(existing)
+            out.push(with_str_clone_ref(existing))
         if not inserted:
-            out.push(item)
+            out.push(with_str_clone_ref(item))
         sorted = out
     sorted
 
@@ -1173,7 +1173,7 @@ fn comptime_action_scratch_dir(target_name: &str) -> str:
 fn ce_clone_str_vec(values: &Vec[str]) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     for i in 0..values.len() as i32:
-        out.push(values.get(i as i64))
+        out.push(with_str_clone_ref(values.get(i as i64)))
     out
 
 // A record read out of capability_records is a bitwise copy: its five Vec[str]
@@ -1183,19 +1183,19 @@ fn ce_clone_capability_record(r: &ComptimeCapabilityRecord) -> ComptimeCapabilit
     ComptimeCapabilityRecord {
         kind: r.kind,
         generation: r.generation,
-        package_name: r.package_name,
-        package_version: r.package_version,
-        project_root: r.project_root,
+        package_name: with_str_clone_ref(r.package_name),
+        package_version: with_str_clone_ref(r.package_version),
+        project_root: with_str_clone_ref(r.project_root),
         workspace_id: r.workspace_id,
-        target_name: r.target_name,
+        target_name: with_str_clone_ref(r.target_name),
         inputs: ce_clone_str_vec(&r.inputs),
         outputs: ce_clone_str_vec(&r.outputs),
         args: ce_clone_str_vec(&r.args),
         write_scope: ce_clone_str_vec(&r.write_scope),
         write_scoped: r.write_scoped,
-        scratch_path: r.scratch_path,
+        scratch_path: with_str_clone_ref(r.scratch_path),
         timeout_ms: r.timeout_ms,
-        cwd: r.cwd,
+        cwd: with_str_clone_ref(r.cwd),
         env: ce_clone_str_vec(&r.env),
         network: r.network,
     }
@@ -1210,14 +1210,14 @@ fn ce_clone_link_env_vec(values: &Vec[LinkStageEnvVar]) -> Vec[LinkStageEnvVar]:
     let out: Vec[LinkStageEnvVar] = Vec.new()
     for i in 0..values.len() as i32:
         let e = &values[i as i64]
-        out.push(LinkStageEnvVar { name: e.name, value: e.value })
+        out.push(LinkStageEnvVar { name: with_str_clone_ref(e.name), value: with_str_clone_ref(e.value) })
     out
 
 fn ce_clone_link_command(c: &LinkStageCommand) -> LinkStageCommand:
     LinkStageCommand {
-        linker: c.linker,
+        linker: with_str_clone_ref(c.linker),
         args: ce_clone_str_vec(&c.args),
-        cwd: c.cwd,
+        cwd: with_str_clone_ref(c.cwd),
         env: ce_clone_link_env_vec(&c.env),
         inputs: ce_clone_str_vec(&c.inputs),
         outputs: ce_clone_str_vec(&c.outputs),
@@ -1229,7 +1229,7 @@ fn ce_clone_link_command(c: &LinkStageCommand) -> LinkStageCommand:
 // both owners free them post-#691 (the workspace-file double free).
 fn ce_clone_workspace_record(r: &ComptimeWorkspaceRecord) -> ComptimeWorkspaceRecord:
     ComptimeWorkspaceRecord {
-        name: r.name,
+        name: with_str_clone_ref(r.name),
         files: ce_clone_str_vec(&r.files),
         string_names: ce_clone_str_vec(&r.string_names),
         string_sources: ce_clone_str_vec(&r.string_sources),
@@ -1243,9 +1243,9 @@ fn ce_clone_workspace_record(r: &ComptimeWorkspaceRecord) -> ComptimeWorkspaceRe
         message_cursor: r.message_cursor,
         intercept_started: r.intercept_started,
         pending_link_active: r.pending_link_active,
-        pending_link_obj_path: r.pending_link_obj_path,
-        pending_link_bin_path: r.pending_link_bin_path,
-        pending_link_output_path: r.pending_link_output_path,
+        pending_link_obj_path: with_str_clone_ref(r.pending_link_obj_path),
+        pending_link_bin_path: with_str_clone_ref(r.pending_link_bin_path),
+        pending_link_output_path: with_str_clone_ref(r.pending_link_output_path),
         pending_link_output_kind: r.pending_link_output_kind,
         pending_link_debug_info: r.pending_link_debug_info,
         pending_link_command: ce_clone_link_command(&r.pending_link_command),
@@ -1257,15 +1257,15 @@ fn ce_clone_workspace_record(r: &ComptimeWorkspaceRecord) -> ComptimeWorkspaceRe
 fn ce_clone_compile_plan(p: &ComptimeWorkspaceCompilePlan) -> ComptimeWorkspaceCompilePlan:
     ComptimeWorkspaceCompilePlan {
         valid: p.valid,
-        name: p.name,
+        name: with_str_clone_ref(p.name),
         is_migrate: p.is_migrate,
-        final_output: p.final_output,
-        absolute_output: p.absolute_output,
+        final_output: with_str_clone_ref(p.final_output),
+        absolute_output: with_str_clone_ref(p.absolute_output),
         output_kind: p.output_kind,
         has_strings: p.has_strings,
         source_paths: ce_clone_str_vec(&p.source_paths),
         source_texts: ce_clone_str_vec(&p.source_texts),
-        absolute_source: p.absolute_source,
+        absolute_source: with_str_clone_ref(p.absolute_source),
         include_paths: ce_clone_str_vec(&p.include_paths),
         defines: ce_clone_str_vec(&p.defines),
         link_libs: ce_clone_str_vec(&p.link_libs),
@@ -1278,19 +1278,19 @@ fn ce_clone_compile_plan(p: &ComptimeWorkspaceCompilePlan) -> ComptimeWorkspaceC
         prelude_mode: p.prelude_mode,
         overflow_mode: p.overflow_mode,
         migrate_is_dir: p.migrate_is_dir,
-        migrate_source: p.migrate_source,
+        migrate_source: with_str_clone_ref(p.migrate_source),
         migrate_include_paths: ce_clone_str_vec(&p.migrate_include_paths),
         migrate_forced_includes: ce_clone_str_vec(&p.migrate_forced_includes),
         migrate_defines: ce_clone_str_vec(&p.migrate_defines),
-        migrate_exclude_basenames: p.migrate_exclude_basenames,
+        migrate_exclude_basenames: with_str_clone_ref(p.migrate_exclude_basenames),
         migrate_no_c_export: p.migrate_no_c_export,
         migrate_c_export_functions: p.migrate_c_export_functions,
         migrate_convert_goto_to_structured: p.migrate_convert_goto_to_structured,
         migrate_block_style: p.migrate_block_style,
         migrate_width_slice: p.migrate_width_slice,
-        migrate_shared_defs: p.migrate_shared_defs,
-        migrate_one: p.migrate_one,
-        migrate_shared_fragment: p.migrate_shared_fragment,
+        migrate_shared_defs: with_str_clone_ref(p.migrate_shared_defs),
+        migrate_one: with_str_clone_ref(p.migrate_one),
+        migrate_shared_fragment: with_str_clone_ref(p.migrate_shared_fragment),
     }
 
 fn comptime_parse_i32_default(text: &str, default_value: i32) -> i32:
@@ -1514,16 +1514,16 @@ pub fn comptime_workspace_compile_subprocess(plan_path: &str, result_path: &str)
 fn comptime_action_outputs(output: &str, extra_outputs: &Vec[str]) -> Vec[str]:
     let outputs: Vec[str] = Vec.new()
     if output.len() > 0:
-        outputs.push(output)
+        outputs.push(with_str_clone_ref(output))
     for i in 0..extra_outputs.len() as i32:
-        outputs.push(extra_outputs.get(i as i64))
+        outputs.push(with_str_clone_ref(extra_outputs.get(i as i64)))
     outputs
 
 fn comptime_action_write_scope(output: &str, extra_outputs: &Vec[str], write_scopes: &Vec[str], scratch_path: &str) -> Vec[str]:
     let scopes = comptime_action_outputs(output, extra_outputs)
     for i in 0..write_scopes.len() as i32:
-        scopes.push(write_scopes.get(i as i64))
-    scopes.push(scratch_path)
+        scopes.push(with_str_clone_ref(write_scopes.get(i as i64)))
+    scopes.push(with_str_clone_ref(scratch_path))
     scopes
 
 fn comptime_action_capability_record(package_name: &str, package_version: &str, project_root: &str, target_name: &str, inputs: Vec[str], output: &str, extra_outputs: &Vec[str], args: Vec[str], write_scopes: &Vec[str], timeout_ms: i32, cwd: &str, env: Vec[str], network: i32) -> ComptimeCapabilityRecord:
@@ -1681,7 +1681,7 @@ impl ComptimeEvaluator:
         comptime_value_invalid()
 
     mut fn fail(node: i32, msg: &str) -> ComptimeControl:
-        self.last_error_msg = msg
+        self.last_error_msg = with_str_clone_ref(msg)
         if self.had_error == 0 and self.require_success != 0 and self.sema.suppress_errors == 0:
             let start = self.ast.get_start(node)
             let end = self.ast.get_end(node)
@@ -2011,7 +2011,7 @@ impl ComptimeEvaluator:
         for i in 0..self.runtime_env_names.len() as i32:
             if self.runtime_env_names.get(i as i64) == name:
                 return
-        self.runtime_env_names.push(name)
+        self.runtime_env_names.push(with_str_clone_ref(name))
         self.runtime_env_values.push(with_getenv_str(name) ++ "")
 
     fn restore_runtime_env() -> Unit:
@@ -2498,7 +2498,7 @@ impl ComptimeEvaluator:
         let parts: Vec[str] = Vec.new()
         var i = rev.len() as i32 - 1
         while i >= 0:
-            parts.push(rev.get(i as i64))
+            parts.push(with_str_clone_ref(rev.get(i as i64)))
             i = i - 1
         with_str_concat_n(parts.ptr, parts.len())
 
@@ -4526,7 +4526,7 @@ impl ComptimeEvaluator:
             let absolute_migrate_output = self.workspace_path(capability.project_root, migrate_output)
             return ComptimeWorkspaceCompilePlan {
                 valid: 1,
-                name: record.name,
+                name: with_str_clone_ref(record.name),
                 is_migrate: 1,
                 final_output: migrate_output,
                 absolute_output: absolute_migrate_output,
@@ -4565,7 +4565,7 @@ impl ComptimeEvaluator:
         let option_source = self.workspace_str_option(options, "source_path")
         var source_path = option_source
         if source_path.len() == 0 and record.files.len() > 0:
-            source_path = record.files.get(0)
+            source_path = with_str_clone_ref(record.files.get(0))
         let output_path = self.workspace_str_option(options, "output_path")
         let output_kind = self.workspace_i32_option(options, "output_kind", 0)
         let target_kind = self.workspace_i32_option(options, "target", 0)
@@ -4598,7 +4598,7 @@ impl ComptimeEvaluator:
                 return comptime_workspace_compile_plan_invalid()
             for si in 0..record.string_names.len() as i32:
                 source_paths.push(self.workspace_path(capability.project_root, record.string_names.get(si as i64)))
-                source_texts.push(record.string_sources.get(si as i64))
+                source_texts.push(with_str_clone_ref(record.string_sources.get(si as i64)))
             has_strings = 1
         else:
             if not comptime_workspace_output_kind_supported(output_kind):
@@ -4607,7 +4607,7 @@ impl ComptimeEvaluator:
             absolute_source = self.workspace_path(capability.project_root, source_path)
         ComptimeWorkspaceCompilePlan {
             valid: 1,
-            name: record.name,
+            name: with_str_clone_ref(record.name),
             is_migrate: 0,
             final_output,
             absolute_output,
@@ -4727,7 +4727,7 @@ impl ComptimeEvaluator:
         let option_source = self.workspace_str_option(options, "source_path")
         var source_path = option_source
         if source_path.len() == 0 and out.files.len() > 0:
-            source_path = out.files.get(0)
+            source_path = with_str_clone_ref(out.files.get(0))
         let output_path = self.workspace_str_option(options, "output_path")
         let output_kind = self.workspace_i32_option(options, "output_kind", 0)
         let target_kind = self.workspace_i32_option(options, "target", 0)
@@ -4767,18 +4767,18 @@ impl ComptimeEvaluator:
             let source_texts: Vec[str] = Vec.new()
             for si in 0..out.string_names.len() as i32:
                 source_paths.push(self.workspace_path(capability.project_root, out.string_names.get(si as i64)))
-                source_texts.push(out.string_sources.get(si as i64))
+                source_texts.push(with_str_clone_ref(out.string_sources.get(si as i64)))
             source_name = with_str_clone_ref(source_paths.get(0))
             pool = comp.compile_entry_source_texts(source_paths, source_texts)
         else:
             let absolute_source = self.workspace_path(capability.project_root, source_path)
             var cfg = project_config_load_for_source(absolute_source)
             for ii in 0..include_paths.len() as i32:
-                cfg.c_import_include_paths.push(include_paths.get(ii as i64))
+                cfg.c_import_include_paths.push(with_str_clone_ref(include_paths.get(ii as i64)))
             for di in 0..defines.len() as i32:
-                cfg.c_import_defines.push(defines.get(di as i64))
+                cfg.c_import_defines.push(with_str_clone_ref(defines.get(di as i64)))
             for li in 0..link_libs.len() as i32:
-                cfg.dep_link_libs.push(link_libs.get(li as i64))
+                cfg.dep_link_libs.push(with_str_clone_ref(link_libs.get(li as i64)))
             pool = comp.compile_entry_file_with_config(absolute_source, move cfg)
 
         let link_plan = comp.prepare_binary_link_from_pool(pool, source_name, obj_path, absolute_output)
@@ -7298,7 +7298,7 @@ impl ComptimeEvaluator:
             let index = arg_values.get(1)
             if text.kind != ComptimeValueKind.CV_STR or comptime_value_is_intlike(index) == 0:
                 return self.fail(node, "with_str_byte_at expects string and integer arguments")
-            return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i32 as i32), with_str_byte_at(text.text, comptime_value_intlike(index))))
+            return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i32 as i32), with_str_byte_at(with_str_clone_ref(text.text), comptime_value_intlike(index))))
         if fn_name == "with_str_slice":
             if arg_values.len() as i32 != 3:
                 return self.fail(node, "with_str_slice takes three arguments")
@@ -7307,7 +7307,7 @@ impl ComptimeEvaluator:
             let end = arg_values.get(2)
             if text.kind != ComptimeValueKind.CV_STR or comptime_value_is_intlike(start) == 0 or comptime_value_is_intlike(end) == 0:
                 return self.fail(node, "with_str_slice expects string and integer arguments")
-            return comptime_control_value(comptime_value_str(with_str_slice(text.text, comptime_value_intlike(start), comptime_value_intlike(end))))
+            return comptime_control_value(comptime_value_str(with_str_slice(with_str_clone_ref(text.text), comptime_value_intlike(start), comptime_value_intlike(end))))
         if fn_name == "with_str_contains" or fn_name == "with_str_starts_with" or fn_name == "with_str_ends_with":
             if arg_values.len() as i32 != 2:
                 return self.fail(node, fn_name ++ " takes two arguments")
@@ -7317,11 +7317,11 @@ impl ComptimeEvaluator:
                 return self.fail(node, fn_name ++ " expects string arguments")
             let result =
                 if fn_name == "with_str_contains":
-                    with_str_contains(text.text, needle.text)
+                    with_str_contains(with_str_clone_ref(text.text), with_str_clone_ref(needle.text))
                 else if fn_name == "with_str_starts_with":
-                    with_str_starts_with(text.text, needle.text)
+                    with_str_starts_with(with_str_clone_ref(text.text), with_str_clone_ref(needle.text))
                 else:
-                    with_str_ends_with(text.text, needle.text)
+                    with_str_ends_with(with_str_clone_ref(text.text), with_str_clone_ref(needle.text))
             return comptime_control_value(comptime_value_bool(result))
         if fn_name == "with_sysinfo_os" or fn_name == "with_sysinfo_arch" or fn_name == "with_sysinfo_hostname":
             if arg_values.len() as i32 != 0:

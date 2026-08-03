@@ -538,7 +538,7 @@ fn build_graph_env_or_default(name: &str, default_value: &str) -> str:
     let value = build_graph_rt_getenv(name)
     if value.len() > 0:
         return value
-    default_value
+    with_str_clone_ref(default_value)
 
 fn build_graph_install_bindir() -> str:
     let prefix = build_graph_env_or_default("PREFIX", "/usr/local")

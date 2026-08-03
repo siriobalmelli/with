@@ -411,7 +411,7 @@ fn ci_infer_macro_return_type_from_expr(type_session: i64, translated: &str, kno
     let stripped = ci_strip_parens(ci_trim(translated))
     if ci_is_int_literal(stripped):
         return "c_int"
-    fallback
+    with_str_clone_ref(fallback)
 
 fn ci_object_macro_is_function_alias(type_session: i64, value: &str) -> bool:
     let t = ci_strip_parens(ci_trim(value))
@@ -430,10 +430,10 @@ fn ci_record_omitted_symbol_cat(name: &str, location: &str, category: &str, reas
     for i in 0..g_cimport_omitted_symbol_names.len() as i32:
         if g_cimport_omitted_symbol_names.get(i as i64) == name:
             return
-    g_cimport_omitted_symbol_names.push(name)
-    g_cimport_omitted_symbol_reasons.push(reason)
-    g_cimport_omitted_symbol_locations.push(location)
-    g_cimport_omitted_symbol_categories.push(category)
+    g_cimport_omitted_symbol_names.push(with_str_clone_ref(name))
+    g_cimport_omitted_symbol_reasons.push(with_str_clone_ref(reason))
+    g_cimport_omitted_symbol_locations.push(with_str_clone_ref(location))
+    g_cimport_omitted_symbol_categories.push(with_str_clone_ref(category))
 
 // If `reason` names an already-omitted symbol, append the originating
 // reason chain (§16.2 dependent bindings carry the same reason chain).
@@ -3843,7 +3843,7 @@ fn ci_first_n_args(args: &str, n: i32) -> str:
             if count >= n:
                 return args.slice(0, i as i64)
         i = i + 1
-    args
+    with_str_clone_ref(args)
 
 fn ci_after_first_arg(args: &str) -> str:
     var depth = 0
@@ -5268,7 +5268,7 @@ fn ci_escape_reserved(name: &str) -> str:
     if name == "while": return "while_"
     if name == "with": return "with_"
     if name == "yield": return "yield_"
-    name
+    with_str_clone_ref(name)
 
 // ── String helpers ──────────────────────────────────────────
 
@@ -6670,7 +6670,7 @@ fn ci_record_count_cache_lookup(key: &str) -> i32:
     -1
 
 fn ci_record_count_cache_store(key: &str, value: i32) -> Unit:
-    g_ci_record_count_cache_keys.push(key)
+    g_ci_record_count_cache_keys.push(with_str_clone_ref(key))
     g_ci_record_count_cache_values.push(value)
 
 fn ci_record_field_cache_lookup_index(key: &str) -> i32:
@@ -6682,9 +6682,9 @@ fn ci_record_field_cache_lookup_index(key: &str) -> i32:
     -1
 
 fn ci_record_field_cache_store(key: &str, name: &str, ty: &str) -> Unit:
-    g_ci_record_field_cache_keys.push(key)
-    g_ci_record_field_name_cache_values.push(name)
-    g_ci_record_field_type_cache_values.push(ty)
+    g_ci_record_field_cache_keys.push(with_str_clone_ref(key))
+    g_ci_record_field_name_cache_values.push(with_str_clone_ref(name))
+    g_ci_record_field_type_cache_values.push(with_str_clone_ref(ty))
 
 fn ci_init_list_record_field_count(session: i64, ty_text: &str, ty: i32) -> i32:
     let ty_key = ci_record_cache_type_text(session, ty_text, ty)
@@ -8662,7 +8662,7 @@ fn ci_migrate_call_requires_unsafe_wrapper(name: &str) -> bool:
 fn ci_migrate_wrap_call_if_needed(name: &str, call_text: &str) -> str:
     if ci_migrate_call_requires_unsafe_wrapper(name):
         return "unsafe { " ++ call_text ++ " }"
-    call_text
+    with_str_clone_ref(call_text)
 
 fn ci_migrate_preamble_extern_call_requires_unsafe(name: &str) -> bool:
     if name == "strlen" or name == "strcmp" or name == "strncmp" or name == "strchr" or name == "memchr": return true
@@ -11022,9 +11022,9 @@ fn ci_scope_note_name(scope: CiScope, key: &str) -> CiScope:
         if scope.ptr as i64 == 0:
             return scope
         let old = (*scope.ptr).names.get(key)
-        (*scope.ptr).name_log_keys.push(key)
+        (*scope.ptr).name_log_keys.push(with_str_clone_ref(key))
         if old.is_some():
-            (*scope.ptr).name_log_values.push(old.unwrap())
+            (*scope.ptr).name_log_values.push(with_str_clone_ref(old.unwrap()))
             (*scope.ptr).name_log_had.push(1)
         else:
             (*scope.ptr).name_log_values.push("")
@@ -11036,9 +11036,9 @@ fn ci_scope_note_type(scope: CiScope, key: &str) -> CiScope:
         if scope.ptr as i64 == 0:
             return scope
         let old = (*scope.ptr).types.get(key)
-        (*scope.ptr).type_log_keys.push(key)
+        (*scope.ptr).type_log_keys.push(with_str_clone_ref(key))
         if old.is_some():
-            (*scope.ptr).type_log_values.push(old.unwrap())
+            (*scope.ptr).type_log_values.push(with_str_clone_ref(old.unwrap()))
             (*scope.ptr).type_log_had.push(1)
         else:
             (*scope.ptr).type_log_values.push("")
@@ -11150,7 +11150,7 @@ fn ci_realpath_cached(path: &str) -> str:
             return g_ci_realpath_cache_values.get(i)
         i = i + 1
     let resolved = with_cimport_realpath(path)
-    g_ci_realpath_cache_paths.push(path)
+    g_ci_realpath_cache_paths.push(with_str_clone_ref(path))
     g_ci_realpath_cache_values.push(resolved)
     resolved
 
@@ -12876,7 +12876,7 @@ fn ci_translate_c_initializer_for_cursor_type(session: i64, init_src: &str, ty: 
                     if macro_items.len() > 1:
                         var mi: i64 = 0
                         while mi < macro_items.len():
-                            expanded_items.push(macro_items.get(mi))
+                            expanded_items.push(with_str_clone_ref(macro_items.get(mi)))
                             mi = mi + 1
                         expanded_any = true
             if not expanded_any:
@@ -12900,7 +12900,7 @@ fn ci_translate_c_initializer_for_cursor_type(session: i64, init_src: &str, ty: 
     if field_count > 0:
         let items = ci_split_top_level_items(inner)
         var field_parts: Vec[str] = Vec.new()
-        field_parts.push(ty)
+        field_parts.push(with_str_clone_ref(ty))
         field_parts.push(" { ")
         var i = 0
         while i < items.len() as i32:
@@ -13809,10 +13809,10 @@ impl CiGotoCfgContext:
     mut fn fail(msg: &str, loc: &str):
         if self.state.ok:
             self.state.ok = false
-            self.state.message = msg
-            self.state.location = loc
-            g_ci_bail_message = msg
-            g_ci_bail_location = loc
+            self.state.message = with_str_clone_ref(msg)
+            self.state.location = with_str_clone_ref(loc)
+            g_ci_bail_message = with_str_clone_ref(msg)
+            g_ci_bail_location = with_str_clone_ref(loc)
             g_ci_bail_kind = CXK_GOTO_STMT
 
     mut fn new_block(desc: &str) -> i32:
@@ -13908,7 +13908,7 @@ impl CiGotoCfgContext:
         if found >= 0:
             return self.state.label_blocks.get(found as i64)
         let block = self.new_block("label " ++ name)
-        self.state.label_names.push(name)
+        self.state.label_names.push(with_str_clone_ref(name))
         self.state.label_blocks.push(block)
         self.state.label_defined.push(0)
         block
@@ -14486,8 +14486,8 @@ impl CiStackEmitContext:
     mut fn fail(msg: &str):
         if self.ok:
             self.ok = false
-            self.message = msg
-            g_ci_bail_message = msg
+            self.message = with_str_clone_ref(msg)
+            g_ci_bail_message = with_str_clone_ref(msg)
         return
 
     mut fn push_frame(kind: i32, label_sym: i32):
@@ -14634,7 +14634,7 @@ impl CiStmtPool:
 
 fn ci_native_goto_fail(msg: &str) -> CiStmtId:
     g_ci_bail_kind = CXK_GOTO_STMT
-    g_ci_bail_message = msg
+    g_ci_bail_message = with_str_clone_ref(msg)
     0 as CiStmtId
 
 impl CiStmtPool:
@@ -15162,7 +15162,7 @@ fn ci_strip_last_arg(args: &str) -> str:
         i = i + 1
     if last_comma > 0:
         return args.slice(0, last_comma as i64)
-    args
+    with_str_clone_ref(args)
 
 // Get the Nth pipe-delimited entry from a string like "|a||b||c|"
 fn ci_get_nth_pipe_entry(entries: &str, n: i32) -> str:

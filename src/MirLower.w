@@ -8,6 +8,7 @@ use Mir
 use Sema
 use SemaCheck
 use Overflow
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_eprint(s: &str) -> Unit
 extern fn with_fs_read_file(path: &str) -> str
 
@@ -2664,7 +2665,7 @@ fn mir_source_text_for_path(fallback_text: &str, path: &str) -> str:
         let text = with_fs_read_file(path)
         if text.len() > 0:
             return text
-    fallback_text
+    with_str_clone_ref(fallback_text)
 
 impl MirBuilder:
     mut fn source_location_operand(node: i32) -> i32:

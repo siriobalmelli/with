@@ -2533,14 +2533,14 @@ impl Sema:
             return 1
         if target_path == self.current_module_path:
             return 1
-        if not self.module_index_by_path.contains(self.current_module_path):
+        if not self.module_index_by_path.contains(with_str_clone_ref(self.current_module_path)):
             return 0
         if not self.module_index_by_path.contains(target_path):
             return 0
         let cache_key = "noprelude|" ++ sema_visibility_cache_key(self.current_module_path, target_path)
         if self.module_visibility_cache.contains(cache_key):
             return self.module_visibility_cache.get(cache_key).unwrap()
-        let start_idx: i32 = self.module_index_by_path.get(self.current_module_path).unwrap()
+        let start_idx: i32 = self.module_index_by_path.get(with_str_clone_ref(self.current_module_path)).unwrap()
         let target_idx: i32 = self.module_index_by_path.get(target_path).unwrap()
         let seen: HashMap[i32, i32] = sema_new_map_i32_i32()
         let stack: Vec[i32] = Vec.new()
@@ -2687,14 +2687,14 @@ impl Sema:
             return 1
         if target_path == self.current_module_path:
             return 1
-        if not self.module_index_by_path.contains(self.current_module_path):
+        if not self.module_index_by_path.contains(with_str_clone_ref(self.current_module_path)):
             return 1
         if not self.module_index_by_path.contains(target_path):
             return 1
         let cache_key = sema_visibility_cache_key(self.current_module_path, target_path)
         if self.module_visibility_cache.contains(cache_key):
             return self.module_visibility_cache.get(cache_key).unwrap()
-        let start_idx: i32 = self.module_index_by_path.get(self.current_module_path).unwrap()
+        let start_idx: i32 = self.module_index_by_path.get(with_str_clone_ref(self.current_module_path)).unwrap()
         let target_idx: i32 = self.module_index_by_path.get(target_path).unwrap()
         if start_idx == target_idx:
             self.module_visibility_cache.insert(sema_owned_text(cache_key), 1)
