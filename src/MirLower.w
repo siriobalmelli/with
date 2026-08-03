@@ -9570,6 +9570,24 @@ impl MirBuilder:
             return pipeline_ret.unwrap()
         self.expr_type(node)
 
+    // D22: an observer intrinsic's probe argument (HashMap/HashSet get and
+    // contains key, Vec.contains element) is read transiently by the runtime;
+    // the caller keeps ownership. A &K argument reads the same header through
+    // one deref. An owned argument shares its place bitwise (OK_COPY, never
+    // consumed); an rvalue lowers through lower_expr_place, which registers a
+    // statement temp so the temporary still drops exactly once.
+    mut fn lower_observer_probe_arg(arg_node: i32) -> i32:
+        let arg_ty = self.expr_type(arg_node)
+        let resolved = if arg_ty != 0: self.sema.resolve_alias(arg_ty as TypeId) else: 0
+        if self.sema.get_type_kind(resolved) == TypeKind.TY_REF:
+            let ref_op = self.lower_expr(arg_node)
+            let ref_place = self.materialize_operand(ref_op, resolved as i32, self.ast.get_start(arg_node))
+            return self.body.new_operand(OperandKind.OK_COPY, self.new_deref_place(ref_place))
+        let place = self.lower_expr_place(arg_node)
+        if self.place_type_is_str(place) != 0:
+            self.mark_string_place_copied(place)
+        self.body.new_operand(OperandKind.OK_COPY, place)
+
     mut fn lower_intrinsic_call(intrinsic: MirIntrinsic, self_expr: i32, method_sym: i32, arg_start: i32, arg_count: i32, node: i32) -> i32:
         // Emit a call terminator with a ConstKind.CK_FN operand and intrinsic tag.
         // The ConstKind.CK_FN sym is meaningless — codegen dispatches by intrinsic kind.
@@ -9615,6 +9633,13 @@ impl MirBuilder:
                 call_args.push(recv_op)
         for i in 0..arg_count:
             let arg_node = self.ast.get_extra(arg_start + i)
+            // D22: get/contains observe their key/probe argument — the runtime
+            // reads it transiently and the caller keeps ownership. Never lower
+            // it as a consuming move (#747: a moved str key was blanked after
+            // the first lookup, so every later use of the key read empty).
+            if i == 0 and (intrinsic == MirIntrinsic.MAP_GET or intrinsic == MirIntrinsic.MAP_CONTAINS or intrinsic == MirIntrinsic.VEC_CONTAINS):
+                call_args.push(self.lower_observer_probe_arg(arg_node))
+                continue
             let arg_op = self.lower_method_arg_with_expected(recv_type_for_args, method_sym, arg_node, i)
             self.consume_moved_operand(arg_op)
             call_args.push(arg_op)

@@ -19892,14 +19892,26 @@ impl Sema:
                         let split_index_ty = self.ty_i64 as i32
                         let _ = self.check_builtin_method_call_arg(mc_call_name, 0, split_index_ty, split_arg_ty, self.ast.get_extra(extra_start))
             else if type_name_sym == self.syms.vec and field == self.syms.contains:
-                // Vec.contains(value: T) — arg[0] must be T
+                // D22: Vec.contains(value: &T) observes — arg[0] is &T; an
+                // owned argument auto-refs at the call site.
                 if arg_count >= 1:
                     let elem_ty = self.get_generic_inst_arg(recv_type, 0)
                     let a0_ty = arg_types.get(0)
                     if elem_ty != 0 and a0_ty != 0:
-                        let _ = self.check_builtin_method_call_arg(mc_call_name, 0, elem_ty, a0_ty, self.ast.get_extra(extra_start))
-            else if type_name_sym == self.syms.hashmap and (field == self.syms.get or field == self.syms.contains or field == self.syms.remove):
-                // HashMap.get/contains/remove(key: K) — arg[0] must be K
+                        let elem_ref_ty = self.ensure_exact_type(TypeKind.TY_REF, elem_ty, 0, 0) as i32
+                        let _ = self.check_builtin_method_call_arg(mc_call_name, 0, elem_ref_ty, a0_ty, self.ast.get_extra(extra_start))
+            else if type_name_sym == self.syms.hashmap and (field == self.syms.get or field == self.syms.contains):
+                // D22: HashMap.get/contains(key: &K) observe — arg[0] is &K;
+                // an owned argument auto-refs at the call site.
+                if arg_count >= 1:
+                    let key_ty = self.get_generic_inst_arg(recv_type, 0)
+                    let a0_ty = arg_types.get(0)
+                    if key_ty != 0 and a0_ty != 0:
+                        let key_ref_ty = self.ensure_exact_type(TypeKind.TY_REF, key_ty, 0, 0) as i32
+                        let _ = self.check_builtin_method_call_arg(mc_call_name, 0, key_ref_ty, a0_ty, self.ast.get_extra(extra_start))
+            else if type_name_sym == self.syms.hashmap and field == self.syms.remove:
+                // D22: remove(key: K) is the ownership-transfer operation —
+                // arg[0] stays owned K.
                 if arg_count >= 1:
                     let key_ty = self.get_generic_inst_arg(recv_type, 0)
                     let a0_ty = arg_types.get(0)
