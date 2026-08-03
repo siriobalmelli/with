@@ -36,6 +36,7 @@ use ReceiverMigration
 
 extern fn with_arg_count() -> i32
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_arg_at(idx: i32) -> str
 extern fn with_fs_write_file(path: str, data: str) -> i32
 extern fn with_fs_mkdir_p(path: str) -> i32
@@ -2363,7 +2364,7 @@ fn run_run_project_command(selected_target_hint: &str, opt_level: i32, no_std: b
     if not graph.ok:
         with_eprint("error: " ++ graph.error_msg)
         return 1
-    var selected_target_name = selected_target_hint
+    var selected_target_name = with_str_clone_ref(selected_target_hint)
     if selected_target_name.len() == 0:
         selected_target_name = graph.default_target
     if selected_target_name.len() == 0:
@@ -2927,7 +2928,7 @@ fn test_directives_have_run_expectations(directives: &TestDirectives) -> bool:
     directives.has_expect_exit or directives.expect_stdout.len() > 0 or directives.expect_stderr.len() > 0
 
 fn test_append_extra_args(argv: &str, extra_args: &str) -> str:
-    var out = argv
+    var out = with_str_clone_ref(argv)
     var start = 0
     var i = 0
     while i <= extra_args.len() as i32:

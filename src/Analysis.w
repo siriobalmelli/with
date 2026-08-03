@@ -9,6 +9,8 @@ use InternPool
 use Mir
 use Sema
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 pub type CompilerAnalysisResult {
     text: str,
     status: i32,
@@ -412,7 +414,7 @@ fn analysis_ast_child_role(sema: &Sema, node: i32, child_index: i32) -> str:
 fn analysis_node_subject(sema: &Sema, node: i32, fallback_path: &str, fallback_source: &str) -> Vec[str]:
     let result: Vec[str] = Vec.new()
     var path = fallback_path
-    var source = fallback_source
+    var source = with_str_clone_ref(fallback_source)
     for i in 0..sema.diags.items.len() as i32:
         let diag = &sema.diags.items[i as i64]
         if diag.origin_node != node:
@@ -1715,7 +1717,7 @@ fn analysis_explain_effect_chain(sema: &Sema, sig: i32, pi: i32, bit_idx: i32, s
     out ++ "    (chain depth limit reached)\n"
 
 fn analysis_explain_effect(sema: &Sema, target: &str, source_path: &str) -> str:
-    var fn_name = target
+    var fn_name = with_str_clone_ref(target)
     var want_pi = 0 - 1
     let colon = analysis_find_from(target, ":", 0)
     if colon >= 0:

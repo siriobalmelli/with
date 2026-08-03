@@ -18,6 +18,7 @@ use std.string.StringBuilder
 
 extern fn with_eprint(s: str) -> Unit
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_fs_read_file(path: str) -> str
 extern fn with_fs_file_exists(path: str) -> i32
 extern fn with_fs_is_dir(path: str) -> i32
@@ -3966,7 +3967,7 @@ fn comptime_workspace_compile_invalid() -> ComptimeWorkspaceCompileResult:
     comptime_workspace_compile_result(comptime_value_invalid(), move messages)
 
 fn comptime_module_name_for_path(root: &str, path: &str) -> str:
-    var rel = path
+    var rel = with_str_clone_ref(path)
     let prefix = if root.ends_with("/"): root else: root ++ "/"
     if root.len() > 0 and path.starts_with(prefix):
         rel = path.slice(prefix.len(), path.len())
@@ -4647,7 +4648,8 @@ fn comptime_execute_workspace_compile_plan(plan: &ComptimeWorkspaceCompilePlan) 
         return comptime_workspace_native_compile_invalid()
     if plan.is_migrate != 0:
         let rc = comptime_execute_workspace_migrate_plan(plan)
-        return comptime_workspace_native_compile_result(rc, if rc == 0: plan.final_output else: "", Compilation.init(), 1)
+        let migrate_artifact = if rc == 0: with_str_clone_ref(plan.final_output) else: ""
+        return comptime_workspace_native_compile_result(rc, migrate_artifact, Compilation.init(), 1)
     var comp = Compilation.init()
     comp.configure(plan.opt_level, plan.no_std, plan.alloc_mode, plan.runtime_available)
     comp.set_overflow_mode(plan.overflow_mode)

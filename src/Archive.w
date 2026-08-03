@@ -4,6 +4,7 @@ extern fn with_fs_read_file(path: str) -> str
 extern fn with_fs_write_file(path: str, data: str) -> i32
 extern fn with_eprint(s: str) -> Unit
 extern fn str_from_byte(b: i32) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 fn ar_u32_le(v: i32) -> str:
     str_from_byte(v & 0xFF) ++ str_from_byte((v >> 8) & 0xFF) ++ str_from_byte((v >> 16) & 0xFF) ++ str_from_byte((v >> 24) & 0xFF)
@@ -39,7 +40,7 @@ fn ar_basename(path: &str) -> str:
     path
 
 fn ar_pad_right(s: &str, width: i32, pad_byte: i32) -> str:
-    var out = s
+    var out = with_str_clone_ref(s)
     while out.len() < width as i64:
         out = out ++ str_from_byte(pad_byte)
     out

@@ -2,6 +2,8 @@ use Resolve
 use compiler.Runtime
 use Overflow
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 type ProjectConfig {
     root_dir: str,
     manifest_path: str,
@@ -702,7 +704,7 @@ fn project_config_is_absolute_path(path: &str) -> bool:
     path.len() > 0 and path.byte_at(0) == 47
 
 fn project_config_normalize_absolute_path(path: &str) -> str:
-    var out = path
+    var out = with_str_clone_ref(path)
     while out.len() > 1 and out.ends_with("/"):
         out = out.slice(0, out.len() - 1)
     while out == "/." or out.ends_with("/."):

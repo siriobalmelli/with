@@ -14,6 +14,8 @@ use CImport
 use render
 use compiler.EmbeddedStdlib
 use compiler.EmbeddedClangResource
+
+extern fn with_str_clone_ref(s: &str) -> str
 use compiler.ProjectConfig
 use compiler.Runtime
 use compiler.TrackedInputs
@@ -999,7 +1001,7 @@ fn c_import_render_header_spec(spec_raw: &str) -> str:
     "#include <" ++ spec ++ ">"
 
 fn c_import_macro_decl(line: &str) -> str:
-    var rest = line
+    var rest = with_str_clone_ref(line)
     if c_import_starts_with(rest, "#define"):
         rest = c_import_trim(rest.slice(7, rest.len()))
     else:
@@ -1032,7 +1034,7 @@ fn c_import_macro_decl(line: &str) -> str:
     ""
 
 fn c_import_define_name(line: &str) -> str:
-    var rest = line
+    var rest = with_str_clone_ref(line)
     if c_import_starts_with(rest, "#define"):
         rest = c_import_trim(rest.slice(7, rest.len()))
     else:
@@ -1697,7 +1699,8 @@ impl Zcu:
             if already:
                 continue
             let embedded_rel = embedded_std_rel_path(mod.path)
-            let text = frontend_normalize_source_text(if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: runtime_read_file(mod.path))
+            let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: runtime_read_file(mod.path)
+            let text = frontend_normalize_source_text(raw_text)
             if text.len() > 0:
                 self.add_source_text_mapping(mod.file_id, mod.path, text)
 
@@ -2349,7 +2352,8 @@ impl Zcu:
 
     mut fn parse_imported_file_frontend(path: &str, target_pool: AstPool) -> AstPool:
         let embedded_rel = embedded_std_rel_path(path)
-        let text = frontend_normalize_source_text(if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: runtime_read_file(path))
+        let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: runtime_read_file(path)
+        let text = frontend_normalize_source_text(raw_text)
         if text.len() == 0:
             return target_pool
 

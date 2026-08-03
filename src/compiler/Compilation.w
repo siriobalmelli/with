@@ -25,6 +25,7 @@ use Analysis
 
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
+extern fn with_str_clone_ref(s: &str) -> str
 
 fn profile_enabled() -> bool:
     runtime_getenv("WITH_PROFILE").len() > 0
@@ -1130,7 +1131,7 @@ impl Compilation:
             return ""
         let typed_pool: AstPool = self.active_pool(prepared_pool)
 
-        var final_output = output_path
+        var final_output = with_str_clone_ref(output_path)
         if final_output.len() == 0:
             final_output = link_stage_output_path_for_source(source_path) ++ ".c"
         if not compilation_ensure_output_dir(link_stage_dirname(final_output)):

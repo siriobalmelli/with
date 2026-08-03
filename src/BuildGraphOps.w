@@ -7,6 +7,8 @@ use BuildGraphModel
 use BuildGraphSupport
 use BuildGraphRuntime
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 fn build_graph_target_input_path(root: &str, target: &BuildGraphTarget, index: i32) -> str:
     if index == 0:
         if target.entry.len() == 0:
@@ -110,7 +112,7 @@ pub fn build_graph_write_response_file(root: &str, target: &BuildGraphTarget) ->
     0
 
 fn build_graph_append_common_compile_args(root: &str, target: &BuildGraphTarget, argv_blob: &str) -> str:
-    var out = argv_blob
+    var out = with_str_clone_ref(argv_blob)
     for ii in 0..target.include_paths.len() as i32:
         out = build_graph_argv_append(out, "-I" ++ build_graph_resolve_project_path(root, target.include_paths.get(ii as i64)))
     for di in 0..target.defines.len() as i32:

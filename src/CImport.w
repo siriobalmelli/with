@@ -13,6 +13,7 @@ use compiler.EmbeddedClangResource
 use std.string.StringBuilder
 
 extern fn with_parse_float(s: str) -> f64
+extern fn with_str_clone_ref(s: &str) -> str
 
 var g_ci_realpath_cache_paths: Vec[str] = Vec.new()
 var g_ci_realpath_cache_values: Vec[str] = Vec.new()
@@ -437,7 +438,7 @@ fn ci_record_omitted_symbol_cat(name: &str, location: &str, category: &str, reas
 // If `reason` names an already-omitted symbol, append the originating
 // reason chain (§16.2 dependent bindings carry the same reason chain).
 fn ci_omitted_chain_reason(reason: &str) -> str:
-    var out = reason
+    var out = with_str_clone_ref(reason)
     for i in 0..g_cimport_omitted_symbol_names.len() as i32:
         let dep = g_cimport_omitted_symbol_names.get(i as i64)
         if dep.len() > 0 and ci_str_contains(reason, dep):
@@ -1303,7 +1304,7 @@ fn ci_has_demoted_field(session: i64, idx: i32, demoted: &str) -> bool:
 // pointer is an unmodeled callback contract — emit it as `unsafe` so calling
 // the slot honestly requires an unsafe context. Value-only signatures stay safe.
 fn ci_unsafe_fn_ptr_type(t: &str) -> str:
-    var normalized = t
+    var normalized = with_str_clone_ref(t)
     if (ci_starts_with(normalized, "unsafe extern \"C\" fn(") or ci_starts_with(normalized, "extern \"C\" fn(") or ci_starts_with(normalized, "fn(")) and normalized.ends_with("-> void"):
         normalized = normalized.slice(0, normalized.len() - 4) ++ "Unit"
     if ci_starts_with(normalized, "unsafe "):
@@ -3520,7 +3521,7 @@ fn ci_scan_ident(s: &str) -> i32:
 
 // Translate postfix chain: .field, ->field, [expr]
 fn ci_translate_postfix(base: &str, rest: &str, params: &str, known: &str) -> str:
-    var result = base
+    var result = with_str_clone_ref(base)
     var pos = 0
     let slen = rest.len() as i32
     while pos < slen:
@@ -11666,7 +11667,7 @@ fn ci_strip_int_suffix(s: &str) -> str:
     s.slice(0, end as i64)
 
 fn ci_strip_parens(s: &str) -> str:
-    var result = s
+    var result = with_str_clone_ref(s)
     while result.len() >= 2 and result.byte_at(0) == 40 and result.byte_at(result.len() - 1) == 41:
         // Verify the outer parens actually match (not just first/last chars)
         let match_pos = ci_find_matching_paren(result, 0)

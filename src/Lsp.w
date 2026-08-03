@@ -22,6 +22,7 @@ extern fn with_free(ptr: *mut u8) -> Unit
 
 extern fn with_eprint(s: str) -> Unit
 extern fn with_read_line_stdin() -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_read_bytes_stdin(count: i32) -> str
 extern fn with_write_stdout(s: str) -> Unit
 extern fn with_flush_stdout() -> Unit
@@ -748,8 +749,8 @@ fn LspState.definition(mut self: LspState, id: i32, uri: &str, text: &str, line:
                 let name = slow_intern.resolve(slow_pool.get_data0(decl))
                 if name == token_text:
                     let ds = slow_pool.get_start(decl)
-                    var def_uri = uri
-                    var def_text = text
+                    var def_uri = with_str_clone_ref(uri)
+                    var def_text = with_str_clone_ref(text)
                     if di < slow_paths.len() as i32:
                         let decl_path = slow_paths.get(di as i64)
                         if decl_path.len() > 0 and decl_path != uri_to_path(uri):
@@ -1257,7 +1258,7 @@ fn LspState.completion(mut self: LspState, id: i32, uri: &str, text: &str, line:
     lsp_write_response(jrpc_result(id, jobj_start() ++ jkv_raw("items", items) ++ jobj_end()))
 
 fn lsp_append_csv_items(items: &str, csv: &str, kind: i32, first: bool) -> str:
-    var result = items
+    var result = with_str_clone_ref(items)
     var f = first
     var start = 0
     for i in 0..csv.len() as i32:

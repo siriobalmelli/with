@@ -6,6 +6,8 @@ use BuildGraphRuntime
 use BuildGraphSupport
 use BuildGraphCache
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 type BuildGraphExternalTestJob {
     test_path: str,
     stdout_path: str,
@@ -47,7 +49,7 @@ pub fn build_graph_test_compiler(root: &str, target: &BuildGraphTarget) -> str:
     ""
 
 fn build_graph_append_test_args(argv: &str, target: &BuildGraphTarget) -> str:
-    var out = argv
+    var out = with_str_clone_ref(argv)
     for ai in 0..target.args.len() as i32:
         let arg = target.args.get(ai as i64)
         if build_graph_test_compiler_arg(arg).len() == 0:

@@ -17,6 +17,7 @@ use std.string.StringBuilder
 extern fn with_fs_read_file(path: str) -> str
 extern fn with_write(s: str) -> Unit
 extern fn with_getenv_str(name: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 fn resolve_owned_text(text: &str) -> str:
     if text.len() == 0:
@@ -204,7 +205,8 @@ fn resolve_from_root_pool_with_prefix(root_path: &str, root_text: &str, root_fil
         else:
             let path = state.module_paths.get(work as i64)
             let embedded_rel = embedded_std_rel_path(path)
-            let text = resolve_normalize_source_text(if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: with_fs_read_file(path))
+            let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: with_fs_read_file(path)
+            let text = resolve_normalize_source_text(raw_text)
             if text.len() == 0:
                 state.emit_import_error(work, "failed to read imported module")
                 state.module_processed.set_i32(work as i64, 1)
@@ -1120,7 +1122,7 @@ fn resolve_file_exists(path: &str) -> bool:
     with_fs_read_file(path).len() > 0
 
 fn resolve_parent_lib_candidate(module_dir: &str, rel_path: &str) -> str:
-    var cur = module_dir
+    var cur = with_str_clone_ref(module_dir)
     while true:
         let lib_dir = resolve_join(cur, "lib")
         let cand = resolve_join(lib_dir, rel_path)
@@ -1207,7 +1209,7 @@ fn resolve_normalize_path(path: &str) -> str:
 pub fn resolve_canonical_module_key(path: &str) -> str:
     if path.len() == 0 or path.starts_with("<"):
         return path
-    var p = path
+    var p = with_str_clone_ref(path)
     if p[0] != 47:
         let cwd = with_getenv_str("PWD")
         if cwd.len() > 0:
@@ -1245,7 +1247,7 @@ pub fn resolve_canonical_module_key(path: &str) -> str:
     out
 
 fn resolve_find_project_root(start_dir: &str) -> str:
-    var cur = start_dir
+    var cur = with_str_clone_ref(start_dir)
     while true:
         let build_file = resolve_join(cur, "build.zig")
         if resolve_file_exists(build_file):

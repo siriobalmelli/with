@@ -5,6 +5,8 @@ use BuildGraphModel
 use BuildGraphRuntime
 use compiler.Runtime
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 pub fn build_graph_output_path(root: &str, target: &BuildGraphTarget, output_path: &str, target_count: i32) -> str:
     if output_path.len() > 0:
         if target_count != 1:
@@ -89,7 +91,7 @@ pub fn build_graph_single_star_pattern_matches(pattern: &str, name: &str) -> boo
     true
 
 pub fn build_graph_path_for_child_process(root: &str, path: &str) -> str:
-    var normalized_root = root
+    var normalized_root = with_str_clone_ref(root)
     while normalized_root.len() > 1 and normalized_root.ends_with("/"):
         normalized_root = normalized_root.slice(0, normalized_root.len() - 1)
     if normalized_root.ends_with("/."):

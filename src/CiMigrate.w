@@ -15,6 +15,7 @@ use std.string.StringBuilder
 extern fn with_write_stdout(s: str) -> Unit
 extern fn with_flush_stdout() -> Unit
 extern fn with_fs_list_files(path: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 // Width-slice mode: when > 0, skip declarations belonging to
 // non-target PCRE2 width families during migration.
@@ -297,7 +298,7 @@ fn ci_migrate_shared_module_prefix() -> str:
     g_migrate_shared_defs_prefix
 
 fn ci_migrate_source_module_suffix(path: &str) -> str:
-    var rel = path
+    var rel = with_str_clone_ref(path)
     if g_migrate_directory_input_dir.len() > 0 and ci_starts_with(path, g_migrate_directory_input_dir):
         rel = path.slice(g_migrate_directory_input_dir.len(), path.len())
     while rel.len() > 0 and rel.byte_at(0) == 47:
