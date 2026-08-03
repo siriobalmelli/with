@@ -7,6 +7,8 @@
 use Token
 use Span
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 // Named character constants for readability.
 enum CharCode: i32:
     Newline = 10
@@ -78,7 +80,7 @@ pub type Lexer {
 }
 
 fn Lexer.init(source: &str, file_id: i32) -> Lexer:
-    Lexer { source, pos: 0, file_id, token_start: 0, emit_comments: 0, last_sig_tag: -1 }
+    Lexer { source: with_str_clone_ref(source), pos: 0, file_id, token_start: 0, emit_comments: 0, last_sig_tag: -1 }
 
 // Tokenize the entire source, returning a token list ending with EOF.
 impl Lexer:

@@ -204,8 +204,8 @@ pub fn codegen_units_emit_generated_all(unit_bc_paths: &Vec[str], obj_path: &str
     var ji = 0
     while ji < unit_count:
         jobs.push(CodegenUnitEmitJob {
-            bc_path: unit_bc_paths.get(ji as i64),
-            obj_path,
+            bc_path: with_str_clone_ref(unit_bc_paths.get(ji as i64)),
+            obj_path: with_str_clone_ref(obj_path),
             opt_level,
             unit_index: ji,
             do_profile: if do_profile: 1 else: 0,

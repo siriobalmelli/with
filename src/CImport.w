@@ -5318,7 +5318,7 @@ fn CiScope.new(return_type: &str) -> CiScope:
             type_log_keys: Vec.new(),
             type_log_values: Vec.new(),
             type_log_had: Vec.new(),
-            return_type,
+            return_type: with_str_clone_ref(return_type),
         }
     CiScope { ptr }
 

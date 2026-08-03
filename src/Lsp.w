@@ -447,7 +447,7 @@ type LspDocument {
 
 fn LspDocument.new(uri: &str, path: &str, text: &str, version: i32) -> LspDocument:
     LspDocument {
-        uri, path, text, version,
+        uri: with_str_clone_ref(uri), path: with_str_clone_ref(path), text: with_str_clone_ref(text), version,
         fast_pool: AstPool.new(),
         fast_intern: InternPool.init(),
         fast_text_len: 0,
@@ -1952,7 +1952,9 @@ fn run_lsp() -> i32:
             if idx >= 0:
                 // Re-analyze on save (slow tier refreshes cross-file data)
                 state.ensure_doc_analyzed(idx)
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.publish_diagnostics(uri, doc_text)
 
         else if method == "textDocument/hover":
@@ -1962,7 +1964,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.hover(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
@@ -1974,7 +1978,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.definition(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
@@ -1983,7 +1989,9 @@ fn run_lsp() -> i32:
             let uri = lsp_extract_uri(msg, tokens, params_idx)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 let formatted = format_source(doc_text)
                 if formatted != doc_text:
                     let el = lsp_offset_to_line(doc_text, doc_text.len() as i32)
@@ -2001,7 +2009,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.completion(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result(id, jobj_start() ++ jkv_raw("items", "[]") ++ jobj_end()))
@@ -2013,7 +2023,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.signature_help(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
@@ -2025,7 +2037,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.find_references(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result(id, "[]"))
@@ -2034,7 +2048,9 @@ fn run_lsp() -> i32:
             let uri = lsp_extract_uri(msg, tokens, params_idx)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.document_symbols(id, uri, doc_text)
             else:
                 lsp_write_response(jrpc_result(id, "[]"))
@@ -2047,7 +2063,9 @@ fn run_lsp() -> i32:
             let new_name = json_tok_str(msg, tokens, json_find(msg, tokens, params_idx, "newName"))
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.rename(id, uri, doc_text, line, character, new_name)
             else:
                 lsp_write_response(jrpc_result_null(id))

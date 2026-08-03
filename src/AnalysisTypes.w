@@ -196,9 +196,9 @@ impl AnalysisFact:
             end: self.end,
             line: self.line,
             column: self.column,
-            path: copy self.path,
-            name: copy self.name,
-            detail: copy self.detail,
+            path: with_str_clone_ref(self.path),
+            name: with_str_clone_ref(self.name),
+            detail: with_str_clone_ref(self.detail),
         }
 
 impl AnalysisReport:

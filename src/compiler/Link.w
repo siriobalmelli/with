@@ -321,7 +321,7 @@ fn link_stage_make_link_command(linker: &str, obj_path: &str, bin_path: &str, ex
     if runtime_sysinfo_os() == "Linux":
         args.push("-lm")
     let cleanup_files = link_stage_collect_cleanup_files(extras)
-    LinkStageCommand { linker, args, cwd: "", env, inputs, outputs, cleanup_files }
+    LinkStageCommand { linker: with_str_clone_ref(linker), args, cwd: "", env, inputs, outputs, cleanup_files }
 
 fn link_stage_file_exists(path: &str) -> bool:
     runtime_file_exists(path) != 0

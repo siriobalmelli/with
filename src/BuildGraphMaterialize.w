@@ -65,9 +65,9 @@ impl BuildGraphMaterializer:
 fn build_graph_materialized_target(kind: i32, name: &str, entry: &str, target_kind: i32, optimize_mode: i32, output: &str) -> BuildGraphTarget:
     BuildGraphTarget {
         kind,
-        name,
-        entry,
-        output,
+        name: with_str_clone_ref(name),
+        entry: with_str_clone_ref(entry),
+        output: with_str_clone_ref(output),
         target_kind,
         optimize_mode,
         system_libs: Vec.new(),

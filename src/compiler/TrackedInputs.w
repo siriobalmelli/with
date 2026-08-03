@@ -9,10 +9,10 @@ pub type TrackedReadResult {
 }
 
 fn tracked_read_ok(path: &str, contents: &str) -> TrackedReadResult:
-    TrackedReadResult { true, path, contents, "" }
+    TrackedReadResult { true, with_str_clone_ref(path), with_str_clone_ref(contents), "" }
 
 fn tracked_read_error(path: &str, msg: &str) -> TrackedReadResult:
-    TrackedReadResult { false, path, "", msg }
+    TrackedReadResult { false, with_str_clone_ref(path), "", with_str_clone_ref(msg) }
 
 pub fn tracked_input_str_compare(a: &str, b: &str) -> i32:
     let min_len = if a.len() < b.len(): a.len() else: b.len()

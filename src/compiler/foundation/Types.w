@@ -44,7 +44,7 @@ pub fn type_key_invalid -> TypeKey:
 pub fn type_key_named(name: &str) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_NAMED(),
-        name,
+        name: with_str_clone_ref(name),
         arg0: 0,
         arg1: 0,
         flags: 0,

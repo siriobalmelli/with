@@ -500,7 +500,7 @@ fn analysis_collect_signatures(report: &AnalysisReport, sema: &Sema, source_path
         sig.index = sema.sig_get_param_count(si)
         sig.flags = if sema.sig_variadic.get(si as i64) != 0: 1 else: 0
         sig.path = analysis_sig_path(sema, sym, source_path)
-        sig.name = name
+        sig.name = with_str_clone_ref(name)
         sig.detail = f"params={sig.index} return={sig.type_id} variadic={sig.flags}"
         report.add(sig.owned_copy())
 
@@ -758,7 +758,7 @@ fn analysis_collect_mir_call(report: &AnalysisReport, mir_mod: &MirModule, body:
     call.symbol = mono
     call.index = count
     call.flags = (if required: 1 else: 0) | ((intrinsic as i32) << 8)
-    call.name = name
+    call.name = with_str_clone_ref(name)
     call.detail = f"sig={sig} mono={mono} args={count} required={required} intrinsic={intrinsic as i32}"
     let caller_path = analysis_sig_path(sema, body.fn_sym, source_path)
     let caller_source = analysis_source_for_path(sema, caller_path, source_text)

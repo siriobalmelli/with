@@ -927,8 +927,8 @@ impl Compilation:
             return compilation_binary_link_plan_fail()
         CompilationBinaryLinkPlan {
             ok: true,
-            obj_path,
-            bin_path,
+            obj_path: with_str_clone_ref(obj_path),
+            bin_path: with_str_clone_ref(bin_path),
             command: link_plan.command,
         }
 

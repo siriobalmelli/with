@@ -342,13 +342,13 @@ fn lock_entry_from_installed_c_dep(project_root: &str, name: &str, version: &str
     let package_rev = lock_json_extract_string(meta, "package_revision")
     let dep_name = "c." ++ name
     if recipe_rev == "system" and package_id == "system" and package_rev == "system":
-        return LockEntry { name: dep_name, source: "system", version, recipe_rev: "", package_id: "", package_rev: "", sha256: "" }
+        return LockEntry { name: dep_name, source: "system", version: with_str_clone_ref(version), recipe_rev: "", package_id: "", package_rev: "", sha256: "" }
     let tgz_path = dep_dir ++ "/conan_package.tgz"
     let digest = lock_sha256_file(tgz_path)
     if digest.len() == 0:
         runtime_eprint("error: cannot lock c." ++ name ++ "@" ++ version ++ ": missing fetched archive " ++ tgz_path)
         return LockEntry { name: "", source: "", version: "", recipe_rev: "", package_id: "", package_rev: "", sha256: "" }
-    LockEntry { name: dep_name, source: "conan", version, recipe_rev, package_id, package_rev, sha256: digest }
+    LockEntry { name: dep_name, source: "conan", version: with_str_clone_ref(version), recipe_rev, package_id, package_rev, sha256: digest }
 
 // The dedup memo travels WITH the lock through the recursion: sibling
 // subtrees must see each other's visits, and an owned Vec parameter is

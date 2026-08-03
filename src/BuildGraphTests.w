@@ -91,7 +91,7 @@ fn build_graph_external_test_argv(root: &str, target: &BuildGraphTarget, compile
     argv
 
 fn build_graph_external_test_job_new(test_path: &str, stdout_path: &str, stderr_path: &str, pid: i32) -> BuildGraphExternalTestJob:
-    BuildGraphExternalTestJob { test_path, stdout_path, stderr_path, pid }
+    BuildGraphExternalTestJob { test_path: with_str_clone_ref(test_path), stdout_path: with_str_clone_ref(stdout_path), stderr_path: with_str_clone_ref(stderr_path), pid }
 
 pub fn build_graph_run_external_test_file(root: &str, target: &BuildGraphTarget, compiler_path: &str, test_path: &str) -> i32:
     let capture_dir = resolve_join(resolve_join(root, "out/test-graph"), target.name)
@@ -189,7 +189,7 @@ pub fn build_graph_run_external_test_files(root: &str, target: &BuildGraphTarget
             pass_keys.push(with_str_clone_ref(active_keys.get(oldest as i64)))
             pass_paths.push(build_cache_project_relative_path(root, job_path))
         else:
-            failed_paths.push(job_path)
+            failed_paths.push(with_str_clone_ref(job_path))
             if first_failure == 0:
                 first_failure = rc
         oldest = oldest + 1

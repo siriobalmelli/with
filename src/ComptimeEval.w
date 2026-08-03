@@ -1137,9 +1137,9 @@ fn comptime_capability_record(kind: i32, package_name: &str, package_version: &s
     ComptimeCapabilityRecord {
         kind,
         generation: 0,
-        package_name,
-        package_version,
-        project_root,
+        package_name: with_str_clone_ref(package_name),
+        package_version: with_str_clone_ref(package_version),
+        project_root: with_str_clone_ref(project_root),
         workspace_id: -1,
         target_name: "",
         inputs: Vec.new(),
@@ -1409,7 +1409,7 @@ impl CppCursor:
     mut fn next_bool() -> bool: self.next_int() != 0
 
 unsafe fn comptime_plan_deserialize(plan_out: *mut ComptimeWorkspaceCompilePlan, text: &str) -> i32:
-    var c = CppCursor { text, pos: 0, ok: 1 }
+    var c = CppCursor { text: with_str_clone_ref(text), pos: 0, ok: 1 }
     let valid = c.next_int()
     let name = c.next_str()
     let is_migrate = c.next_int()
@@ -1531,11 +1531,11 @@ fn comptime_action_capability_record(package_name: &str, package_version: &str, 
     ComptimeCapabilityRecord {
         kind: CapabilityKind.CK_BUILD_ACTION_CTX,
         generation: 0,
-        package_name,
-        package_version,
-        project_root,
+        package_name: with_str_clone_ref(package_name),
+        package_version: with_str_clone_ref(package_version),
+        project_root: with_str_clone_ref(project_root),
         workspace_id: -1,
-        target_name,
+        target_name: with_str_clone_ref(target_name),
         inputs,
         outputs: comptime_action_outputs(output, extra_outputs),
         args,
@@ -1543,7 +1543,7 @@ fn comptime_action_capability_record(package_name: &str, package_version: &str, 
         write_scoped: 1,
         scratch_path,
         timeout_ms,
-        cwd,
+        cwd: with_str_clone_ref(cwd),
         env,
         network,
     }
@@ -1920,7 +1920,7 @@ impl ComptimeEvaluator:
 
     mut fn new_workspace_record(name: &str, node: i32) -> ComptimeWorkspaceRecord:
         ComptimeWorkspaceRecord {
-            name,
+            name: with_str_clone_ref(name),
             files: Vec.new(),
             string_names: Vec.new(),
             string_sources: Vec.new(),
@@ -4460,13 +4460,13 @@ fn comptime_workspace_native_compile_invalid() -> ComptimeWorkspaceNativeCompile
 
 fn comptime_workspace_native_compile_result(rc: i32, artifact_path: &str, comp: Compilation, is_migrate: i32) -> ComptimeWorkspaceNativeCompileResult:
     if is_migrate != 0:
-        return ComptimeWorkspaceNativeCompileResult { rc, artifact_path, comp: null as *mut Compilation, is_migrate }
+        return ComptimeWorkspaceNativeCompileResult { rc, artifact_path: with_str_clone_ref(artifact_path), comp: null as *mut Compilation, is_migrate }
     let comp_ptr = with_alloc(sizeof[Compilation]()) as *mut Compilation
     if comp_ptr as i64 == 0:
         return ComptimeWorkspaceNativeCompileResult { rc: 1, artifact_path: "", comp: null as *mut Compilation, is_migrate }
     unsafe:
         *comp_ptr = comp
-    ComptimeWorkspaceNativeCompileResult { rc, artifact_path, comp: comp_ptr, is_migrate }
+    ComptimeWorkspaceNativeCompileResult { rc, artifact_path: with_str_clone_ref(artifact_path), comp: comp_ptr, is_migrate }
 
 fn comptime_workspace_native_compile_result_free(native: &ComptimeWorkspaceNativeCompileResult):
     if native.comp as i64 != 0:

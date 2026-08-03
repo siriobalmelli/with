@@ -1428,12 +1428,12 @@ fn build_pool_retire_oldest(pool_names: &Vec[str], pool_pids: &Vec[i32], pool_t0
     with_eprint("[time] " ++ name ++ " " ++ build_graph_time_fmt(spent))
     if rc == 124:
         with_eprint("error: build.w target '" ++ name ++ "' timed out")
-        return PoolRetireResult { rc: 124, name, spent }
+        return PoolRetireResult { rc: 124, name: with_str_clone_ref(name), spent }
     if rc != 0:
         with_eprint("error: build.w target '" ++ name ++ f"' failed with exit code {rc}")
-        return PoolRetireResult { rc, name, spent }
+        return PoolRetireResult { rc, name: with_str_clone_ref(name), spent }
     build_cache_forget_fingerprints()
-    PoolRetireResult { rc: 0, name, spent }
+    PoolRetireResult { rc: 0, name: with_str_clone_ref(name), spent }
 
 // #683: serial actions run IN-PROCESS — this driver already holds the
 // evaluated graph and sema; the former worker child recompiled build.w

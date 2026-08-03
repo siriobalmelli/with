@@ -1129,7 +1129,7 @@ fn const_string_eval_fail -> ConstStringEval:
 fn const_string_eval_ok(text: &str) -> ConstStringEval:
     ConstStringEval {
         ok: true,
-        text,
+        text: with_str_clone_ref(text),
     }
 
 impl Codegen:

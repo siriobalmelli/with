@@ -3,6 +3,7 @@
 // Root `Source` now follows the foundation implementation shape.
 
 extern fn with_fs_read_file(path: &str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_vec_push_i32(v: &Vec[i32], val: i32) -> Unit
 
 type Source {
@@ -22,8 +23,8 @@ type Location = SourceLocation
 
 fn Source.from_string(path: &str, text: &str, file_id: i32) -> Source:
     Source {
-        path,
-        text,
+        path: with_str_clone_ref(path),
+        text: with_str_clone_ref(text),
         line_offsets: source_compute_line_offsets(text),
         file_id,
     }

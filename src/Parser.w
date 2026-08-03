@@ -114,7 +114,7 @@ fn Parser.init_with_pool(tokens: TokenList, source: &str, file_id: i32, intern: 
         pool,
         intern,
         diags,
-        source,
+        source: with_str_clone_ref(source),
         file_id,
         suppress_as: 0,
         suppress_brace: 0,
