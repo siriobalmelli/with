@@ -3765,7 +3765,7 @@ fn numeric_literal_core(text: &str) -> str:
         return text.slice(0, numeric_literal_suffix_start(text, "f64") as i64)
     if suffix == LiteralSuffix.F32:
         return text.slice(0, numeric_literal_suffix_start(text, "f32") as i64)
-    text
+    with_str_clone_ref(text)
 
 fn int_literal_core_radix(core: &str) -> i32:
     if core.len() > 2 and core.byte_at(0) == 48 and (core.byte_at(1) == 120 or core.byte_at(1) == 88):

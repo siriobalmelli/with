@@ -403,7 +403,7 @@ fn ci_migrate_publicize_shared_line(line: &str) -> str:
         return with_str_clone_ref(line)
     if line.starts_with("type ") or line.starts_with("let ") or line.starts_with("var ") or line.starts_with("fn ") or line.starts_with("unsafe fn ") or line.starts_with("extern fn ") or line.starts_with("extern let ") or line.starts_with("extern var "):
         return "pub " ++ line
-    line
+    with_str_clone_ref(line)
 
 fn ci_migrate_publicize_shared_defs(text: &str) -> str:
     var out = ""

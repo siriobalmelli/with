@@ -246,7 +246,7 @@ fn compilation_relative_source_path(root: &str, path: &str) -> str:
     let prefix = if root.ends_with("/"): root else: root ++ "/"
     if path.starts_with(prefix):
         return path.slice(prefix.len(), path.len())
-    path
+    with_str_clone_ref(path)
 
 fn compilation_module_import_name(root: &str, path: &str) -> str:
     var rel = compilation_relative_source_path(root, path)

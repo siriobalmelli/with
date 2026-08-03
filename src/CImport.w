@@ -2098,7 +2098,7 @@ fn ci_pointer_type_explicit_mut(ty: &str) -> str:
         return with_str_clone_ref(ty)
     if ci_starts_with(ty, "*"):
         return "*mut " ++ ci_trim(ty.slice(1, ty.len()))
-    ty
+    with_str_clone_ref(ty)
 
 // ── Struct/Union translation ────────────────────────────────
 
@@ -9988,7 +9988,7 @@ fn ci_strip_trailing_newline(s: &str) -> str:
         return with_str_clone_ref(s)
     if s.byte_at(s.len() - 1) == 10:
         return s.slice(0, s.len() - 1)
-    s
+    with_str_clone_ref(s)
 
 // Extract (init, cond, inc, body) cursors from a CXK_FOR_STMT
 // cursor by finding the two `;` characters in the for header via
@@ -15083,7 +15083,7 @@ fn ci_coerce_init_value_for_type(value: &str, ty: &str) -> str:
             return rendered
     if ci_starts_with(ty, "*") and ci_is_string_literal(value):
         return with_str_clone_ref(value)
-    value
+    with_str_clone_ref(value)
 
 fn ci_find_fn_cursor(session: i64, name: &str) -> i32:
     let root = with_ci_root_cursor(session)

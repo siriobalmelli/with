@@ -666,7 +666,7 @@ fn project_config_resolve_c_import_header(cfg: &ProjectConfig, decl_dir: &str, h
         return "\"" ++ header_name ++ "\""
     if preserve_angle != 0:
         return "<" ++ header_name ++ ">"
-    header_spec_raw
+    with_str_clone_ref(header_spec_raw)
 
 fn project_config_resolve_header_path(cfg: &ProjectConfig, decl_dir: &str, header_name: &str) -> str:
     if header_name.len() == 0:

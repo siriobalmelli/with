@@ -48,7 +48,7 @@ fn analysis_with_node_location(fact: AnalysisFact, sema: &Sema, node: i32, sourc
 
 fn analysis_sig_path(sema: &Sema, sym: i32, fallback: &str) -> str:
     let found = sema.fn_decl_source_paths.get(sym)
-    if found.is_some(): with_str_clone_ref(found.unwrap()) else: fallback
+    if found.is_some(): with_str_clone_ref(found.unwrap()) else: with_str_clone_ref(fallback)
 
 fn analysis_decl_path(sema: &Sema, decl_index: i32, fallback: &str) -> str:
     let path = sema.decl_source_path_for_index(decl_index)
@@ -721,7 +721,7 @@ fn analysis_operand_kind_name(kind: i32) -> str:
 fn analysis_source_for_path(sema: &Sema, path: &str, fallback: &str) -> str:
     for i in 0..sema.source_text_names.len() as i32:
         if sema.source_text_names.get(i as i64) == path: return with_str_clone_ref(sema.source_texts.get(i as i64))
-    fallback
+    with_str_clone_ref(fallback)
 
 fn analysis_call_receiver_node(sema: &Sema, call_node: i32) -> i32:
     if call_node <= 0 or call_node >= sema.ast.node_count() or sema.ast.kind(call_node) != NodeKind.NK_CALL: return 0
@@ -1275,7 +1275,7 @@ fn analysis_move_site_file_name(sema: &Sema, file_id: i32, root_path: &str) -> s
     for i in 0..sema.source_text_file_ids.len() as i32:
         if sema.source_text_file_ids.get(i as i64) == file_id:
             return with_str_clone_ref(sema.source_text_names.get(i as i64))
-    root_path
+    with_str_clone_ref(root_path)
 
 fn analysis_move_site_shape(sema: &Sema, node: i32) -> str:
     var n = node
