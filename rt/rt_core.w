@@ -2026,6 +2026,13 @@ pub fn with_str_byte_at(s: str, idx: i64) -> i32:
     let p = str_data(s)
     (unsafe p[idx]) as i32
 
+// #747: slice/substr/trim/replace results are independent OWNED strs, so
+// they COPY. Returning a make_str view into the argument's buffer was
+// correct while str was Copy (nothing dropped), but under owned str the
+// argument stays with the caller (observer args) and both values drop: a
+// view at offset 0 IS the payload start, so its drop freed the caller's
+// still-owned buffer (double free), and any interior view dangled once the
+// caller's drop ran first. #748 view tokens can recover the zero-copy form.
 pub fn with_str_slice(s: str, start_arg: i64, end_arg: i64) -> str:
     let slen = str_length(s)
     var start = start_arg
@@ -2034,9 +2041,9 @@ pub fn with_str_slice(s: str, start_arg: i64, end_arg: i64) -> str:
     if end > slen: end = slen
     if start >= end:
         return make_str("" as *const u8, 0)
-    make_str((str_data(s) as i64 + start) as *const u8, end - start)
+    alloc_str((str_data(s) as i64 + start) as *const u8, end - start)
 
-// #747: slice through a BORROWED str header — same view semantics as
+// #747: slice through a BORROWED str header — same owned-copy semantics as
 // with_str_slice, callable from &str contexts (std wrappers whose text
 // params borrow). Codegen keeps emitting the consuming form; this one is
 // std-wiring only.
@@ -2050,7 +2057,7 @@ pub fn with_str_slice_ref(s: &str, start_arg: i64, end_arg: i64) -> str:
         return make_str("" as *const u8, 0)
     // BOOTSTRAP INTERIM (#747): see with_str_clone_ref.
     let data = unsafe **(&s as *const *const *const u8)
-    make_str((data as i64 + start) as *const u8, end - start)
+    alloc_str((data as i64 + start) as *const u8, end - start)
 
 pub fn with_str_substr(s: str, start_arg: i64, length_arg: i64) -> str:
     let slen = str_length(s)
@@ -2061,7 +2068,7 @@ pub fn with_str_substr(s: str, start_arg: i64, length_arg: i64) -> str:
         return make_str("" as *const u8, 0)
     if start + length > slen:
         length = slen - start
-    make_str((str_data(s) as i64 + start) as *const u8, length)
+    alloc_str((str_data(s) as i64 + start) as *const u8, length)
 
 pub fn with_str_starts_with(s: str, prefix: str) -> i32:
     let pl = str_length(prefix)
@@ -2132,13 +2139,14 @@ pub fn with_str_trim(s: str) -> str:
         if c != 32 and c != 9 and c != 10 and c != 13:
             break
         end = end - 1
-    if start == 0 and end == slen:
-        return s
-    make_str((sp as i64 + start) as *const u8, end - start)
+    if start >= end:
+        return make_str("" as *const u8, 0)
+    // #747: owned copy, never `return s`/a view (see with_str_slice).
+    alloc_str((sp as i64 + start) as *const u8, end - start)
 
 pub fn with_str_to_upper(s: str) -> str:
     let slen = str_length(s)
-    if slen == 0: return s
+    if slen == 0: return make_str("" as *const u8, 0)  // #747: never return s (alias)
     let out = rt_alloc(slen + 1)
     let sp = str_data(s)
     var i: i64 = 0
@@ -2154,7 +2162,7 @@ pub fn with_str_to_upper(s: str) -> str:
 
 pub fn with_str_to_lower(s: str) -> str:
     let slen = str_length(s)
-    if slen == 0: return s
+    if slen == 0: return make_str("" as *const u8, 0)  // #747: never return s (alias)
     let out = rt_alloc(slen + 1)
     let sp = str_data(s)
     var i: i64 = 0
@@ -2186,7 +2194,9 @@ pub fn with_str_replace(s: str, old: str, new_s: str) -> str:
     let sl = str_length(s)
     let ol = str_length(old)
     let nl = str_length(new_s)
-    if ol == 0 or sl == 0: return s
+    if sl == 0: return make_str("" as *const u8, 0)
+    // #747: the no-op paths copy, never `return s` (see with_str_slice).
+    if ol == 0: return alloc_str(str_data(s), sl)
     let sp = str_data(s)
     let op = str_data(old)
     let np = str_data(new_s)
@@ -2199,7 +2209,7 @@ pub fn with_str_replace(s: str, old: str, new_s: str) -> str:
             i = i + ol
         else:
             i = i + 1
-    if count == 0: return s
+    if count == 0: return alloc_str(sp, sl)
     let new_len = sl + count * (nl - ol)
     let out = rt_alloc(new_len + 1)
     var j: i64 = 0
@@ -3367,14 +3377,16 @@ pub fn with_flush_stdout() -> Unit:
 
 // ── String split/lines ─────────────────────────────────────────────
 
+// #747: parts are independent OWNED strs — each copies (see
+// with_str_split_vec's note).
 pub fn with_str_split(s: str, delim: str, out: *mut u8, count: *mut i64) -> Unit:
     let sl = str_length(s)
     let dl = str_length(delim)
     if sl == 0 or dl == 0:
-        if out as i64 != 0:
-            // Store s at out[0] (str is 16 bytes)
-            unsafe *(out as *mut str) = s
         if sl > 0:
+            if out as i64 != 0:
+                // Store a copy of s at out[0] (str is 16 bytes)
+                unsafe *(out as *mut str) = alloc_str(str_data(s), sl)
             unsafe *count = 1
         else:
             unsafe *count = 0
@@ -3387,7 +3399,7 @@ pub fn with_str_split(s: str, delim: str, out: *mut u8, count: *mut i64) -> Unit
     while i <= sl - dl:
         if rt_memcmp((sp as i64 + i) as *const u8, dp, dl) == 0:
             if out as i64 != 0:
-                let part = make_str((sp as i64 + start) as *const u8, i - start)
+                let part = alloc_str((sp as i64 + start) as *const u8, i - start)
                 unsafe *((out as i64 + n * 16) as *mut str) = part
             n = n + 1
             start = i + dl
@@ -3395,7 +3407,7 @@ pub fn with_str_split(s: str, delim: str, out: *mut u8, count: *mut i64) -> Unit
         else:
             i = i + 1
     if out as i64 != 0:
-        let last = make_str((sp as i64 + start) as *const u8, sl - start)
+        let last = alloc_str((sp as i64 + start) as *const u8, sl - start)
         unsafe *((out as i64 + n * 16) as *mut str) = last
     n = n + 1
     unsafe *count = n
@@ -3408,12 +3420,12 @@ pub fn with_lines_out(out: *mut u8, s: str) -> Unit:
     var i: i64 = 0
     while i < sl:
         if (unsafe sp[i]) == 10:  // '\n'
-            let line = make_str((sp as i64 + start) as *const u8, i - start)
+            let line = alloc_str((sp as i64 + start) as *const u8, i - start)
             with_vec_push(out, &line as *const u8)
             start = i + 1
         i = i + 1
     if start < sl:
-        let line = make_str((sp as i64 + start) as *const u8, sl - start)
+        let line = alloc_str((sp as i64 + start) as *const u8, sl - start)
         with_vec_push(out, &line as *const u8)
 
 pub fn with_lines(s: str) -> (*mut u8, i64, i64, i64):
@@ -3462,13 +3474,18 @@ pub fn with_str_join(parts: *mut u8, sep: str) -> str:
 pub fn with_vec_str_join(parts: *mut u8, sep: str) -> str:
     with_str_join(parts, sep)
 
+// #747: split/lines parts are independent OWNED strs, so each part copies
+// (see with_str_slice) — a view part at offset 0 double-freed the source
+// buffer when the parts vec dropped, and every part dangled after the
+// source's own drop.
 pub fn with_str_split_vec(out: *mut u8, s: str, delim: str) -> Unit:
     with_vec_new_out(out, 16)  // sizeof(str) = 16
     let sl = str_length(s)
     if sl == 0: return
     let dl = str_length(delim)
     if dl == 0:
-        with_vec_push(out, &s as *const u8)
+        let whole = alloc_str(str_data(s), sl)
+        with_vec_push(out, &whole as *const u8)
         return
     let sp = str_data(s)
     let dp = str_data(delim)
@@ -3476,13 +3493,13 @@ pub fn with_str_split_vec(out: *mut u8, s: str, delim: str) -> Unit:
     var i: i64 = 0
     while i <= sl - dl:
         if rt_memcmp((sp as i64 + i) as *const u8, dp, dl) == 0:
-            let part = make_str((sp as i64 + start) as *const u8, i - start)
+            let part = alloc_str((sp as i64 + start) as *const u8, i - start)
             with_vec_push(out, &part as *const u8)
             start = i + dl
             i = start
         else:
             i = i + 1
-    let last = make_str((sp as i64 + start) as *const u8, sl - start)
+    let last = alloc_str((sp as i64 + start) as *const u8, sl - start)
     with_vec_push(out, &last as *const u8)
 
 // ── Time ───────────────────────────────────────────────────────────
