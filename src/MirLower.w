@@ -4267,11 +4267,29 @@ impl MirBuilder:
             let table = self.body.new_switch_table(vals, targets)
             self.terminate(TermKind.TK_SWITCH_INT, lhs_read, table, end_bb, 0)
         self.switch_to(rhs_bb)
+        // #729-class (see lower_if): the RHS runs on only one path. A temp
+        // created inside it that registers into the enclosing statement frame
+        // would drop at the enclosing boundary — the join block — which the
+        // short-circuit path also reaches, freeing an uninitialized slot
+        // (#747: `guard != 0 and s != parser_active_arch()` freed stack
+        // garbage on every guard==0 iteration). Frame the RHS and flush its
+        // temps, its pending source-resets, and its move state on the RHS
+        // path, before merging.
+        let rhs_move_state = self.save_move_state()
+        let pending_reset_start = self.pending_reset_locals.len() as i32
+        let pending_reset_field_start = self.pending_reset_field_places.len() as i32
+        let pending_move_temp_start = self.pending_move_temp_locals.len() as i32
+        self.field_move_in_branch = self.field_move_in_branch + 1
+        let rhs_temp_frame = self.push_stmt_temp_frame()
         let rhs = self.lower_expr(rhs_expr)
         let rhs_rv = self.body.new_rvalue(RvalueKind.RK_USE, rhs, 0, 0)
         let result_place2 = self.place_for_local(result)
         self.body.push_stmt(self.cur_bb, StmtKind.Assign, result_place2, rhs_rv, self.ast.get_start(node))
+        self.finish_stmt_temp_frame(rhs_temp_frame)
+        self.flush_pending_resets_since(pending_reset_start, pending_reset_field_start, pending_move_temp_start)
+        self.field_move_in_branch = self.field_move_in_branch - 1
         self.terminate(TermKind.TK_GOTO, end_bb, 0, 0, 0)
+        self.restore_move_state(&rhs_move_state)
         self.switch_to(end_bb)
         self.body.new_operand(OperandKind.OK_COPY, self.place_for_local(result))
 
