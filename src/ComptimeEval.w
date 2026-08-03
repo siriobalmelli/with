@@ -1551,9 +1551,11 @@ impl ComptimeEvaluator:
     // Snapshot read of the value arena. extra_values GROWS during almost
     // every evaluation step; a `let x = extra_values.get(i)` view dangles
     // as soon as a push reallocates (stage2's map-insert loop read a freed
-    // buffer). The typed return is the owned demand — always a copy.
+    // buffer). The share copies the value struct OUT of the vec buffer
+    // (curing that dangle — str payloads live on the heap and don't move
+    // with the vec) without deep-cloning text on every field read.
     fn extra_value_at(index: i64) -> ComptimeValue:
-        comptime_value_clone(self.extra_values.get(index))
+        comptime_value_share(self.extra_values.get(index))
 
     fn cleanup_workspace_pending_links():
         for wi in 0..self.workspace_records.len() as i32:
@@ -2193,7 +2195,7 @@ impl ComptimeEvaluator:
     mut fn lookup_value(sym: i32, node: i32) -> ComptimeControl:
         let idx = self.lookup_slot_index(sym)
         if idx >= 0:
-            return comptime_control_value(comptime_value_clone(self.slot_values.get(idx as i64)))
+            return comptime_control_value(comptime_value_share(self.slot_values.get(idx as i64)))
         let decl = self.find_module_let_decl(sym)
         if decl == 0:
             return self.fail(node, "runtime value is not available at comptime")
@@ -6355,7 +6357,7 @@ impl ComptimeEvaluator:
             return comptime_control_value(comptime_value_str(""))
         let idx = self.lookup_slot_index(sym)
         if idx >= 0:
-            return comptime_control_value(comptime_value_clone(self.slot_values.get(idx as i64)))
+            return comptime_control_value(comptime_value_share(self.slot_values.get(idx as i64)))
         let decl = self.find_module_let_decl(sym)
         if decl != 0:
             if self.ast.get_data2(decl) % 2 != 0:

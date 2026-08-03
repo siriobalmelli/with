@@ -427,3 +427,13 @@ fn comptime_values_equal(lhs: &ComptimeValue, rhs: &ComptimeValue, extras: &Vec[
 // #747: explicit owned copy — ComptimeValue's text is an owned str now.
 pub fn comptime_value_clone(v: &ComptimeValue) -> ComptimeValue:
     ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: with_str_clone(v.text), extra_start: v.extra_start, extra_count: v.extra_count }
+
+// Read-path share: the evaluator hands out transient copies of stored values
+// on every identifier/field READ — deep-cloning there is quadratic on big
+// string accumulators (a source-concat build.w loop allocated 64 GiB in
+// seconds) and the store sites already clone. The text field is SHARED, which
+// is exactly the pre-#747 Copy semantics; under the flipped classifier this
+// helper is a migration site — the checker flags the owned-str field read
+// through the borrow, forcing true view typing here.
+pub fn comptime_value_share(v: &ComptimeValue) -> ComptimeValue:
+    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: v.text, extra_start: v.extra_start, extra_count: v.extra_count }
