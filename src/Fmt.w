@@ -9,6 +9,7 @@ use Token
 extern fn with_str_len(s: &str) -> i64
 extern fn with_str_byte_at(s: str, index: i64) -> i32
 extern fn with_str_slice(s: str, start: i64, end: i64) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 // ── Spacing classification ──────────────────────────────────────
 
@@ -370,8 +371,8 @@ fn format_source_styled(source: &str, style: i32) -> str:
 
     // Ensure file ends with exactly one newline
     if out.len() > 0:
-        while out.len() > 0 and with_str_byte_at(out, with_str_len(out) - 1) == 10:
-            out = with_str_slice(out, 0, with_str_len(out) - 1)
+        while out.len() > 0 and with_str_byte_at(with_str_clone_ref(out), with_str_len(out) - 1) == 10:
+            out = with_str_slice(with_str_clone_ref(out), 0, with_str_len(out) - 1)
         out = out ++ "\n"
     out
 
