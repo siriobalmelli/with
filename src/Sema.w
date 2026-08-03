@@ -1198,11 +1198,13 @@ impl Sema:
         if existing.is_some():
             return existing.unwrap()
 
+        // Compare through element views; clone only for the map insert on the
+        // (at most one) match. A clone per scanned element made every miss —
+        // and every NEW symbol misses — allocate the whole symbol table.
         var i = 1
         while i < self.pool.state.symbol_texts.len() as i32:
-            let existing_text: str = with_str_clone_ref(self.pool.state.symbol_texts.get(i as i64))
-            if sema_str_eq(existing_text, name) != 0:
-                self.pool.state.symbol_map.insert(existing_text, i)
+            if sema_str_eq(self.pool.state.symbol_texts.get(i as i64), name) != 0:
+                self.pool.state.symbol_map.insert(with_str_clone_ref(self.pool.state.symbol_texts.get(i as i64)), i)
                 return i
             i = i + 1
 

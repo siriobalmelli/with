@@ -132,11 +132,13 @@ impl InternPool:
         if existing.is_some():
             return existing.unwrap()
 
+        // Compare through element views; clone only for the map insert on the
+        // (at most one) match. A clone per scanned element made every miss —
+        // and every NEW symbol misses — allocate the whole symbol table.
         var i = 1
         while i < st.symbol_texts.len() as i32:
-            let existing_text: str = with_str_clone_ref(st.symbol_texts.get(i as i64))
-            if intern_text_eq(existing_text, s):
-                st.symbol_map.insert(existing_text, i)
+            if intern_text_eq(st.symbol_texts.get(i as i64), s):
+                st.symbol_map.insert(with_str_clone_ref(st.symbol_texts.get(i as i64)), i)
                 return i
             i = i + 1
 
