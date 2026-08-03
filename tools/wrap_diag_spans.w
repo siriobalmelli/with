@@ -245,8 +245,22 @@ fn plan_edits(path: &str, text: &str, sites: &Vec[Site], skips: &Vec[str]) -> Ed
                 continue
             ed_start = start + eq + 3
             new_text = "with_str_clone_ref(" ++ rhs ++ ")"
+        else if site.kind == 6:
+            // span may be a full `return <expr>` statement or a bare tail
+            // expression; wrap just the expression. Any single-line span is
+            // a complete expression (multiline spans were skipped above).
+            var expr_off: i64 = 0
+            if span.starts_with("return "):
+                expr_off = 7
+                while expr_off < span.len() and span.byte_at(expr_off) == 32: expr_off = expr_off + 1
+            let expr = span.slice(expr_off, span.len())
+            if expr.starts_with("if ") or expr.starts_with("match ") or expr.len() == 0:
+                print("skip-branch-span " ++ tag)
+                continue
+            ed_start = start + expr_off
+            new_text = "with_str_clone_ref(" ++ expr ++ ")"
         else:
-            if site.kind == 4 or site.kind == 6:
+            if site.kind == 4:
                 if not is_ident_or_field(span):
                     print("skip-complex " ++ tag ++ " kind=" ++ kind_name(site.kind))
                     continue

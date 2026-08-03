@@ -158,7 +158,7 @@ impl CiTypePool:
         self.state.extra.get(idx as i64)
 
     fn get_string(idx: i32) -> str:
-        self.state.strings.get(idx as i64)
+        with_str_clone_ref(self.state.strings.get(idx as i64))
 
     // Type constructor helpers.
     fn ty_void() -> CiTypeId:
@@ -402,7 +402,7 @@ impl CiExprPool:
         self.state.extra.get(idx as i64)
 
     fn get_string(idx: i32) -> str:
-        self.state.strings.get(idx as i64)
+        with_str_clone_ref(self.state.strings.get(idx as i64))
 
     fn extra_len() -> i32:
         self.state.extra.len() as i32
@@ -571,7 +571,7 @@ impl CiStmtPool:
         self.state.extra.get(idx as i64)
 
     fn get_string(idx: i32) -> str:
-        self.state.strings.get(idx as i64)
+        with_str_clone_ref(self.state.strings.get(idx as i64))
 
     // Statement constructor helpers.
     fn expr_stmt(expr: CiExprId) -> CiStmtId:
@@ -762,7 +762,7 @@ impl CiDeclPool:
         self.state.extra.get(idx as i64)
 
     fn get_string(idx: i32) -> str:
-        self.state.strings.get(idx as i64)
+        with_str_clone_ref(self.state.strings.get(idx as i64))
 
     // Decl constructor helpers.
     fn fn_decl(name_sym: i32, ret_ty: CiTypeId, body: CiStmtId, flags: i32) -> CiDeclId:
@@ -946,6 +946,6 @@ impl CiProject:
         let owner_module = self.symbols.get(symbol_id as i64).owner_module
         if owner_module < 0 or owner_module >= self.module_paths.len() as i32:
             return ""
-        self.module_paths.get(owner_module as i64)
+        with_str_clone_ref(self.module_paths.get(owner_module as i64))
 
 let _ci_ir_eof_guard = 0

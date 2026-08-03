@@ -1040,7 +1040,7 @@ fn mir_clip_text(s: &str, max_len: i32) -> str:
     if max_len <= 0:
         return ""
     if s.len() as i32 <= max_len:
-        return s
+        return with_str_clone_ref(s)
     if max_len <= 3:
         return s.slice(0, max_len as i64)
     s.slice(0, (max_len - 3) as i64) ++ "..."
@@ -1482,7 +1482,7 @@ fn mir_drop_state_map_len(map: MirDropStateMap) -> i32:
 
 fn mir_drop_state_map_key(map: MirDropStateMap, idx: i32) -> str:
     let st = map.state
-    unsafe { st.keys.get(idx as i64) }
+    with_str_clone_ref(unsafe { st.keys.get(idx as i64) })
 
 fn mir_drop_state_map_state(map: MirDropStateMap, idx: i32) -> i32:
     let st = map.state

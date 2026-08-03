@@ -8,6 +8,7 @@ use InternPool
 use render
 use std.string.StringBuilder
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_eprint(s: &str) -> Unit
 extern fn with_getenv_str(name: &str) -> str
 
@@ -290,7 +291,7 @@ impl Sema:
         if self.pretty_symbol_names.contains(sym):
             let pretty = self.pretty_symbol_names.get(sym).unwrap()
             if pretty.len() > 0:
-                return pretty
+                return with_str_clone_ref(pretty)
         let pooled = self.pool_resolve(sym)
         if pooled.len() > 0:
             return pooled

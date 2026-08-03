@@ -201,7 +201,7 @@ impl Zcu:
 
     fn decl_source_path_frontend(decl_index: i32) -> str:
         if decl_index >= 0 and decl_index < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(decl_index as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(decl_index as i64))
         self.current_source_path
 
     fn decl_source_file_id_frontend(decl_index: i32) -> i32:
@@ -218,7 +218,7 @@ impl Zcu:
     fn c_import_cache_lookup(key: &str) -> str:
         for i in 0..self.c_import_cache_keys.len() as i32:
             if self.c_import_cache_keys.get(i as i64) == key:
-                return self.c_import_cache_values.get(i as i64)
+                return with_str_clone_ref(self.c_import_cache_values.get(i as i64))
         ""
 
     fn c_import_cache_store(key: &str, value: &str) -> Unit:

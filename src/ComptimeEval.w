@@ -455,7 +455,7 @@ fn comptime_tool_path_dirname(path: &str) -> str:
 
 fn comptime_tool_join(root: &str, path: &str) -> str:
     if root.len() == 0 or root == ".":
-        return path
+        return with_str_clone_ref(path)
     if root.ends_with("/"):
         return root ++ path
     root ++ "/" ++ path
@@ -2082,7 +2082,7 @@ impl ComptimeEvaluator:
         let key = if resolved.len() > 0: resolved else: exe
         for i in 0..self.tool_identity_paths.len() as i32:
             if self.tool_identity_paths.get(i as i64) == key:
-                return self.tool_identity_values.get(i as i64)
+                return with_str_clone_ref(self.tool_identity_values.get(i as i64))
         if resolved.len() > 0:
             let identity = comptime_effect_escape(resolved) ++ ":" ++ comptime_sha256_text(with_fs_read_file(resolved))
             self.tool_identity_paths.push(key)
@@ -2103,7 +2103,7 @@ fn comptime_effect_resolve_executable(exe: &str) -> str:
     if exe.len() == 0:
         return ""
     if with_fs_file_exists(exe) != 0:
-        return exe
+        return with_str_clone_ref(exe)
     if comptime_effect_contains_slash(exe):
         return ""
     let path = with_getenv_str("PATH")
@@ -2293,7 +2293,7 @@ impl ComptimeEvaluator:
         if decl_idx >= 0 and decl_idx < self.sema.decl_source_paths.len() as i32:
             let path = self.sema.decl_source_paths.get(decl_idx as i64)
             if path.len() > 0:
-                return path
+                return with_str_clone_ref(path)
         if self.sema.current_module_path.len() > 0:
             return self.sema.current_module_path
         ""
@@ -3864,9 +3864,9 @@ impl ComptimeEvaluator:
 
     fn workspace_path(root: &str, path: &str) -> str:
         if path.len() == 0:
-            return path
+            return with_str_clone_ref(path)
         if path.byte_at(0) == 47:
-            return path
+            return with_str_clone_ref(path)
         let clean_root = if root.ends_with("/"): root.slice(0, root.len() - 1) else: root
         clean_root ++ "/" ++ path
 

@@ -125,7 +125,7 @@ fn build_cache_fingerprint_symlink(path: &str, mode: i32) -> str:
 pub fn build_cache_fingerprint_file(path: &str) -> str:
     let memoized = build_cache_fp_memo.get(path)
     if memoized.is_some():
-        return memoized.unwrap()
+        return with_str_clone_ref(memoized.unwrap())
     let mode = build_graph_rt_file_mode(path)
     if mode < 0:
         return build_cache_sha256_text("absent\n")
@@ -152,7 +152,7 @@ fn build_cache_resolve_executable_path(argv0: &str) -> str:
     if argv0.len() == 0:
         return ""
     if build_graph_rt_file_exists(argv0) != 0:
-        return argv0
+        return with_str_clone_ref(argv0)
     if build_cache_str_contains_byte(argv0, 47):
         return ""
 
@@ -299,7 +299,7 @@ fn build_cache_last_colon(text: &str) -> i32:
 
 fn build_cache_dep_path(root: &str, stored_path: &str) -> str:
     if stored_path.len() > 0 and stored_path.byte_at(0) == 47:
-        return stored_path
+        return with_str_clone_ref(stored_path)
     root ++ "/" ++ stored_path
 
 fn build_cache_effect_env_state_line(effect_line: &str) -> str:
@@ -345,7 +345,7 @@ fn build_cache_action_source_disk_path(root: &str, path: &str) -> str:
     if path.starts_with("<embedded-std>/"):
         return root ++ "/lib/" ++ path.slice("<embedded-std>/".len(), path.len())
     if path.starts_with("/"):
-        return path
+        return with_str_clone_ref(path)
     root ++ "/" ++ path
 
 fn build_cache_hash_action_sources(root: &str, paths: &Vec[str]) -> str:

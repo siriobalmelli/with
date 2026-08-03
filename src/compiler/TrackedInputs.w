@@ -77,10 +77,10 @@ fn tracked_path_has_parent_segment(path: &str) -> bool:
 
 fn tracked_resolve_source_relative(source_path: &str, raw_path: &str) -> str:
     if tracked_path_is_absolute(raw_path):
-        return raw_path
+        return with_str_clone_ref(raw_path)
     let dir = tracked_dirname(source_path)
     if dir.len() == 0:
-        return raw_path
+        return with_str_clone_ref(raw_path)
     dir ++ "/" ++ raw_path
 
 fn tracked_inside_root(path: &str, root: &str) -> bool:
@@ -102,7 +102,7 @@ fn tracked_inside_root(path: &str, root: &str) -> bool:
 // leading '..' is dropped (cannot go above '/').
 fn tracked_normalize_path(path: &str) -> str:
     if path.len() == 0:
-        return path
+        return with_str_clone_ref(path)
     let is_abs = path.len() > 0 and path.byte_at(0) == 47
     let parts: Vec[str] = Vec.new()
     var start = 0
@@ -139,7 +139,7 @@ fn tracked_normalize_path(path: &str) -> str:
 
 fn tracked_authorized_root(source_path: &str, package_root: &str) -> str:
     if package_root.len() > 0:
-        return package_root
+        return with_str_clone_ref(package_root)
     let dir = tracked_dirname(source_path)
     if dir.len() == 0:
         return ""

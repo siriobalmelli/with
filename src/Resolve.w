@@ -1151,11 +1151,11 @@ fn resolve_project_root_candidate(module_dir: &str, rel_path: &str) -> str:
 
 fn resolve_join(a: &str, b: &str) -> str:
     if a.len() == 0:
-        return b
+        return with_str_clone_ref(b)
     if b.len() == 0:
-        return a
+        return with_str_clone_ref(a)
     if a == ".":
-        return b
+        return with_str_clone_ref(b)
     if a.ends_with("/"):
         return resolve_normalize_path(a ++ b)
     resolve_normalize_path(a ++ "/" ++ b)
@@ -1173,7 +1173,7 @@ fn resolve_dirname(path: &str) -> str:
 
 fn resolve_normalize_path(path: &str) -> str:
     if path.len() == 0:
-        return path
+        return with_str_clone_ref(path)
 
     var out = ""
     var i = 0
@@ -1208,7 +1208,7 @@ fn resolve_normalize_path(path: &str) -> str:
 // original spelling (downstream tier checks match on relative prefixes).
 pub fn resolve_canonical_module_key(path: &str) -> str:
     if path.len() == 0 or path.starts_with("<"):
-        return path
+        return with_str_clone_ref(path)
     var p = with_str_clone_ref(path)
     if p[0] != 47:
         let cwd = with_getenv_str("PWD")

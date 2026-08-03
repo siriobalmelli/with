@@ -242,7 +242,7 @@ fn compilation_decl_index_for_node(pool: AstPool, node: NodeId) -> i32:
 
 fn compilation_relative_source_path(root: &str, path: &str) -> str:
     if root.len() == 0:
-        return path
+        return with_str_clone_ref(path)
     let prefix = if root.ends_with("/"): root else: root ++ "/"
     if path.starts_with(prefix):
         return path.slice(prefix.len(), path.len())

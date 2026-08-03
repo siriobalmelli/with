@@ -845,7 +845,7 @@ fn cc_emit_checked_arith_helpers -> str:
 fn cc_base_name(raw: &str) -> str:
     let dot = cc_str_find_last_char(raw, 46)
     if dot < 0:
-        return raw
+        return with_str_clone_ref(raw)
     raw.slice((dot + 1) as i64, raw.len() as i64)
 
 fn cc_is_vec_method_name(name: &str) -> i32:
@@ -952,7 +952,7 @@ impl CCodegen:
         if di >= 0 and di < self.sema.decl_source_paths.len() as i32:
             let path = self.sema.decl_source_paths.get(di as i64)
             if path.len() > 0:
-                return path
+                return with_str_clone_ref(path)
         self.source_path
 
     fn source_text_for_path(path: &str) -> str:

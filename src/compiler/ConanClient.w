@@ -328,7 +328,7 @@ fn conan_result_version_for_name(result: &str, name: &str) -> str:
 
 fn conan_resolve_version(name: &str, version_hint: &str) -> str:
     if version_hint.len() > 0 and not version_hint.ends_with(".Z"):
-        return version_hint
+        return with_str_clone_ref(version_hint)
     let url = CONAN_CENTER_URL() ++ "/v2/conans/search?q=" ++ name
     let response = conan_http_get(url)
     if response.len() == 0:

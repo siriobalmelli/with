@@ -3736,7 +3736,7 @@ fn numeric_literal_suffix_code(text: &str) -> i32:
 fn numeric_literal_core(text: &str) -> str:
     let suffix = numeric_literal_suffix_code(text)
     if suffix == LiteralSuffix.None:
-        return text
+        return with_str_clone_ref(text)
     if suffix == LiteralSuffix.Usize:
         return text.slice(0, numeric_literal_suffix_start(text, "usize") as i64)
     if suffix == LiteralSuffix.Isize:
@@ -4459,7 +4459,7 @@ fn dedent_multiline(text: &str) -> str:
         i = i + 1
 
     if min_indent <= 0:
-        return text
+        return with_str_clone_ref(text)
 
     var out = ""
     line_start = 0
@@ -5422,12 +5422,12 @@ impl Parser:
                         j = j + 1
                     if j >= n:
                         self.emit_error("unterminated '{' in asm template")
-                        return tmpl
+                        return with_str_clone_ref(tmpl)
                     let nm = tmpl.slice((i + 1) as i64, j as i64)
                     let idx = self.asm_operand_index(names, self.intern.intern(nm))
                     if idx < 0:
                         self.emit_error("asm template references unknown binding '" ++ nm ++ "'")
-                        return tmpl
+                        return with_str_clone_ref(tmpl)
                     out = out ++ f"${idx}"
                     i = j + 1
             else if c == 125:  // '}'

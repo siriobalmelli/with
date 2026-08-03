@@ -9,6 +9,7 @@ use CapabilityRegistry
 use render
 use std.collections.HashMap
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_eq(a: str, b: str) -> i32
 
@@ -359,7 +360,7 @@ impl Sema:
     fn decl_index_source_path(di: i32) -> str:
         if di < 0 or di >= self.decl_source_paths.len() as i32:
             return ""
-        self.decl_source_paths.get(di as i64)
+        with_str_clone_ref(self.decl_source_paths.get(di as i64))
 
     fn decls_share_source_file(a: i32, b: i32) -> i32:
         if a < 0 or b < 0:
@@ -1735,12 +1736,12 @@ impl Sema:
     fn decl_source_path_for_node(node: i32) -> str:
         let di = self.find_decl_index(node)
         if di >= 0 and di < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(di as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(di as i64))
         self.current_module_path
 
     fn decl_source_path_for_index(decl_index: i32) -> str:
         if decl_index >= 0 and decl_index < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(decl_index as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(decl_index as i64))
         self.current_module_path
 
     fn decl_source_file_id_for_index(decl_index: i32) -> i32:
@@ -1823,7 +1824,7 @@ impl Sema:
         let node = self.type_decl_nodes.get(type_sym).unwrap()
         let di = self.find_decl_index(node)
         if di >= 0 and di < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(di as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(di as i64))
         ""
 
     fn type_decl_source_file_id(type_sym: i32) -> i32:

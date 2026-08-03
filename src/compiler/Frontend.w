@@ -70,7 +70,7 @@ fn frontend_resolve_executable_path(argv0: &str) -> str:
     if argv0.len() == 0:
         return ""
     if runtime_read_file(argv0).len() > 0:
-        return argv0
+        return with_str_clone_ref(argv0)
     if frontend_str_contains_byte(argv0, 47):
         return ""
 

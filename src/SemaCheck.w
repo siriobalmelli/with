@@ -201,7 +201,7 @@ impl Sema:
         var i = self.named_type_candidate_syms.len() as i32 - 1
         while i >= 0:
             if self.named_type_candidate_syms.get(i as i64) == sym and self.named_type_candidate_tids.get(i as i64) == tid:
-                return self.named_type_candidate_paths.get(i as i64)
+                return with_str_clone_ref(self.named_type_candidate_paths.get(i as i64))
             i = i - 1
         ""
 
@@ -6758,7 +6758,7 @@ fn ci_omitted_field(record: &str, idx: i32) -> str:
         i = i + 1
     if second < 0:
         // Not a structured record — whole string is the reason.
-        if idx == 2: return record
+        if idx == 2: return with_str_clone_ref(record)
         return ""
     if idx == 0: return record.slice(0, first as i64)
     if idx == 1: return record.slice((first + 1) as i64, second as i64)
@@ -9097,13 +9097,13 @@ impl Sema:
 
     fn fn_symbol_source_path(fn_sym: i32) -> str:
         if self.fn_decl_source_paths.contains(fn_sym):
-            return self.fn_decl_source_paths.get(fn_sym).unwrap()
+            return with_str_clone_ref(self.fn_decl_source_paths.get(fn_sym).unwrap())
         let fn_node = self.fn_symbol_decl_node(fn_sym)
         if fn_node == 0:
             return ""
         let di = self.find_decl_index(fn_node)
         if di >= 0 and di < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(di as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(di as i64))
         ""
 
     fn fn_symbol_is_tool_comptime_allowed(fn_sym: i32) -> i32:
@@ -22719,7 +22719,7 @@ impl Sema:
                 continue
             let target = self.module_import_targets.get(idx as i64)
             if target >= 0 and target < self.module_paths.len() as i32:
-                return self.module_paths.get(target as i64)
+                return with_str_clone_ref(self.module_paths.get(target as i64))
         ""
 
     fn extension_path_visible_from_current(path: &str) -> i32:

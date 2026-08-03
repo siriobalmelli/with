@@ -220,7 +220,7 @@ fn link_stage_basename(path: &str) -> str:
         if path.byte_at(i as i64) == 47:
             last_slash = i
     if last_slash < 0:
-        return path
+        return with_str_clone_ref(path)
     path.slice((last_slash + 1) as i64, path.len())
 
 fn link_stage_owned_temp_archive(path: &str, pid_text: &str) -> bool:
@@ -354,7 +354,7 @@ fn link_stage_linux_gcc_dir() -> str:
     for i in 0..candidates.len() as i32:
         let dir = candidates.get(i as i64)
         if link_stage_file_exists(dir ++ "/crtbegin.o"):
-            return dir
+            return with_str_clone_ref(dir)
     ""
 
 fn link_stage_linux_system_lib_path(name: &str) -> str:
@@ -786,7 +786,7 @@ fn link_stage_resolve_runtime_root() -> str:
         let probe = dir ++ "/cimport_stubs.o"
         let platform_probe = if platform_object.len() > 0: dir ++ "/" ++ platform_object else: ""
         if runtime_read_file(probe).len() > 0 and (platform_probe.len() == 0 or runtime_read_file(platform_probe).len() > 0):
-            return dir
+            return with_str_clone_ref(dir)
     // Fall back to compiler-relative runtime dir.
     compiler_dir ++ "/runtime"
 
@@ -843,7 +843,7 @@ fn link_stage_host_platform_runtime_object() -> str:
 
 fn link_stage_make_archive(obj_path: &str) -> str:
     if runtime_sysinfo_os() == "Windows":
-        return obj_path
+        return with_str_clone_ref(obj_path)
     // Wrap a .o file in a .a archive so the linker treats it as a library
     // (only pulling in symbols that aren't already defined).
     let ar_path = obj_path ++ f".{runtime_getpid()}.{runtime_clock_nanos()}.a"
@@ -857,7 +857,7 @@ fn link_stage_make_archive_to_path(obj_path: &str, ar_path: &str) -> str:
     members.push(with_str_clone_ref(obj_path))
     let rc = create_static_archive(ar_path, members)
     if rc == 0:
-        return ar_path
+        return with_str_clone_ref(ar_path)
     ""
 
 fn link_stage_should_use_rt_core_from_undef(undef: &str) -> bool:

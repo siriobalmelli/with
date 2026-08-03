@@ -36,7 +36,7 @@ pub fn build_graph_object_output_path(root: &str, target: &BuildGraphTarget, out
 
 pub fn build_graph_resolve_project_path(root: &str, path: &str) -> str:
     if path.len() > 0 and path.byte_at(0) == 47:
-        return path
+        return with_str_clone_ref(path)
     resolve_join(root, path)
 
 pub fn build_graph_resolve_paths(root: &str, paths: &Vec[str]) -> Vec[str]:
@@ -63,7 +63,7 @@ pub fn build_graph_dirname(path: &str) -> str:
 pub fn build_graph_path_basename(path: &str) -> str:
     let dir = build_graph_dirname(path)
     if dir == ".":
-        return path
+        return with_str_clone_ref(path)
     path.slice((dir.len() + 1) as i64, path.len())
 
 pub fn build_graph_path_has_glob(path: &str) -> bool:

@@ -2622,7 +2622,7 @@ impl Sema:
                 let path = self.decl_visibility_paths.get(i as i64)
                 let is_pub = self.decl_visibility_pub.get(i as i64)
                 if path.len() > 0 and path != self.current_module_path and is_pub == 0 and self.module_is_visible_from_current(path) != 0:
-                    return path
+                    return with_str_clone_ref(path)
             i = i - 1
         ""
 
@@ -3208,7 +3208,7 @@ impl Sema:
             return self.source_text
         for si in 0..self.source_text_file_ids.len() as i32:
             if self.source_text_file_ids.get(si as i64) == file_id:
-                return self.source_texts.get(si as i64)
+                return with_str_clone_ref(self.source_texts.get(si as i64))
         ""
 
     fn source_text_for_decl_node(node: i32) -> str:

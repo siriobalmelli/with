@@ -89,7 +89,7 @@ fn ci_ann_owned_return_destructor(name: &str) -> str:
     for i in 0..g_cimport_owns_ann.len() as i32:
         let parts = ci_ann_split_arrow(g_cimport_owns_ann.get(i as i64))
         if parts.len() == 2 and parts.get(0) == name:
-            return parts.get(1)
+            return with_str_clone_ref(parts.get(1))
     ""
 
 // Annotated borrow-param constructor for (name, pi), or "".
@@ -115,7 +115,7 @@ fn ci_ann_borrow_param_ctor(name: &str, pi: i32) -> str:
             saw_digit = 1
             qq = qq + 1
         if saw_digit != 0 and idx == pi:
-            return parts.get(1)
+            return with_str_clone_ref(parts.get(1))
     ""
 
 // True when auto-method/constructor generation is suppressed for `name`.
@@ -848,7 +848,7 @@ fn ci_unique_name(name: &str) -> str:
     // If name is not yet emitted, return it as-is.
     // Otherwise append _2, _3, ... until unique.
     if with_cimport_is_name_emitted(name) == 0:
-        return name
+        return with_str_clone_ref(name)
     var suffix = 2
     while suffix < 100:
         let candidate = f"{name}_{suffix}"
@@ -863,11 +863,11 @@ fn ci_build_include_text(header_spec: &str) -> str:
     // c_import also accepts raw C snippets used by tests and generated bindings.
     if header_spec.len() > 0:
         if header_spec.byte_at(0) == 35 or ci_str_contains(header_spec, "\n") or ci_str_contains(header_spec, ";"):
-            return header_spec
+            return with_str_clone_ref(header_spec)
     // Already has #include directive
     if header_spec.len() >= 8:
         if header_spec.slice(0, 8) == "#include":
-            return header_spec
+            return with_str_clone_ref(header_spec)
     // Has angle brackets
     if header_spec.len() > 2 and header_spec.byte_at(0) == 60:
         return "#include " ++ header_spec
@@ -998,11 +998,11 @@ fn ci_pointer_pointee_name(translated_type: &str) -> str:
 fn ci_missing_pointer_opaque_add(session: i64, count: i32, names: &str, translated_type: &str) -> str:
     let name = ci_pointer_pointee_name(translated_type)
     if name.len() == 0:
-        return names
+        return with_str_clone_ref(names)
     if ci_type_decl_name_exists(session, name, count):
-        return names
+        return with_str_clone_ref(names)
     if ci_str_contains(names, "|" ++ name ++ "|"):
-        return names
+        return with_str_clone_ref(names)
     names ++ "|" ++ name ++ "|"
 
 fn ci_collect_missing_pointer_opaques(session: i64, count: i32) -> str:
@@ -2091,11 +2091,11 @@ fn ci_cimport_param_type_requires_raw_abi(ty: &str) -> bool:
 
 fn ci_pointer_type_explicit_mut(ty: &str) -> str:
     if ci_starts_with(ty, "*const "):
-        return ty
+        return with_str_clone_ref(ty)
     if ci_starts_with(ty, "*mut "):
-        return ty
+        return with_str_clone_ref(ty)
     if ci_starts_with(ty, "*volatile "):
-        return ty
+        return with_str_clone_ref(ty)
     if ci_starts_with(ty, "*"):
         return "*mut " ++ ci_trim(ty.slice(1, ty.len()))
     ty
@@ -3446,7 +3446,7 @@ fn ci_parse_postfix_expr(s: &str, params: &str, known: &str) -> str:
 // Helper: ensure expression is boolean (add != 0 if not already a comparison)
 fn ci_ensure_bool(expr: &str) -> str:
     if ci_is_bool_expr(expr):
-        return expr
+        return with_str_clone_ref(expr)
     expr ++ " != 0"
 
 // Helper: find a two-char operator at paren depth 0 (leftmost occurrence)
@@ -4397,7 +4397,7 @@ fn ci_decimal_digit(d: i64) -> str:
 
 fn ci_trim_float_literal_zeros(raw: &str) -> str:
     if not ci_str_contains(raw, "."):
-        return raw
+        return with_str_clone_ref(raw)
     var end = raw.len() as i32
     while end > 0 and raw.byte_at((end - 1) as i64) == 48:
         end = end - 1
@@ -6613,12 +6613,12 @@ fn ci_record_type_field_type(session: i64, ty: i32, field_idx: i32) -> str:
 
 fn ci_initializer_normalize_anon_field_type(session: i64, parent_ty: &str, field_idx: i32, field_ty: &str) -> str:
     if parent_ty.len() == 0 or field_ty.len() == 0:
-        return field_ty
+        return with_str_clone_ref(field_ty)
     if not ci_str_contains(field_ty, "(unnamed at ") and not ci_str_contains(field_ty, "::("):
-        return field_ty
+        return with_str_clone_ref(field_ty)
     let field_name = ci_type_field_name(session, parent_ty, field_idx)
     if field_name.len() == 0:
-        return field_ty
+        return with_str_clone_ref(field_ty)
     ci_escape_reserved(parent_ty ++ "_" ++ field_name)
 
 fn ci_record_type_field_cxtype(session: i64, ty: i32, field_idx: i32) -> i32:
@@ -6643,7 +6643,7 @@ fn ci_record_field_caches_clear():
 
 fn ci_record_cache_type_text(session: i64, ty_text: &str, ty: i32) -> str:
     if ty_text.len() > 0:
-        return ty_text
+        return with_str_clone_ref(ty_text)
     if ty >= 0:
         let translated = with_ci_type_translated(session, ty)
         if translated.len() > 0:
@@ -6703,7 +6703,7 @@ fn ci_init_list_record_field_name(session: i64, ty_text: &str, ty: i32, field_id
     let key = ci_record_field_cache_key(session, ty_key, field_idx)
     let cached = ci_record_field_cache_lookup_index(key)
     if cached >= 0:
-        return g_ci_record_field_name_cache_values.get(cached as i64)
+        return with_str_clone_ref(g_ci_record_field_name_cache_values.get(cached as i64))
     var name = ci_record_type_field_name(session, ty, field_idx)
     var field_ty = ci_record_type_field_type(session, ty, field_idx)
     if name.len() == 0:
@@ -6719,7 +6719,7 @@ fn ci_init_list_record_field_type(session: i64, ty_text: &str, ty: i32, field_id
     let key = ci_record_field_cache_key(session, ty_key, field_idx)
     let cached = ci_record_field_cache_lookup_index(key)
     if cached >= 0:
-        return g_ci_record_field_type_cache_values.get(cached as i64)
+        return with_str_clone_ref(g_ci_record_field_type_cache_values.get(cached as i64))
     var name = ci_record_type_field_name(session, ty, field_idx)
     var field_ty = ci_record_type_field_type(session, ty, field_idx)
     if name.len() == 0:
@@ -9985,7 +9985,7 @@ impl CiExprPool:
 // ci_indent_block, so we strip the redundant one on the way out.
 fn ci_strip_trailing_newline(s: &str) -> str:
     if s.len() == 0:
-        return s
+        return with_str_clone_ref(s)
     if s.byte_at(s.len() - 1) == 10:
         return s.slice(0, s.len() - 1)
     s
@@ -10715,12 +10715,12 @@ fn ci_location_path(loc: &str) -> str:
     while last_colon >= 0 and loc.byte_at(last_colon as i64) != 58:
         last_colon = last_colon - 1
     if last_colon < 0:
-        return loc
+        return with_str_clone_ref(loc)
     var second_last = last_colon - 1
     while second_last >= 0 and loc.byte_at(second_last as i64) != 58:
         second_last = second_last - 1
     if second_last < 0:
-        return loc
+        return with_str_clone_ref(loc)
     loc.slice(0, second_last as i64)
 
 fn ci_array_elem_type(ty: &str) -> str:
@@ -10994,12 +10994,12 @@ fn ci_scope_lookup(scope: CiScope, name: &str) -> str:
             return ""
         let value = (*scope.ptr).names.get(name)
         if value.is_some():
-            return value.unwrap()
+            return with_str_clone_ref(value.unwrap())
     ""
 
 fn ci_scope_mangle(scope: CiScope, name: &str) -> str:
     if not ci_scope_contains(scope, name):
-        return name
+        return with_str_clone_ref(name)
     var suffix = 1
     while suffix < 100:
         let candidate = f"{name}_{suffix}"
@@ -11115,7 +11115,7 @@ fn ci_scope_lookup_type(scope: CiScope, name: &str) -> str:
             return ""
         let value = (*scope.ptr).types.get(name)
         if value.is_some():
-            return value.unwrap()
+            return with_str_clone_ref(value.unwrap())
     ""
 
 fn ci_scope_type_for_cursor(session: i64, cursor: i32, scope: CiScope) -> str:
@@ -11147,7 +11147,7 @@ fn ci_realpath_cached(path: &str) -> str:
     var i: i64 = 0
     while i < g_ci_realpath_cache_paths.len():
         if g_ci_realpath_cache_paths.get(i) == path:
-            return g_ci_realpath_cache_values.get(i)
+            return with_str_clone_ref(g_ci_realpath_cache_values.get(i))
         i = i + 1
     let resolved = with_cimport_realpath(path)
     g_ci_realpath_cache_paths.push(with_str_clone_ref(path))
@@ -11550,9 +11550,9 @@ fn ci_str_replace_last_field(field_str: &str, old_name: &str, new_name: &str) ->
 
 fn ci_str_replace(text: &str, needle: &str, replacement: &str) -> str:
     if needle.len() == 0:
-        return text
+        return with_str_clone_ref(text)
     if needle.len() > text.len():
-        return text
+        return with_str_clone_ref(text)
     var result = ""
     var i = 0
     let limit = text.len() as i32
@@ -13451,7 +13451,7 @@ fn ci_fn_var_names_register(name: &str):
 
 fn ci_fn_var_names_unique(base: &str) -> str:
     if not ci_fn_var_names_contains(base):
-        return base
+        return with_str_clone_ref(base)
     var suffix = 1
     while suffix < 100:
         let candidate = f"{base}_{suffix}"
@@ -15082,7 +15082,7 @@ fn ci_coerce_init_value_for_type(value: &str, ty: &str) -> str:
         if rendered.len() > 0:
             return rendered
     if ci_starts_with(ty, "*") and ci_is_string_literal(value):
-        return value
+        return with_str_clone_ref(value)
     value
 
 fn ci_find_fn_cursor(session: i64, name: &str) -> i32:
@@ -15102,9 +15102,9 @@ fn ci_find_fn_cursor(session: i64, name: &str) -> i32:
 // Cast memcpy args: (dst, src, n) → (dst as *i8, src as *i8, n as i64)
 fn ci_cast_memcpy_args(args: &str) -> str:
     let first_comma = ci_find_arg_comma(args, 0)
-    if first_comma < 0: return args
+    if first_comma < 0: return with_str_clone_ref(args)
     let second_comma = ci_find_arg_comma(args, first_comma + 1)
-    if second_comma < 0: return args
+    if second_comma < 0: return with_str_clone_ref(args)
     let dst = ci_trim(args.slice(0, first_comma as i64))
     let src = ci_trim(args.slice((first_comma + 1) as i64, second_comma as i64))
     let n = ci_trim(args.slice((second_comma + 1) as i64, args.len()))
@@ -15113,9 +15113,9 @@ fn ci_cast_memcpy_args(args: &str) -> str:
 // Cast memset args: (ptr, c, n) → (ptr as *i8, c, n as i64)
 fn ci_cast_memset_args(args: &str) -> str:
     let first_comma = ci_find_arg_comma(args, 0)
-    if first_comma < 0: return args
+    if first_comma < 0: return with_str_clone_ref(args)
     let second_comma = ci_find_arg_comma(args, first_comma + 1)
-    if second_comma < 0: return args
+    if second_comma < 0: return with_str_clone_ref(args)
     let ptr = ci_trim(args.slice(0, first_comma as i64))
     let c = ci_trim(args.slice((first_comma + 1) as i64, second_comma as i64))
     let n = ci_trim(args.slice((second_comma + 1) as i64, args.len()))
@@ -15124,9 +15124,9 @@ fn ci_cast_memset_args(args: &str) -> str:
 // Cast memcmp args: (a, b, n) → (a as *i8, b as *i8, n as i64)
 fn ci_cast_memcmp_args(args: &str) -> str:
     let first_comma = ci_find_arg_comma(args, 0)
-    if first_comma < 0: return args
+    if first_comma < 0: return with_str_clone_ref(args)
     let second_comma = ci_find_arg_comma(args, first_comma + 1)
-    if second_comma < 0: return args
+    if second_comma < 0: return with_str_clone_ref(args)
     let a = ci_trim(args.slice(0, first_comma as i64))
     let b = ci_trim(args.slice((first_comma + 1) as i64, second_comma as i64))
     let n = ci_trim(args.slice((second_comma + 1) as i64, args.len()))

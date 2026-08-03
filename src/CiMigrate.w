@@ -283,9 +283,9 @@ fn ci_migrate_fn_has_raw_pointer_param(session: i64, idx: i32) -> bool:
 
 fn ci_migrate_insert_libc_use(output: &str) -> str:
     if not ci_migrate_needs_libc():
-        return output
+        return with_str_clone_ref(output)
     if ci_find_str(output, "\nuse std.libc\n") >= 0:
-        return output
+        return with_str_clone_ref(output)
     let header_end = ci_find_str(output, "\n\n")
     if header_end >= 0:
         output.slice(0, header_end as i64) ++ "\nuse std.libc" ++ output.slice(header_end as i64, output.len())
@@ -329,10 +329,10 @@ fn ci_migrate_pipe_i32_contains(items: &str, want: i32) -> bool:
 
 fn ci_migrate_add_import_once(imports: &str, module_path: &str) -> str:
     if module_path.len() == 0:
-        return imports
+        return with_str_clone_ref(imports)
     let line = "use " ++ module_path ++ "\n"
     if ci_find_str(imports, line) >= 0:
-        return imports
+        return with_str_clone_ref(imports)
     imports ++ line
 
 fn ci_migrate_project_imports_for_file(project_active: bool, project: &CiProject, input_path: &str) -> str:
@@ -356,7 +356,7 @@ fn ci_migrate_project_imports_for_file(project_active: bool, project: &CiProject
 // where k = number of matches, suitable for large outputs with sparse matches.
 fn ci_replace_sparse(text: &str, needle: &str, replacement: &str) -> str:
     if needle.len() == 0 or needle.len() > text.len():
-        return text
+        return with_str_clone_ref(text)
     var result = ""
     var start: i64 = 0
     let tlen = text.len()
@@ -400,7 +400,7 @@ fn ci_migrate_normalize_output(text: &str) -> str:
 
 fn ci_migrate_publicize_shared_line(line: &str) -> str:
     if line.starts_with("pub "):
-        return line
+        return with_str_clone_ref(line)
     if line.starts_with("type ") or line.starts_with("let ") or line.starts_with("var ") or line.starts_with("fn ") or line.starts_with("unsafe fn ") or line.starts_with("extern fn ") or line.starts_with("extern let ") or line.starts_with("extern var "):
         return "pub " ++ line
     line

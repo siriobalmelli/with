@@ -639,13 +639,13 @@ fn project_config_is_string_array_value(value: &str) -> bool:
 fn project_config_resolve_c_import_header(cfg: &ProjectConfig, decl_dir: &str, header_spec_raw: &str) -> str:
     let header_spec = project_config_trim(header_spec_raw)
     if header_spec.len() == 0:
-        return header_spec_raw
+        return with_str_clone_ref(header_spec_raw)
     if project_config_str_contains(header_spec, "\n"):
-        return header_spec_raw
+        return with_str_clone_ref(header_spec_raw)
     if project_config_str_contains(header_spec, ";"):
-        return header_spec_raw
+        return with_str_clone_ref(header_spec_raw)
     if header_spec.byte_at(0) == 35:
-        return header_spec_raw
+        return with_str_clone_ref(header_spec_raw)
 
     var header_name = header_spec
     var preserve_angle = 0
@@ -673,7 +673,7 @@ fn project_config_resolve_header_path(cfg: &ProjectConfig, decl_dir: &str, heade
         return ""
     if project_config_is_absolute_path(header_name):
         if project_config_file_exists(header_name):
-            return header_name
+            return with_str_clone_ref(header_name)
         return ""
 
     let base_dir = if decl_dir.len() > 0:
@@ -693,9 +693,9 @@ fn project_config_resolve_header_path(cfg: &ProjectConfig, decl_dir: &str, heade
 
 fn project_config_resolve_path(root_dir: &str, path: &str) -> str:
     if path.len() == 0:
-        return path
+        return with_str_clone_ref(path)
     if project_config_is_absolute_path(path):
-        return path
+        return with_str_clone_ref(path)
     if root_dir.len() == 0:
         return project_config_absolutize_path(path)
     resolve_join(root_dir, path)
@@ -717,12 +717,12 @@ fn project_config_normalize_absolute_path(path: &str) -> str:
 
 fn project_config_absolutize_path(path: &str) -> str:
     if path.len() == 0:
-        return path
+        return with_str_clone_ref(path)
     if project_config_is_absolute_path(path):
         return project_config_normalize_absolute_path(path)
     let cwd = runtime_getenv("PWD")
     if cwd.len() == 0:
-        return path
+        return with_str_clone_ref(path)
     project_config_normalize_absolute_path(resolve_join(cwd, path))
 
 fn project_config_find_char(text: &str, ch: i32) -> i32:

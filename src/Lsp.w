@@ -313,7 +313,7 @@ fn json_skip(tokens: *mut JsonToken, idx: i32) -> i32:
 
 fn json_unescape(s: &str) -> str:
     if not s.contains("\\"):
-        return s
+        return with_str_clone_ref(s)
     var out = ""
     var i = 0
     while i < s.len() as i32:

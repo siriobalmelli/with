@@ -3730,7 +3730,7 @@ fn doc_collect_entries(info: &str, root: &str, source_path: &str, fallback_sourc
 
 fn doc_default_source(source: &str) -> str:
     if source.len() > 0:
-        return source
+        return with_str_clone_ref(source)
     let root = build_graph_find_build_root(".")
     if root.len() > 0:
         let project_main = resolve_join(root, "src/main.w")
@@ -3742,7 +3742,7 @@ fn doc_default_source(source: &str) -> str:
 
 fn doc_output_path(output: &str) -> str:
     if output.len() > 0:
-        return output
+        return with_str_clone_ref(output)
     "out/doc/index.md"
 
 fn run_doc_command(argc: i32, source: &str, output: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:

@@ -9,6 +9,7 @@ use Overflow
 use AnalysisTypes
 use compiler.TrackedInputs
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_eprint(s: &str) -> Unit
 
 // ── Collect trait info ────────────────────────────────────────────
@@ -1150,7 +1151,7 @@ impl Codegen:
         if decl_index >= 0 and decl_index < self.decl_source_paths.len() as i32:
             let path = self.decl_source_paths.get(decl_index as i64)
             if path.len() > 0:
-                return path
+                return with_str_clone_ref(path)
         if self.current_decl_source_file.len() > 0 and self.current_decl_source_file != "<unknown>":
             return self.current_decl_source_file
         self.source_file

@@ -9,6 +9,7 @@ use Sema
 use SemaCheck
 use Span
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn str_from_byte(b: i32) -> str
 
 fn ct_new_vec_str -> Vec[str]:
@@ -1341,7 +1342,7 @@ impl Sema:
 
     fn ct_decl_source_path(di: i32) -> str:
         if di >= 0 and di < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(di as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(di as i64))
         ""
 
     fn ct_decl_source_file_id(di: i32) -> i32:

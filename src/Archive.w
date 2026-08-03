@@ -89,7 +89,7 @@ fn ar_gnu_member_name_field(name: &str, long_name_offset: i32) -> str:
     if long_name_offset >= 0:
         return "/" ++ ar_format_decimal(long_name_offset as i64)
     if name == "/" or name == "//":
-        return name
+        return with_str_clone_ref(name)
     name ++ "/"
 
 fn ar_gnu_needs_long_name(name: &str) -> bool:

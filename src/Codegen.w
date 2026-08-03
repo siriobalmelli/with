@@ -2522,9 +2522,9 @@ impl Codegen:
 
     fn sema_symbol_text(sym: i32) -> str:
         if sym > 0 and sym < self.sema_symbol_texts.len() as i32:
-            return self.sema_symbol_texts.get(sym as i64)
+            return with_str_clone_ref(self.sema_symbol_texts.get(sym as i64))
         if sym > 0 and sym < self.sema.pool.state.symbol_texts.len() as i32:
-            return self.sema.pool.state.symbol_texts.get(sym as i64)
+            return with_str_clone_ref(self.sema.pool.state.symbol_texts.get(sym as i64))
         self.sema.pool_resolve(sym)
 
     // ── Resolve type expression → LLVM type ───────────────────────────
@@ -4065,9 +4065,9 @@ fn codegen_hash_name_component(value: i64) -> str:
 
 fn codegen_canonical_module_path(path: &str) -> str:
     if path.len() == 0 or path == "<unknown>":
-        return path
+        return with_str_clone_ref(path)
     if path.byte_at(0) == 60:
-        return path
+        return with_str_clone_ref(path)
     if path.byte_at(0) == 47:
         return resolve_normalize_path(path)
     let cwd = with_getenv_str("PWD")
@@ -4098,12 +4098,12 @@ fn codegen_preserve_runtime_link_name(source_path: &str, base_name: &str) -> boo
 impl Codegen:
     fn module_link_name_for_path(source_path: &str, base_name: &str) -> str:
         if self.module_object_mode == 0:
-            return base_name
+            return with_str_clone_ref(base_name)
         if codegen_preserve_runtime_link_name(source_path, base_name):
-            return base_name
+            return with_str_clone_ref(base_name)
         let canonical_path = codegen_canonical_module_path(source_path)
         if canonical_path.len() == 0 or canonical_path == "<unknown>":
-            return base_name
+            return with_str_clone_ref(base_name)
         "__with_mod_" ++ codegen_hash_name_component(with_str_hash(canonical_path)) ++ "__" ++ base_name
 
     fn current_decl_module_link_name(base_name: &str) -> str:

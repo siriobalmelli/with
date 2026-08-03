@@ -96,9 +96,9 @@ fn ci_contains_str(s: &str, needle: &str) -> bool:
 
 fn ci_strip_one_outer_paren(s: &str) -> str:
     if s.len() < 2:
-        return s
+        return with_str_clone_ref(s)
     if s.byte_at(0) != 40 or s.byte_at(s.len() - 1) != 41:
-        return s
+        return with_str_clone_ref(s)
     var depth = 0
     var i = 0
     while i as i64 < s.len():
@@ -108,10 +108,10 @@ fn ci_strip_one_outer_paren(s: &str) -> str:
         else if c == 41:
             depth = depth - 1
             if depth == 0 and i as i64 != s.len() - 1:
-                return s
+                return with_str_clone_ref(s)
         i = i + 1
     if depth != 0:
-        return s
+        return with_str_clone_ref(s)
     s.slice(1, s.len() - 1)
 
 fn ci_stmt_ir_ends_with_terminator(stmts: CiStmtPool, id: CiStmtId) -> bool:
