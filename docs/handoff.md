@@ -685,7 +685,126 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-03d): #747 CHECK rc=0 AT 48 GB; STAGE2 BUILDS rc=0; stage2 EXECUTION has a diagnosed defect class
+## SESSION-RESUME (2026-08-03e): #747 extern-arg class CLOSED (observer semantics end-to-end); stage2 lexes+parses; NEXT WALL: TokenList blanked through Parser.init struct literal
+
+MAIN LINE: healthy, untouched (docs-only commit here). Before ANY
+reseed: probe candidate as ORCHESTRATOR (#757).
+
+#747 STATE: branch `747-flip` @ c0f1fa61 (7 commits this session, every
+one seed-gated rc=0: bddbda6f rt owned-copy returns, 94df7c03 extern
+bit-copy + intrinsic needles, b80af0fb wl_ decls + vec_push_str effect,
+696f8a4f wrap revert, ab43619c seed annotations, 1fca9200 let-of-field
+alias, c0f1fa61 init_with_pool pool fix). Worktree recipe unchanged.
+
+THE CONSUMING-EXTERN CLASS IS CLOSED — not by wraps, by ONE rule at both
+layers (the HashMap 24f38e97 precedent, generalized):
+- Sema.extern_param_is_bit_copy (SemaCheck.w, next to mark_moved_if_consumed):
+  extern/ci callee + no DECLARED consume/escape_value effect => the param is
+  a bit-copy, no ownership transfer. This was ALREADY sema's documented
+  doctrine in check_call ("Extern/C params are bit-copied and do NOT own");
+  the census gap was never a missing diagnostic — sema's model was borrow,
+  MirLower's lowering was move. The divergence WAS the stage2 corruption.
+- MirLower.lower_call_arg (callee_sym now threaded from lower_call via
+  comp_resolved, redirect/arg-nodes/receiver-operand variants): a PLAIN
+  OK_MOVE arg to a bit-copy extern param re-issues as a non-consuming
+  OK_COPY share — caller keeps ownership + drop; rvalue args stay
+  registered stmt temps (the old consume CANCELLED the temp and leaked
+  every rvalue arg). Explicit `move`/`copy` keep transfer semantics.
+- Str reader intrinsics (contains/starts_with/ends_with/find/index_of/
+  split needle, replace args 0+1) lower through lower_observer_probe_arg
+  (str_intrinsic_observer_arg helper; also the optional-chain variant).
+  Sema never consumed these (only method_arg_stores_value args consume).
+- rt_core.w: slice/slice_ref/substr/trim/replace/split/split_vec/lines_out
+  now alloc_str-COPY their results; trim/replace/upper/lower no-op paths
+  stop returning `s`. Observer args + view returns would double-free at
+  offset 0 (the view IS the payload start) and dangle otherwise. #748 view
+  tokens can recover the zero-copy forms.
+- with_vec_push_str pinned @[effect(val: escape_value)] (vec RETAINS the
+  header — the one genuinely-consuming str extern in src/lib). wl_assemble/
+  compile_ir_to_object decls fixed str->&str (defs take &str; the str decl
+  was a real ABI mismatch). 840476d6's ~15 CLI clone wraps REVERTED.
+
+SECOND ROOT CAUSE, lldb-proven to the instruction: `let src = self.source`
+(unannotated let of a non-Copy FIELD) compiled to ldp(load)+stp xzr,xzr
+(RESET self.source)+with_str_free_drop_origin at return — a field MOVE the
+checker models as a VIEW (D27 "a binding names what's there"; the census
+campaign annotated every base-mutating site). skip_whitespace blanked
+self.source, next_token read len 0 => instant EOF => "parser returned an
+empty module" for every source. Evidence chain: tokenize-entry dump showed
+source intact; next_token/TokenList.append hit count exactly 2;
+parse_fn_decl/parse_use_decl/add_decl 0. FIX: lower_binding_alias_place now
+resolves field-of-IDENT bases (receiver included, alias-bound names too) to
+a projected field place => pure alias binding, no move/reset/drop. The
+machinery predates the flip (Apr #78, NK_CALL + autoderef bases only); str
+was Copy then, so the fallback byte-copied and nobody noticed.
+
+ALSO: Parser.init_with_pool stored the moved-from `pool` in the literal
+while file_pool (holding set_current_file_id) dropped at exit — freed the
+caller's live prelude pool. Fixed (pool: file_pool). Checker was SILENT on
+this var-rebind-then-reuse of a param: a real census gap instance to fix.
+
+NUMBERS (all with WITH_MEMORY_LIMIT_BYTES=118111600640):
+- probes (stage1-built): probe_extern (find_source_arg pattern incl.
+  left-to-right slice(arg,9,arg.len())), probe_methods (receiver+needle
+  survival, slice/trim/split copies), probe_concat (a,b valid after ++):
+  all rc=0 correct output, --debug-alloc leak count=0 each.
+- census: rc=0 "ok", ZERO diagnostics, 72-86 s, peak 48.33 GB (03d:
+  76 s / 48.2 GB — the rt copies are noise at this scale).
+- stage2 build: rc=0, 129-168 s, peak 63.7-65.4 GB -> /tmp/flip-stage2-probe.
+- stage2 smoke: --version ok. The 03d parser-empty-module is DEAD: the
+  lexer lexes (correct tags+spans in --dump-tokens) and the parser parses.
+
+NEXT WALL (facts collected, NOT yet root-caused): the TokenList is BLANK
+inside the constructed Parser.
+- At Parser.init_with_pool ENTRY the tokens are INTACT: TokenList passes
+  flattened in regs (x0=tags.ptr, x1=tags.len — x1 was 0x12=18 = exactly
+  tiny.w's 18 tokens; second call 0xf=15 for the prelude synthetic).
+- At Parser.parse_module ENTRY parser.tokens.tags = {ptr 0, len 0, cap 0,
+  elem 4} — BLANKED, not dangling.
+- So the loss is in init_with_pool's literal / return-by-value / the
+  caller's `var pparser =` store. Same ordering genus as the let-of-field
+  bug (reset-before-read of a moved slot). Disasm head of init_with_pool
+  shows the spilled param regs and five with_vec_new_out(elem=4) calls for
+  the literal's fresh Vec fields; the tokens stores were beyond the 80
+  instrs read.
+- Downstream symptoms (all one cause): peek on the null vec reads garbage
+  tags => "expected import path after 'use'" hallucinations; the
+  diagnostic renderer then displays RECYCLED memory (its own output bytes
+  as source lines) => the freed-buffer reuse is real; `-e` panics
+  "invalid free ... origin=drop#struct __drop_struct_468".
+- Attack for next session: dump MIR for Parser.init_with_pool with the
+  flipped stage1 (`with-stage1 check --dump-mir`/analyze select on a
+  Parser-shaped repro), or reduce a tiny two-field-struct repro: With fn
+  takes struct-with-Vec param byval-flattened, stores it in a literal,
+  returns the literal by value — check the param slot reset ordering
+  against the literal's field reads. drop-audit cell shape: (flattened
+  struct param x struct literal x return-by-value).
+
+TRAPS this session: lldb address breakpoints don't survive ASLR — use
+-r regex name breakpoints (With symbols are ___wcu$NNN$Type.method; $ needs
+quoting, regex is easier). --auto-continue + `breakpoint list -b` hit
+counts answer "did X run and how often" without any prints. Frame-variable
+info is absent (no DWARF locals) — argument registers at entry + struct
+field offsets are the way. Do NOT edit worktree files while a seed gate
+builds — a mid-build edit produced a phantom red gate (heap corruption in
+the seed reading changing sources) that cost a re-run.
+
+REVIEW ITEMS FOR ERIC (this session):
+- extern bit-copy rule: sema doctrine now enforced in lowering; is the
+  D5/G1 reading (extern str params observe unless effect-pinned) blessed?
+- let-of-field alias bindings: broad semantics change for unannotated
+  non-Copy field lets in flip-built code; checker already modeled it.
+- rt slice/substr/trim/replace/split/lines copies: perf cost accepted
+  interim (census peak unchanged); #748 recovers.
+- print/eprint (lib/std/builtins.w) take consuming `str` — observer
+  doctrine says they should observe; untouched (census-clean today).
+- rt with_vec_get_str returns an alias of the vec element typed owned —
+  same alias-return family, untouched (may be unreachable under D27
+  lowering; verify before stage3).
+- Checker gap: `var y = x; use(x)` on non-Copy PARAMS produced no
+  use-after-move diagnostic (Parser.init_with_pool). Needs a census rule.
+
+## SESSION-RESUME (2026-08-03d, SUPERSEDED by 03e above): #747 CHECK rc=0 AT 48 GB; STAGE2 BUILDS rc=0; stage2 EXECUTION has a diagnosed defect class
 
 MAIN LINE: healthy, untouched (docs-only commit here). Before ANY
 reseed: probe candidate as ORCHESTRATOR (#757).
