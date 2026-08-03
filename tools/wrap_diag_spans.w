@@ -63,6 +63,7 @@ fn classify(line: &str) -> i32:
     if line == "error: type mismatch in struct literal field": return 4
     if line == "error: type mismatch in assignment": return 5
     if line == "error: return type mismatch": return 6
+    if line.starts_with("error: wrong argument type in call to '"): return 7
     0
 
 fn count_carets(line: &str) -> i32:
@@ -107,6 +108,7 @@ fn kind_name(kind: i32) -> str:
     if kind == 3: return "d22-struct-field"
     if kind == 4: return "struct-field-mismatch"
     if kind == 5: return "assignment"
+    if kind == 7: return "wrong-arg"
     "return"
 
 fn load_skips(skip_path: &str) -> Vec[str]:
@@ -134,6 +136,20 @@ fn push_label_ok(dlines: &Vec[str], caret_idx: i32) -> bool:
             if extra.contains("has type &str"): label_ok = 1
         li = li + 1
     label_seen == 0 or label_ok == 1
+
+// A wrong-argument site is wrappable only when the argument is a &str
+// meeting a consuming owned-str parameter (labels follow the caret line).
+fn wrong_arg_label_ok(dlines: &Vec[str], caret_idx: i32) -> bool:
+    var li = caret_idx + 1
+    var borrowed_arg = 0
+    var owned_param = 0
+    while (li as i64) < dlines.len():
+        let extra = dlines.get(li as i64)
+        if not extra.starts_with("  = "): break
+        if extra.contains("has type &str"): borrowed_arg = 1
+        if extra.ends_with("expects str"): owned_param = 1
+        li = li + 1
+    borrowed_arg == 1 and owned_param == 1
 
 fn collect_sites(dlines: &Vec[str]) -> Vec[Site]:
     var sites: Vec[Site] = Vec.new()
@@ -165,6 +181,9 @@ fn collect_sites(dlines: &Vec[str]) -> Vec[Site]:
             continue
         if kind == 1 and not push_label_ok(dlines, caret_idx):
             print("skip-label " ++ path ++ f":{line_no}:{col}")
+            continue
+        if kind == 7 and not wrong_arg_label_ok(dlines, caret_idx):
+            print("skip-arg-label " ++ path ++ f":{line_no}:{col}")
             continue
         let key = path ++ f":{line_no}:{col}:{kind}"
         var dup = false

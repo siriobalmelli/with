@@ -11058,9 +11058,9 @@ fn ci_scope_restore(scope: CiScope, mark: CiScopeMark) -> CiScope:
             let _ = (*scope.ptr).name_log_values.pop()
             let _ = (*scope.ptr).name_log_had.pop()
             if had != 0:
-                (*scope.ptr).names.insert(key, value)
+                (*scope.ptr).names.insert(with_str_clone_ref(key), with_str_clone_ref(value))
             else:
-                let _ = (*scope.ptr).names.remove(key)
+                let _ = (*scope.ptr).names.remove(with_str_clone_ref(key))
         while (*scope.ptr).type_log_keys.len() > mark.type_log_len:
             let idx = (*scope.ptr).type_log_keys.len() - 1
             let key = (*scope.ptr).type_log_keys.get(idx)
@@ -11070,16 +11070,16 @@ fn ci_scope_restore(scope: CiScope, mark: CiScopeMark) -> CiScope:
             let _ = (*scope.ptr).type_log_values.pop()
             let _ = (*scope.ptr).type_log_had.pop()
             if had != 0:
-                (*scope.ptr).types.insert(key, value)
+                (*scope.ptr).types.insert(with_str_clone_ref(key), with_str_clone_ref(value))
             else:
-                let _ = (*scope.ptr).types.remove(key)
+                let _ = (*scope.ptr).types.remove(with_str_clone_ref(key))
     scope
 
 fn ci_scope_add(scope: CiScope, name: &str) -> CiScope:
     if name.len() > 0:
         let _ = ci_scope_note_name(scope, name)
         unsafe:
-            (*scope.ptr).names.insert(name, "")
+            (*scope.ptr).names.insert(with_str_clone_ref(name), "")
     scope
 
 fn ci_scope_add_mangled(scope: CiScope, original: &str, mangled: &str) -> CiScope:
@@ -11088,15 +11088,15 @@ fn ci_scope_add_mangled(scope: CiScope, original: &str, mangled: &str) -> CiScop
     if original == mangled:
         let _ = ci_scope_note_name(scope, original)
         unsafe:
-            (*scope.ptr).names.insert(original, "")
+            (*scope.ptr).names.insert(with_str_clone_ref(original), "")
     else:
         let _ = ci_scope_note_name(scope, original)
         unsafe:
-            (*scope.ptr).names.insert(original, mangled)
+            (*scope.ptr).names.insert(with_str_clone_ref(original), with_str_clone_ref(mangled))
         if mangled.len() > 0:
             let _ = ci_scope_note_name(scope, mangled)
             unsafe:
-                (*scope.ptr).names.insert(mangled, "")
+                (*scope.ptr).names.insert(with_str_clone_ref(mangled), "")
     scope
 
 fn ci_scope_add_type(scope: CiScope, name: &str, ty: &str) -> CiScope:
@@ -11104,7 +11104,7 @@ fn ci_scope_add_type(scope: CiScope, name: &str, ty: &str) -> CiScope:
         return scope
     let _ = ci_scope_note_type(scope, name)
     unsafe:
-        (*scope.ptr).types.insert(name, ty)
+        (*scope.ptr).types.insert(with_str_clone_ref(name), with_str_clone_ref(ty))
     scope
 
 fn ci_scope_lookup_type(scope: CiScope, name: &str) -> str:
@@ -13564,7 +13564,7 @@ fn ci_aggregate_kind_vec(v: &Vec[i32], label: &str):
             unique.push(k)
             counts.push(1)
         i = i + 1
-    eprint(label)
+    eprint(with_str_clone_ref(label))
     var u: i64 = 0
     while u < unique.len():
         let k = unique.get(u)
@@ -13782,7 +13782,7 @@ fn ci_stackify_no_args() -> Vec[i32]:
 
 fn ci_goto_cfg_new(entry_desc: &str) -> CiGotoCfgContext:
     var graph = StackifyGraph.new(0)
-    let entry = graph.add_block(entry_desc)
+    let entry = graph.add_block(with_str_clone_ref(entry_desc))
     let ptr = with_alloc(sizeof[CiGotoCfgContextState]()) as *mut CiGotoCfgContextState
     unsafe:
         *ptr = CiGotoCfgContextState {
@@ -13816,7 +13816,7 @@ impl CiGotoCfgContext:
             g_ci_bail_kind = CXK_GOTO_STMT
 
     mut fn new_block(desc: &str) -> i32:
-        self.state.cfg.graph.add_block(desc)
+        self.state.cfg.graph.add_block(with_str_clone_ref(desc))
 
     fn block_has_term(block: i32) -> bool:
         if block < 0 or block >= self.state.cfg.graph.blocks.len() as i32:

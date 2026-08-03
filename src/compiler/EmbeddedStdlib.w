@@ -1,4 +1,5 @@
 use compiler.EmbeddedStdlibData
+extern fn with_str_clone_ref(s: &str) -> str
 
 fn EMBEDDED_STD_PREFIX -> str: "<embedded-std>/"
 
@@ -6,7 +7,7 @@ fn embedded_std_is_module_rel(rel_path: &str) -> bool:
     rel_path.starts_with("std/")
 
 fn embedded_std_source(rel_path: &str) -> str:
-    embedded_std_source_data(rel_path)
+    embedded_std_source_data(with_str_clone_ref(rel_path))
 
 fn embedded_std_list_modules() -> str:
     embedded_std_list_modules_data()

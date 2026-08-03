@@ -1500,7 +1500,7 @@ fn ci_migrate_set_error(msg: &str):
         g_migrate_file_error = with_str_clone_ref(msg)
 
 fn ci_migrate_fail_function(msg: &str) -> str:
-    eprint(msg)
+    eprint(with_str_clone_ref(msg))
     ci_migrate_set_error(msg)
     ""
 

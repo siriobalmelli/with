@@ -1134,7 +1134,7 @@ impl CCodegen:
             if cc_intern_resolve(self.intern, sym) == name:
                 out = sym
                 break
-        self.body_fn_name_map.insert(name, out)
+        self.body_fn_name_map.insert(with_str_clone_ref(name), out)
         out
 
     fn has_body_for_sym(fn_sym: i32) -> i32:
