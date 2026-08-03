@@ -263,7 +263,7 @@ fn analysis_collect_trait_declarations(report: &AnalysisReport, sema: &Sema, sou
             fact.end = method_end
             fact.line = analysis_line_for_offset(source, method_start)
             fact.column = analysis_column_for_offset(source, method_start)
-            fact.path = path
+            fact.path = with_str_clone_ref(path)
             fact.name = trait_name ++ "." ++ sema.pool_resolve(method_sym)
             fact.detail = "trait declaration receiver=" ++ analysis_receiver_mode_name(mode) ++ f" params={param_count} explicit-receiver={explicit_receiver} synthetic-receiver={synthetic_receiver} source-file={source_file}"
             report.add(move fact)
@@ -281,7 +281,7 @@ fn analysis_collect_types(report: &AnalysisReport, sema: &Sema):
         fact.id = tid
         fact.index = kind
         fact.symbol = if kind == TypeKind.TY_STRUCT or kind == TypeKind.TY_ENUM or kind == TypeKind.TY_ALIAS: d0 else: 0
-        fact.name = type_name
+        fact.name = with_str_clone_ref(type_name)
         fact.detail = f"kind={kind} d0={d0} d1={d1} d2={d2}"
         report.add(move fact)
 
@@ -514,7 +514,7 @@ fn analysis_collect_signatures(report: &AnalysisReport, sema: &Sema, source_path
             param.effects = sema.sig_param_effect(si, pi)
             param.flags = if sema.sig_param_uses_value_ref_abi(si, pi) != 0: 1 else: 0
             param.path = with_str_clone(sig.path)
-            param.name = name
+            param.name = with_str_clone_ref(name)
             param.detail = analysis_param_class(sema, si, pi) ++ f" direct={sema.sig_param_direct_effect(si, pi)} final={param.effects} value-ref={param.flags}"
             report.add(param.owned_copy())
 
@@ -779,7 +779,7 @@ fn analysis_collect_mir_call(report: &AnalysisReport, mir_mod: &MirModule, body:
         arg.type_id = mir_validate_operand_type(mir_mod, body, operand)
         arg.effects = if sig >= 0 and ai < sema.sig_get_param_count(sig): sema.sig_param_effect(sig, ai) else: 0
         arg.flags = (kind & 255) | (if share: 256 else: 0)
-        arg.name = name
+        arg.name = with_str_clone_ref(name)
         arg.detail = analysis_operand_kind_name(kind) ++ " " ++ mir_operand_text(body, operand, pool, sema) ++ if share: " -> share-place" else: ""
         let arg_node = arg.node
         arg = analysis_with_node_location(move arg, sema, arg_node, caller_path, caller_source)
@@ -1111,8 +1111,8 @@ fn analysis_audit_frozen_calls(report: &AnalysisReport, sema: &Sema, mir_mod: &M
             fact.body_sym = body.fn_sym
             fact.symbol = callee_sym
             fact.flags = mode as i32
-            fact.path = caller_path
-            fact.name = callee
+            fact.path = with_str_clone_ref(caller_path)
+            fact.name = with_str_clone_ref(callee)
             fact.detail = "frozen caller " ++ sema.pool_resolve(body.fn_sym) ++ " reaches " ++ analysis_receiver_mode_name(mode) ++ " semantic method"
             report.add(move fact)
             report.fail("frozen phase " ++ sema.pool_resolve(body.fn_sym) ++ " -> " ++ callee ++ ": mutable Sema re-entry")

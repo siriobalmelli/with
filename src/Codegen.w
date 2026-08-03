@@ -759,7 +759,7 @@ impl Codegen:
         fact.type_id = self.mir_operand_sema_type(body, operand)
         fact.effects = if sig >= 0 and param_index >= 0 and param_index < self.sema.sig_get_param_count(sig): self.sema.sig_param_effect(sig, param_index) else: 0
         fact.flags = (strategy as i32) | ((op_kind & 255) << 8) | (if share: 65536 else: 0) | (if ref_table: 131072 else: 0)
-        fact.name = name
+        fact.name = with_str_clone_ref(name)
         // Strategy verdicts are derived before the enum's last use below;
         // analysis_marshal_strategy_name consumes it.
         let strategy_unmarshaled = strategy == AnalysisMarshalStrategy.DirectValue or strategy == AnalysisMarshalStrategy.MissingSignature
@@ -791,7 +791,7 @@ impl Codegen:
         fact.type_id = if param_index + 1 < body.local_type_ids.len() as i32: body.local_type_ids.get((param_index + 1) as i64) else: 0
         fact.effects = if sig >= 0 and param_index < self.sema.sig_get_param_count(sig): self.sema.sig_param_effect(sig, param_index) else: 0
         fact.flags = (strategy as i32) | (if share: 65536 else: 0) | (if ref_table: 131072 else: 0) | (if incoming_ptr: 262144 else: 0)
-        fact.name = name
+        fact.name = with_str_clone_ref(name)
         // Derived before analysis_marshal_strategy_name consumes the enum.
         let strategy_not_alias = strategy != AnalysisMarshalStrategy.CalleePlaceAlias
         fact.detail = analysis_marshal_strategy_name(strategy) ++ f" incoming={incoming} storage={storage} sig={sig} sema-share={share} ref-table={ref_table} llvm-pointer={incoming_ptr}"
@@ -5597,7 +5597,7 @@ impl Codegen:
             arg_sema_types.push(self.llvm_type_to_sema_type(fallback_ty))
 
         let base_name = self.intern.resolve(name_sym)
-        var mangled = base_name
+        var mangled = with_str_clone_ref(base_name)
         for ti in 0..tp_count:
             let arg_ty = arg_types.get(ti as i64)
             mangled = mangled ++ "__" ++ self.llvm_type_mangle(arg_ty)

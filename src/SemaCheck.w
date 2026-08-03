@@ -1446,7 +1446,7 @@ impl Sema:
         if di < self.decl_source_paths.len() as i32:
             let path: str = self.decl_source_paths.get(di as i64)
             if path != self.current_module_path:
-                self.current_module_path = path
+                self.current_module_path = with_str_clone_ref(path)
                 if self.scoping_active != 0:
                     let path_sym = self.pool_lookup_symbol(path)
                     self.current_module_has_ci = if path_sym != 0 and self.ci_modules.contains(path_sym): 1 else: 0

@@ -888,7 +888,7 @@ fn ci_migrate_file_inner(input_path: &str, output_path: &str, project_active: bo
         return 1
     let source_prefix = ci_migrate_source_prefix()
     g_migrate_current_input_path = with_str_clone_ref(input_path)
-    g_migrate_raw_source = source
+    g_migrate_raw_source = with_str_clone_ref(source)
 
     // Pass to libclang via cimport_parse
     let session = with_cimport_parse(source)
@@ -974,8 +974,9 @@ fn ci_migrate_file_inner(input_path: &str, output_path: &str, project_active: bo
             output_parts.push(ci_migrate_translate_function(session, i, translated_structs, input_path, project_active, project))
         else if kind == CK_STRUCT or kind == CK_UNION:
             let struct_result = ci_translate_struct(session, i, kind == CK_UNION, translated_structs, demoted_types, count)
+            let struct_result_len = struct_result.len()
             output_parts.push(struct_result)
-            if struct_result.len() > 0:
+            if struct_result_len > 0:
                 let sname = with_cimport_decl_name(session, i)
                 if sname.len() > 0 and sname.byte_at(0) != 95:
                     translated_structs = translated_structs ++ "|" ++ sname ++ "|"
@@ -988,8 +989,9 @@ fn ci_migrate_file_inner(input_path: &str, output_path: &str, project_active: bo
             output_parts.push(ci_translate_enum(session, i))
         else if kind == CK_TYPEDEF:
             let td_result = ci_translate_typedef(session, i, count)
+            let td_result_len = td_result.len()
             output_parts.push(td_result)
-            if td_result.len() > 0:
+            if td_result_len > 0:
                 let td_name = with_cimport_decl_name(session, i)
                 if td_name.len() > 0 and td_name.byte_at(0) != 95:
                     translated_structs = translated_structs ++ "|" ++ td_name ++ "|"

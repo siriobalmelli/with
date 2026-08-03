@@ -305,7 +305,7 @@ pub fn lock_write(project_root: &str, lock: &LockFile) -> i32:
 
 pub fn lock_sha256_text(data: &str) -> str:
     var digest: [32]u8 = [0 as u8; 32]
-    sha256_hash_str(with_str_clone_ref(data), &raw mut digest[0] as *mut u8)
+    sha256_hash_str(data, &raw mut digest[0] as *mut u8)
     sha256_hex(&digest[0] as *const u8)
 
 pub fn lock_sha256_file(path: &str) -> str:

@@ -80,7 +80,7 @@ pub fn build_cache_is_cacheable(kind: i32) -> bool:
 
 fn build_cache_sha256_text(data: &str) -> str:
     var digest: [32]u8 = [0 as u8; 32]
-    sha256_hash_str(with_str_clone_ref(data), &raw mut digest[0] as *mut u8)
+    sha256_hash_str(data, &raw mut digest[0] as *mut u8)
     sha256_hex(&digest[0] as *const u8)
 
 // Digest-identical to hashing framing ++ payload, but the payload (often a
@@ -139,7 +139,7 @@ pub fn build_cache_fingerprint_file(path: &str) -> str:
         fp = build_cache_fingerprint_regular_file(path, mode)
     else:
         fp = build_cache_sha256_text("other\nmode:" ++ f"{mode}" ++ "\n")
-    build_cache_fp_memo.insert(with_str_clone_ref(path), fp)
+    build_cache_fp_memo.insert(with_str_clone_ref(path), with_str_clone_ref(fp))
     fp
 
 fn build_cache_str_contains_byte(text: &str, target: i32) -> bool:

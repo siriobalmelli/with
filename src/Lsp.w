@@ -1568,10 +1568,10 @@ fn LspState.signature_help(mut self: LspState, id: i32, uri: &str, text: &str, l
                     if inner > 0 and parsed.pool.kind(inner as NodeId) == NodeKind.NK_TYPE_NAMED:
                         ptype_str = "&" ++ parsed.intern.resolve(parsed.pool.get_data0(inner as NodeId))
             let param_text = if ptype_str.len() > 0: pname ++ ": " ++ ptype_str else: pname
-            param_labels.push(param_text)
             if pi > 0:
                 label = label ++ ", "
             label = label ++ param_text
+            param_labels.push(param_text)
         label = label ++ ")"
         sig_label = label
         break

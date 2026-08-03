@@ -191,7 +191,7 @@ fn resolve_from_root_pool_with_prefix(root_path: &str, root_text: &str, root_fil
     state.root_prefix_skip = root_prefix_skip
     let normalized_root_text = resolve_normalize_source_text(root_text)
     let root_dir = resolve_dirname(root_path)
-    state.root_source_dir = root_dir
+    state.root_source_dir = with_str_clone_ref(root_dir)
     let root_module = state.reserve_module(root_path, root_dir, root_file_id)
 
     var work = 0
@@ -1233,7 +1233,7 @@ pub fn resolve_canonical_module_key(path: &str) -> str:
                     if parts.len() > 0 and parts.get(parts.len() - 1) != "..":
                         parts.pop()
                     else if not is_abs:
-                        parts.push(part)
+                        parts.push(with_str_clone_ref(part))
                 if keep:
                     parts.push(part)
             start = i + 1

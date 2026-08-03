@@ -7124,7 +7124,7 @@ impl Codegen:
             if self.pool.get_data1(decl) == 0:
                 continue
             let fn_text = self.codegen_symbol_text(self.pool.get_data0(decl))
-            var bare = fn_text
+            var bare = with_str_clone_ref(fn_text)
             for dot_i in 0..fn_text.len() as i32:
                 if fn_text.byte_at(dot_i as i64) == 46:
                     bare = fn_text.slice((dot_i + 1) as i64, fn_text.len() as i64)
@@ -7172,7 +7172,7 @@ impl Codegen:
         if tk == 0 and resolved >= self.mir_type_kinds_len() as i32 and resolved > 0:
             tk = self.sema.get_type_kind(self.sema.resolve_alias(resolved as TypeId))
         let method_full_name = self.codegen_method_symbol_text(method_sym)
-        var method_name = method_full_name
+        var method_name = with_str_clone_ref(method_full_name)
         for method_dot_i in 0..method_full_name.len() as i32:
             if method_full_name.byte_at(method_dot_i as i64) == 46:
                 method_name = method_full_name.slice((method_dot_i + 1) as i64, method_full_name.len() as i64)
@@ -7434,7 +7434,7 @@ impl Codegen:
         if recv_ty == 0 or method_sym == 0:
             return MirIntrinsic.NONE
         let method_full_name = self.codegen_method_symbol_text(method_sym)
-        var method_name = method_full_name
+        var method_name = with_str_clone_ref(method_full_name)
         for method_dot_i in 0..method_full_name.len() as i32:
             if method_full_name.byte_at(method_dot_i as i64) == 46:
                 method_name = method_full_name.slice((method_dot_i + 1) as i64, method_full_name.len() as i64)
@@ -13678,7 +13678,7 @@ impl Codegen:
                 if gc_name == "track":
                     if self.mir_emit_async_scope_track_call(body, args_id, dest_place, next_bb):
                         return true
-                var gc_tail_name = gc_name
+                var gc_tail_name = with_str_clone_ref(gc_name)
                 for gc_tail_i in 0..gc_name.len() as i32:
                     if gc_name.byte_at(gc_tail_i as i64) == 46:
                         gc_tail_name = gc_name.slice((gc_tail_i + 1) as i64, gc_name.len() as i64)
@@ -13960,7 +13960,7 @@ impl Codegen:
                         gc_synth_owner_sym = self.find_struct_type_by_llvm(gc_synth_recv_llvm_ty)
                     if gc_synth_owner_sym != 0:
                         let gc_synth_callee_name = self.intern.resolve(gc_callee_sym)
-                        var gc_synth_method_name = gc_synth_callee_name
+                        var gc_synth_method_name = with_str_clone_ref(gc_synth_callee_name)
                         for gc_synth_di in 0..gc_synth_callee_name.len() as i32:
                             if gc_synth_callee_name.byte_at(gc_synth_di as i64) == 46:
                                 gc_synth_method_name = gc_synth_callee_name.slice((gc_synth_di + 1) as i64, gc_synth_callee_name.len() as i64)

@@ -142,8 +142,8 @@ impl InternPool:
 
         let id = st.symbol_texts.len() as i32
         let owned = st.strings.store(s)
+        st.symbol_map.insert(with_str_clone_ref(owned), id)
         st.symbol_texts.push(owned)
-        st.symbol_map.insert(owned, id)
         id
 
     fn resolve_symbol(sym: Symbol) -> str:

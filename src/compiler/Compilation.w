@@ -614,8 +614,8 @@ impl Compilation:
             let path = zcu.decl_source_path_frontend(di)
             let import_name = compilation_module_import_name(root, path)
             if import_name.len() > 0 and not imported.contains(import_name):
-                imported.insert(import_name, 1)
                 out = out ++ "use " ++ import_name ++ ".*\n"
+                imported.insert(import_name, 1)
         out = out ++ "\n"
         out = out ++ self.project_info_source(pool)
         out = out ++ "\nfn main:\n"

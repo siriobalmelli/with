@@ -57,7 +57,7 @@ fn ci_reindent_spaces(text: &str, spaces: i32) -> str:
         while end < tlen and text.byte_at(end as i64) != 10:
             end = end + 1
         if end > start:
-            parts.push(prefix)
+            parts.push(with_str_clone_ref(prefix))
         parts.push(text.slice(start as i64, end as i64))
         parts.push("\n")
         start = end + 1

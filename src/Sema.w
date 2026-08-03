@@ -1208,8 +1208,8 @@ impl Sema:
 
         let id = self.pool.state.symbol_texts.len() as i32
         let owned = sema_owned_text(name)
+        self.pool.state.symbol_map.insert(with_str_clone_ref(owned), id)
         self.pool.state.symbol_texts.push(owned)
-        self.pool.state.symbol_map.insert(owned, id)
         id
 
 fn sema_tier_path_is_std_implementation(path: &str) -> i32:

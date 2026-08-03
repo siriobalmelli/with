@@ -122,7 +122,7 @@ fn tracked_normalize_path(path: &str) -> str:
                     if parts.len() > 0 and parts.get(parts.len() - 1) != "..":
                         parts.pop()
                     else if not is_abs:
-                        parts.push(part)
+                        parts.push(with_str_clone_ref(part))
                 if keep:
                     parts.push(part)
             start = i + 1

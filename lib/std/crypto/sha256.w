@@ -145,8 +145,8 @@ pub fn sha256_hash(data: *const u8, len: i32, out: *mut u8) -> Unit:
     unsafe { sha256_update(p, data, len) }
     unsafe { sha256_finish(p, out) }
 
-// Convenience: hash a string
-pub fn sha256_hash_str(s: str, out: *mut u8) -> Unit:
+// Convenience: hash a string (observer — reads, never retains; D5)
+pub fn sha256_hash_str(s: &str, out: *mut u8) -> Unit:
     unsafe:
         let bytes = str_copy_bytes(s)
         sha256_hash(bytes as *const u8, s.len() as i32, out)
@@ -155,7 +155,7 @@ pub fn sha256_hash_str(s: str, out: *mut u8) -> Unit:
 // Hash the concatenation a ++ b without materializing it. Digest-identical to
 // sha256_hash_str(a ++ b) — callers with a large payload use this so the
 // payload never enters a `++` chain.
-pub fn sha256_hash_str_pair(a: str, b: str, out: *mut u8) -> Unit:
+pub fn sha256_hash_str_pair(a: &str, b: &str, out: *mut u8) -> Unit:
     var ctx = Sha256.new()
     let p = &raw mut ctx as *mut Sha256
     unsafe:

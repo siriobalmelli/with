@@ -546,7 +546,7 @@ fn cimport_deps_sorted_unique_paths(files: &str) -> Vec[str]:
                 for i in 0..out.len() as i32:
                     let existing = out.get(i as i64)
                     if not inserted and cimport_deps_str_compare(path, existing) < 0:
-                        next.push(path)
+                        next.push(with_str_clone_ref(path))
                         inserted = true
                     next.push(with_str_clone_ref(existing))
                 if not inserted:
@@ -1160,7 +1160,7 @@ fn c_import_param_type(param_raw: &str) -> str:
     while end >= 0 and c_import_is_space(param.byte_at(end as i64)):
         end = end - 1
 
-    var type_spec = param
+    var type_spec = with_str_clone_ref(param)
     if end >= 0 and c_import_is_ident_char(param.byte_at(end as i64)):
         var j = end
         while j >= 0 and c_import_is_ident_char(param.byte_at(j as i64)):
@@ -1446,7 +1446,7 @@ impl Zcu:
             runtime_eprint("[frontend] compile_source:parse")
         let normalized_text = frontend_normalize_source_text(text)
         self.current_source_path = with_str_clone_ref(name)
-        self.current_source_text = normalized_text
+        self.current_source_text = with_str_clone_ref(normalized_text)
 
         // Phase 1+2: Lex + Parse.  When prelude is enabled, parse the prelude
         // USE declaration first, then (#682-inc1) expand the prelude closure

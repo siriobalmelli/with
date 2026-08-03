@@ -385,7 +385,7 @@ fn link_stage_make_darwin_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_p
     args.push("arm64")
     args.push("-platform_version")
     args.push("macos")
-    args.push(platform_version)
+    args.push(with_str_clone_ref(platform_version))
     args.push(platform_version)
     args.push("-dead_strip")
     args.push("-o")
@@ -435,12 +435,12 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_pa
     args.push(with_str_clone_ref(bin_path))
     outputs.push(with_str_clone_ref(bin_path))
 
-    args.push(crt1)
+    args.push(with_str_clone_ref(crt1))
     inputs.push(crt1)
-    args.push(crti)
+    args.push(with_str_clone_ref(crti))
     inputs.push(crti)
     let crtbegin = gcc_dir ++ "/crtbegin.o"
-    args.push(crtbegin)
+    args.push(with_str_clone_ref(crtbegin))
     inputs.push(crtbegin)
 
     args.push(with_str_clone_ref(obj_path))
@@ -462,7 +462,7 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_pa
         else:
             let fallback_lib = link_stage_linux_system_lib_path(lib)
             if fallback_lib.len() > 0:
-                args.push(fallback_lib)
+                args.push(with_str_clone_ref(fallback_lib))
                 inputs.push(fallback_lib)
             else:
                 args.push("-l" ++ lib)
@@ -472,9 +472,9 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_pa
     args.push("-lgcc")
 
     let crtend = gcc_dir ++ "/crtend.o"
-    args.push(crtend)
+    args.push(with_str_clone_ref(crtend))
     inputs.push(crtend)
-    args.push(crtn)
+    args.push(with_str_clone_ref(crtn))
     inputs.push(crtn)
     let cleanup_files = link_stage_collect_cleanup_files(extras)
     LinkStageCommand { linker: with_str_clone_ref(llvm_ld), args, cwd: "", env, inputs, outputs, cleanup_files }

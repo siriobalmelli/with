@@ -1701,7 +1701,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
         let target = &graph.targets[ti as i64]
         if timing_name.len() > 0:
             let spent = with_clock_nanos() - timing_t0
-            timed_names.push(timing_name)
+            timed_names.push(with_str_clone_ref(timing_name))
             timed_ns.push(spent)
             with_eprint("[time] " ++ timing_name ++ " " ++ build_graph_time_fmt(spent))
             timing_name = ""
@@ -1750,7 +1750,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
         if target.kind != 9 and pool_dep_inflight:
             while pool_oldest < pool_names.len() as i32:
                 let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
-                timed_names.push(retire.name)
+                timed_names.push(with_str_clone_ref(retire.name))
                 timed_ns.push(retire.spent)
                 if retire.rc == 0:
                     completed_targets.push(retire.name)
@@ -1778,7 +1778,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
         if not will_pool and pool_oldest < pool_names.len() as i32:
             while pool_oldest < pool_names.len() as i32:
                 let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
-                timed_names.push(retire.name)
+                timed_names.push(with_str_clone_ref(retire.name))
                 timed_ns.push(retire.spent)
                 if retire.rc == 0:
                     completed_targets.push(retire.name)
@@ -1794,7 +1794,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
         if will_pool:
             if pool_names.len() as i32 - pool_oldest >= pool_width:
                 let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
-                timed_names.push(retire.name)
+                timed_names.push(with_str_clone_ref(retire.name))
                 timed_ns.push(retire.spent)
                 if retire.rc == 0:
                     completed_targets.push(retire.name)
@@ -1807,7 +1807,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                     if not survey:
                         while pool_oldest < pool_names.len() as i32:
                             let drain = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
-                            timed_names.push(drain.name)
+                            timed_names.push(with_str_clone_ref(drain.name))
                             timed_ns.push(drain.spent)
                             if drain.rc == 0:
                                 completed_targets.push(drain.name)
@@ -1823,7 +1823,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                 with_eprint("error: could not spawn worker for build.w target '" ++ target.name ++ "'")
                 while pool_oldest < pool_names.len() as i32:
                     let drain = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
-                    timed_names.push(drain.name)
+                    timed_names.push(with_str_clone_ref(drain.name))
                     timed_ns.push(drain.spent)
                     if drain.rc == 0:
                         completed_targets.push(drain.name)
@@ -1983,7 +1983,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
         completed_targets.push(with_str_clone_ref(target.name))
     while pool_oldest < pool_names.len() as i32:
         let retire = build_pool_retire_oldest(pool_names, pool_pids, pool_t0s, pool_outs, pool_errs, pool_timeouts, pool_oldest)
-        timed_names.push(retire.name)
+        timed_names.push(with_str_clone_ref(retire.name))
         timed_ns.push(retire.spent)
         if retire.rc == 0:
             completed_targets.push(retire.name)
@@ -1998,7 +1998,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
         return pool_failed_rc
     if timing_name.len() > 0:
         let spent = with_clock_nanos() - timing_t0
-        timed_names.push(timing_name)
+        timed_names.push(with_str_clone_ref(timing_name))
         timed_ns.push(spent)
         with_eprint("[time] " ++ timing_name ++ " " ++ build_graph_time_fmt(spent))
     if times_top_level:
@@ -4647,9 +4647,9 @@ fn run_init_command(argc: i32) -> i32:
     let lib_path = resolve_join(src_dir, "lib.w")
     let main_path = resolve_join(src_dir, "main.w")
     let test_path = resolve_join(test_dir, "test_main.w")
-    var created_path = target_dir
+    var created_path = with_str_clone_ref(target_dir)
     if target_dir == ".":
-        created_path = name
+        created_path = with_str_clone_ref(name)
 
     let ai_guide = init_ai_guide_template()
 
@@ -4803,7 +4803,7 @@ fn run_get_command(argc: i32) -> i32:
         return 1
     // Parse name and version from spec
     let pkg_part = spec.slice(2, spec.len())
-    var pkg_name = pkg_part
+    var pkg_name = with_str_clone_ref(pkg_part)
     var pkg_version = ""
     for i in 0..pkg_part.len() as i32:
         if pkg_part.byte_at(i as i64) == 64:

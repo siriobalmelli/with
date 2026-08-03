@@ -7,7 +7,7 @@
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 
-pub unsafe fn str_copy_bytes(s: str) -> *mut u8:
+pub unsafe fn str_copy_bytes(s: &str) -> *mut u8:
     let out = with_alloc(s.len() + 1)
     var i: i64 = 0
     while i < s.len():

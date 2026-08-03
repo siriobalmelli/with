@@ -294,7 +294,7 @@ fn relocate_file(path: &str, semantic: &RelocationFacts, apply: bool, list_metho
         // if any. The receiver base is often spelled `Self` (an alias for the
         // dotted type), so the base MUST come from the dotted name, never the
         // receiver spelling — else every `self: &Self` method yields `impl Self:`.
-        var target = type_name
+        var target = with_str_clone_ref(type_name)
         var bpos = rti
         while bpos < rlen and (recv_type.byte_at(bpos as i64) as i32) != 91:   // '['
             bpos = bpos + 1
@@ -376,7 +376,7 @@ fn relocate_file(path: &str, semantic: &RelocationFacts, apply: bool, list_metho
             chunks.push(reindent(gap, "    "))     // inter-method comments go inside
         else:
             chunks.push(gap)                        // leading comments at column 0
-            chunks.push(header)
+            chunks.push(with_str_clone_ref(header))
             chunks.push("\n")
             open_header = header
 

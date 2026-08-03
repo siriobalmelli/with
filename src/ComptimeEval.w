@@ -2086,11 +2086,11 @@ impl ComptimeEvaluator:
         if resolved.len() > 0:
             let identity = comptime_effect_escape(resolved) ++ ":" ++ comptime_sha256_text(with_fs_read_file(resolved))
             self.tool_identity_paths.push(key)
-            self.tool_identity_values.push(identity)
+            self.tool_identity_values.push(with_str_clone_ref(identity))
             return identity
         let identity = comptime_effect_escape(exe) ++ ":unresolved"
         self.tool_identity_paths.push(key)
-        self.tool_identity_values.push(identity)
+        self.tool_identity_values.push(with_str_clone_ref(identity))
         identity
 
 fn comptime_effect_contains_slash(text: &str) -> bool:
@@ -2233,7 +2233,7 @@ impl ComptimeEvaluator:
         let new_start = self.extra_values.len() as i32
         for fi in 0..base_value.extra_count:
             if fi == field_index:
-                self.extra_values.push(value)
+                self.extra_values.push(comptime_value_clone(value))
             else:
                 self.extra_values.push(self.extra_value_at((base_value.extra_start + fi) as i64))
         let updated = comptime_value_struct(base_value.type_id, new_start, base_value.extra_count)
@@ -2316,7 +2316,7 @@ impl ComptimeEvaluator:
             let text = with_fs_read_file(path)
             if text.len() > 0 or with_fs_file_exists(path) != 0:
                 self.source_text_cache_path = path
-                self.source_text_cache = text
+                self.source_text_cache = with_str_clone_ref(text)
                 return text
         self.sema.source_text
 
@@ -3096,7 +3096,7 @@ impl ComptimeEvaluator:
                 let old_key = self.extra_value_at(base as i64)
                 self.extra_values.push(comptime_value_clone(old_key))
                 if comptime_values_equal(old_key, key_signal.value, self.extra_values) != 0:
-                    self.extra_values.push(value_signal.value)
+                    self.extra_values.push(comptime_value_clone(value_signal.value))
                     replaced = 1
                 else:
                     self.extra_values.push(self.extra_value_at((base + 1) as i64))
@@ -3410,8 +3410,8 @@ impl ComptimeEvaluator:
             let arg_signal = self.eval_expr(self.ast.get_extra(extra_start + i))
             if arg_signal.kind != ComptimeControlKind.CTL_VALUE:
                 return arg_signal
-            arg_values.push(arg_signal.value)
             arg_types.push(self.comptime_value_semantic_type(arg_signal.value))
+            arg_values.push(arg_signal.value)
 
         let resolved_recv = self.sema.auto_deref_method_type_frozen(recv_value.type_id as TypeId, method)
         let owner = self.sema.method_owner_symbol_for_type(resolved_recv as i32)
@@ -3732,7 +3732,7 @@ impl ComptimeEvaluator:
 
 fn comptime_sha256_text(data: &str) -> str:
     var digest: [32]u8 = [0 as u8; 32]
-    sha256_hash_str(with_str_clone_ref(data), &raw mut digest[0] as *mut u8)
+    sha256_hash_str(data, &raw mut digest[0] as *mut u8)
     sha256_hex(&digest[0] as *const u8)
 
 impl ComptimeEvaluator:
@@ -4761,7 +4761,7 @@ impl ComptimeEvaluator:
         comp.set_prelude_mode(self.workspace_i32_option(options, "prelude_mode", 0))
 
         var pool = AstPool.new()
-        var source_name = source_path
+        var source_name = with_str_clone_ref(source_path)
         if out.string_names.len() > 0:
             let source_paths: Vec[str] = Vec.new()
             let source_texts: Vec[str] = Vec.new()

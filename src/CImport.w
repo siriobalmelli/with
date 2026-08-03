@@ -1812,8 +1812,8 @@ fn ci_detect_member_functions(session: i64, count: i32, known_structs: &str) -> 
                 se = se + 1
             if se > si + 1:
                 let sname = known_structs.slice((si + 1) as i64, se as i64)
-                struct_names.push(sname)
                 struct_prefixes.push(ci_compute_snake_prefix(sname))
+                struct_names.push(sname)
             si = se
         else:
             si = si + 1
@@ -2455,7 +2455,7 @@ fn ci_translate_var(session: i64, idx: i32, known_structs: &str) -> str:
     with_cimport_mark_name_emitted(name)
 
     // Convert incomplete arrays ([0]T) to pointer types
-    var actual_type = var_type
+    var actual_type = with_str_clone_ref(var_type)
     if ci_starts_with(var_type, "[0]"):
         actual_type = "*mut " ++ var_type.slice(3, var_type.len())
 
@@ -2918,7 +2918,7 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: &str, macro
                         translated = ci_translate_c_expr(work_value, param_names, known_values)
                     if translated.len() > 0:
                         // Infer return type from cast expression: (x as c_int) → return c_int
-                        var inferred_ret = ret_type
+                        var inferred_ret = with_str_clone_ref(ret_type)
                         if ci_translation_is_void_statement(translated):
                             inferred_ret = "Unit"
                         else if param_count > 0:
@@ -8396,17 +8396,17 @@ impl CiExprPool:
             let spelling_expanded = ci_expand_string_macro_sequence(session, spelling_src)
             let source_expanded = ci_expand_string_macro_sequence(session, source_src)
             var preprocessed_expanded = ""
-            var text = literal_src
+            var text = with_str_clone_ref(literal_src)
             if ci_is_string_literal(spelling_literal):
                 text = spelling_literal
             else if ci_is_concatenated_string(spelling_src):
                 text = ci_concat_strings(spelling_src)
             else if ci_is_string_literal(spelling_src):
-                text = spelling_src
+                text = with_str_clone_ref(spelling_src)
             else if ci_is_concatenated_string(source_src):
                 text = ci_concat_strings(source_src)
             else if ci_is_string_literal(source_src):
-                text = source_src
+                text = with_str_clone_ref(source_src)
             else if expansion_expanded.len() > 0:
                 text = expansion_expanded
             else if expansion_arg_expanded.len() > 0:
@@ -8422,10 +8422,10 @@ impl CiExprPool:
                 if stringify_val.len() > 0:
                     text = stringify_val
                 else:
-                    let preprocessed_raw_src = if expansion_src.len() > 0: expansion_src else if source_src.len() > 0: source_src else: literal_src
+                    let preprocessed_raw_src = if expansion_src.len() > 0: with_str_clone_ref(expansion_src) else if source_src.len() > 0: with_str_clone_ref(source_src) else: with_str_clone_ref(literal_src)
                     preprocessed_expanded = ci_expand_string_macro_sequence(session, ci_preprocessed_string_sequence_for_cursor(session, cursor, preprocessed_raw_src))
                     if preprocessed_expanded.len() > 0:
-                        text = preprocessed_expanded
+                        text = with_str_clone_ref(preprocessed_expanded)
                     else:
                         return 0 as CiExprId
             else:
@@ -8470,7 +8470,7 @@ impl CiExprPool:
             if mangled.len() > 0:
                 text = mangled
             else:
-                text = escaped
+                text = with_str_clone_ref(escaped)
             let s = self.add_string(text)
             var ty = types.type_from_libclang(session, with_ci_cursor_type(session, cursor))
             let scoped_ty = ci_scope_lookup_type(scope, escaped)
@@ -10667,7 +10667,9 @@ fn ci_cursor_kind_is_expression(kind: i32) -> bool:
     false
 
 fn ci_trans_stmt_via_ir(session: i64, cursor: i32, kind: i32, indent: i32, scope: CiScope) -> str:
-    let saved_fn_var_names = g_ci_fn_var_names
+    // Snapshot must CLONE: a move would leave the global in moved state for
+    // every other reader on the success path (#747).
+    let saved_fn_var_names = with_str_clone_ref(g_ci_fn_var_names)
     let saved_temp_cursor_len = g_ci_temp_cursors.len() as i32
     let saved_temp_id_len = g_ci_temp_ids.len() as i32
     let saved_temp_next = g_ci_temp_next
@@ -11151,7 +11153,7 @@ fn ci_realpath_cached(path: &str) -> str:
         i = i + 1
     let resolved = with_cimport_realpath(path)
     g_ci_realpath_cache_paths.push(with_str_clone_ref(path))
-    g_ci_realpath_cache_values.push(resolved)
+    g_ci_realpath_cache_values.push(with_str_clone_ref(resolved))
     resolved
 
 fn ci_goto_decl_suffix(session: i64, var_cursor: i32) -> str:
@@ -11258,7 +11260,7 @@ impl CiStmtPool:
                 let raw_name = with_ci_cursor_spelling(session, child)
                 let escaped = ci_escape_reserved(raw_name)
                 let vty = with_ci_cursor_type(session, child)
-                var storage_name = escaped
+                var storage_name = with_str_clone_ref(escaped)
                 if hoisted:
                     storage_name = ci_goto_hoisted_var_name(session, child)
                     new_scope = ci_scope_add_mangled(new_scope, escaped, storage_name)
@@ -11278,7 +11280,7 @@ impl CiStmtPool:
                 if init_cursor >= 0:
                     let init_src = ci_var_initializer_text_from_cursor(session, child)
                     let init_has_macro = init_src.len() > 0 and ci_initializer_text_has_macro_reference(session, init_src)
-                    source_init_expr = init_src
+                    source_init_expr = with_str_clone_ref(init_src)
                     if init_has_macro:
                         let preprocessed_init = ci_var_init_expr_from_preprocessed_cursor_for_type(session, child, with_ci_type_translated(session, vty))
                         if preprocessed_init.len() > 0:
@@ -11470,7 +11472,7 @@ fn ci_try_translate_fn_body(session: i64, decl_idx: i32) -> str:
             let cpname = ci_escape_reserved(with_ci_cursor_spelling(session, child))
             if cpname.len() > 0:
                 let sig_name = ci_param_signature_name(cpname, param_index)
-                var storage_name = sig_name
+                var storage_name = with_str_clone_ref(sig_name)
                 if ci_body_assigns_to(session, body_cursor, cpname):
                     storage_name = ci_param_local_name(cpname, param_index)
                     param_rebinds = param_rebinds ++ f"    var {storage_name} = {sig_name}\n"
@@ -11579,7 +11581,7 @@ fn ci_indent_block(text: &str, indent: i32) -> str:
         while end < len and text.byte_at(end as i64) != 10:
             end = end + 1
         if end > start:
-            parts.push(prefix)
+            parts.push(with_str_clone_ref(prefix))
         parts.push(text.slice(start as i64, end as i64))
         parts.push("\n")
         start = end + 1

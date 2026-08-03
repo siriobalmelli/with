@@ -297,7 +297,7 @@ fn project_config_apply_entry(cfg: ProjectConfig, section: &str, key: &str, valu
         let constraint = project_config_strip_quotes(project_config_trim(value))
         if key.len() > 0 and constraint.len() > 0:
             out.dep_names.push(with_str_clone_ref(key))
-            out.dep_constraints.push(constraint)
+            out.dep_constraints.push(with_str_clone_ref(constraint))
             if key.starts_with("c."):
                 // C package dependency: c.sqlite3 = "3.45"
                 let pkg_name = key.slice(2, key.len())
@@ -307,7 +307,7 @@ fn project_config_apply_entry(cfg: ProjectConfig, section: &str, key: &str, valu
                             out.manifest_error = "dependency c." ++ pkg_name ++ " is declared both as a Conan dependency and a manual [deps.c." ++ pkg_name ++ "] table"
                     else:
                         if not project_config_vec_contains(out.c_dep_metadata_names, pkg_name):
-                            out.c_dep_metadata_names.push(pkg_name)
+                            out.c_dep_metadata_names.push(with_str_clone_ref(pkg_name))
                         out = project_config_load_dep_metadata(move out, pkg_name, constraint)
             else if out.manifest_error.len() == 0:
                 out.manifest_error = "With package dependency '" ++ key ++ "' is declared in with.toml but the With package registry is not available yet; remove it or use a C package (c.<name>)"
@@ -647,7 +647,7 @@ fn project_config_resolve_c_import_header(cfg: &ProjectConfig, decl_dir: &str, h
     if header_spec.byte_at(0) == 35:
         return with_str_clone_ref(header_spec_raw)
 
-    var header_name = header_spec
+    var header_name = with_str_clone_ref(header_spec)
     var preserve_angle = 0
     var preserve_quote = 0
     if header_spec.len() >= 2 and header_spec.byte_at(0) == 60 and header_spec.byte_at(header_spec.len() as i64 - 1) == 62:

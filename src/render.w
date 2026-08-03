@@ -9,6 +9,7 @@ use std.string.StringBuilder
 
 
 extern fn str_from_byte(b: i32) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 fn render_module(pool: AstPool, intern: InternPool) -> str:
     var out = StringBuilder.new()
@@ -61,7 +62,7 @@ fn render_decl(pool: AstPool, intern: InternPool, node: NodeId, indent: i32) -> 
         let packed_kind = pool.get_data2(node)
         let sub_kind = type_decl_sub_kind(packed_kind)
         let is_ephemeral = type_decl_is_ephemeral(packed_kind)
-        var out = prefix
+        var out = with_str_clone_ref(prefix)
 
         if type_decl_is_specified(packed_kind) != 0:
             out = out ++ "@[specified]\n" ++ prefix
@@ -675,7 +676,7 @@ fn render_expr(pool: AstPool, intern: InternPool, node: NodeId, indent: i32) -> 
         let body = pool.get_data0(node)
         let cond = pool.get_data1(node)
         let label = pool.get_data2(node)
-        var out = prefix
+        var out = with_str_clone_ref(prefix)
         if label != 0:
             out = out ++ "'" ++ intern.resolve(label) ++ " "
         out = out ++ "do:\n" ++ render_expr(pool, intern, (body) as NodeId, indent + 2)
