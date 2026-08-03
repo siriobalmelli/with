@@ -8259,6 +8259,10 @@ impl MirBuilder:
             let sig_ret = self.sema.sig_return_type(sig_idx)
             if sig_ret != 0:
                 actual_ret_type_id = sig_ret
+        // #747: the resolved callee symbol feeds lower_call_arg's extern
+        // bit-copy rule (a call not in comp_resolved lowers conservatively).
+        let bc_resolved = self.sema.comp_resolved.get(node)
+        let bc_callee_sym = if bc_resolved.is_some(): bc_resolved.unwrap() else: 0
 
         let args: Vec[i32] = Vec.new()
         // Use sema-resolved arg order for named-arg and implicit-arg calls
@@ -8274,13 +8278,13 @@ impl MirBuilder:
                     if self.sema.resolved_call_arg_is_default(node, i) != 0:
                         args.push(self.lower_default_call_arg(arg_node, node, sig_idx, callable_fn_tid, i))
                     else:
-                        args.push(self.lower_call_arg(arg_node, sig_idx, callable_fn_tid, i))
+                        args.push(self.lower_call_arg(arg_node, sig_idx, callable_fn_tid, i, bc_callee_sym))
                 else:
                     args.push(self.unit_operand())
         else:
             for i in 0..arg_exprs_count:
                 let arg_node = self.ast.get_extra(arg_exprs_start + i)
-                args.push(self.lower_call_arg(arg_node, sig_idx, callable_fn_tid, i))
+                args.push(self.lower_call_arg(arg_node, sig_idx, callable_fn_tid, i, bc_callee_sym))
 
             // Fill in default parameter values for missing arguments
             if fn_expr != 0 and self.ast.kind(fn_expr) == NodeKind.NK_IDENT:
@@ -8325,7 +8329,7 @@ impl MirBuilder:
         let args: Vec[i32] = Vec.new()
         for i in 0..arg_exprs_count:
             let arg_node = self.ast.get_extra(arg_exprs_start + i)
-            args.push(self.lower_call_arg(arg_node, sig_idx, 0, i))
+            args.push(self.lower_call_arg(arg_node, sig_idx, 0, i, fn_sym))
         let args_id = self.body.new_call_args(args)
         self.body.set_call_ast_node(args_id, node)
         self.record_call_contract(args_id, node, sig_idx)
@@ -8372,7 +8376,7 @@ impl MirBuilder:
             if arg_node < 0:
                 args.push(self.lower_var(0 - arg_node, 0, 0))
             else:
-                args.push(self.lower_call_arg(arg_node, sig_idx, 0, i + arg_pos))
+                args.push(self.lower_call_arg(arg_node, sig_idx, 0, i + arg_pos, callee_sym))
         let args_id = self.body.new_call_args(args)
         self.body.set_call_ast_node(args_id, node)
         self.record_call_contract(args_id, node, sig_idx)
@@ -8494,7 +8498,7 @@ impl MirBuilder:
             return 0
         self.sema.callable_any_fn_type(expr_tid as TypeId)
 
-    mut fn lower_call_arg(arg_node: i32, sig_idx: i32, callable_fn_tid: i32, arg_i: i32) -> i32:
+    mut fn lower_call_arg(arg_node: i32, sig_idx: i32, callable_fn_tid: i32, arg_i: i32, callee_sym: i32 = 0) -> i32:
         let saved_expected = self.expected_type
         var expected_ty = 0
         if sig_idx >= 0 and arg_i >= 0 and arg_i < self.sema.sig_get_param_count(sig_idx):
@@ -8566,10 +8570,27 @@ impl MirBuilder:
             self.pending_move_temp_locals.push(mv_tmp)
             return self.body.new_operand(OperandKind.OK_COPY, mv_tmp_place)
         // A share-place (value_ref_abi) parameter BORROWS — a PLAIN argument
-        // stays owned by the caller, which keeps its drop. Only an owned/extern
+        // stays owned by the caller, which keeps its drop. Only an owned
         // param, or a `copy` (whose clone is a distinct owned temp), consumes
         // the operand.
         if arg_is_copy or not callee_share_place:
+            // #747: sema's extern doctrine (extern_param_is_bit_copy): an
+            // extern/C param with no DECLARED consume effect is a bit-copy —
+            // the callee reads transiently and never owns. Consuming here was
+            // the stage2 moved-arg-reset class: the checker modeled no
+            // transfer, but the move reset the caller's slot, so every later
+            // read (including a later ARG of the same call, args evaluate
+            // left-to-right) saw an empty str. Re-issue the operand as a
+            // non-consuming share: the caller keeps ownership and its drop;
+            // an rvalue arg stays a registered statement temp and still
+            // drops exactly once. Explicit `move` keeps its transfer.
+            if not arg_is_copy and arg_kind != NodeKind.NK_MOVE_ARG and callee_sym != 0 and self.body.operand_kinds.get(lowered as i64) == OperandKind.OK_MOVE:
+                let bc_sym = self.sema_symbol_for_ast_symbol(callee_sym)
+                if self.sema.extern_param_is_bit_copy(bc_sym, sig_idx, arg_i) != 0:
+                    let bc_place = self.body.operand_d0.get(lowered as i64)
+                    if self.place_type_is_str(bc_place) != 0:
+                        self.mark_string_place_copied(bc_place)
+                    return self.body.new_operand(OperandKind.OK_COPY, bc_place)
             self.consume_moved_operand(lowered)
         // #606: a by-value `xs.push(a)` arg carries the receiver's buffer; cancel the
         // receiver's drop so it isn't double-freed with the callee's. Gated to NK_CALL
@@ -9588,6 +9609,19 @@ impl MirBuilder:
             self.mark_string_place_copied(place)
         self.body.new_operand(OperandKind.OK_COPY, place)
 
+    // #747: str reader intrinsics observe their needle/delim/pattern
+    // arguments — the runtime reads the bytes transiently and every result
+    // is an independent owned value (rt copies; no view returns), so the
+    // caller keeps ownership. The checker already models these as borrows
+    // (only method_arg_stores_value args consume); consuming them in MIR was
+    // the same moved-arg-reset class as extern str args.
+    fn str_intrinsic_observer_arg(intrinsic: MirIntrinsic, i: i32) -> i32:
+        if i == 0 and (intrinsic == MirIntrinsic.STR_CONTAINS or intrinsic == MirIntrinsic.STR_STARTS_WITH or intrinsic == MirIntrinsic.STR_ENDS_WITH or intrinsic == MirIntrinsic.STR_FIND or intrinsic == MirIntrinsic.STR_INDEX_OF or intrinsic == MirIntrinsic.STR_SPLIT):
+            return 1
+        if (i == 0 or i == 1) and intrinsic == MirIntrinsic.STR_REPLACE:
+            return 1
+        0
+
     mut fn lower_intrinsic_call(intrinsic: MirIntrinsic, self_expr: i32, method_sym: i32, arg_start: i32, arg_count: i32, node: i32) -> i32:
         // Emit a call terminator with a ConstKind.CK_FN operand and intrinsic tag.
         // The ConstKind.CK_FN sym is meaningless — codegen dispatches by intrinsic kind.
@@ -9637,7 +9671,9 @@ impl MirBuilder:
             // reads it transiently and the caller keeps ownership. Never lower
             // it as a consuming move (#747: a moved str key was blanked after
             // the first lookup, so every later use of the key read empty).
-            if i == 0 and (intrinsic == MirIntrinsic.MAP_GET or intrinsic == MirIntrinsic.MAP_CONTAINS or intrinsic == MirIntrinsic.VEC_CONTAINS):
+            // #747: str reader needles (contains/starts_with/…/replace/split)
+            // are the same observer class.
+            if (i == 0 and (intrinsic == MirIntrinsic.MAP_GET or intrinsic == MirIntrinsic.MAP_CONTAINS or intrinsic == MirIntrinsic.VEC_CONTAINS)) or self.str_intrinsic_observer_arg(intrinsic, i) != 0:
                 call_args.push(self.lower_observer_probe_arg(arg_node))
                 continue
             let arg_op = self.lower_method_arg_with_expected(recv_type_for_args, method_sym, arg_node, i)
@@ -11492,6 +11528,10 @@ impl MirBuilder:
         self.consume_moved_operand(recv_op)
         call_args.push(recv_op)
         for ai in 0..arg_count:
+            // #747: str reader needles observe (see str_intrinsic_observer_arg).
+            if self.str_intrinsic_observer_arg(intrinsic, ai) != 0:
+                call_args.push(self.lower_observer_probe_arg(self.ast.get_extra(arg_start + ai)))
+                continue
             let arg_op = self.lower_method_arg_with_expected(recv_type, method_sym, self.ast.get_extra(arg_start + ai), ai)
             self.consume_moved_operand(arg_op)
             call_args.push(arg_op)
@@ -11630,7 +11670,7 @@ impl MirBuilder:
             self.consume_moved_operand(recv_op)
         args.push(recv_op)
         for ai in 0..arg_count:
-            args.push(self.lower_call_arg(self.ast.get_extra(arg_start + ai), sig_idx, 0, ai + 1))
+            args.push(self.lower_call_arg(self.ast.get_extra(arg_start + ai), sig_idx, 0, ai + 1, callee_sym))
         let args_id = self.body.new_call_args(args)
         self.body.set_call_ast_node(args_id, node)
         self.record_call_contract(args_id, node, sig_idx)

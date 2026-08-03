@@ -14929,9 +14929,9 @@ impl Sema:
                             // (no transfer). But an extern param with a DECLARED
                             // consume/escape effect (`@[effect(x: consume)]`, §16.3d)
                             // DOES take ownership, so enforce the `move` for those too
-                            // (G1 — docs/share_place_known_gaps.md).
-                            let extern_owns = (param_eff & (EFF_CONSUME | EFF_ESCAPE_VALUE)) != 0
-                            if (self.extern_fn_names.contains(fn_sym) == 0 and self.ci_syms.contains(fn_sym) == 0) or extern_owns:
+                            // (G1 — docs/share_place_known_gaps.md). ONE rule with
+                            // MirLower's argument lowering: extern_param_is_bit_copy.
+                            if self.extern_param_is_bit_copy(fn_sym, sig_idx, param_i) == 0:
                                 // Ownership is about the PARAMETER's ABI, not the
                                 // argument's type: an enum argument coerced to a Copy
                                 // `i32` param transfers nothing. Key on expected_ty.
@@ -22510,6 +22510,21 @@ impl Sema:
                             if ret_base == "Option" and self.get_generic_inst_arg_count(ret_resolved as i32) > 0:
                                 return self.get_generic_inst_arg(ret_resolved as i32, 0)
         self.ty_i32 as i32
+
+    // #747: the extern doctrine (check_call, §3.8/G1) as ONE queryable rule.
+    // An extern/C parameter with no DECLARED consume/escape effect
+    // (`@[effect(x: consume)]`, §16.3d) receives a bit-copy and does NOT own:
+    // the callee reads it transiently, no ownership transfers at a plain call
+    // site, and the caller keeps its drop. Both the checker's move marking
+    // and MirLower's argument lowering key off this predicate — a divergence
+    // is the #747 stage2 moved-arg-reset defect class (caller slot reset by a
+    // move the checker never modeled, every later read saw an empty str).
+    fn extern_param_is_bit_copy(fn_sym: i32, sig_idx: i32, param_i: i32) -> i32:
+        if self.extern_fn_names.contains(fn_sym) == 0 and self.ci_syms.contains(fn_sym) == 0:
+            return 0
+        if sig_idx >= 0 and (self.sig_param_effect(sig_idx, param_i) & (EFF_CONSUME | EFF_ESCAPE_VALUE)) != 0:
+            return 0
+        1
 
     mut fn mark_moved_if_consumed(node: i32):
         if node == 0:
