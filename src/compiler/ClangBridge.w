@@ -475,7 +475,7 @@ unsafe fn c_strchr(s: *const u8, c: u8) -> *const u8:
     0 as *const u8
 
 // Allocate and copy a with_str to a null-terminated C string
-unsafe fn str_to_cstr(s: str) -> *mut u8:
+unsafe fn str_to_cstr(s: &str) -> *mut u8:
     let out = with_alloc(s.len() + 1)
     if out as i64 == 0: return 0 as *mut u8
     if s.len() > 0:
@@ -585,7 +585,7 @@ var g_cimport_include_count: i32 = 0
 // §16.1: target SDK sysroot from with.toml [c_import] sdk_path (empty = none).
 var g_cimport_sdk_path: str = ""
 
-pub fn with_cimport_set_sdk_path(path: str) -> Unit:
+pub fn with_cimport_set_sdk_path(path: &str) -> Unit:
     g_cimport_sdk_path = path
 
 var sdk_path_buf: [1024]u8 = [0 as u8; 1024]
@@ -618,10 +618,10 @@ unsafe fn copy_cstr_to_buf(dst: *mut u8, cap: i64, src: *const u8):
         i = i + 1
     *((dst as i64 + i) as *mut u8) = 0
 
-unsafe fn str_data_ptr(s: str) -> *const u8:
+unsafe fn str_data_ptr(s: &str) -> *const u8:
     *(&s as *const *const u8)
 
-unsafe fn copy_first_line_to_buf(text: str, dst: *mut u8, cap: i64) -> i32:
+unsafe fn copy_first_line_to_buf(text: &str, dst: *mut u8, cap: i64) -> i32:
     if cap <= 0:
         return 0
     let data = str_data_ptr(text)
@@ -912,7 +912,7 @@ unsafe fn translate_type_recursive(s: *mut CImportSession, ty: CXType, depth: i3
 unsafe fn translate_storage_type_recursive(s: *mut CImportSession, ty: CXType, depth: i32, is_last_struct_field: i32) -> *mut u8:
     translate_type_recursive_mode(s, ty, depth, is_last_struct_field, 1)
 
-unsafe fn cimport_path_to_cstr(path: str) -> *mut u8:
+unsafe fn cimport_path_to_cstr(path: &str) -> *mut u8:
     let buf = with_alloc(path.len() + 1)
     if buf as i64 == 0:
         return 0 as *mut u8
@@ -1100,7 +1100,7 @@ unsafe fn ensure_enum_consts_cached(s: *mut CImportSession, idx: i32):
 pub fn with_cimport_available() -> i32:
     1
 
-pub fn with_cimport_is_name_emitted(name: str) -> i32:
+pub fn with_cimport_is_name_emitted(name: &str) -> i32:
     unsafe:
         if name.len() <= 0: return 0
         var buf: [512]u8 = [0 as u8; 512]
@@ -1111,7 +1111,7 @@ pub fn with_cimport_is_name_emitted(name: str) -> i32:
         buf[len as i64] = 0
         is_name_emitted(&buf as *const [512]u8 as *const u8)
 
-pub fn with_cimport_mark_name_emitted(name: str) -> i32:
+pub fn with_cimport_mark_name_emitted(name: &str) -> i32:
     unsafe:
         if name.len() <= 0: return 0
         var buf: [512]u8 = [0 as u8; 512]
@@ -1136,7 +1136,7 @@ pub fn with_cimport_reset_names() -> i32:
         g_emitted_cap = 0
         0
 
-pub fn with_cimport_add_include_path(path: str) -> i32:
+pub fn with_cimport_add_include_path(path: &str) -> i32:
     unsafe:
         if g_cimport_include_count >= 32 or path.len() <= 0: return 0
         let buf = with_alloc(path.len() + 1)
@@ -1157,7 +1157,7 @@ pub fn with_cimport_clear_include_paths() -> i32:
     g_cimport_include_count = 0
     0
 
-pub fn with_cimport_set_resource_dir(path: str) -> Unit:
+pub fn with_cimport_set_resource_dir(path: &str) -> Unit:
     unsafe:
         resource_dir_resolved = 1
         if path.len() <= 0:
@@ -1178,7 +1178,7 @@ var g_cimport_parse_counter: i64 = 0
 pub fn with_cimport_parse_generation() -> i64:
     g_cimport_parse_counter
 
-pub fn with_cimport_parse(header_code: str) -> i64:
+pub fn with_cimport_parse(header_code: &str) -> i64:
     unsafe:
         g_cimport_parse_counter = g_cimport_parse_counter + 1
         let size = sizeof[CImportSession]()
@@ -1604,7 +1604,7 @@ pub fn with_cimport_struct_field_offset(session: i64, idx: i32, field: i32) -> i
         if offset_bits < 0: return -1
         offset_bits / 8
 
-pub fn with_cimport_record_field_offset_by_name(session: i64, type_name: str, field_name: str) -> i64:
+pub fn with_cimport_record_field_offset_by_name(session: i64, type_name: &str, field_name: &str) -> i64:
     unsafe:
         let s = session as *mut CImportSession
         if s as i64 == 0: return -1
@@ -1783,7 +1783,7 @@ pub fn with_cimport_var_storage_class(session: i64, idx: i32) -> i32:
         let cursor = *(((*s).decls as i64 + idx as i64 * 32) as *const CXCursor)
         clang_Cursor_getStorageClass(cursor)
 
-unsafe fn cimport_var_decl_has_initializer_text(s: str) -> i32:
+unsafe fn cimport_var_decl_has_initializer_text(s: &str) -> i32:
     let slen = s.len() as i32
     var paren_depth = 0
     var bracket_depth = 0
@@ -1864,7 +1864,7 @@ pub fn with_cimport_var_storage_type_translated(session: i64, idx: i32) -> str:
         if result as i64 == 0: return ""
         session_make_str(s, result as *const u8)
 
-pub fn with_ci_cursor_in_file(session: i64, cursor_idx: i32, path: str) -> i32:
+pub fn with_ci_cursor_in_file(session: i64, cursor_idx: i32, path: &str) -> i32:
     unsafe:
         let s = session as *mut CImportSession
         if s as i64 == 0 or cursor_idx < 0 or cursor_idx >= (*s).cursor_count or path.len() == 0:
@@ -1955,7 +1955,7 @@ pub fn with_cimport_typedef_underlying_translated(session: i64, idx: i32) -> str
 
 // ── Hex float conversion ────────────────────────────────────
 
-pub fn with_cimport_hex_float_to_decimal(hex_str: str) -> str:
+pub fn with_cimport_hex_float_to_decimal(hex_str: &str) -> str:
     unsafe:
         let cstr = str_to_cstr(hex_str)
         if cstr as i64 == 0: return ""
@@ -1973,7 +1973,7 @@ pub fn with_cimport_hex_float_to_decimal(hex_str: str) -> str:
 
 // ── Path utilities ──────────────────────────────────────────
 
-pub fn with_cimport_realpath(path: str) -> str:
+pub fn with_cimport_realpath(path: &str) -> str:
     unsafe:
         let cpath = str_to_cstr(path)
         if cpath as i64 == 0: return ""
@@ -2139,7 +2139,7 @@ unsafe fn macro_session_grow(ms: *mut MacroSession):
     (*ms).params = np as *mut *mut *mut u8
     (*ms).param_counts = npc as *mut i32
 
-fn macro_source_is_define_line(source: str) -> bool:
+fn macro_source_is_define_line(source: &str) -> bool:
     var i = 0
     while i < source.len() as i32 and (source.byte_at(i as i64) == 32 or source.byte_at(i as i64) == 9):
         i = i + 1
@@ -2254,7 +2254,7 @@ unsafe fn collect_macro_def(cursor: CXCursor, parent: CXCursor, data: *mut u8) -
         with_free(loc_ptr)
     CXChildVisit_Continue
 
-unsafe fn cimport_collect_macros_from_libclang(ms: *mut MacroSession, header_code: str) -> i32:
+unsafe fn cimport_collect_macros_from_libclang(ms: *mut MacroSession, header_code: &str) -> i32:
     let size = 232  // sizeof(CImportSession)
     let s = with_alloc(size) as *mut CImportSession
     if s as i64 == 0:
@@ -2313,7 +2313,7 @@ unsafe fn cimport_collect_macros_from_libclang(ms: *mut MacroSession, header_cod
     with_cimport_dispose(s as i64)
     1
 
-pub fn with_cimport_parse_macros(header_code: str) -> i64:
+pub fn with_cimport_parse_macros(header_code: &str) -> i64:
     unsafe:
         let ms_size = 72  // sizeof(MacroSession)
         let ms = with_alloc(ms_size) as *mut MacroSession
@@ -2327,7 +2327,7 @@ pub fn with_cimport_parse_macros(header_code: str) -> i64:
         // empty session rather than a second engine that can disagree.
         ms as i64
 
-pub fn with_cimport_collect_object_macro_types(header_code: str, macro_names: str) -> str:
+pub fn with_cimport_collect_object_macro_types(header_code: &str, macro_names: &str) -> str:
     unsafe:
         if macro_names.len() == 0:
             return ""
@@ -2421,7 +2421,7 @@ pub fn with_cimport_collect_object_macro_types(header_code: str, macro_names: st
         with_cimport_dispose(s as i64)
         result
 
-pub fn with_cimport_parse_macro_probe(header_code: str, macro_name: str) -> i64:
+pub fn with_cimport_parse_macro_probe(header_code: &str, macro_name: &str) -> i64:
     unsafe:
         if macro_name.len() == 0:
             return 0

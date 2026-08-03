@@ -636,7 +636,7 @@ impl MirBuilder:
         if self.sema.type_needs_drop_frozen(sema_ty) != 0:
             self.emit_drop_stmt(place, "scope-exit", 0)
 
-    mut fn emit_drop_stmt(place: i32, origin_kind: str, span: i32):
+    mut fn emit_drop_stmt(place: i32, origin_kind: &str, span: i32):
         let stmt_id = self.body.stmt_count()
         let place_text = mir_place_text(&self.body, place)
         let origin = self.pool.intern(f"drop#{stmt_id} {origin_kind} {place_text}")
@@ -1571,7 +1571,7 @@ impl MirBuilder:
             return 0
         resolved
 
-    fn collection_len_method_return_type(method_name: str) -> i32:
+    fn collection_len_method_return_type(method_name: &str) -> i32:
         if method_name == "len":
             return self.sema.ty_usize as i32
         if method_name == "is_empty":
@@ -1620,7 +1620,7 @@ impl MirBuilder:
                 return recv_ty
         self.sema.ty_void as i32
 
-    mut fn intrinsic_return_type(recv_type: i32, method_name: str) -> i32:
+    mut fn intrinsic_return_type(recv_type: i32, method_name: &str) -> i32:
         // Return known return types for intrinsic (builtin) methods.
         // These methods have no sema signatures, so call_return_type can't resolve them.
         let resolved = self.sema.resolve_alias(recv_type) as i32
@@ -2659,7 +2659,7 @@ impl MirBuilder:
         let canonical_sym = self.sema.pool_lookup_symbol(self.pool.resolve(sym))
         if canonical_sym == self.sema.syms.src: 1 else: 0
 
-fn mir_source_text_for_path(fallback_text: str, path: str) -> str:
+fn mir_source_text_for_path(fallback_text: &str, path: &str) -> str:
     if path.len() > 0 and path != "<unknown>":
         let text = with_fs_read_file(path)
         if text.len() > 0:
@@ -2779,7 +2779,7 @@ impl MirBuilder:
         self.body.push_stmt(self.cur_bb, StmtKind.Assign, captures_ref_place, captures_ref_rv, self.ast.get_start(self.cur_node))
         self.body.new_operand(OperandKind.OK_COPY, captures_ref_place)
 
-    mut fn lower_regex_method_bool(regex_place: i32, text_place: i32, method_name: str) -> i32:
+    mut fn lower_regex_method_bool(regex_place: i32, text_place: i32, method_name: &str) -> i32:
         let method_sym = self.sema.pool_lookup_symbol(method_name)
         let fn_sym = self.sema.lookup_method_fn(self.sema.syms.regex, method_sym)
         let fn_op = self.lower_var(fn_sym, 0, 0)
@@ -3682,7 +3682,7 @@ impl MirBuilder:
             i = i - 1
         out
 
-fn mir_str_payload_is_raw_marked(text: str) -> bool:
+fn mir_str_payload_is_raw_marked(text: &str) -> bool:
     text.len() >= 5 and text.byte_at(0) == 1 and text.byte_at(1) == 114 and text.byte_at(2) == 97 and text.byte_at(3) == 119 and text.byte_at(4) == 1
 
 // Fold a ++ chain whose parts are all plain string literals into a single
@@ -8401,7 +8401,7 @@ impl MirBuilder:
     // drop_consumed_field skips), then the binding is consumed via the move
     // discipline (moved-mark + reset-on-move) so the scope-exit drop guard-skips
     // and a later reassign re-arms cleanly.
-    mut fn lower_drop_glue_and_consume(recv_node: i32, origin: str, node: i32) -> i32:
+    mut fn lower_drop_glue_and_consume(recv_node: i32, origin: &str, node: i32) -> i32:
         let place = self.lower_expr_place(recv_node)
         self.emit_drop_stmt(place, origin, self.ast.get_start(recv_node))
         let mv = self.body.new_operand(OperandKind.OK_MOVE, place)
@@ -8984,7 +8984,7 @@ impl MirBuilder:
             return self.body.new_operand(OperandKind.OK_COPY, place)
         self.body.new_operand(OperandKind.OK_MOVE, place)
 
-    fn classify_intrinsic(recv_type: i32, method_name: str) -> MirIntrinsic:
+    fn classify_intrinsic(recv_type: i32, method_name: &str) -> MirIntrinsic:
         if recv_type == 0 or method_name.len() == 0:
             return MirIntrinsic.NONE
         let resolved = self.sema.auto_deref_ref_ptr_type(recv_type as TypeId)
@@ -10430,7 +10430,7 @@ impl MirBuilder:
         self.forget_string_flow_facts()
         self.operand_for_place(result_place, result_ty)
 
-    mut fn lower_result_ok_err_method(self_expr: i32, method_name: str, arg_count: i32, node: i32) -> i32:
+    mut fn lower_result_ok_err_method(self_expr: i32, method_name: &str, arg_count: i32, node: i32) -> i32:
         if arg_count != 0:
             self.mark_unsupported()
             return self.unit_operand()
@@ -10624,7 +10624,7 @@ impl MirBuilder:
         self.forget_string_flow_facts()
         self.operand_for_place(result_place, result_ty)
 
-    mut fn lower_vec_sequence_or_traverse_method(self_expr: i32, method_name: str, arg_start: i32, arg_count: i32, node: i32) -> i32:
+    mut fn lower_vec_sequence_or_traverse_method(self_expr: i32, method_name: &str, arg_start: i32, arg_count: i32, node: i32) -> i32:
         let span = self.ast.get_start(node)
         var recv_type = self.expr_type(self_expr)
         if recv_type == 0 or recv_type == self.sema.ty_void:
@@ -10762,7 +10762,7 @@ impl MirBuilder:
         self.forget_string_flow_facts()
         self.operand_for_place(result_place, result_ty)
 
-    mut fn lower_option_combinator_method(self_expr: i32, method_name: str, arg_start: i32, arg_count: i32, node: i32) -> i32:
+    mut fn lower_option_combinator_method(self_expr: i32, method_name: &str, arg_start: i32, arg_count: i32, node: i32) -> i32:
         let explicit_owner = method_name == "copied" or method_name == "cloned"
         if explicit_owner:
             if arg_count != 0:
@@ -10883,7 +10883,7 @@ impl MirBuilder:
         self.forget_string_flow_facts()
         self.operand_for_place(result_place, result_ty)
 
-    mut fn lower_result_combinator_method(self_expr: i32, method_name: str, arg_start: i32, arg_count: i32, node: i32) -> i32:
+    mut fn lower_result_combinator_method(self_expr: i32, method_name: &str, arg_start: i32, arg_count: i32, node: i32) -> i32:
         if arg_count != 1:
             self.mark_unsupported()
             return self.unit_operand()
@@ -11541,7 +11541,7 @@ impl MirBuilder:
     // four cache-masked machinery strata). Language-machinery calls carry
     // no specialization contract — codegen dispatches them by
     // name/receiver. User-Deref dispatch opts out at its creation site.
-    mut fn require_generic_call_contract(args_id: i32, callee_sym: i32, method_sym: i32, self_expr: i32, has_recorded_sig: bool, site: str):
+    mut fn require_generic_call_contract(args_id: i32, callee_sym: i32, method_sym: i32, self_expr: i32, has_recorded_sig: bool, site: &str):
         let mach_name = self.generic_call_symbol_text(if method_sym != 0: method_sym else: callee_sym)
         var recv_ty = 0
         if self_expr != 0 and self.sema.typed_expr_types.contains(self_expr):

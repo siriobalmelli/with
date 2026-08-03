@@ -20,7 +20,7 @@ impl BuildGraphMaterializer:
         graph.error_msg = message
         graph
 
-    fn field_index(type_id: i32, field_name: str) -> i32:
+    fn field_index(type_id: i32, field_name: &str) -> i32:
         let field_sym = self.sema.pool_lookup_symbol(field_name)
         if field_sym == 0:
             return -1
@@ -30,7 +30,7 @@ impl BuildGraphMaterializer:
                 return i
         -1
 
-    fn field_value(value: &ComptimeValue, field_name: str) -> ComptimeValue:
+    fn field_value(value: &ComptimeValue, field_name: &str) -> ComptimeValue:
         if value.kind != ComptimeValueKind.CV_STRUCT:
             return comptime_value_invalid()
         let index = self.field_index(value.type_id, field_name)
@@ -38,19 +38,19 @@ impl BuildGraphMaterializer:
             return comptime_value_invalid()
         comptime_value_clone(self.extras.get((value.extra_start + index) as i64))
 
-    fn expect_str_field(value: &ComptimeValue, field_name: str) -> ComptimeValue:
+    fn expect_str_field(value: &ComptimeValue, field_name: &str) -> ComptimeValue:
         let field = self.field_value(value, field_name)
         if field.kind != ComptimeValueKind.CV_STR:
             return comptime_value_invalid()
         field
 
-    fn expect_i32_field(value: &ComptimeValue, field_name: str) -> ComptimeValue:
+    fn expect_i32_field(value: &ComptimeValue, field_name: &str) -> ComptimeValue:
         let field = self.field_value(value, field_name)
         if field.kind != ComptimeValueKind.CV_INT:
             return comptime_value_invalid()
         field
 
-    fn string_vec_field(value: &ComptimeValue, field_name: str) -> Vec[str]:
+    fn string_vec_field(value: &ComptimeValue, field_name: &str) -> Vec[str]:
         let out: Vec[str] = Vec.new()
         let field = self.field_value(value, field_name)
         if field.kind != ComptimeValueKind.CV_VEC and field.kind != ComptimeValueKind.CV_ARRAY:
@@ -61,7 +61,7 @@ impl BuildGraphMaterializer:
                 out.push(item.text)
         out
 
-fn build_graph_materialized_target(kind: i32, name: str, entry: str, target_kind: i32, optimize_mode: i32, output: str) -> BuildGraphTarget:
+fn build_graph_materialized_target(kind: i32, name: &str, entry: &str, target_kind: i32, optimize_mode: i32, output: &str) -> BuildGraphTarget:
     BuildGraphTarget {
         kind,
         name,
@@ -87,7 +87,7 @@ fn build_graph_materialized_target(kind: i32, name: str, entry: str, target_kind
     }
 
 impl BuildGraphMaterializer:
-    fn target_name_exists(graph: &BuildGraph, name: str) -> bool:
+    fn target_name_exists(graph: &BuildGraph, name: &str) -> bool:
         for i in 0..graph.targets.len() as i32:
             if graph.targets.get(i as i64).name == name:
                 return true

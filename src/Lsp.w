@@ -41,13 +41,13 @@ fn lsp_read_message() -> str:
         return ""
     with_read_bytes_stdin(content_length)
 
-fn lsp_write_response(json: str):
+fn lsp_write_response(json: &str):
     let len_str = int_to_string(json.len() as i32)
     with_write_stdout("Content-Length: " ++ len_str ++ "\r\n\r\n")
     with_write_stdout(json)
     with_flush_stdout()
 
-fn lsp_parse_int(s: str) -> i32:
+fn lsp_parse_int(s: &str) -> i32:
     var result = 0
     var started = false
     for i in 0..s.len() as i32:
@@ -100,7 +100,7 @@ unsafe fn jsmn_fill_token(tokens: *mut JsonToken, idx: i32, tok_type: i32, start
     tok.end = end
     tok.size = 0
 
-unsafe fn jsmn_parse_primitive(parser: *mut JsonParser, js: str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+unsafe fn jsmn_parse_primitive(parser: *mut JsonParser, js: &str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     let start = parser.pos
     while parser.pos < len:
         let c = js.byte_at(parser.pos as i64) as i32
@@ -121,7 +121,7 @@ unsafe fn jsmn_parse_primitive(parser: *mut JsonParser, js: str, len: i32, token
     parser.pos = parser.pos - 1
     0
 
-unsafe fn jsmn_parse_string(parser: *mut JsonParser, js: str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+unsafe fn jsmn_parse_string(parser: *mut JsonParser, js: &str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     let start = parser.pos
     parser.pos = parser.pos + 1
     while parser.pos < len:
@@ -161,7 +161,7 @@ unsafe fn jsmn_parse_string(parser: *mut JsonParser, js: str, len: i32, tokens: 
     parser.pos = start
     -3
 
-unsafe fn jsmn_parse(parser: *mut JsonParser, js: str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+unsafe fn jsmn_parse(parser: *mut JsonParser, js: &str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     var count = parser.toknext
     while parser.pos < len:
         let c = js.byte_at(parser.pos as i64) as i32
@@ -238,11 +238,11 @@ unsafe fn jsmn_parse(parser: *mut JsonParser, js: str, len: i32, tokens: *mut Js
 
 // ── JSON token accessors ────────────────────────────────────
 
-fn lsp_json_parse(js: str, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+fn lsp_json_parse(js: &str, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     var parser = JsonParser { pos: 0, toknext: 0, toksuper: -1 }
     unsafe { jsmn_parse(&raw mut parser as *mut JsonParser, js, js.len() as i32, tokens, num_tokens) }
 
-fn json_tok_str(js: str, tokens: *mut JsonToken, idx: i32) -> str:
+fn json_tok_str(js: &str, tokens: *mut JsonToken, idx: i32) -> str:
     if idx < 0:
         return ""
     var start: i32 = 0
@@ -252,7 +252,7 @@ fn json_tok_str(js: str, tokens: *mut JsonToken, idx: i32) -> str:
         end = (*(tokens + idx as u64)).end
     json_unescape(js.slice(start as i64, end as i64))
 
-fn json_tok_int(js: str, tokens: *mut JsonToken, idx: i32) -> i32:
+fn json_tok_int(js: &str, tokens: *mut JsonToken, idx: i32) -> i32:
     if idx < 0:
         return -1
     var start: i32 = 0
@@ -262,7 +262,7 @@ fn json_tok_int(js: str, tokens: *mut JsonToken, idx: i32) -> i32:
         end = (*(tokens + idx as u64)).end
     lsp_parse_int(js.slice(start as i64, end as i64))
 
-fn json_find(js: str, tokens: *mut JsonToken, parent: i32, key: str) -> i32:
+fn json_find(js: &str, tokens: *mut JsonToken, parent: i32, key: &str) -> i32:
     if parent < 0:
         return -1
     var tok_type: i32 = 0
@@ -310,7 +310,7 @@ fn json_skip(tokens: *mut JsonToken, idx: i32) -> i32:
         return next
     idx + 1
 
-fn json_unescape(s: str) -> str:
+fn json_unescape(s: &str) -> str:
     if not s.contains("\\"):
         return s
     var out = ""
@@ -337,7 +337,7 @@ fn json_unescape(s: str) -> str:
             i = i + 1
     out
 
-fn json_escape(s: str) -> str:
+fn json_escape(s: &str) -> str:
     var out = ""
     for i in 0..s.len() as i32:
         let ch = s.byte_at(i as i64)
@@ -355,7 +355,7 @@ fn json_escape(s: str) -> str:
             out = out ++ s.slice(i as i64, (i + 1) as i64)
     out
 
-fn lsp_find_substr(haystack: str, needle: str) -> i32:
+fn lsp_find_substr(haystack: &str, needle: &str) -> i32:
     let h_len = haystack.len() as i32
     let n_len = needle.len() as i32
     if n_len == 0 or n_len > h_len:
@@ -384,19 +384,19 @@ fn jarr_start() -> str:
 fn jarr_end() -> str:
     "]"
 
-fn jkv_str(key: str, val: str) -> str:
+fn jkv_str(key: &str, val: &str) -> str:
     "\"" ++ key ++ "\":\"" ++ json_escape(val) ++ "\""
 
-fn jkv_int(key: str, val: i32) -> str:
+fn jkv_int(key: &str, val: i32) -> str:
     "\"" ++ key ++ "\":" ++ int_to_string(val)
 
-fn jkv_raw(key: str, val: str) -> str:
+fn jkv_raw(key: &str, val: &str) -> str:
     "\"" ++ key ++ "\":" ++ val
 
-fn jkv_null(key: str) -> str:
+fn jkv_null(key: &str) -> str:
     "\"" ++ key ++ "\":null"
 
-fn jkv_bool(key: str, val: bool) -> str:
+fn jkv_bool(key: &str, val: bool) -> str:
     "\"" ++ key ++ "\":" ++ (if val: "true" else: "false")
 
 fn jpos(line: i32, col: i32) -> str:
@@ -405,16 +405,16 @@ fn jpos(line: i32, col: i32) -> str:
 fn jrange(sl: i32, sc: i32, el: i32, ec: i32) -> str:
     jobj_start() ++ jkv_raw("start", jpos(sl, sc)) ++ "," ++ jkv_raw("end", jpos(el, ec)) ++ jobj_end()
 
-fn jrpc_result(id: i32, result: str) -> str:
+fn jrpc_result(id: i32, result: &str) -> str:
     jobj_start() ++ jkv_str("jsonrpc", "2.0") ++ "," ++ jkv_int("id", id) ++ "," ++ jkv_raw("result", result) ++ jobj_end()
 
 fn jrpc_result_null(id: i32) -> str:
     jobj_start() ++ jkv_str("jsonrpc", "2.0") ++ "," ++ jkv_int("id", id) ++ "," ++ jkv_null("result") ++ jobj_end()
 
-fn jrpc_notification(method: str, params: str) -> str:
+fn jrpc_notification(method: &str, params: &str) -> str:
     jobj_start() ++ jkv_str("jsonrpc", "2.0") ++ "," ++ jkv_str("method", method) ++ "," ++ jkv_raw("params", params) ++ jobj_end()
 
-fn jrpc_error(id: i32, code: i32, message: str) -> str:
+fn jrpc_error(id: i32, code: i32, message: &str) -> str:
     let err = jobj_start() ++ jkv_int("code", code) ++ "," ++ jkv_str("message", message) ++ jobj_end()
     jobj_start() ++ jkv_str("jsonrpc", "2.0") ++ "," ++ jkv_int("id", id) ++ "," ++ jkv_raw("error", err) ++ jobj_end()
 
@@ -444,7 +444,7 @@ type LspDocument {
     cache_valid: bool,
 }
 
-fn LspDocument.new(uri: str, path: str, text: str, version: i32) -> LspDocument:
+fn LspDocument.new(uri: &str, path: &str, text: &str, version: i32) -> LspDocument:
     LspDocument {
         uri, path, text, version,
         fast_pool: AstPool.new(),
@@ -550,7 +550,7 @@ impl LspDocument:
         ""
 
     // Get trait methods for a type via cached sema data.
-    fn trait_methods_for_type(type_name: str) -> Vec[str]:
+    fn trait_methods_for_type(type_name: &str) -> Vec[str]:
         if not self.cache_valid:
             return Vec.new()
         let opt = self.cached_trait_methods.get(type_name)
@@ -575,7 +575,7 @@ fn LspState.new() -> LspState:
     LspState { initialized: false, documents: Vec.new() }
 
 impl LspState:
-    fn find_doc(uri: str) -> i32:
+    fn find_doc(uri: &str) -> i32:
         for i in 0..self.documents.len() as i32:
             if (&self.documents[i as i64]).uri == uri:
                 return i
@@ -611,7 +611,7 @@ impl LspState:
         with self.documents.slot(analyzed_slot_idx) as mut slot:
             slot.set(move reanalyzed)
 
-    fn get_parsed(uri: str, text: str) -> LspParseResult:
+    fn get_parsed(uri: &str, text: &str) -> LspParseResult:
         // Always a fresh caller-owned parse. Returning the cached fast_pool /
         // fast_intern handed out handle copies of the document's pools; every
         // caller dropped its result and freed the cache's buffers, and the
@@ -619,7 +619,7 @@ impl LspState:
         // parse is ~1ms; share the cache via views if it ever matters.
         lsp_parse_file(text)
 
-    mut fn set_doc(uri: str, text: str, version: i32):
+    mut fn set_doc(uri: &str, text: &str, version: i32):
         let idx = self.find_doc(uri)
         if idx < 0:
             self.documents.push(LspDocument.new(uri, uri_to_path(uri), text, version))
@@ -630,14 +630,14 @@ impl LspState:
         with self.documents.slot(idx) as mut slot:
             slot.set(LspDocument.new(uri, uri_to_path(uri), text, version))
 
-fn uri_to_path(uri: str) -> str:
+fn uri_to_path(uri: &str) -> str:
     if uri.starts_with("file://"):
         return uri.slice(7, uri.len())
     uri
 
 // ── Line/column utilities ────────────────────────────────────
 
-fn lsp_offset_to_line(text: str, offset: i32) -> i32:
+fn lsp_offset_to_line(text: &str, offset: i32) -> i32:
     var line = 0
     var i = 0
     while i < offset and i < text.len() as i32:
@@ -646,7 +646,7 @@ fn lsp_offset_to_line(text: str, offset: i32) -> i32:
         i = i + 1
     line
 
-fn lsp_offset_to_col(text: str, offset: i32) -> i32:
+fn lsp_offset_to_col(text: &str, offset: i32) -> i32:
     var col = 0
     var i = 0
     while i < offset and i < text.len() as i32:
@@ -657,7 +657,7 @@ fn lsp_offset_to_col(text: str, offset: i32) -> i32:
         i = i + 1
     col
 
-fn lsp_line_col_to_offset(text: str, line: i32, col: i32) -> i32:
+fn lsp_line_col_to_offset(text: &str, line: i32, col: i32) -> i32:
     var cur_line = 0
     var cur_col = 0
     for i in 0..text.len() as i32:
@@ -672,7 +672,7 @@ fn lsp_line_col_to_offset(text: str, line: i32, col: i32) -> i32:
 
 // ── Diagnostics ──────────────────────────────────────────────
 
-fn LspState.publish_diagnostics(mut self: LspState, uri: str, text: str):
+fn LspState.publish_diagnostics(mut self: LspState, uri: &str, text: &str):
     let idx = self.find_doc(uri)
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
@@ -713,7 +713,7 @@ fn LspState.publish_diagnostics(mut self: LspState, uri: str, text: str):
 
 // ── Go to definition ─────────────────────────────────────────
 
-fn LspState.definition(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.definition(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     var lexer = Lexer.init(text, 0)
@@ -785,7 +785,7 @@ fn LspState.definition(mut self: LspState, id: i32, uri: str, text: str, line: i
 // ── Hover ────────────────────────────────────────────────────
 
 // Extract /// doc comment lines above a declaration at the given byte offset.
-fn lsp_extract_doc_comment(text: str, decl_start: i32) -> str:
+fn lsp_extract_doc_comment(text: &str, decl_start: i32) -> str:
     // Walk backward from decl_start to find preceding /// comment lines.
     var pos = decl_start - 1
     // Skip whitespace/newlines before the declaration
@@ -818,7 +818,7 @@ fn lsp_extract_doc_comment(text: str, decl_start: i32) -> str:
         i = i - 1
     result
 
-fn LspState.hover(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.hover(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     var lexer = Lexer.init(text, 0)
@@ -887,7 +887,7 @@ fn LspState.hover(mut self: LspState, id: i32, uri: str, text: str, line: i32, c
 
 // ── Dot completion ───────────────────────────────────────────
 
-fn LspState.dot_completion(mut self: LspState, id: i32, uri: str, text: str, offset: i32, dot_pos: i32):
+fn LspState.dot_completion(mut self: LspState, id: i32, uri: &str, text: &str, offset: i32, dot_pos: i32):
     // Find the receiver identifier before the dot
     var recv_end = dot_pos
     var recv_start = recv_end - 1
@@ -1030,7 +1030,7 @@ fn LspState.dot_completion(mut self: LspState, id: i32, uri: str, text: str, off
 fn lsp_is_ident_char(ch: i32) -> bool:
     (ch >= 97 and ch <= 122) or (ch >= 65 and ch <= 90) or (ch >= 48 and ch <= 57) or ch == 95
 
-fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: str, offset: i32) -> str:
+fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: &str, offset: i32) -> str:
     // Find the enclosing function, then look for:
     // 1. Parameter with type annotation: fn foo(x: MyType) → "MyType"
     // 2. Let binding with type annotation: let x: MyType = ... → "MyType"
@@ -1094,7 +1094,7 @@ fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: str, o
                                     return ret_type
     ""
 
-fn lsp_fn_return_type(pool: AstPool, intern: InternPool, fn_name: str) -> str:
+fn lsp_fn_return_type(pool: AstPool, intern: InternPool, fn_name: &str) -> str:
     for di in 0..pool.decl_count():
         let decl = pool.get_decl(di)
         if pool.kind(decl) != NodeKind.NK_FN_DECL:
@@ -1127,7 +1127,7 @@ fn lsp_type_node_to_name(pool: AstPool, intern: InternPool, type_node: i32) -> s
 
 // ── Completion ───────────────────────────────────────────────
 
-fn LspState.completion(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.completion(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Find the line text up to cursor to detect context
@@ -1256,7 +1256,7 @@ fn LspState.completion(mut self: LspState, id: i32, uri: str, text: str, line: i
     items = items ++ jarr_end()
     lsp_write_response(jrpc_result(id, jobj_start() ++ jkv_raw("items", items) ++ jobj_end()))
 
-fn lsp_append_csv_items(items: str, csv: str, kind: i32, first: bool) -> str:
+fn lsp_append_csv_items(items: &str, csv: &str, kind: i32, first: bool) -> str:
     var result = items
     var f = first
     var start = 0
@@ -1278,7 +1278,7 @@ type LspParseResult {
     intern: InternPool,
 }
 
-fn lsp_parse_file(text: str) -> LspParseResult:
+fn lsp_parse_file(text: &str) -> LspParseResult:
     var lexer = Lexer.init(text, 0)
     let tokens = lexer.tokenize()
     var intern = InternPool.init()
@@ -1431,7 +1431,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
 
     empty
 
-fn lsp_list_embedded_modules(prefix: str) -> Vec[str]:
+fn lsp_list_embedded_modules(prefix: &str) -> Vec[str]:
     // Query the embedded stdlib listing and filter by prefix.
     // Returns module names without prefix or .w extension.
     // e.g. prefix="std/" returns ["collections", "fmt", "fs", ...]
@@ -1492,7 +1492,7 @@ fn lsp_keywords() -> Vec[str]:
 
 // ── Signature help ───────────────────────────────────────────
 
-fn LspState.signature_help(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.signature_help(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Walk tokens backward from cursor to find the opening ( and function name.
@@ -1593,7 +1593,7 @@ fn LspState.signature_help(mut self: LspState, id: i32, uri: str, text: str, lin
 
 // ── Find references ──────────────────────────────────────────
 
-fn LspState.find_references(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.find_references(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Find the identifier at cursor
@@ -1707,7 +1707,7 @@ fn LspState.find_references(mut self: LspState, id: i32, uri: str, text: str, li
 
 // ── Document symbols ─────────────────────────────────────────
 
-fn LspState.document_symbols(mut self: LspState, id: i32, uri: str, text: str):
+fn LspState.document_symbols(mut self: LspState, id: i32, uri: &str, text: &str):
     let idx = self.find_doc(uri)
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
@@ -1759,7 +1759,7 @@ fn LspState.document_symbols(mut self: LspState, id: i32, uri: str, text: str):
 
 // ── Rename symbol ───────────────────────────────────────────
 
-fn lsp_is_valid_ident(name: str) -> bool:
+fn lsp_is_valid_ident(name: &str) -> bool:
     if name.len() == 0:
         return false
     let first_ch = name.byte_at(0)
@@ -1771,7 +1771,7 @@ fn lsp_is_valid_ident(name: str) -> bool:
             return false
     true
 
-fn LspState.rename(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32, new_name: str):
+fn LspState.rename(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32, new_name: &str):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Find the identifier at cursor
@@ -1871,11 +1871,11 @@ fn LspState.rename(mut self: LspState, id: i32, uri: str, text: str, line: i32, 
 
 // ── Main loop ────────────────────────────────────────────────
 
-fn lsp_extract_uri(msg: str, tokens: *mut JsonToken, params_idx: i32) -> str:
+fn lsp_extract_uri(msg: &str, tokens: *mut JsonToken, params_idx: i32) -> str:
     let td = json_find(msg, tokens, params_idx, "textDocument")
     json_tok_str(msg, tokens, json_find(msg, tokens, td, "uri"))
 
-fn lsp_extract_position(msg: str, tokens: *mut JsonToken, params_idx: i32, line_out: *mut i32, char_out: *mut i32):
+fn lsp_extract_position(msg: &str, tokens: *mut JsonToken, params_idx: i32, line_out: *mut i32, char_out: *mut i32):
     let pos = json_find(msg, tokens, params_idx, "position")
     unsafe:
         *(line_out + 0u64) = json_tok_int(msg, tokens, json_find(msg, tokens, pos, "line"))

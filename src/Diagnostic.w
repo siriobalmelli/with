@@ -38,10 +38,10 @@ type Diagnostic {
     helps: Vec[str],
 }
 
-fn diagnostic_owned_text(text: str) -> str:
+fn diagnostic_owned_text(text: &str) -> str:
     with_str_clone(text)
 
-fn diagnostic_error(message: str, primary: Span) -> Diagnostic:
+fn diagnostic_error(message: &str, primary: Span) -> Diagnostic:
     Diagnostic {
         severity: DiagSeverity.Error,
         code: "",
@@ -56,7 +56,7 @@ fn diagnostic_error(message: str, primary: Span) -> Diagnostic:
         helps: Vec.new(),
     }
 
-fn diagnostic_warning(message: str, primary: Span) -> Diagnostic:
+fn diagnostic_warning(message: &str, primary: Span) -> Diagnostic:
     Diagnostic {
         severity: DiagSeverity.Warning,
         code: "",
@@ -71,29 +71,29 @@ fn diagnostic_warning(message: str, primary: Span) -> Diagnostic:
         helps: Vec.new(),
     }
 
-fn Diagnostic.err(message: str, span: Span) -> Diagnostic:
+fn Diagnostic.err(message: &str, span: Span) -> Diagnostic:
     diagnostic_error(message, span)
 
-fn Diagnostic.warn(message: str, span: Span) -> Diagnostic:
+fn Diagnostic.warn(message: &str, span: Span) -> Diagnostic:
     diagnostic_warning(message, span)
 
 impl Diagnostic:
-    mut fn set_code(code: str):
+    mut fn set_code(code: &str):
         self.code = diagnostic_owned_text(code)
 
-    mut fn set_origin(file: str, fn_name: str, line: i32, node: i32):
+    mut fn set_origin(file: &str, fn_name: &str, line: i32, node: i32):
         self.origin_file = diagnostic_owned_text(file)
         self.origin_fn = diagnostic_owned_text(fn_name)
         self.origin_line = line
         self.origin_node = node
 
-    mut fn add_label(span: Span, message: str) -> Unit:
+    mut fn add_label(span: Span, message: &str) -> Unit:
         self.labels.push(DiagnosticLabel { span, message: diagnostic_owned_text(message) })
 
-    mut fn add_note(message: str) -> Unit:
+    mut fn add_note(message: &str) -> Unit:
         self.notes.push(diagnostic_owned_text(message))
 
-    mut fn add_help(message: str) -> Unit:
+    mut fn add_help(message: &str) -> Unit:
         self.helps.push(diagnostic_owned_text(message))
 
     fn render(source: &Source):

@@ -317,7 +317,7 @@ enum MirIntrinsic: i32:
 // Vec/HashMap, and compared throughout MIR lowering and codegen.
 impl Copy for MirIntrinsic
 
-fn mir_len_method_intrinsic(base: MirIntrinsic, method_name: str) -> MirIntrinsic:
+fn mir_len_method_intrinsic(base: MirIntrinsic, method_name: &str) -> MirIntrinsic:
     if method_name == "len":
         return base
     if base == MirIntrinsic.VEC_LEN:
@@ -1035,7 +1035,7 @@ fn print_mir_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema):
         let body = &mir_mod.bodies[i as i64]
         with_write(dump_mir_body(body, pool, sema))
 
-fn mir_clip_text(s: str, max_len: i32) -> str:
+fn mir_clip_text(s: &str, max_len: i32) -> str:
     if max_len <= 0:
         return ""
     if s.len() as i32 <= max_len:
@@ -1466,7 +1466,7 @@ fn mir_drop_state_map_new() -> MirDropStateMap:
 
 // Overflow-safe rolling hash (compiler builds with overflow checking, so no
 // wrapping FNV). h stays < 1e9, h*31 < 3.1e10 < i64 max, result fits i32.
-fn mir_drop_state_key_hash(key: str) -> i32:
+fn mir_drop_state_key_hash(key: &str) -> i32:
     var h: i64 = 0
     var i = 0
     let n = key.len() as i32
@@ -1487,7 +1487,7 @@ fn mir_drop_state_map_state(map: MirDropStateMap, idx: i32) -> i32:
     let st = map.state
     unsafe { st.states.get(idx as i64) }
 
-fn mir_drop_state_map_find(map: MirDropStateMap, key: str) -> i32:
+fn mir_drop_state_map_find(map: MirDropStateMap, key: &str) -> i32:
     let h = mir_drop_state_key_hash(key)
     let st = map.state
     let b = h % MIR_DROP_STATE_BUCKETS
@@ -1499,7 +1499,7 @@ fn mir_drop_state_map_find(map: MirDropStateMap, key: str) -> i32:
         idx = unsafe { st.bucket_next.get(idx as i64) }
     -1
 
-fn mir_drop_state_map_set(map: MirDropStateMap, key: str, state: i32):
+fn mir_drop_state_map_set(map: MirDropStateMap, key: &str, state: i32):
     let st = map.state
     let idx = mir_drop_state_map_find(map, key)
     if idx >= 0:
@@ -1602,7 +1602,7 @@ fn mir_drop_state_local_key(local_id: i32) -> str:
     mir_local_key_cache_lock.store(0, .Release)
     key
 
-fn mir_drop_state_key_is_descendant(key: str, local_key: str) -> bool:
+fn mir_drop_state_key_is_descendant(key: &str, local_key: &str) -> bool:
     if key == local_key:
         return true
     if not key.starts_with(local_key):
@@ -1869,7 +1869,7 @@ fn dump_drop_state_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema) -
         out = out ++ dump_drop_state_body(body, pool)
     out
 
-fn mir_drop_state_get_key(map: MirDropStateMap, key: str) -> i32:
+fn mir_drop_state_get_key(map: MirDropStateMap, key: &str) -> i32:
     let idx = mir_drop_state_map_find(map, key)
     if idx < 0:
         return MirDropState.Uninit
@@ -1878,14 +1878,14 @@ fn mir_drop_state_get_key(map: MirDropStateMap, key: str) -> i32:
 fn mir_drop_state_get_place(map: MirDropStateMap, body: &MirBody, place_id: i32) -> i32:
     mir_drop_state_get_key(map, mir_place_text(body, place_id))
 
-fn mir_ownership_key_matches(key: str, target: str) -> bool:
+fn mir_ownership_key_matches(key: &str, target: &str) -> bool:
     if target.len() == 0:
         return true
     if key == target:
         return true
     mir_drop_state_key_is_descendant(key, target)
 
-fn mir_drop_state_selected_format(map: MirDropStateMap, target: str) -> str:
+fn mir_drop_state_selected_format(map: MirDropStateMap, target: &str) -> str:
     if target.len() == 0:
         return mir_drop_state_format(map)
     var out = ""
@@ -1903,19 +1903,19 @@ fn mir_drop_state_selected_format(map: MirDropStateMap, target: str) -> str:
         return target ++ "=" ++ mir_drop_state_name(MirDropState.Uninit)
     out
 
-fn mir_ownership_place_matches(body: &MirBody, place_id: i32, target: str) -> bool:
+fn mir_ownership_place_matches(body: &MirBody, place_id: i32, target: &str) -> bool:
     if target.len() == 0:
         return true
     mir_ownership_key_matches(mir_place_text(body, place_id), target)
 
-fn mir_ownership_operand_move_matches(body: &MirBody, operand_id: i32, target: str) -> bool:
+fn mir_ownership_operand_move_matches(body: &MirBody, operand_id: i32, target: &str) -> bool:
     if operand_id < 0 or operand_id >= body.operand_kinds.len() as i32:
         return false
     if body.operand_kinds.get(operand_id as i64) != OperandKind.OK_MOVE:
         return false
     mir_ownership_place_matches(body, body.operand_d0.get(operand_id as i64), target)
 
-fn mir_ownership_call_args_move_matches(body: &MirBody, args_id: i32, target: str) -> bool:
+fn mir_ownership_call_args_move_matches(body: &MirBody, args_id: i32, target: &str) -> bool:
     if args_id < 0 or args_id >= body.call_arg_starts.len() as i32:
         return false
     let start = body.call_arg_starts.get(args_id as i64)
@@ -1925,7 +1925,7 @@ fn mir_ownership_call_args_move_matches(body: &MirBody, args_id: i32, target: st
             return true
     false
 
-fn mir_ownership_agg_fields_move_matches(body: &MirBody, fields_id: i32, target: str) -> bool:
+fn mir_ownership_agg_fields_move_matches(body: &MirBody, fields_id: i32, target: &str) -> bool:
     if fields_id < 0 or fields_id >= body.agg_field_starts.len() as i32:
         return false
     let start = body.agg_field_starts.get(fields_id as i64)
@@ -1935,7 +1935,7 @@ fn mir_ownership_agg_fields_move_matches(body: &MirBody, fields_id: i32, target:
             return true
     false
 
-fn mir_ownership_rvalue_move_matches(body: &MirBody, rval_id: i32, target: str) -> bool:
+fn mir_ownership_rvalue_move_matches(body: &MirBody, rval_id: i32, target: &str) -> bool:
     if rval_id < 0 or rval_id >= body.rval_kinds.len() as i32:
         return false
     let kind = body.rval_kinds.get(rval_id as i64)
@@ -1958,7 +1958,7 @@ fn mir_ownership_rvalue_move_matches(body: &MirBody, rval_id: i32, target: str) 
         return mir_ownership_operand_move_matches(body, d1, target) or mir_ownership_operand_move_matches(body, d2, target)
     false
 
-fn mir_ownership_stmt_event(body: &MirBody, stmt_id: i32, target: str) -> str:
+fn mir_ownership_stmt_event(body: &MirBody, stmt_id: i32, target: &str) -> str:
     let kind = body.stmt_kind(stmt_id)
     if kind == StmtKind.Assign:
         if mir_ownership_rvalue_move_matches(body, body.stmt_data1(stmt_id), target):
@@ -1972,7 +1972,7 @@ fn mir_ownership_stmt_event(body: &MirBody, stmt_id: i32, target: str) -> str:
         return "drop"
     "nop"
 
-fn mir_ownership_term_event(body: &MirBody, bb: i32, target: str) -> str:
+fn mir_ownership_term_event(body: &MirBody, bb: i32, target: &str) -> str:
     let kind = body.term_kind(bb)
     if kind == TermKind.TK_CALL:
         if mir_ownership_operand_move_matches(body, body.term_data0(bb), target) or mir_ownership_call_args_move_matches(body, body.term_data1(bb), target):
@@ -2003,7 +2003,7 @@ fn mir_drop_state_compute_blocks(body: &MirBody) -> MirDropStateBlocks:
         mir_drop_state_store_block(blocks, bb, state)
     blocks
 
-fn trace_ownership_body(body: &MirBody, pool: &InternPool, sema: &Sema, spec: str, target: str) -> str:
+fn trace_ownership_body(body: &MirBody, pool: &InternPool, sema: &Sema, spec: &str, target: &str) -> str:
     var out = ""
     out = out ++ "fn " ++ mir_debug_body_label(body, pool) ++ "\n"
     var hits = 0
@@ -2035,7 +2035,7 @@ fn trace_ownership_body(body: &MirBody, pool: &InternPool, sema: &Sema, spec: st
         out = out ++ "  <no ownership transitions>\n"
     out
 
-fn trace_ownership_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec: str) -> str:
+fn trace_ownership_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec: &str) -> str:
     let wanted_fn = mir_debug_spec_fn(spec)
     let target = mir_debug_spec_target(spec)
     var out = "trace-ownership " ++ spec ++ "\n"
@@ -2059,7 +2059,7 @@ fn mir_drop_plan_action(state: i32) -> str:
         return "skip"
     "skip"
 
-fn mir_drop_plan_place_line(body: &MirBody, pool: &InternPool, sema: &Sema, place_id: i32, state: i32, label: str, text: str) -> str:
+fn mir_drop_plan_place_line(body: &MirBody, pool: &InternPool, sema: &Sema, place_id: i32, state: i32, label: &str, text: &str) -> str:
     let ty = if place_id >= 0 and place_id < body.place_sema_types.len() as i32: body.place_sema_types.get(place_id as i64) else: 0
     label ++ " place=" ++ mir_place_text(body, place_id) ++ f" ty=ty{ty} state_before=" ++ mir_drop_state_name(state) ++ " action=" ++ mir_drop_plan_action(state) ++ " text=\"" ++ text ++ "\"\n"
 
@@ -2214,7 +2214,7 @@ fn dump_place_map_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema) ->
         out = out ++ dump_place_map_body(mir_mod, body, pool)
     out
 
-fn mir_parse_positive_i32(text: str) -> i32:
+fn mir_parse_positive_i32(text: &str) -> i32:
     if text.len() == 0:
         return -1
     var out = 0
@@ -2225,24 +2225,24 @@ fn mir_parse_positive_i32(text: str) -> i32:
         out = out * 10 + (ch - 48)
     out
 
-fn mir_parse_block_id(text: str) -> i32:
+fn mir_parse_block_id(text: &str) -> i32:
     if text.starts_with("bb"):
         return mir_parse_positive_i32(text.slice(2, text.len()))
     mir_parse_positive_i32(text)
 
-fn mir_cleanup_edge_from(target: str) -> i32:
+fn mir_cleanup_edge_from(target: &str) -> i32:
     for i in 0..target.len() as i32:
         if target.byte_at(i as i64) == 45 and i + 1 < target.len() as i32 and target.byte_at((i + 1) as i64) == 62:
             return mir_parse_block_id(target.slice(0, i as i64))
     -1
 
-fn mir_cleanup_edge_to(target: str) -> i32:
+fn mir_cleanup_edge_to(target: &str) -> i32:
     for i in 0..target.len() as i32:
         if target.byte_at(i as i64) == 45 and i + 1 < target.len() as i32 and target.byte_at((i + 1) as i64) == 62:
             return mir_parse_block_id(target.slice((i + 2) as i64, target.len()))
     -1
 
-fn trace_cleanup_edge_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec: str) -> str:
+fn trace_cleanup_edge_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec: &str) -> str:
     let wanted_fn = mir_debug_spec_fn(spec)
     let target = mir_debug_spec_target(spec)
     let from_bb = mir_cleanup_edge_from(target)
@@ -2325,13 +2325,13 @@ fn validate_ownership_mir_module(mir_mod: &MirModule) -> str:
             return err
     ""
 
-fn mir_debug_spec_fn(spec: str) -> str:
+fn mir_debug_spec_fn(spec: &str) -> str:
     for i in 0..spec.len() as i32:
         if spec.byte_at(i as i64) == 58:
             return spec.slice(0, i as i64)
     ""
 
-fn mir_debug_spec_target(spec: str) -> str:
+fn mir_debug_spec_target(spec: &str) -> str:
     for i in 0..spec.len() as i32:
         if spec.byte_at(i as i64) == 58:
             return spec.slice((i + 1) as i64, spec.len())
@@ -2347,7 +2347,7 @@ fn mir_debug_body_label(body: &MirBody, pool: &InternPool) -> str:
         return f"sym{body.fn_sym}(" ++ pool.resolve(body.fn_sym) ++ ")"
     "<anon>"
 
-fn mir_debug_body_matches(body: &MirBody, pool: &InternPool, wanted_fn: str) -> bool:
+fn mir_debug_body_matches(body: &MirBody, pool: &InternPool, wanted_fn: &str) -> bool:
     if wanted_fn.len() == 0:
         return true
     let name = mir_debug_body_name(body, pool)
@@ -2357,10 +2357,10 @@ fn mir_debug_body_matches(body: &MirBody, pool: &InternPool, wanted_fn: str) -> 
         return true
     false
 
-fn mir_debug_mentions(text: str, target: str) -> bool:
+fn mir_debug_mentions(text: &str, target: &str) -> bool:
     target.len() == 0 or with_str_contains(text, target) != 0
 
-fn trace_place_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec: str) -> str:
+fn trace_place_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec: &str) -> str:
     let wanted_fn = mir_debug_spec_fn(spec)
     let target = mir_debug_spec_target(spec)
     var out = "trace-place " ++ spec ++ "\n"
@@ -2393,7 +2393,7 @@ fn trace_place_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec:
         out = out ++ "  <no matching MIR events>\n"
     out
 
-fn explain_mir_origin_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec: str) -> str:
+fn explain_mir_origin_module(mir_mod: &MirModule, pool: &InternPool, sema: &Sema, spec: &str) -> str:
     let wanted_fn = mir_debug_spec_fn(spec)
     let target = mir_debug_spec_target(spec)
     var out = "mir-origin " ++ spec ++ "\n"
@@ -2952,7 +2952,7 @@ fn mir_validation_ok -> MirValidationError:
         message: "",
     }
 
-fn mir_validation_fail(fn_sym: i32, span: i32, message: str) -> MirValidationError:
+fn mir_validation_fail(fn_sym: i32, span: i32, message: &str) -> MirValidationError:
     MirValidationError {
         fn_sym: fn_sym,
         span: span,

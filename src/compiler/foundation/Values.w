@@ -41,7 +41,7 @@ pub fn value_key_bool(v: bool) -> ValueKey:
         type_ref: -1,
     }
 
-pub fn value_key_string(v: str) -> ValueKey:
+pub fn value_key_string(v: &str) -> ValueKey:
     ValueKey {
         tag: VALUE_KEY_STRING(),
         int_value: 0,

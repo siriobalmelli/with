@@ -71,7 +71,7 @@ impl Codegen:
         self.trait_idx_syms.push(name_sym)
         self.trait_decl_nodes.insert(name_sym, trait_node)
 
-    fn audit_trait_method_row(trait_name: str, trait_node: i32, trait_idx: i32, method_start: i32, method_idx: i32):
+    fn audit_trait_method_row(trait_name: &str, trait_node: i32, trait_idx: i32, method_start: i32, method_idx: i32):
         let row = method_start + method_idx
         let ast_name = self.pool.trait_method_field(trait_node, method_idx, TRAIT_METHOD_NAME)
         let ast_flags = self.pool.trait_method_field(trait_node, method_idx, TRAIT_METHOD_FLAGS)
@@ -1125,7 +1125,7 @@ fn const_string_eval_fail -> ConstStringEval:
         text: "",
     }
 
-fn const_string_eval_ok(text: str) -> ConstStringEval:
+fn const_string_eval_ok(text: &str) -> ConstStringEval:
     ConstStringEval {
         ok: true,
         text,
@@ -1214,17 +1214,17 @@ impl Codegen:
                 return di
         -1
 
-    mut fn record_tracked_input(path: str):
+    mut fn record_tracked_input(path: &str):
         var paths = self.tracked_input_paths
         self.tracked_input_paths = tracked_input_insert_unique(move paths, path)
 
-    mut fn read_tracked_embed_file(source_path: str, raw_path: str) -> TrackedReadResult:
+    mut fn read_tracked_embed_file(source_path: &str, raw_path: &str) -> TrackedReadResult:
         let result = tracked_embed_read(source_path, raw_path, self.tracked_input_root)
         if result.ok:
             self.record_tracked_input(result.resolved_path)
         result
 
-    mut fn try_eval_const_string(node: i32, source_path: str, depth: i32) -> ConstStringEval:
+    mut fn try_eval_const_string(node: i32, source_path: &str, depth: i32) -> ConstStringEval:
         if node == 0 or depth > 32:
             return const_string_eval_fail()
 
@@ -1789,7 +1789,7 @@ impl Codegen:
             return wl_const_bitcast(value, expected_ty)
         0
 
-    fn const_c_string_pointer(text: str, ptr_ty: i64) -> i64:
+    fn const_c_string_pointer(text: &str, ptr_ty: i64) -> i64:
         if ptr_ty == 0:
             return 0
         let name = f"__with_cstr_{codegen_hash_name_component(with_str_hash(text))}_{text.len()}"

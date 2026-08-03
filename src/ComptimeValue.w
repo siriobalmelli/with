@@ -78,7 +78,7 @@ fn comptime_value_bool(value: i32) -> ComptimeValue:
         extra_count: 0,
     }
 
-fn comptime_value_str(value: str) -> ComptimeValue:
+fn comptime_value_str(value: &str) -> ComptimeValue:
     ComptimeValue {
         kind: ComptimeValueKind.CV_STR,
         type_id: 0,
@@ -188,7 +188,7 @@ fn comptime_value_enum(type_id: i32, variant_sym: i32, extra_start: i32, extra_c
         extra_count,
     }
 
-fn comptime_value_bytes(type_id: i32, data: str) -> ComptimeValue:
+fn comptime_value_bytes(type_id: i32, data: &str) -> ComptimeValue:
     ComptimeValue {
         kind: ComptimeValueKind.CV_BYTES,
         type_id,
@@ -210,7 +210,7 @@ fn comptime_value_string_builder(type_id: i32, head: i32, chunk_count: i32, byte
         extra_count: chunk_count,
     }
 
-fn comptime_value_string_chunk(prev: i32, data: str) -> ComptimeValue:
+fn comptime_value_string_chunk(prev: i32, data: &str) -> ComptimeValue:
     ComptimeValue {
         kind: ComptimeValueKind.CV_STRING_CHUNK,
         type_id: 0,

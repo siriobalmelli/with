@@ -18,7 +18,7 @@ extern fn with_fs_mkdir_p(path: str) -> i32
 extern fn with_getenv_str(name: str) -> str
 extern fn with_str_hash(s: str) -> i64
 
-fn ecr_dirname(path: str) -> str:
+fn ecr_dirname(path: &str) -> str:
     var last = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:

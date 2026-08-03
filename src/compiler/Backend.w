@@ -17,7 +17,7 @@ fn backend_debug_pool_flow_enabled() -> i32:
     1
 
 impl Zcu:
-    mut fn compile_to_object_backend(pool: AstPool, opt_level: i32, output_path: str, debug_info: bool, module_object_mode: bool) -> i32:
+    mut fn compile_to_object_backend(pool: AstPool, opt_level: i32, output_path: &str, debug_info: bool, module_object_mode: bool) -> i32:
         if self.last_mir_module.body_count() == 0:
             runtime_eprint("error: missing MIR input for LLVM backend")
             return 1
@@ -103,7 +103,7 @@ impl Zcu:
     // applies the shared global-ownership surgery, writes the unit's small
     // bitcode, and disposes everything before the next round. Threads then
     // optimize+emit the small bitcodes concurrently.
-    mut fn compile_units_generated(pool: AstPool, opt_level: i32, output_path: str, debug_info: bool, unit_count: i32) -> i32:
+    mut fn compile_units_generated(pool: AstPool, opt_level: i32, output_path: &str, debug_info: bool, unit_count: i32) -> i32:
         let do_profile = runtime_getenv("WITH_PROFILE").len() > 0
         var backend_mir = self.last_mir_module
         let mir_ptr = &raw const backend_mir as i64
@@ -215,7 +215,7 @@ impl Zcu:
     // Run the real LLVM backend with analysis instrumentation enabled, but do not
     // print IR or emit an object. The returned facts come from the same marshalling
     // and callee-binding branches used for production codegen.
-    mut fn analyze_codegen_backend(pool: AstPool, opt_level: i32, query: str) -> AnalysisBackendResult:
+    mut fn analyze_codegen_backend(pool: AstPool, opt_level: i32, query: &str) -> AnalysisBackendResult:
         if self.last_mir_module.body_count() == 0:
             let report = AnalysisReport.init()
             report.fail("missing MIR input for codegen analysis")

@@ -5,7 +5,7 @@ use BuildGraphModel
 use BuildGraphRuntime
 use compiler.Runtime
 
-pub fn build_graph_output_path(root: str, target: &BuildGraphTarget, output_path: str, target_count: i32) -> str:
+pub fn build_graph_output_path(root: &str, target: &BuildGraphTarget, output_path: &str, target_count: i32) -> str:
     if output_path.len() > 0:
         if target_count != 1:
             return ""
@@ -14,7 +14,7 @@ pub fn build_graph_output_path(root: str, target: &BuildGraphTarget, output_path
         return build_graph_resolve_project_path(root, target.output)
     resolve_join(resolve_join(root, "out/bin"), target.name)
 
-pub fn build_graph_library_output_path(root: str, target: &BuildGraphTarget, output_path: str, target_count: i32) -> str:
+pub fn build_graph_library_output_path(root: &str, target: &BuildGraphTarget, output_path: &str, target_count: i32) -> str:
     if output_path.len() > 0:
         if target_count != 1:
             return ""
@@ -23,7 +23,7 @@ pub fn build_graph_library_output_path(root: str, target: &BuildGraphTarget, out
         return build_graph_resolve_project_path(root, target.output)
     resolve_join(resolve_join(root, "out/lib"), "lib" ++ target.name ++ ".a")
 
-pub fn build_graph_object_output_path(root: str, target: &BuildGraphTarget, output_path: str, target_count: i32) -> str:
+pub fn build_graph_object_output_path(root: &str, target: &BuildGraphTarget, output_path: &str, target_count: i32) -> str:
     if output_path.len() > 0:
         if target_count != 1:
             return ""
@@ -32,12 +32,12 @@ pub fn build_graph_object_output_path(root: str, target: &BuildGraphTarget, outp
         return build_graph_resolve_project_path(root, target.output)
     resolve_join(resolve_join(root, "out/obj"), target.name ++ ".o")
 
-pub fn build_graph_resolve_project_path(root: str, path: str) -> str:
+pub fn build_graph_resolve_project_path(root: &str, path: &str) -> str:
     if path.len() > 0 and path.byte_at(0) == 47:
         return path
     resolve_join(root, path)
 
-pub fn build_graph_resolve_paths(root: str, paths: &Vec[str]) -> Vec[str]:
+pub fn build_graph_resolve_paths(root: &str, paths: &Vec[str]) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     for i in 0..paths.len() as i32:
         out.push(build_graph_resolve_project_path(root, paths.get(i as i64)))
@@ -49,7 +49,7 @@ pub fn build_graph_clone_strings(values: &Vec[str]) -> Vec[str]:
         out.push(runtime_str_clone(values.get(i as i64)))
     out
 
-pub fn build_graph_dirname(path: str) -> str:
+pub fn build_graph_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -58,16 +58,16 @@ pub fn build_graph_dirname(path: str) -> str:
         return "."
     path.slice(0, last_slash as i64)
 
-pub fn build_graph_path_basename(path: str) -> str:
+pub fn build_graph_path_basename(path: &str) -> str:
     let dir = build_graph_dirname(path)
     if dir == ".":
         return path
     path.slice((dir.len() + 1) as i64, path.len())
 
-pub fn build_graph_path_has_glob(path: str) -> bool:
+pub fn build_graph_path_has_glob(path: &str) -> bool:
     path.contains("*")
 
-pub fn build_graph_single_star_pattern_matches(pattern: str, name: str) -> bool:
+pub fn build_graph_single_star_pattern_matches(pattern: &str, name: &str) -> bool:
     var star = -1
     for i in 0..pattern.len() as i32:
         if pattern.byte_at(i as i64) == 42:
@@ -88,7 +88,7 @@ pub fn build_graph_single_star_pattern_matches(pattern: str, name: str) -> bool:
             return false
     true
 
-pub fn build_graph_path_for_child_process(root: str, path: str) -> str:
+pub fn build_graph_path_for_child_process(root: &str, path: &str) -> str:
     var normalized_root = root
     while normalized_root.len() > 1 and normalized_root.ends_with("/"):
         normalized_root = normalized_root.slice(0, normalized_root.len() - 1)
@@ -102,7 +102,7 @@ pub fn build_graph_path_for_child_process(root: str, path: str) -> str:
         return path.slice(prefix.len(), path.len())
     path
 
-pub fn build_graph_generated_path_valid(path: str) -> bool:
+pub fn build_graph_generated_path_valid(path: &str) -> bool:
     if path.len() == 0:
         return false
     if path.byte_at(0) == 47:
@@ -115,7 +115,7 @@ pub fn build_graph_generated_path_valid(path: str) -> bool:
             return false
     true
 
-pub fn build_graph_manifest_relative_path_valid(path: str) -> bool:
+pub fn build_graph_manifest_relative_path_valid(path: &str) -> bool:
     if path.len() == 0:
         return false
     if path.byte_at(0) == 47:
@@ -128,7 +128,7 @@ pub fn build_graph_manifest_relative_path_valid(path: str) -> bool:
             return false
     true
 
-pub fn build_graph_define_valid(define: str) -> bool:
+pub fn build_graph_define_valid(define: &str) -> bool:
     if define.len() == 0:
         return false
     for i in 0..define.len() as i32:
@@ -137,13 +137,13 @@ pub fn build_graph_define_valid(define: str) -> bool:
             return false
     true
 
-pub fn build_graph_process_arg_valid(arg: str) -> bool:
+pub fn build_graph_process_arg_valid(arg: &str) -> bool:
     for i in 0..arg.len() as i32:
         if arg.byte_at(i as i64) == 0:
             return false
     true
 
-pub fn build_graph_path_project_contained(path: str) -> bool:
+pub fn build_graph_path_project_contained(path: &str) -> bool:
     if path.len() == 0:
         return true
     if path.byte_at(0) == 47:
@@ -158,7 +158,7 @@ pub fn build_graph_path_project_contained(path: str) -> bool:
             return false
     true
 
-pub fn build_graph_path_is_install_dest(path: str) -> bool:
+pub fn build_graph_path_is_install_dest(path: &str) -> bool:
     path.starts_with("$HOME/") or path.starts_with("$INSTALL_BINDIR/") or path.starts_with("$INSTALL_LIBDIR/")
 
 pub fn build_graph_validate_target_containment(target: &BuildGraphTarget) -> i32:
@@ -196,10 +196,10 @@ pub fn build_graph_validate_target_containment(target: &BuildGraphTarget) -> i32
             return 1
     0
 
-pub fn build_graph_argv_append(argv_blob: str, arg: str) -> str:
+pub fn build_graph_argv_append(argv_blob: &str, arg: &str) -> str:
     argv_blob ++ arg ++ "\0"
 
-pub fn build_graph_exec_argv(target: &BuildGraphTarget, operation_name: str, argv_blob: str) -> i32:
+pub fn build_graph_exec_argv(target: &BuildGraphTarget, operation_name: &str, argv_blob: &str) -> i32:
     let rc = build_graph_rt_exec_argv(argv_blob)
     if rc != 0:
         build_graph_rt_eprint("error: " ++ operation_name ++ " target '" ++ target.name ++ f"' failed with exit code {rc}")
@@ -223,7 +223,7 @@ pub fn build_graph_validate_process_args(target: &BuildGraphTarget) -> i32:
             return 1
     0
 
-fn build_graph_split_nonempty_lines(text: str) -> Vec[str]:
+fn build_graph_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     let text_len = text.len() as i32
     var start = 0
@@ -242,7 +242,7 @@ fn build_graph_split_nonempty_lines(text: str) -> Vec[str]:
         i = i + 1
     lines
 
-fn build_graph_str_compare(a: str, b: str) -> i32:
+fn build_graph_str_compare(a: &str, b: &str) -> i32:
     let min_len = if a.len() < b.len(): a.len() else: b.len()
     var i = 0
     while i < min_len as i32:
@@ -274,7 +274,7 @@ pub fn build_graph_sorted_strings(items: &Vec[str]) -> Vec[str]:
         sorted = out
     sorted
 
-pub fn collect_test_files(target_dir: str) -> Vec[str]:
+pub fn collect_test_files(target_dir: &str) -> Vec[str]:
     let listing = build_graph_rt_list_files(target_dir)
     if listing.len() == 0:
         return Vec.new()
@@ -286,7 +286,7 @@ pub fn collect_test_files(target_dir: str) -> Vec[str]:
             w_files.push(path)
     build_graph_sorted_strings(w_files)
 
-fn build_graph_edge_find(paths: &Vec[str], path: str) -> i64:
+fn build_graph_edge_find(paths: &Vec[str], path: &str) -> i64:
     for i in 0..paths.len() as i32:
         if paths.get(i as i64) == path:
             return i as i64
@@ -347,7 +347,7 @@ fn build_graph_time_picked(picked: &Vec[i64], idx: i64) -> bool:
 // Per-invocation wall-time record: chronological TSV beside the cache state
 // (the dir build_cache_state_dir names), plus a slowest-first stderr summary.
 // Durations must never enter hashed build inputs or compared artifacts.
-pub fn build_graph_times_report(root: str, names: &Vec[str], ns_list: &Vec[i64], total_ns: i64) -> Unit:
+pub fn build_graph_times_report(root: &str, names: &Vec[str], ns_list: &Vec[i64], total_ns: i64) -> Unit:
     if names.len() == 0:
         return
     var text = "target\tseconds\n"

@@ -13,13 +13,13 @@ enum CapabilityKind: i32:
     CK_COMPILER_DIAGNOSTICS = 9
     CK_COMPILER_SOURCE_EMITTER = 10
 
-fn capability_registry_is_std_build_path(path: str) -> bool:
+fn capability_registry_is_std_build_path(path: &str) -> bool:
     path == "<embedded-std>/std/build.w" or path == "lib/std/build.w" or path.ends_with("/lib/std/build.w")
 
-fn capability_registry_is_std_compiler_path(path: str) -> bool:
+fn capability_registry_is_std_compiler_path(path: &str) -> bool:
     path == "<embedded-std>/std/compiler.w" or path == "lib/std/compiler.w" or path.ends_with("/lib/std/compiler.w")
 
-fn capability_registry_lookup_std_build(name: str) -> i32:
+fn capability_registry_lookup_std_build(name: &str) -> i32:
     if name == "BuildCtx": return CapabilityKind.CK_BUILD_CTX
     if name == "ProjectInfo": return CapabilityKind.CK_BUILD_PROJECT_INFO
     if name == "Diagnostics": return CapabilityKind.CK_BUILD_DIAGNOSTICS
@@ -30,12 +30,12 @@ fn capability_registry_lookup_std_build(name: str) -> i32:
     if name == "Workspace": return CapabilityKind.CK_BUILD_WORKSPACE
     CapabilityKind.CK_NONE
 
-fn capability_registry_lookup_std_compiler(name: str) -> i32:
+fn capability_registry_lookup_std_compiler(name: &str) -> i32:
     if name == "Diagnostics": return CapabilityKind.CK_COMPILER_DIAGNOSTICS
     if name == "SourceEmitter": return CapabilityKind.CK_COMPILER_SOURCE_EMITTER
     CapabilityKind.CK_NONE
 
-fn capability_registry_lookup(module_path: str, type_name: str) -> i32:
+fn capability_registry_lookup(module_path: &str, type_name: &str) -> i32:
     if capability_registry_is_std_build_path(module_path):
         return capability_registry_lookup_std_build(type_name)
     if capability_registry_is_std_compiler_path(module_path):
@@ -58,7 +58,7 @@ fn capability_registry_kind_name(kind: i32) -> str:
     if kind == CapabilityKind.CK_COMPILER_SOURCE_EMITTER: return "std.compiler.SourceEmitter"
     "none"
 
-fn capability_registry_compiler_hook_param_supported(module_path: str, type_name: str) -> bool:
+fn capability_registry_compiler_hook_param_supported(module_path: &str, type_name: &str) -> bool:
     if not capability_registry_is_std_compiler_path(module_path):
         return false
     type_name == "ProjectInfo" or capability_registry_is_capability(capability_registry_lookup_std_compiler(type_name))

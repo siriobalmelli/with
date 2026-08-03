@@ -495,7 +495,7 @@ type LoopState {
 
 // ── Codegen lifecycle ─────────────────────────────────────────────
 
-fn Codegen.init(module_name: str) -> Codegen:
+fn Codegen.init(module_name: &str) -> Codegen:
     Codegen.init_with_opt(module_name, 0)
 
 // D17/#697 phase take-and-return (the lower_module pattern): codegen OWNS the
@@ -521,7 +521,7 @@ extend Codegen:
         self.intern = InternPool.init()
         i
 
-fn Codegen.init_with_opt_and_intern(module_name: str, opt_level: i32, intern: InternPool, sema: Sema) -> Codegen:
+fn Codegen.init_with_opt_and_intern(module_name: &str, opt_level: i32, intern: InternPool, sema: Sema) -> Codegen:
     var cg = Codegen.init_with_opt(module_name, opt_level)
     let overflow_mode = sema.overflow_mode
     cg.intern = intern
@@ -585,7 +585,7 @@ fn Codegen.init_with_opt_and_intern(module_name: str, opt_level: i32, intern: In
     cg
 
 impl Codegen:
-    mut fn enable_analysis(query: str):
+    mut fn enable_analysis(query: &str):
         self.analysis_enabled = 1
         self.analysis_query = query
 
@@ -593,7 +593,7 @@ impl Codegen:
         if self.analysis_enabled != 0:
             self.analysis_report.add(move fact)
 
-    fn analysis_fail(message: str):
+    fn analysis_fail(message: &str):
         if self.analysis_enabled != 0:
             self.analysis_report.fail(message)
 
@@ -801,7 +801,7 @@ impl Codegen:
         if selected and share and strategy_not_alias:
             self.analysis_fail(f"callee {name} sig={sig} param={param_index}: share-place parameter does not alias the incoming caller place")
 
-fn Codegen.init_with_opt(module_name: str, opt_level: i32) -> Codegen:
+fn Codegen.init_with_opt(module_name: &str, opt_level: i32) -> Codegen:
     wl_init_native_target()
     wl_init_native_asm_printer()
     wl_init_native_asm_parser()
@@ -1066,7 +1066,7 @@ impl Codegen:
             wl_print_ir(self.llmod)
             with_eprint("===== END POST-OPTIMIZE LLVM IR =====\n")
 
-    fn emit_object_file(path: str) -> i32:
+    fn emit_object_file(path: &str) -> i32:
         wl_emit_object(self.target_machine, self.llmod, path)
 
     fn print_ir():
@@ -1316,7 +1316,7 @@ impl Codegen:
     // Non-empty when a would-be-internal planned fn is instead promoted
     // external under a collision-proof name; identical in every unit so
     // cross-unit calls resolve at link time (#681, the __wcu$ scheme).
-    fn unit_promoted_name(sym: i32, effective_name: str) -> str:
+    fn unit_promoted_name(sym: i32, effective_name: &str) -> str:
         if self.unit_total <= 1:
             return ""
         let ridx = self.unit_rename_index.get(sym)
@@ -1592,7 +1592,7 @@ impl Codegen:
         let raw = with_getenv_str("WITH_DEBUG_FALLBACK")
         raw.len() > 0 and raw != "0"
 
-    fn debug_type_layout_field(owner_name: str, field_index: i32, field_name: i32, type_node: i32, resolved_ty: i64):
+    fn debug_type_layout_field(owner_name: &str, field_index: i32, field_name: i32, type_node: i32, resolved_ty: i64):
         if not self.debug_type_layout_enabled():
             return
         let node_kind = if type_node != 0: self.pool.kind(type_node) else: -1
@@ -1667,7 +1667,7 @@ impl Codegen:
     fn loop_result_alloca_at(idx: i32) -> i64:
         with_codegen_loop_get_result(idx)
 
-    fn debug_call_coerce_failure(context: str, call_node: i32, arg_index: i32, arg_node: i32, actual_val: i64, expected_ty: i64) -> Unit:
+    fn debug_call_coerce_failure(context: &str, call_node: i32, arg_index: i32, arg_node: i32, actual_val: i64, expected_ty: i64) -> Unit:
         if not self.debug_call_coerce_enabled():
             return
         var msg = "[call-coerce] " ++ context
@@ -1693,7 +1693,7 @@ impl Codegen:
                 msg = msg ++ f" arg_text={arg_text}"
         with_eprint(msg)
 
-    mut fn enforce_coerced_type(value: i64, expected_ty: i64, context: str) -> i64:
+    mut fn enforce_coerced_type(value: i64, expected_ty: i64, context: &str) -> i64:
         if value == 0 or expected_ty == 0:
             return value
 
@@ -1880,7 +1880,7 @@ impl Codegen:
         wl_build_store(self.builder, arg_val, tmp)
         tmp
 
-    mut fn coerce_call_arg_to_param(arg_node: i32, arg_val: i64, param_ty: i64, call_context: str, call_node: i32, arg_index: i32) -> i64:
+    mut fn coerce_call_arg_to_param(arg_node: i32, arg_val: i64, param_ty: i64, call_context: &str, call_node: i32, arg_index: i32) -> i64:
         if arg_val == 0 or param_ty == 0:
             return arg_val
 
@@ -2084,7 +2084,7 @@ impl Codegen:
                             return alias_known.unwrap()
         0
 
-    mut fn coerce_call_args_for_fn_value(fn_sym: i32, fn_val: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> Vec[i64]:
+    mut fn coerce_call_args_for_fn_value(fn_sym: i32, fn_val: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: &str, call_node: i32) -> Vec[i64]:
         let out: Vec[i64] = Vec.new()
         let param_count = wl_count_params(fn_val)
         let sret_opt = self.extern_fn_has_sret.get(fn_sym)
@@ -2128,7 +2128,7 @@ impl Codegen:
             out.push(arg_val)
         out
 
-    mut fn build_call_fn_value(fn_sym: i32, fn_val: i64, fn_ty: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> i64:
+    mut fn build_call_fn_value(fn_sym: i32, fn_val: i64, fn_ty: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: &str, call_node: i32) -> i64:
         let sret_opt = self.extern_fn_has_sret.get(fn_sym)
         let has_sret = if sret_opt.is_some(): sret_opt.unwrap() else: 0
         var sret_ty: i64 = 0
@@ -2507,7 +2507,7 @@ fn vec_copy_i64(src: &Vec[i64]) -> Vec[i64]:
         out.push(src.get(i as i64))
     out
 
-fn codegen_owned_text(text: str) -> str:
+fn codegen_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
     with_str_clone(text)
@@ -4062,7 +4062,7 @@ fn codegen_hash_name_component(value: i64) -> str:
         return "n" ++ f"{0 - value}"
     f"{value}"
 
-fn codegen_canonical_module_path(path: str) -> str:
+fn codegen_canonical_module_path(path: &str) -> str:
     if path.len() == 0 or path == "<unknown>":
         return path
     if path.byte_at(0) == 60:
@@ -4074,7 +4074,7 @@ fn codegen_canonical_module_path(path: str) -> str:
         return resolve_normalize_path(path)
     resolve_join(cwd, path)
 
-fn codegen_is_runtime_source_file(source_path: str) -> bool:
+fn codegen_is_runtime_source_file(source_path: &str) -> bool:
     source_path.starts_with("rt/") or source_path.contains("/rt/") or
         source_path.starts_with("rt\\") or source_path.contains("\\rt\\") or
         source_path == "out/gen/compat_runtime.w" or
@@ -4082,7 +4082,7 @@ fn codegen_is_runtime_source_file(source_path: str) -> bool:
         source_path.ends_with("/out/gen/compat_runtime.w") or
         source_path.ends_with("\\out\\gen\\compat_runtime.w")
 
-fn codegen_is_runtime_abi_symbol(base_name: str) -> bool:
+fn codegen_is_runtime_abi_symbol(base_name: &str) -> bool:
     if base_name.starts_with("with_") or base_name.starts_with("rt_") or base_name.starts_with("wl_"):
         return true
     base_name == "__error" or base_name == "__open" or
@@ -4091,11 +4091,11 @@ fn codegen_is_runtime_abi_symbol(base_name: str) -> bool:
         base_name == "i32_to_str" or base_name == "i64_to_string" or
         base_name == "str_from_byte"
 
-fn codegen_preserve_runtime_link_name(source_path: str, base_name: str) -> bool:
+fn codegen_preserve_runtime_link_name(source_path: &str, base_name: &str) -> bool:
     codegen_is_runtime_source_file(source_path) and codegen_is_runtime_abi_symbol(base_name)
 
 impl Codegen:
-    fn module_link_name_for_path(source_path: str, base_name: str) -> str:
+    fn module_link_name_for_path(source_path: &str, base_name: &str) -> str:
         if self.module_object_mode == 0:
             return base_name
         if codegen_preserve_runtime_link_name(source_path, base_name):
@@ -4105,7 +4105,7 @@ impl Codegen:
             return base_name
         "__with_mod_" ++ codegen_hash_name_component(with_str_hash(canonical_path)) ++ "__" ++ base_name
 
-    fn current_decl_module_link_name(base_name: str) -> str:
+    fn current_decl_module_link_name(base_name: &str) -> str:
         self.module_link_name_for_path(self.current_decl_source_file, base_name)
 
     fn ident_text_from_node(node: i32) -> str:
@@ -4809,10 +4809,10 @@ impl Codegen:
             return cc_name.slice(1, cc_name.len() - 1)
         cc_name
 
-    fn fn_uses_c_abi(cc_name: str) -> bool:
+    fn fn_uses_c_abi(cc_name: &str) -> bool:
         cc_name == "c" or (cc_name.len() > 9 and cc_name.slice(0, 9) == "c_export:")
 
-fn codegen_extern_uses_internal_abi(name: str, cc_name: str) -> bool:
+fn codegen_extern_uses_internal_abi(name: &str, cc_name: &str) -> bool:
     if cc_name.len() > 0:
         return false
     codegen_is_runtime_abi_symbol(name)
@@ -5234,7 +5234,7 @@ impl Codegen:
                 self.fn_fn_types.insert(canonical_sym, actual_fn_type)
                 self.record_c_abi_transform(canonical_sym, has_sret, sret_ty, byval_mask, move byval_types, direct_mask, move direct_types, direct_ret_ty)
 
-    fn resolve_callconv(name: str) -> i32:
+    fn resolve_callconv(name: &str) -> i32:
         if name == "c": return wl_cc_c()
         if name == "stdcall": return wl_cc_x86_stdcall()
         if name == "fastcall": return wl_cc_x86_fastcall()
@@ -5267,7 +5267,7 @@ impl Codegen:
             wl_set_global_constant(gv, 1)
         self.module_constants.insert(name_sym, gv)
 
-    fn canonical_extern_name(name: str) -> str:
+    fn canonical_extern_name(name: &str) -> str:
         // c_import may suffix C symbols as "name.<n>" — strip the suffix for linking.
         var dot_pos = -1
         for i in 0..name.len() as i32:
@@ -5411,10 +5411,10 @@ impl Codegen:
             return f"s{wl_count_struct_elem_types(ty)}"
         f"t{ty}"
 
-    fn collection_wrapper_name_1(prefix: str, t0: i64) -> str:
+    fn collection_wrapper_name_1(prefix: &str, t0: i64) -> str:
         prefix ++ "." ++ self.deterministic_type_tag(t0)
 
-    fn collection_wrapper_name_2(prefix: str, t0: i64, t1: i64) -> str:
+    fn collection_wrapper_name_2(prefix: &str, t0: i64, t1: i64) -> str:
         prefix ++ "." ++ self.deterministic_type_tag(t0) ++ "." ++ self.deterministic_type_tag(t1)
 
     // Dual-keyed collection type caches (#731): the sema tid preserves
@@ -5684,7 +5684,7 @@ impl Codegen:
     fn invalid_concrete_mir_function() -> ConcreteMirFunction:
         ConcreteMirFunction { sym: 0, value: 0, fn_type: 0, sig: -1 }
 
-    mut fn ensure_concrete_mir_function(call_node: i32, recorded_sig: i32, recorded_mono_sym: i32, fallback_sym: i32, label: str) -> ConcreteMirFunction:
+    mut fn ensure_concrete_mir_function(call_node: i32, recorded_sig: i32, recorded_mono_sym: i32, fallback_sym: i32, label: &str) -> ConcreteMirFunction:
         var sema_sym = fallback_sym
         var sig_idx = if sema_sym != 0: self.sema.get_sig(sema_sym) else: -1
         if recorded_mono_sym != 0:
@@ -5777,7 +5777,7 @@ impl Codegen:
         self.gen_function_mir_mono(mono_sym, 0, body)
         ConcreteMirFunction { sym: mono_sym, value: function, fn_type, sig: sig_idx }
 
-    mut fn call_concrete_mir_function(concrete: &ConcreteMirFunction, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> i64:
+    mut fn call_concrete_mir_function(concrete: &ConcreteMirFunction, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: &str, call_node: i32) -> i64:
         if self.sema.task_fns.contains(concrete.sym):
             let task_sema = self.sema.sig_return_type(concrete.sig)
             let task_ty = self.sema_type_to_llvm(task_sema)
@@ -5789,7 +5789,7 @@ impl Codegen:
             return self.emit_async_fn_spawn_task_value(concrete.sym, concrete.value, concrete.fn_type, &coerced, task_ty)
         self.build_call_fn_value(concrete.sym, concrete.value, concrete.fn_type, args_start, arg_node_base_index, args, arg_count, call_context, call_node)
 
-    mut fn monomorphize_struct_method_core(mono_type_sym: i32, method_name: str, _decl: i32, obj: i64, obj_ptr: i64, obj_node: i32, obj_ty: i64, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
+    mut fn monomorphize_struct_method_core(mono_type_sym: i32, method_name: &str, _decl: i32, obj: i64, obj_ptr: i64, obj_node: i32, obj_ty: i64, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
         let fallback = self.intern.intern(self.intern.resolve(mono_type_sym) ++ "." ++ method_name)
         let concrete = self.ensure_concrete_mir_function(call_node, concrete_sig, concrete_sym, fallback, "method " ++ method_name)
         if concrete.sym == 0:
@@ -5803,7 +5803,7 @@ impl Codegen:
             args.push(pre_args.get(ai as i64))
         self.call_concrete_mir_function(concrete, args_start, 1, args, arg_count + 1, "method " ++ method_name, call_node)
 
-    mut fn monomorphize_struct_static_method_core(mono_type_sym: i32, method_name: str, _decl: i32, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
+    mut fn monomorphize_struct_static_method_core(mono_type_sym: i32, method_name: &str, _decl: i32, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
         let fallback = self.intern.intern(self.intern.resolve(mono_type_sym) ++ "." ++ method_name)
         let concrete = self.ensure_concrete_mir_function(call_node, concrete_sig, concrete_sym, fallback, "static method " ++ method_name)
         if concrete.sym == 0:

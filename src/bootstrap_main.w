@@ -39,7 +39,7 @@ fn main -> Unit:
     with_eprint("error: bootstrap recovery entry supports only build/check/version/help")
     exit(1)
 
-fn has_output_prefix(arg: str) -> bool:
+fn has_output_prefix(arg: &str) -> bool:
     if arg.len() < 9:
         return false
     arg.slice(0, 9) == "--output="

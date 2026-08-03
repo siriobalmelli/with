@@ -18,7 +18,7 @@ pub type SourceLocation {
     col: i32, // 0-based byte column
 }
 
-pub fn Source.from_string(path: str, text: str, file_id: FileId) -> Source:
+pub fn Source.from_string(path: &str, text: &str, file_id: FileId) -> Source:
     Source {
         path,
         text,
@@ -26,7 +26,7 @@ pub fn Source.from_string(path: str, text: str, file_id: FileId) -> Source:
         file_id,
     }
 
-pub fn Source.from_file(path: str, file_id: FileId) -> Source:
+pub fn Source.from_file(path: &str, file_id: FileId) -> Source:
     let text = with_fs_read_file(path)
     Source.from_string(path, text, file_id)
 
@@ -71,7 +71,7 @@ pub fn Source.line_text(self: &Self, line: i32) -> str:
         return slice.slice(0, (slice.len() - 1) as i64)
     slice
 
-fn source_compute_line_offsets(text: str) -> Vec[i32]:
+fn source_compute_line_offsets(text: &str) -> Vec[i32]:
     let offsets: Vec[i32] = Vec.new()
     with_vec_push_i32(&offsets, 0)
     for i in 0..text.len():

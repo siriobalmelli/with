@@ -16,7 +16,7 @@ fn ct_new_vec_str -> Vec[str]:
     out
 
 impl Sema:
-    mut fn ct_emit_error(ast: AstPool, node: i32, msg: str):
+    mut fn ct_emit_error(ast: AstPool, node: i32, msg: &str):
         let start = ast.get_start(node)
         let end = ast.get_end(node)
         self.diags.emit(Diagnostic.err(msg, Span { file: self.local_file_id, start, end }))
@@ -221,7 +221,7 @@ impl AstPool:
     fn ct_empty_block(node: i32) -> i32:
         self.add_node(NodeKind.NK_BLOCK, self.get_start(node), self.get_end(node), self.extra_len(), 0, 0) as i32
 
-fn ct_fresh_sym(intern: InternPool, prefix: str, seed: i32) -> i32:
+fn ct_fresh_sym(intern: InternPool, prefix: &str, seed: i32) -> i32:
     intern.intern(prefix ++ f"{seed}" ++ "_" ++ f"{intern.symbol_count() + 1}")
 
 impl Sema:
@@ -1431,7 +1431,7 @@ impl AstPool:
     fn ct_build_bool_lit(node: i32, value: bool) -> i32:
         self.add_node(NodeKind.NK_BOOL_LIT, self.get_start(node), self.get_end(node), if value: 1 else: 0, 0, 0) as i32
 
-    fn ct_build_string_lit(intern: InternPool, node: i32, value: str) -> i32:
+    fn ct_build_string_lit(intern: InternPool, node: i32, value: &str) -> i32:
         self.add_node(NodeKind.NK_STRING_LIT, self.get_start(node), self.get_end(node), intern.intern(value), 0, 0) as i32
 
     fn ct_build_binary(node: i32, op: i32, lhs: i32, rhs: i32) -> i32:
@@ -1480,7 +1480,7 @@ fn ct_copy_type_params(pool: AstPool, src_tp_start: i32, tp_count: i32) -> i32:
         src = src + 2 + bound_count
     dst_tp_start
 
-fn ct_component_id_value(name: str) -> i64:
+fn ct_component_id_value(name: &str) -> i64:
     var h: i64 = 5381
     var i: i64 = 0
     while i < name.len():
@@ -1813,7 +1813,7 @@ fn ct_supported_derive_target(intern: InternPool, derive_sym: i32) -> i32:
     if name == "ComponentId": return 1
     0
 
-fn ct_derive_target_fn_name(name: str) -> str:
+fn ct_derive_target_fn_name(name: &str) -> str:
     if name.len() == 0:
         return "derive_"
     let first = with_str_byte_at(name, 0)
@@ -1854,7 +1854,7 @@ impl Sema:
             return ""
         evald.value.text
 
-    mut fn ct_parse_user_derive_source(out: AstPool, intern: InternPool, decl: i32, source: str) -> Vec[i32]:
+    mut fn ct_parse_user_derive_source(out: AstPool, intern: InternPool, decl: i32, source: &str) -> Vec[i32]:
         let generated: Vec[i32] = Vec.new()
         if source.len() == 0:
             return generated
@@ -1981,11 +1981,11 @@ fn ct_build_result_type(out: AstPool, intern: InternPool, decl: i32, ok_type: i3
     args.push(err_type)
     ct_build_generic_type(out, decl, intern.intern("Result"), args)
 
-fn ct_build_variant_call(out: AstPool, intern: InternPool, decl: i32, variant_name: str, args: &Vec[i32]) -> i32:
+fn ct_build_variant_call(out: AstPool, intern: InternPool, decl: i32, variant_name: &str, args: &Vec[i32]) -> i32:
     let callee = out.ct_build_ident(decl, intern.intern(variant_name))
     out.ct_build_call(decl, callee, args)
 
-fn ct_build_variant_shorthand(out: AstPool, intern: InternPool, decl: i32, variant_name: str, args: &Vec[i32]) -> i32:
+fn ct_build_variant_shorthand(out: AstPool, intern: InternPool, decl: i32, variant_name: &str, args: &Vec[i32]) -> i32:
     let extra_start = out.extra_len()
     for ai in 0..args.len() as i32:
         out.add_extra(args.get(ai as i64))

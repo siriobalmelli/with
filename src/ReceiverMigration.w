@@ -26,15 +26,15 @@ extern fn with_fs_read_file(path: str) -> str
 extern fn with_fs_write_file(path: str, data: str) -> i32
 
 // 0-based column of a byte offset (distance from the start of its line, 10 = '\n').
-fn col_of(text: str, offset: i32):
+fn col_of(text: &str, offset: i32):
     var j = offset - 1
     while j >= 0 and (text.byte_at(j as i64) as i32) != 10:
         j = j - 1
     offset - (j + 1)
 
-fn slice(text: str, a: i32, b: i32): text.slice(a as i64, b as i64)
+fn slice(text: &str, a: i32, b: i32): text.slice(a as i64, b as i64)
 
-fn trim(s: str):
+fn trim(s: &str):
     let m = s.len() as i32
     var a = 0
     while a < m and (s.byte_at(a as i64) as i32) == 32:
@@ -46,7 +46,7 @@ fn trim(s: str):
 
 // Names from a type-param inner text ("K: Ord, V" -> "K, V"): each top-level
 // comma segment's identifier, stripped of its optional `: Bound`.
-fn tparam_names(inner: str):
+fn tparam_names(inner: &str):
     var parts: Vec[str] = Vec.new()
     let m = inner.len() as i32
     var seg_start = 0
@@ -73,7 +73,7 @@ fn tparam_names(inner: str):
     parts.join(", ")
 
 // Prefix `pad` to every non-empty line of `text` (blank lines stay blank).
-fn reindent(text: str, pad: str):
+fn reindent(text: &str, pad: &str):
     var parts: Vec[str] = Vec.new()
     let m = text.len() as i32
     var line_start = 0
@@ -92,7 +92,7 @@ fn reindent(text: str, pad: str):
     parts.join("")
 
 // Count top-level comma-separated segments in the bytes of a `[...]` group text.
-fn count_args(inner: str) -> i32:
+fn count_args(inner: &str) -> i32:
     let m = inner.len() as i32
     if m == 0:
         return 0
@@ -118,11 +118,11 @@ type RelocationFacts {
     matched: Vec[i32],
 }
 
-fn local_source_path(path: str) -> str:
+fn local_source_path(path: &str) -> str:
     let embedded = "<embedded-std>/"
     if path.starts_with(embedded): "lib/" ++ slice(path, embedded.len() as i32, path.len() as i32) else: path
 
-fn compiler_relocation_facts(entry: str) -> RelocationFacts:
+fn compiler_relocation_facts(entry: &str) -> RelocationFacts:
     let result = compiler_analyze_file(entry, "select:kind=declaration")
     let facts = RelocationFacts { paths: Vec.new(), starts: Vec.new(), ends: Vec.new(), modes: Vec.new(), matched: Vec.new() }
     for i in 0..result.report.facts.len() as i32:
@@ -139,12 +139,12 @@ fn compiler_relocation_facts(entry: str) -> RelocationFacts:
         facts.matched.push(0)
     facts
 
-fn relocation_fact_at(facts: &RelocationFacts, path: str, offset: i32) -> i32:
+fn relocation_fact_at(facts: &RelocationFacts, path: &str, offset: i32) -> i32:
     for i in 0..facts.starts.len() as i32:
         if facts.paths.get(i as i64) == path and offset >= facts.starts.get(i as i64) and offset < facts.ends.get(i as i64): return i
     -1
 
-fn relocate_file(path: str, semantic: &RelocationFacts, apply: bool, list_methods: bool) -> i32:
+fn relocate_file(path: &str, semantic: &RelocationFacts, apply: bool, list_methods: bool) -> i32:
     let text = with_fs_read_file(path)
     let tlen = text.len() as i32
     if tlen == 0:
@@ -416,7 +416,7 @@ fn relocate_file(path: str, semantic: &RelocationFacts, apply: bool, list_method
     print(f"{path}: relocated {count}")
     count
 
-fn path_excluded(path: str, excludes: &Vec[str]) -> bool:
+fn path_excluded(path: &str, excludes: &Vec[str]) -> bool:
     for i in 0..excludes.len() as i32:
         let excluded = excludes.get(i as i64)
         if path == excluded or path.starts_with(excluded ++ "/"): return true

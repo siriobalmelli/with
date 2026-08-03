@@ -16,6 +16,6 @@ enum MigrateMode: i32:
     Check = 1
     Diff = 2
 
-fn run(lang: str, path: str, mode: i32) -> i32:
+fn run(lang: &str, path: &str, mode: i32) -> i32:
     with_eprint("migrate: not yet implemented in self-hosted compiler")
     1

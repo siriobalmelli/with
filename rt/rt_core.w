@@ -1978,6 +1978,22 @@ pub fn with_str_clone(s: str) -> str:
     unsafe *((out as i64 + slen) as *mut u8) = 0
     make_str(out as *const u8, slen)
 
+// #747: owned copy from a BORROWED str — the clone spelling for reading an
+// owned field through a borrow (with_str_clone's consuming param cannot be
+// fed from one). &str passes the header by pointer, so this is a distinct
+// ABI from with_str_clone, not an overload. Reads the header through the
+// reference directly; str_data/str_length take consuming str.
+pub fn with_str_clone_ref(s: &str) -> str:
+    let slen = s.len()
+    if slen == 0:
+        return make_str("" as *const u8, 0)
+    let sp = s as *const str
+    let data = unsafe *(sp as *const *const u8)
+    let out = rt_alloc(slen + 1)
+    rt_memcpy(out, data, slen)
+    unsafe *((out as i64 + slen) as *mut u8) = 0
+    make_str(out as *const u8, slen)
+
 pub fn with_str_len(s: str) -> i64:
     str_length(s)
 
@@ -1997,6 +2013,22 @@ pub fn with_str_slice(s: str, start_arg: i64, end_arg: i64) -> str:
     if start >= end:
         return make_str("" as *const u8, 0)
     make_str((str_data(s) as i64 + start) as *const u8, end - start)
+
+// #747: slice through a BORROWED str header — same view semantics as
+// with_str_slice, callable from &str contexts (std wrappers whose text
+// params borrow). Codegen keeps emitting the consuming form; this one is
+// std-wiring only.
+pub fn with_str_slice_ref(s: &str, start_arg: i64, end_arg: i64) -> str:
+    let slen = s.len()
+    var start = start_arg
+    var end = end_arg
+    if start < 0: start = 0
+    if end > slen: end = slen
+    if start >= end:
+        return make_str("" as *const u8, 0)
+    let sp = s as *const str
+    let data = unsafe *(sp as *const *const u8)
+    make_str((data as i64 + start) as *const u8, end - start)
 
 pub fn with_str_substr(s: str, start_arg: i64, length_arg: i64) -> str:
     let slen = str_length(s)

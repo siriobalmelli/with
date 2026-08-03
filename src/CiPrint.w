@@ -34,7 +34,7 @@ fn ci_make_indent(n: i32) -> str:
 // The bare `\n` separators that CIS_BLOCK inserts between children
 // stay bare when a container above the block re-indents, so generated
 // output never contains whitespace-only lines.
-fn ci_reindent_spaces(text: str, spaces: i32) -> str:
+fn ci_reindent_spaces(text: &str, spaces: i32) -> str:
     if text.len() == 0:
         return ""
     var prefix = ""
@@ -66,7 +66,7 @@ fn ci_reindent_spaces(text: str, spaces: i32) -> str:
 // binary printer to decide whether to wrap an operand in
 // `(L as c_uint)` so With's literal type inference picks the
 // unsigned type that matches `+%`/`-%`/`*%`.
-fn ci_is_decimal_literal_str(s: str) -> bool:
+fn ci_is_decimal_literal_str(s: &str) -> bool:
     if s.len() == 0: return false
     var i = 0
     while i as i64 < s.len():
@@ -75,12 +75,12 @@ fn ci_is_decimal_literal_str(s: str) -> bool:
         i = i + 1
     true
 
-fn ci_starts_with_str(s: str, prefix: str) -> bool:
+fn ci_starts_with_str(s: &str, prefix: &str) -> bool:
     if prefix.len() > s.len():
         return false
     s.slice(0, prefix.len()) == prefix
 
-fn ci_contains_str(s: str, needle: str) -> bool:
+fn ci_contains_str(s: &str, needle: &str) -> bool:
     if needle.len() == 0:
         return true
     if needle.len() > s.len():
@@ -93,7 +93,7 @@ fn ci_contains_str(s: str, needle: str) -> bool:
         i = i + 1
     false
 
-fn ci_strip_one_outer_paren(s: str) -> str:
+fn ci_strip_one_outer_paren(s: &str) -> str:
     if s.len() < 2:
         return s
     if s.byte_at(0) != 40 or s.byte_at(s.len() - 1) != 41:
@@ -212,7 +212,7 @@ fn ci_float_type_name(bits: i32) -> str:
 // Wrap an expression source snippet in `(unsafe ...)` for rendering
 // raw pointer access. Keeping the `unsafe` wrapping in one place makes
 // it cheap to change the convention later.
-fn ci_wrap_unsafe(inner: str) -> str:
+fn ci_wrap_unsafe(inner: &str) -> str:
     "(unsafe " ++ inner ++ ")"
 
 fn ci_print_compact_stmt_local(stmts: CiStmtPool, exprs: CiExprPool, types: CiTypePool, id: CiStmtId, depth: i32) -> str:
@@ -449,7 +449,7 @@ fn ci_field_base_needs_borrow(types: CiTypePool, ty: CiTypeId) -> bool:
             return false
     kind == CiTypeKind.CT_STRUCT or kind == CiTypeKind.CT_NAMED
 
-fn ci_named_type_is_scalar(name: str) -> bool:
+fn ci_named_type_is_scalar(name: &str) -> bool:
     if name == "bool" or name == "void":
         return true
     if name == "usize" or name == "isize":
@@ -488,12 +488,12 @@ var g_ci_print_in_unsafe_fn: bool = false
 pub fn ci_print_set_unsafe_fn_context(enabled: bool) -> Unit:
     g_ci_print_in_unsafe_fn = enabled
 
-fn ci_print_unsafe_stmt(indent: str, call: str) -> str:
+fn ci_print_unsafe_stmt(indent: &str, call: &str) -> str:
     if g_ci_print_in_unsafe_fn:
         return indent ++ call ++ "\n"
     indent ++ "unsafe { " ++ call ++ " }\n"
 
-fn ci_print_memcpy_assignment(indent: str, exprs: CiExprPool, types: CiTypePool, lhs: CiExprId, rhs: CiExprId, ty: CiTypeId) -> str:
+fn ci_print_memcpy_assignment(indent: &str, exprs: CiExprPool, types: CiTypePool, lhs: CiExprId, rhs: CiExprId, ty: CiTypeId) -> str:
     let lhs_str = ci_print_expr(exprs, types, lhs, 0, 1)
     let ty_text = ci_print_sizeof_type_text(ci_print_type(types, ty))
     // A designated-init rhs renders as C's own compound-literal assignment
@@ -523,7 +523,7 @@ fn ci_print_memcpy_assignment(indent: str, exprs: CiExprPool, types: CiTypePool,
     let rhs_str = ci_print_expr(exprs, types, rhs, 0, 1)
     ci_print_unsafe_stmt(indent, "with_memcpy((&raw mut " ++ lhs_str ++ " as *i8), (&raw const " ++ rhs_str ++ " as *i8), sizeof[" ++ ty_text ++ "]())")
 
-fn ci_print_sizeof_type_text(text: str) -> str:
+fn ci_print_sizeof_type_text(text: &str) -> str:
     if ci_starts_with_str(text, "*const "):
         return "usize"
     if ci_starts_with_str(text, "*mut "):
@@ -1099,7 +1099,7 @@ fn ci_print_decl(decls: CiDeclPool, stmts: CiStmtPool, exprs: CiExprPool, types:
 // Phase-B lowering lands new kinds — each new kind picks up a
 // case here that exercises its printer arm in isolation.
 
-fn ci_expect_eq(label: str, actual: str, expected: str) -> i32:
+fn ci_expect_eq(label: &str, actual: &str, expected: &str) -> i32:
     if actual == expected:
         return 0
     with_eprint("ci-roundtrip FAIL: " ++ label ++ "\n")

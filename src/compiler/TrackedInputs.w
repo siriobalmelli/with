@@ -7,13 +7,13 @@ pub type TrackedReadResult {
     error_msg: str,
 }
 
-fn tracked_read_ok(path: str, contents: str) -> TrackedReadResult:
+fn tracked_read_ok(path: &str, contents: &str) -> TrackedReadResult:
     TrackedReadResult { true, path, contents, "" }
 
-fn tracked_read_error(path: str, msg: str) -> TrackedReadResult:
+fn tracked_read_error(path: &str, msg: &str) -> TrackedReadResult:
     TrackedReadResult { false, path, "", msg }
 
-pub fn tracked_input_str_compare(a: str, b: str) -> i32:
+pub fn tracked_input_str_compare(a: &str, b: &str) -> i32:
     let min_len = if a.len() < b.len(): a.len() else: b.len()
     var i = 0
     while i < min_len as i32:
@@ -28,7 +28,7 @@ pub fn tracked_input_str_compare(a: str, b: str) -> i32:
         return -1
     1
 
-pub fn tracked_input_insert_unique(paths: Vec[str], path: str) -> Vec[str]:
+pub fn tracked_input_insert_unique(paths: Vec[str], path: &str) -> Vec[str]:
     if path.len() == 0:
         return paths
     var out: Vec[str] = Vec.new()
@@ -52,7 +52,7 @@ pub fn tracked_input_merge_unique(left: Vec[str], right: &Vec[str]) -> Vec[str]:
         out = tracked_input_insert_unique(move out, right.get(i as i64))
     out
 
-fn tracked_dirname(path: str) -> str:
+fn tracked_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -63,18 +63,18 @@ fn tracked_dirname(path: str) -> str:
         return "/"
     path.slice(0, last_slash as i64)
 
-fn tracked_path_is_absolute(path: str) -> bool:
+fn tracked_path_is_absolute(path: &str) -> bool:
     if path.len() > 0 and path.byte_at(0) == 47:
         return true
     path.len() >= 3 and path.byte_at(1) == 58 and (path.byte_at(2) == 47 or path.byte_at(2) == 92)
 
-fn tracked_path_has_parent_segment(path: str) -> bool:
+fn tracked_path_has_parent_segment(path: &str) -> bool:
     path == ".." or path.starts_with("../") or path.starts_with("..\\") or
         path.ends_with("/..") or path.ends_with("\\..") or
         path.contains("/../") or path.contains("\\..\\") or
         path.contains("/..\\") or path.contains("\\../")
 
-fn tracked_resolve_source_relative(source_path: str, raw_path: str) -> str:
+fn tracked_resolve_source_relative(source_path: &str, raw_path: &str) -> str:
     if tracked_path_is_absolute(raw_path):
         return raw_path
     let dir = tracked_dirname(source_path)
@@ -82,7 +82,7 @@ fn tracked_resolve_source_relative(source_path: str, raw_path: str) -> str:
         return raw_path
     dir ++ "/" ++ raw_path
 
-fn tracked_inside_root(path: str, root: str) -> bool:
+fn tracked_inside_root(path: &str, root: &str) -> bool:
     if root.len() == 0:
         return true
     if path == root:
@@ -99,7 +99,7 @@ fn tracked_inside_root(path: str, root: str) -> bool:
 // the start of a relative path is kept (it escapes the resolution base and the
 // caller's containment/parent-segment checks reject it); on an absolute path a
 // leading '..' is dropped (cannot go above '/').
-fn tracked_normalize_path(path: str) -> str:
+fn tracked_normalize_path(path: &str) -> str:
     if path.len() == 0:
         return path
     let is_abs = path.len() > 0 and path.byte_at(0) == 47
@@ -136,7 +136,7 @@ fn tracked_normalize_path(path: str) -> str:
         result = result ++ parts.get(pi as i64)
     result
 
-fn tracked_authorized_root(source_path: str, package_root: str) -> str:
+fn tracked_authorized_root(source_path: &str, package_root: &str) -> str:
     if package_root.len() > 0:
         return package_root
     let dir = tracked_dirname(source_path)
@@ -144,10 +144,10 @@ fn tracked_authorized_root(source_path: str, package_root: str) -> str:
         return ""
     dir
 
-pub fn tracked_embed_resolve(source_path: str, raw_path: str) -> str:
+pub fn tracked_embed_resolve(source_path: &str, raw_path: &str) -> str:
     tracked_resolve_source_relative(source_path, raw_path)
 
-pub fn tracked_embed_read(source_path: str, raw_path: str, package_root: str) -> TrackedReadResult:
+pub fn tracked_embed_read(source_path: &str, raw_path: &str, package_root: &str) -> TrackedReadResult:
     // #585: resolve relative to the source file, NORMALIZE, then enforce that
     // the normalized path stays inside the authorized root — so an internal
     // '..' that resolves back inside the package (src/main.w embedding

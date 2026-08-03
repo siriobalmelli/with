@@ -15,7 +15,7 @@ extern fn with_eprint(s: str) -> Unit
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn abort() -> Unit
 
-fn ast_pool_phase_bug(message: str):
+fn ast_pool_phase_bug(message: &str):
     with_eprint(message)
     abort()
 
@@ -672,7 +672,7 @@ impl AstPool:
         idx
 
     // Add a string to the string table, returns the string index.
-    fn add_string(s: str) -> i32:
+    fn add_string(s: &str) -> i32:
         if self.state.frozen != 0:
             ast_pool_phase_bug("BUG: AstPool.add_string called after freeze")
         let idx = self.state.strings.len() as i32
@@ -938,7 +938,7 @@ fn exact_int_digit_value(ch: i32) -> i32:
         return ch - 55
     -1
 
-fn exact_int_parse_digits(digits: str, radix: i32) -> ExactIntValue:
+fn exact_int_parse_digits(digits: &str, radix: i32) -> ExactIntValue:
     if radix < 2 or radix > 16:
         return exact_int_invalid()
     var acc = exact_int_value(0, 0)
@@ -1178,7 +1178,7 @@ impl AstPool:
     fn node_count() -> i32:
         self.state.kinds.len() as i32
 
-    fn require_same_storage(other: &AstPool, context: str):
+    fn require_same_storage(other: &AstPool, context: &str):
         if self.state != other.state:
             ast_pool_phase_bug("BUG: mismatched AstPool storage at " ++ context)
 

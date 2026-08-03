@@ -14,7 +14,7 @@ extern fn with_eprint(s: str) -> Unit
 // ── gen_function_dispatch: MIR-first, AST fallback for unsupported patterns ──
 
 impl Codegen:
-    mut fn fail_mir_codegen_for_function(fn_node: i32, reason: str):
+    mut fn fail_mir_codegen_for_function(fn_node: i32, reason: &str):
         let fn_sym = self.sema.fn_decl_semantic_symbol(fn_node, self.pool.get_data0(fn_node))
         let sema_name = self.sema_symbol_text(fn_sym)
         let fn_name = if sema_name.len() > 0: sema_name else: self.function_symbol_name(fn_sym)
@@ -288,7 +288,7 @@ impl Codegen:
                 return str_ty
         self.mir_sema_type_to_llvm(elem_tid)
 
-fn codegen_regex_flag_options(flags: str) -> i32:
+fn codegen_regex_flag_options(flags: &str) -> i32:
     var options: i32 = 0
     var i: i64 = 0
     while i < flags.len():
@@ -308,7 +308,7 @@ fn codegen_regex_flag_options(flags: str) -> i32:
         i = i + 1
     options
 
-fn codegen_regex_state_flags(flags: str) -> i32:
+fn codegen_regex_state_flags(flags: &str) -> i32:
     var state_flags: i32 = 0
     var i: i64 = 0
     while i < flags.len():
@@ -318,7 +318,7 @@ fn codegen_regex_state_flags(flags: str) -> i32:
     state_flags
 
 impl Codegen:
-    fn ensure_regex_runtime_fn(name: str, ret_ty: i64, params: &Vec[i64]) -> i64:
+    fn ensure_regex_runtime_fn(name: &str, ret_ty: i64, params: &Vec[i64]) -> i64:
         var fn_val = wl_get_named_function(self.llmod, name)
         if fn_val != 0:
             return fn_val
@@ -338,7 +338,7 @@ impl Codegen:
         self.had_error = 1
         0
 
-    fn regex_literal_global(name: str, ty: i64, init: i64) -> i64:
+    fn regex_literal_global(name: &str, ty: i64, init: i64) -> i64:
         var gv = wl_get_named_global(self.llmod, name)
         if gv != 0:
             return gv
@@ -2735,7 +2735,7 @@ impl Codegen:
         a.push(coerced)
         self.call_internal_runtime_fn(fn_name, pts, a, 1, str_ty)
 
-    mut fn call_runtime_str_fn(fn_name: str, arg: i64, str_ty: i64) -> i64:
+    mut fn call_runtime_str_fn(fn_name: &str, arg: i64, str_ty: i64) -> i64:
         let sym = self.intern.intern(fn_name)
         let fv = self.fn_values.get(sym)
         let ft = self.fn_fn_types.get(sym)
@@ -2751,7 +2751,7 @@ impl Codegen:
         a.push(arg)
         self.call_internal_runtime_fn(fn_name, pts, a, 1, str_ty)
 
-    mut fn ensure_internal_runtime_fn(name: str, orig_param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
+    mut fn ensure_internal_runtime_fn(name: &str, orig_param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
         let sym = self.intern.intern(name)
         let fv = self.fn_values.get(sym)
         if fv.is_some():
@@ -2791,7 +2791,7 @@ impl Codegen:
         self.fn_fn_types.insert(sym, fn_type)
         func
 
-    mut fn call_internal_runtime_fn(name: str, orig_param_types: &Vec[i64], args: &Vec[i64], arg_count: i32, ret_ty: i64) -> i64:
+    mut fn call_internal_runtime_fn(name: &str, orig_param_types: &Vec[i64], args: &Vec[i64], arg_count: i32, ret_ty: i64) -> i64:
         let sym = self.intern.intern(name)
         let func = self.ensure_internal_runtime_fn(name, orig_param_types, arg_count, ret_ty)
         let ft = self.fn_fn_types.get(sym).unwrap() as i64
@@ -3159,7 +3159,7 @@ impl Codegen:
 
     // ── FmtBuffer codegen helpers ────────────────────────────────────
 
-    mut fn ensure_fmt_buf_fn(name: str, param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
+    mut fn ensure_fmt_buf_fn(name: &str, param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
         self.ensure_internal_runtime_fn(name, param_types, param_count, ret_ty)
 
     mut fn gen_fmt_buf_new() -> i64:
@@ -4403,7 +4403,7 @@ impl Codegen:
         let te_start = self.mir_type_d1_at(resolved)
         self.mir_type_extra_at(te_start + index)
 
-    fn ensure_hashmap_slot_runtime_fn(name: str, ret_ty: i64) -> i64:
+    fn ensure_hashmap_slot_runtime_fn(name: &str, ret_ty: i64) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0:
             return existing
@@ -4537,7 +4537,7 @@ impl Codegen:
         let te_start = self.mir_type_d1_at(resolved)
         self.mir_type_extra_at(te_start)
 
-    fn ensure_slotmap_slot_runtime_fn(name: str, ret_ty: i64) -> i64:
+    fn ensure_slotmap_slot_runtime_fn(name: &str, ret_ty: i64) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0:
             return existing
@@ -5687,7 +5687,7 @@ impl Codegen:
             args.push(ptrs.get(i as i64))
             wl_build_call(self.builder, free_ty, free_fn, vec_data_i64(&args), 1)
 
-    mut fn mir_eval_call_operand_info(body: &MirBody, operand_id: i32, expected_ty: i64, expected_sema_ty: i32, is_c_abi_arg: i32, call_context: str, arg_index: i32) -> CallArgValue:
+    mut fn mir_eval_call_operand_info(body: &MirBody, operand_id: i32, expected_ty: i64, expected_sema_ty: i32, is_c_abi_arg: i32, call_context: &str, arg_index: i32) -> CallArgValue:
         var eval_expected_ty = expected_ty
         if expected_ty != 0 and wl_get_type_kind(expected_ty) == wl_pointer_type_kind():
             eval_expected_ty = 0
@@ -5715,7 +5715,7 @@ impl Codegen:
             self.debug_call_coerce_failure(call_context, 0, arg_index, 0, out, expected_ty)
         CallArgValue { value: coerced, cleanup_ptr: 0 }
 
-    mut fn mir_eval_call_operand(body: &MirBody, operand_id: i32, expected_ty: i64, call_context: str, arg_index: i32) -> i64:
+    mut fn mir_eval_call_operand(body: &MirBody, operand_id: i32, expected_ty: i64, call_context: &str, arg_index: i32) -> i64:
         self.mir_eval_call_operand_info(body, operand_id, expected_ty, 0, 0, call_context, arg_index).value
 
     fn mir_unwrap_ref_like_sema_type(sema_ty: i32) -> i32:
@@ -6142,7 +6142,7 @@ impl Codegen:
                 return ti
         0
 
-    fn mir_find_named_type_text(type_name: str) -> i32:
+    fn mir_find_named_type_text(type_name: &str) -> i32:
         if type_name.len() == 0:
             return 0
         for ti in 0..self.mir_type_kinds_len() as i32:
@@ -6825,7 +6825,7 @@ impl Codegen:
             return self.codegen_dyn_trait_symbol_from_type_node(self.pool.get_data0(type_node))
         0
 
-    mut fn mir_emit_dyn_call_error(msg: str, next_bb: i32) -> bool:
+    mut fn mir_emit_dyn_call_error(msg: &str, next_bb: i32) -> bool:
         with_eprint(msg)
         self.had_error = 1
         if next_bb >= 0 and next_bb < self.mir_bb_values.len() as i32:
@@ -7048,7 +7048,7 @@ impl Codegen:
             return text
         self.codegen_method_symbol_text(method_sym)
 
-    fn trait_decl_has_method_named(trait_sym: i32, method_name: str) -> bool:
+    fn trait_decl_has_method_named(trait_sym: i32, method_name: &str) -> bool:
         if trait_sym == 0 or method_name.len() == 0:
             return false
         for ti in 0..self.trait_idx_syms.len() as i32:
@@ -7063,7 +7063,7 @@ impl Codegen:
             return false
         false
 
-    fn impl_decl_method_named(impl_node: i32, method_name: str) -> i32:
+    fn impl_decl_method_named(impl_node: i32, method_name: &str) -> i32:
         if impl_node == 0 or method_name.len() == 0:
             return 0
         var impl_index = -1
@@ -15365,14 +15365,14 @@ impl Codegen:
 
         false
 
-    fn mir_cleanup_dump_enabled(name_str: str) -> bool:
+    fn mir_cleanup_dump_enabled(name_str: &str) -> bool:
         let _ = self
         let raw = with_getenv_str("WITH_DUMP_MIR_CLEANUP_FN")
         if raw.len() == 0:
             return false
         raw == "*" or raw == name_str
 
-    mut fn run_mir_cleanup_passes(function: i64, name_str: str):
+    mut fn run_mir_cleanup_passes(function: i64, name_str: &str):
         if function == 0:
             return
         let should_dump = self.mir_cleanup_dump_enabled(name_str)
@@ -17547,7 +17547,7 @@ impl Codegen:
             self.collect_captures(self.pool.get_data1(node))
             return
 
-    fn decode_string_escapes(text: str) -> str:
+    fn decode_string_escapes(text: &str) -> str:
         var out = ""
         let len = text.len() as i32
         var i = 0
@@ -17592,7 +17592,7 @@ impl Codegen:
             return ch - 55
         -1
 
-    fn gen_string_literal_raw(text: str) -> i64:
+    fn gen_string_literal_raw(text: &str) -> i64:
         let str_sym = self.intern.intern("str")
         let st_opt = self.struct_type_map.get(str_sym)
         if not st_opt.is_some():
@@ -17607,7 +17607,7 @@ impl Codegen:
         wl_build_store(self.builder, wl_const_int(wl_i64_type(self.context), text.len(), 1), len_gep)
         wl_build_load(self.builder, str_type, alloca)
 
-    fn gen_string_literal_ref(text: str) -> i64:
+    fn gen_string_literal_ref(text: &str) -> i64:
         let str_type = self.str_llvm_type()
         if str_type == 0:
             with_eprint("error: str builtin type not found")
@@ -17632,7 +17632,7 @@ impl Codegen:
             return as_ptr
         str_global
 
-    fn gen_c_string_literal_ref(text: str) -> i64:
+    fn gen_c_string_literal_ref(text: &str) -> i64:
         let cstr_sym = self.intern.intern("CStr")
         let st_opt = self.struct_type_map.get(cstr_sym)
         if not st_opt.is_some():
@@ -17777,13 +17777,13 @@ impl Codegen:
         args.push(ptr_val)
         wl_build_call(self.builder, fn_type, fn_val, vec_data_i64(&args), 1)
 
-    fn ensure_c_fn(name: str, ret_ty: i64, param_count: i32) -> i64:
+    fn ensure_c_fn(name: &str, ret_ty: i64, param_count: i32) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0: return existing
         let fn_ty = self.get_runtime_fn_type(name, ret_ty, param_count)
         wl_add_function(self.llmod, name, fn_ty)
 
-    fn get_runtime_fn_type(name: str, ret_ty: i64, param_count: i32) -> i64:
+    fn get_runtime_fn_type(name: &str, ret_ty: i64, param_count: i32) -> i64:
         let str_sym = self.intern.intern("str")
         let st_opt = self.struct_type_map.get(str_sym)
         let str_type = if st_opt.is_some(): self.struct_llvm_types.get(st_opt.unwrap() as i64) else: wl_i64_type(self.context)
@@ -17817,7 +17817,7 @@ impl Codegen:
                 params.push(i64_ty)
         wl_function_type(ret_ty, vec_data_i64(&params), param_count, 0)
 
-    fn emit_runtime_panic(msg: str) -> Unit:
+    fn emit_runtime_panic(msg: &str) -> Unit:
         self.emit_runtime_panic_value(self.gen_string_literal_raw(msg), self.gen_string_literal_raw(""))
 
     fn emit_runtime_panic_value(msg: i64, loc: i64) -> Unit:
@@ -17834,13 +17834,13 @@ impl Codegen:
     // VecIter[T] = { data_ptr: i64, len: i64, idx: i64 }
     // next() returns Option[T]: checks idx < len, loads T from data_ptr, increments idx.
 
-    fn ensure_vec_runtime_fn(name: str, ret_ty: i64, param_count: i32) -> i64:
+    fn ensure_vec_runtime_fn(name: &str, ret_ty: i64, param_count: i32) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0: return existing
         let fn_ty = self.get_vec_fn_type(name, ret_ty, param_count)
         wl_add_function(self.llmod, name, fn_ty)
 
-    fn get_vec_fn_type(name: str, ret_ty: i64, param_count: i32) -> i64:
+    fn get_vec_fn_type(name: &str, ret_ty: i64, param_count: i32) -> i64:
         let ptr_ty = wl_ptr_type(self.context)
         let i64_ty = wl_i64_type(self.context)
         let params: Vec[i64] = Vec.new()
@@ -17857,7 +17857,7 @@ impl Codegen:
 
     // ── HashMap method dispatch ───────────────────────────────────────
 
-    fn ensure_hm_fn(name: str, ret_ty: i64) -> i64:
+    fn ensure_hm_fn(name: &str, ret_ty: i64) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0: return existing
         let ptr_ty = wl_ptr_type(self.context)

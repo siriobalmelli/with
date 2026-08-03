@@ -19,7 +19,7 @@ type ConanLibraryScan {
     libs: Vec[str],
 }
 
-fn conan_http_get(url: str) -> str:
+fn conan_http_get(url: &str) -> str:
     let tmp = f"/tmp/with-conan-http-{runtime_getpid()}.json"
     let _rm_old = runtime_remove_file(tmp)
     let rc = conan_curl_to_file(url, tmp, 300000)
@@ -30,20 +30,20 @@ fn conan_http_get(url: str) -> str:
     let _rm = runtime_remove_file(tmp)
     body
 
-fn conan_http_download(url: str, path: str) -> i32:
+fn conan_http_download(url: &str, path: &str) -> i32:
     conan_curl_to_file(url, path, 300000)
 
-fn conan_sha256_file(path: str) -> str:
+fn conan_sha256_file(path: &str) -> str:
     if runtime_file_exists(path) == 0:
         return ""
     var digest: [32]u8 = [0 as u8; 32]
     sha256_hash_str(runtime_read_file(path), &raw mut digest[0] as *mut u8)
     sha256_hex(&digest[0] as *const u8)
 
-fn conan_argv_append(argv: str, arg: str) -> str:
+fn conan_argv_append(argv: &str, arg: &str) -> str:
     argv ++ arg ++ "\0"
 
-fn conan_curl_to_file(url: str, path: str, timeout_ms: i32) -> i32:
+fn conan_curl_to_file(url: &str, path: &str, timeout_ms: i32) -> i32:
     var argv = ""
     argv = conan_argv_append(argv, "curl")
     argv = conan_argv_append(argv, "-fsSL")
@@ -58,7 +58,7 @@ fn conan_curl_to_file(url: str, path: str, timeout_ms: i32) -> i32:
     argv = conan_argv_append(argv, url)
     runtime_exec_argv_capture(argv, "/dev/null", "/dev/null", timeout_ms)
 
-fn conan_extract_tgz(archive: str, dest: str) -> i32:
+fn conan_extract_tgz(archive: &str, dest: &str) -> i32:
     var argv = ""
     argv = conan_argv_append(argv, "tar")
     argv = conan_argv_append(argv, "xzf")
@@ -67,7 +67,7 @@ fn conan_extract_tgz(archive: str, dest: str) -> i32:
     argv = conan_argv_append(argv, dest)
     runtime_exec_argv_capture(argv, "/dev/null", "/dev/null", 120000)
 
-fn conan_extract_tgz_strip1(archive: str, dest: str) -> i32:
+fn conan_extract_tgz_strip1(archive: &str, dest: &str) -> i32:
     var argv = ""
     argv = conan_argv_append(argv, "tar")
     argv = conan_argv_append(argv, "xzf")
@@ -77,7 +77,7 @@ fn conan_extract_tgz_strip1(archive: str, dest: str) -> i32:
     argv = conan_argv_append(argv, "--strip-components=1")
     runtime_exec_argv_capture(argv, "/dev/null", "/dev/null", 120000)
 
-fn conan_str_compare(a: str, b: str) -> i32:
+fn conan_str_compare(a: &str, b: &str) -> i32:
     let min_len = if a.len() < b.len(): a.len() else: b.len()
     for i in 0..min_len as i32:
         let ca = a.byte_at(i as i64) as i32
@@ -92,13 +92,13 @@ fn conan_str_compare(a: str, b: str) -> i32:
         return 1
     0
 
-fn conan_vec_contains(values: &Vec[str], value: str) -> bool:
+fn conan_vec_contains(values: &Vec[str], value: &str) -> bool:
     for i in 0..values.len() as i32:
         if values.get(i as i64) == value:
             return true
     false
 
-fn conan_sorted_insert_unique(values: Vec[str], value: str) -> Vec[str]:
+fn conan_sorted_insert_unique(values: Vec[str], value: &str) -> Vec[str]:
     if value.len() == 0 or conan_vec_contains(values, value):
         return values
     let out: Vec[str] = Vec.new()
@@ -113,7 +113,7 @@ fn conan_sorted_insert_unique(values: Vec[str], value: str) -> Vec[str]:
         out.push(value)
     out
 
-fn conan_trim(text: str) -> str:
+fn conan_trim(text: &str) -> str:
     var start = 0
     var end = text.len() as i32
     while start < end:
@@ -128,19 +128,19 @@ fn conan_trim(text: str) -> str:
         end = end - 1
     text.slice(start as i64, end as i64)
 
-fn conan_strip_quotes(value: str) -> str:
+fn conan_strip_quotes(value: &str) -> str:
     let t = conan_trim(value)
     if t.len() >= 2 and t.byte_at(0) == 34 and t.byte_at(t.len() - 1) == 34:
         return t.slice(1, t.len() - 1)
     t
 
-fn conan_find_char(text: str, ch: i32) -> i32:
+fn conan_find_char(text: &str, ch: i32) -> i32:
     for i in 0..text.len() as i32:
         if text.byte_at(i as i64) == ch:
             return i
     -1
 
-fn conan_find_text(text: str, needle: str) -> i32:
+fn conan_find_text(text: &str, needle: &str) -> i32:
     if needle.len() == 0:
         return 0
     let n = text.len() as i32
@@ -157,14 +157,14 @@ fn conan_find_text(text: str, needle: str) -> i32:
         i = i + 1
     -1
 
-fn conan_path_basename(path: str) -> str:
+fn conan_path_basename(path: &str) -> str:
     var start = 0
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
             start = i + 1
     path.slice(start as i64, path.len())
 
-fn conan_path_dirname(path: str) -> str:
+fn conan_path_dirname(path: &str) -> str:
     var slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -173,7 +173,7 @@ fn conan_path_dirname(path: str) -> str:
         return "."
     path.slice(0, slash as i64)
 
-fn conan_relative_path(base: str, path: str) -> str:
+fn conan_relative_path(base: &str, path: &str) -> str:
     if path == base:
         return "."
     let prefix = base ++ "/"
@@ -181,7 +181,7 @@ fn conan_relative_path(base: str, path: str) -> str:
         return path.slice(prefix.len(), path.len())
     path
 
-fn conan_split_nonempty_lines(text: str) -> Vec[str]:
+fn conan_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     let n = text.len() as i32
     var start = 0
@@ -200,7 +200,7 @@ fn conan_split_nonempty_lines(text: str) -> Vec[str]:
         i = i + 1
     lines
 
-fn json_extract_string(json: str, key: str) -> str:
+fn json_extract_string(json: &str, key: &str) -> str:
     let needle = "\"" ++ key ++ "\""
     let json_len = json.len() as i32
     var pos = 0
@@ -234,7 +234,7 @@ fn json_extract_string(json: str, key: str) -> str:
         pos = pos + 1
     ""
 
-fn json_extract_string_array(json: str, key: str) -> Vec[str]:
+fn json_extract_string_array(json: &str, key: &str) -> Vec[str]:
     var result: Vec[str] = Vec.new()
     let needle = "\"" ++ key ++ "\""
     let json_len = json.len() as i32
@@ -275,7 +275,7 @@ fn json_extract_string_array(json: str, key: str) -> Vec[str]:
         pos = pos + 1
     result
 
-fn conan_version_compare(a: str, b: str) -> i32:
+fn conan_version_compare(a: &str, b: &str) -> i32:
     var ai = 0
     var bi = 0
     let an = a.len() as i32
@@ -305,7 +305,7 @@ fn conan_version_compare(a: str, b: str) -> i32:
             return 1
     conan_str_compare(a, b)
 
-fn conan_version_matches_hint(version: str, hint: str) -> bool:
+fn conan_version_matches_hint(version: &str, hint: &str) -> bool:
     if hint.len() == 0:
         return true
     if hint.ends_with(".Z"):
@@ -313,7 +313,7 @@ fn conan_version_matches_hint(version: str, hint: str) -> bool:
         return version == prefix or version.starts_with(prefix ++ ".")
     version == hint
 
-fn conan_result_version_for_name(result: str, name: str) -> str:
+fn conan_result_version_for_name(result: &str, name: &str) -> str:
     let slash = conan_find_char(result, 47)
     if slash <= 0:
         return ""
@@ -325,7 +325,7 @@ fn conan_result_version_for_name(result: str, name: str) -> str:
         return ""
     result.slice((slash + 1) as i64, at as i64)
 
-fn conan_resolve_version(name: str, version_hint: str) -> str:
+fn conan_resolve_version(name: &str, version_hint: &str) -> str:
     if version_hint.len() > 0 and not version_hint.ends_with(".Z"):
         return version_hint
     let url = CONAN_CENTER_URL() ++ "/v2/conans/search?q=" ++ name
@@ -344,7 +344,7 @@ fn conan_resolve_version(name: str, version_hint: str) -> str:
             best = version
     best
 
-fn conan_get_latest_recipe_rev(name: str, version: str) -> str:
+fn conan_get_latest_recipe_rev(name: &str, version: &str) -> str:
     let url = CONAN_CENTER_URL() ++ "/v2/conans/" ++ name ++ "/" ++ version ++ "/_/_/latest"
     let response = conan_http_get(url)
     if response.len() == 0:
@@ -360,13 +360,13 @@ fn conan_detect_arch -> str:
         return "armv8"
     arch
 
-fn conan_block_matches_setting(block: str, key: str, value: str) -> bool:
+fn conan_block_matches_setting(block: &str, key: &str, value: &str) -> bool:
     block.contains("\"" ++ key ++ "\" : \"" ++ value ++ "\"") or block.contains("\"" ++ key ++ "\":\"" ++ value ++ "\"")
 
-fn conan_block_shared(block: str) -> bool:
+fn conan_block_shared(block: &str) -> bool:
     block.contains("\"shared\" : \"True\"") or block.contains("\"shared\":\"True\"")
 
-fn conan_find_matching_package(name: str, version: str, rev: str) -> ConanPackagePick:
+fn conan_find_matching_package(name: &str, version: &str, rev: &str) -> ConanPackagePick:
     let url = CONAN_CENTER_URL() ++ "/v2/conans/" ++ name ++ "/" ++ version ++ "/_/_/revisions/" ++ rev ++ "/search?list_only=False"
     let response = conan_http_get(url)
     if response.len() == 0:
@@ -413,17 +413,17 @@ fn conan_find_matching_package(name: str, version: str, rev: str) -> ConanPackag
                 best_shared = shared
     ConanPackagePick { package_id: best_id, shared: best_shared }
 
-fn conan_get_latest_package_rev(name: str, version: str, rev: str, pkg_id: str) -> str:
+fn conan_get_latest_package_rev(name: &str, version: &str, rev: &str, pkg_id: &str) -> str:
     let latest_url = CONAN_CENTER_URL() ++ "/v2/conans/" ++ name ++ "/" ++ version ++ "/_/_/revisions/" ++ rev ++ "/packages/" ++ pkg_id ++ "/latest"
     let latest = conan_http_get(latest_url)
     if latest.len() == 0:
         return ""
     json_extract_string(latest, "revision")
 
-fn conan_package_file_url(name: str, version: str, rev: str, pkg_id: str, pkg_rev: str, file_name: str) -> str:
+fn conan_package_file_url(name: &str, version: &str, rev: &str, pkg_id: &str, pkg_rev: &str, file_name: &str) -> str:
     CONAN_CENTER_URL() ++ "/v2/conans/" ++ name ++ "/" ++ version ++ "/_/_/revisions/" ++ rev ++ "/packages/" ++ pkg_id ++ "/revisions/" ++ pkg_rev ++ "/files/" ++ file_name
 
-fn conan_parse_requires_from_info(info: str) -> Vec[str]:
+fn conan_parse_requires_from_info(info: &str) -> Vec[str]:
     let requires: Vec[str] = Vec.new()
     let lines = conan_split_nonempty_lines(info)
     var in_requires = false
@@ -436,13 +436,13 @@ fn conan_parse_requires_from_info(info: str) -> Vec[str]:
             requires.push(line)
     requires
 
-fn conan_ref_name(req: str) -> str:
+fn conan_ref_name(req: &str) -> str:
     let slash = conan_find_char(req, 47)
     if slash <= 0:
         return ""
     req.slice(0, slash as i64)
 
-fn conan_ref_version(req: str) -> str:
+fn conan_ref_version(req: &str) -> str:
     let slash = conan_find_char(req, 47)
     if slash <= 0:
         return ""
@@ -452,7 +452,7 @@ fn conan_ref_version(req: str) -> str:
         end = at
     req.slice((slash + 1) as i64, end as i64)
 
-fn conan_json_escape(value: str) -> str:
+fn conan_json_escape(value: &str) -> str:
     var out = ""
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -470,7 +470,7 @@ fn conan_json_array(values: &Vec[str]) -> str:
         out = out ++ q ++ conan_json_escape(values.get(i as i64)) ++ q
     out ++ "]"
 
-fn conan_write_metadata(dest_dir: str, name: str, version: str, recipe_rev: str, package_id: str, package_rev: str, include_paths: &Vec[str], lib_paths: &Vec[str], libs: &Vec[str], defines: &Vec[str], link_args: &Vec[str], requires: &Vec[str]) -> i32:
+fn conan_write_metadata(dest_dir: &str, name: &str, version: &str, recipe_rev: &str, package_id: &str, package_rev: &str, include_paths: &Vec[str], lib_paths: &Vec[str], libs: &Vec[str], defines: &Vec[str], link_args: &Vec[str], requires: &Vec[str]) -> i32:
     let q = "\x22"
     let nl = "\n"
     var meta = "{" ++ nl
@@ -488,7 +488,7 @@ fn conan_write_metadata(dest_dir: str, name: str, version: str, recipe_rev: str,
     meta = meta ++ "}" ++ nl
     runtime_write_file(dest_dir ++ "/metadata.json", meta)
 
-fn conan_library_name_from_path(path: str) -> str:
+fn conan_library_name_from_path(path: &str) -> str:
     let base = conan_path_basename(path)
     var name = ""
     if base.ends_with(".a"):
@@ -506,7 +506,7 @@ fn conan_library_name_from_path(path: str) -> str:
         return name.slice(3, name.len())
     name
 
-fn conan_is_link_library_path(path: str) -> bool:
+fn conan_is_link_library_path(path: &str) -> bool:
     let base = conan_path_basename(path)
     if base.ends_with(".lib"):
         return true
@@ -517,7 +517,7 @@ fn conan_is_link_library_path(path: str) -> bool:
             return true
     false
 
-fn conan_scan_libraries(dep_dir: str) -> ConanLibraryScan:
+fn conan_scan_libraries(dep_dir: &str) -> ConanLibraryScan:
     var lib_paths: Vec[str] = Vec.new()
     var libs: Vec[str] = Vec.new()
     let listing = runtime_list_files(dep_dir)
@@ -543,13 +543,13 @@ fn conan_scan_libraries(dep_dir: str) -> ConanLibraryScan:
 // loudly at link time, and conan_known_link_metadata remains the
 // override for packages whose recipes are too dynamic to read.
 
-fn conan_recipe_line_indent(line: str) -> i32:
+fn conan_recipe_line_indent(line: &str) -> i32:
     var i = 0
     while i < line.len() as i32 and line.byte_at(i as i64) == 32:
         i = i + 1
     i
 
-fn conan_recipe_extract_quoted(text: str) -> Vec[str]:
+fn conan_recipe_extract_quoted(text: &str) -> Vec[str]:
     var out: Vec[str] = Vec.new()
     var i = 0
     let n = text.len() as i32
@@ -567,7 +567,7 @@ fn conan_recipe_extract_quoted(text: str) -> Vec[str]:
 
 // Evaluate a package_info condition against the target OS.
 // Returns 1 (true), 0 (false), or -1 (unresolvable).
-fn conan_recipe_eval_condition(cond_raw: str, target_os: str) -> i32:
+fn conan_recipe_eval_condition(cond_raw: &str, target_os: &str) -> i32:
     var cond = conan_trim(cond_raw)
     while cond.len() >= 2 and cond.byte_at(0) == 40 and cond.byte_at(cond.len() - 1) == 41:
         cond = conan_trim(cond.slice(1, cond.len() - 1))
@@ -599,7 +599,7 @@ fn conan_recipe_eval_condition(cond_raw: str, target_os: str) -> i32:
 //   ... .frameworks.append("X")
 //   ... .system_libs.extend(["a", "b"])
 // Returns an empty Vec when the right-hand side cannot be read safely.
-fn conan_recipe_attr_values(line: str, attr_pos: i32) -> Vec[str]:
+fn conan_recipe_attr_values(line: &str, attr_pos: i32) -> Vec[str]:
     let rhs = line.slice(attr_pos as i64, line.len())
     // Python conditional expressions and multi-line lists are unresolvable.
     if conan_find_text(rhs, " if ") >= 0:
@@ -617,7 +617,7 @@ fn conan_recipe_attr_values(line: str, attr_pos: i32) -> Vec[str]:
 // Read system_libs and frameworks for target_os from a recipe's
 // package_info(). Frameworks are returned as ("-framework", name) link
 // argument pairs in lib_paths, matching conan_known_link_metadata.
-pub fn conan_extract_recipe_link_metadata(recipe: str, target_os: str) -> ConanLibraryScan:
+pub fn conan_extract_recipe_link_metadata(recipe: &str, target_os: &str) -> ConanLibraryScan:
     var sys_libs: Vec[str] = Vec.new()
     var fw_args: Vec[str] = Vec.new()
     var fw_seen: Vec[str] = Vec.new()
@@ -738,7 +738,7 @@ pub fn conan_extract_recipe_link_metadata(recipe: str, target_os: str) -> ConanL
 
     ConanLibraryScan { lib_paths: fw_args, libs: sys_libs }
 
-fn conan_fetch_recipe_text(name: str, version: str) -> str:
+fn conan_fetch_recipe_text(name: &str, version: &str) -> str:
     let folder = conan_recipe_folder(name, version)
     if folder.len() == 0:
         return ""
@@ -747,7 +747,7 @@ fn conan_fetch_recipe_text(name: str, version: str) -> str:
 // Packages whose link metadata is still hand-maintained. The table wins
 // over recipe extraction for these; the goal is to shrink this list as
 // extraction proves itself per package (#550).
-fn conan_package_has_table_link_metadata(name: str, version: str) -> bool:
+fn conan_package_has_table_link_metadata(name: &str, version: &str) -> bool:
     if name == "opengl" and version == "system":
         return true
     if name == "glfw":
@@ -758,7 +758,7 @@ fn conan_package_has_table_link_metadata(name: str, version: str) -> bool:
         return true
     false
 
-fn conan_link_metadata_with_recipe(name: str, version: str, libs: Vec[str], link_args: Vec[str], recipe: str) -> ConanLibraryScan:
+fn conan_link_metadata_with_recipe(name: &str, version: &str, libs: Vec[str], link_args: Vec[str], recipe: &str) -> ConanLibraryScan:
     if conan_package_has_table_link_metadata(name, version):
         return conan_known_link_metadata(name, version, move libs, move link_args)
     if recipe.len() == 0:
@@ -773,7 +773,7 @@ fn conan_link_metadata_with_recipe(name: str, version: str, libs: Vec[str], link
         out_args.push(extracted.lib_paths.get(i as i64))
     ConanLibraryScan { lib_paths: out_args, libs: out_libs }
 
-fn conan_known_link_metadata(name: str, version: str, libs: Vec[str], link_args: Vec[str]) -> ConanLibraryScan:
+fn conan_known_link_metadata(name: &str, version: &str, libs: Vec[str], link_args: Vec[str]) -> ConanLibraryScan:
     let os = conan_detect_os()
     var out_libs = libs
     var out_args = link_args
@@ -831,7 +831,7 @@ fn conan_known_link_metadata(name: str, version: str, libs: Vec[str], link_args:
         return ConanLibraryScan { lib_paths: out_args, libs: out_libs }
     ConanLibraryScan { lib_paths: out_args, libs: out_libs }
 
-pub fn conan_write_known_system_package(name: str, version: str, project_root: str) -> bool:
+pub fn conan_write_known_system_package(name: &str, version: &str, project_root: &str) -> bool:
     if version != "system":
         return false
     if name != "opengl" and name != "xorg":
@@ -854,7 +854,7 @@ pub fn conan_write_known_system_package(name: str, version: str, project_root: s
     let requires: Vec[str] = Vec.new()
     conan_write_metadata(dep_dir, name, version, "system", "system", "system", include_paths, lib_paths, known_libs, defines, known_link_args, requires) == 0
 
-fn conan_resolve_and_install_requirements(requirements: &Vec[str], project_root: str, depth: i32, force_reinstall: bool) -> Vec[str]:
+fn conan_resolve_and_install_requirements(requirements: &Vec[str], project_root: &str, depth: i32, force_reinstall: bool) -> Vec[str]:
     let resolved: Vec[str] = Vec.new()
     for i in 0..requirements.len() as i32:
         let req = requirements.get(i as i64)
@@ -869,7 +869,7 @@ fn conan_resolve_and_install_requirements(requirements: &Vec[str], project_root:
         resolved.push(req_name ++ "/" ++ actual)
     resolved
 
-fn conan_write_binary_metadata(name: str, version: str, recipe_rev: str, package_id: str, package_rev: str, dep_dir: str, requirements: &Vec[str]) -> i32:
+fn conan_write_binary_metadata(name: &str, version: &str, recipe_rev: &str, package_id: &str, package_rev: &str, dep_dir: &str, requirements: &Vec[str]) -> i32:
     var include_paths: Vec[str] = Vec.new()
     if runtime_is_dir(dep_dir ++ "/include") != 0:
         include_paths.push("include")
@@ -885,7 +885,7 @@ fn conan_write_binary_metadata(name: str, version: str, recipe_rev: str, package
     let known = conan_link_metadata_with_recipe(name, version, move libs, move link_args, conan_fetch_recipe_text(name, version))
     conan_write_metadata(dep_dir, name, version, recipe_rev, package_id, package_rev, include_paths, lib_paths, known.libs, defines, known.lib_paths, requirements)
 
-pub fn conan_restore_locked_binary_package(name: str, version: str, recipe_rev: str, package_id: str, package_rev: str, expected_sha256: str, project_root: str) -> bool:
+pub fn conan_restore_locked_binary_package(name: &str, version: &str, recipe_rev: &str, package_id: &str, package_rev: &str, expected_sha256: &str, project_root: &str) -> bool:
     let dep_dir = project_root ++ "/.with/deps/c/" ++ name ++ "/" ++ version
     let _clean = runtime_remove_tree(dep_dir)
     if runtime_mkdir_p(dep_dir) != 0:
@@ -921,7 +921,7 @@ pub fn conan_restore_locked_binary_package(name: str, version: str, recipe_rev: 
         return false
     true
 
-fn conan_install_binary(name: str, version: str, recipe_rev: str, project_root: str, depth: i32, force_reinstall: bool) -> str:
+fn conan_install_binary(name: &str, version: &str, recipe_rev: &str, project_root: &str, depth: i32, force_reinstall: bool) -> str:
     let pick = conan_find_matching_package(name, version, recipe_rev)
     if pick.package_id.len() == 0:
         return ""
@@ -965,13 +965,13 @@ fn conan_install_binary(name: str, version: str, recipe_rev: str, project_root: 
     runtime_eprint("  installed to .with/deps/c/" ++ name ++ "/" ++ version ++ "/")
     version
 
-fn conan_recipe_config_url(name: str) -> str:
+fn conan_recipe_config_url(name: &str) -> str:
     CONAN_INDEX_RAW() ++ "/" ++ name ++ "/config.yml"
 
-fn conan_recipe_file_url(name: str, folder: str, file_name: str) -> str:
+fn conan_recipe_file_url(name: &str, folder: &str, file_name: &str) -> str:
     CONAN_INDEX_RAW() ++ "/" ++ name ++ "/" ++ folder ++ "/" ++ file_name
 
-fn conan_recipe_folder(name: str, version: str) -> str:
+fn conan_recipe_folder(name: &str, version: &str) -> str:
     let config = conan_http_get(conan_recipe_config_url(name))
     if config.len() == 0:
         return ""
@@ -989,7 +989,7 @@ fn conan_recipe_folder(name: str, version: str) -> str:
             break
     ""
 
-fn conan_source_url_from_data(data: str, version: str) -> str:
+fn conan_source_url_from_data(data: &str, version: &str) -> str:
     let lines = conan_split_nonempty_lines(data)
     var in_version = false
     let version_line_a = "\"" ++ version ++ "\":"
@@ -1004,17 +1004,17 @@ fn conan_source_url_from_data(data: str, version: str) -> str:
             break
     ""
 
-fn conan_version_has_patches(data: str, version: str) -> bool:
+fn conan_version_has_patches(data: &str, version: &str) -> bool:
     let patch_pos = conan_find_text(data, "patches:")
     if patch_pos < 0:
         return false
     let after = data.slice(patch_pos as i64, data.len())
     after.contains("\"" ++ version ++ "\":") or after.contains(version ++ ":")
 
-fn conan_source_unsupported_recipe(recipe: str) -> bool:
+fn conan_source_unsupported_recipe(recipe: &str) -> bool:
     recipe.contains("self.requires(") or recipe.contains("apply_conandata_patches") or recipe.contains("configure(")
 
-fn conan_collect_c_sources_and_headers(source_dir: str) -> ConanLibraryScan:
+fn conan_collect_c_sources_and_headers(source_dir: &str) -> ConanLibraryScan:
     let listing = runtime_list_files(source_dir)
     let files = conan_split_nonempty_lines(listing)
     var c_files: Vec[str] = Vec.new()
@@ -1033,7 +1033,7 @@ fn conan_c_compiler -> str:
         return cc
     "cc"
 
-fn conan_compile_c_source(source: str, obj: str, include_dirs: &Vec[str]) -> i32:
+fn conan_compile_c_source(source: &str, obj: &str, include_dirs: &Vec[str]) -> i32:
     var argv = ""
     argv = conan_argv_append(argv, conan_c_compiler())
     argv = conan_argv_append(argv, "-O2")
@@ -1045,7 +1045,7 @@ fn conan_compile_c_source(source: str, obj: str, include_dirs: &Vec[str]) -> i32
     argv = conan_argv_append(argv, obj)
     runtime_exec_argv_capture(argv, "/dev/null", "/dev/null", 120000)
 
-fn conan_install_source_fallback(name: str, version: str, project_root: str) -> str:
+fn conan_install_source_fallback(name: &str, version: &str, project_root: &str) -> str:
     let folder = conan_recipe_folder(name, version)
     if folder.len() == 0:
         runtime_eprint("error: no prebuilt binary for your platform, source build not supported for " ++ name ++ "/" ++ version)
@@ -1127,7 +1127,7 @@ fn conan_install_source_fallback(name: str, version: str, project_root: str) -> 
     runtime_eprint("  built source package at .with/deps/c/" ++ name ++ "/" ++ version ++ "/")
     version
 
-fn conan_install_internal(name: str, version_hint: str, project_root: str, depth: i32, force_reinstall: bool) -> str:
+fn conan_install_internal(name: &str, version_hint: &str, project_root: &str, depth: i32, force_reinstall: bool) -> str:
     if depth > 8:
         runtime_eprint("error: Conan dependency graph too deep while resolving " ++ name)
         return ""
@@ -1153,5 +1153,5 @@ fn conan_install_internal(name: str, version_hint: str, project_root: str, depth
     conan_install_source_fallback(name, version, project_root)
 
 // Public API. Returns the concrete installed version, or "" on failure.
-fn conan_install(name: str, version_hint: str, project_root: str, force_reinstall: bool) -> str:
+fn conan_install(name: &str, version_hint: &str, project_root: &str, force_reinstall: bool) -> str:
     conan_install_internal(name, version_hint, project_root, 0, force_reinstall)

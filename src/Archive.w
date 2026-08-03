@@ -11,17 +11,17 @@ fn ar_u32_le(v: i32) -> str:
 fn ar_u32_be(v: i32) -> str:
     str_from_byte((v >> 24) & 0xFF) ++ str_from_byte((v >> 16) & 0xFF) ++ str_from_byte((v >> 8) & 0xFF) ++ str_from_byte(v & 0xFF)
 
-fn ar_read_u16_le(data: str, offset: i64) -> i32:
+fn ar_read_u16_le(data: &str, offset: i64) -> i32:
     if offset + 2 > data.len():
         return 0
     (data.byte_at(offset) as i32) | ((data.byte_at(offset + 1) as i32) << 8)
 
-fn ar_read_u32_le(data: str, offset: i64) -> i32:
+fn ar_read_u32_le(data: &str, offset: i64) -> i32:
     if offset + 4 > data.len():
         return 0
     (data.byte_at(offset) as i32) | ((data.byte_at(offset + 1) as i32) << 8) | ((data.byte_at(offset + 2) as i32) << 16) | ((data.byte_at(offset + 3) as i32) << 24)
 
-fn ar_read_u64_le(data: str, offset: i64) -> i64:
+fn ar_read_u64_le(data: &str, offset: i64) -> i64:
     if offset + 8 > data.len():
         return 0
     var out: i64 = 0
@@ -29,7 +29,7 @@ fn ar_read_u64_le(data: str, offset: i64) -> i64:
         out = out | ((data.byte_at(offset + i) as i64) << ((i * 8) as u32))
     out
 
-fn ar_basename(path: str) -> str:
+fn ar_basename(path: &str) -> str:
     var last_sep: i64 = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -38,7 +38,7 @@ fn ar_basename(path: str) -> str:
         return path.slice(last_sep + 1, path.len())
     path
 
-fn ar_pad_right(s: str, width: i32, pad_byte: i32) -> str:
+fn ar_pad_right(s: &str, width: i32, pad_byte: i32) -> str:
     var out = s
     while out.len() < width as i64:
         out = out ++ str_from_byte(pad_byte)
@@ -58,7 +58,7 @@ fn ar_bsd_name_pad_len(name_len: i64) -> i64:
     let rem = name_len % 8
     if rem <= 4: name_len + 4 - rem else: name_len + 12 - rem
 
-fn ar_member_header(name: str, content_size: i64) -> str:
+fn ar_member_header(name: &str, content_size: i64) -> str:
     let padded_name_len = ar_bsd_name_pad_len(name.len())
     let name_field = ar_pad_right("#1/" ++ ar_format_decimal(padded_name_len), 16, 32)
     let mtime_field = ar_pad_right("0", 12, 32)
@@ -70,7 +70,7 @@ fn ar_member_header(name: str, content_size: i64) -> str:
     let fmag = "`\n"
     name_field ++ mtime_field ++ uid_field ++ gid_field ++ mode_field ++ size_field ++ fmag
 
-fn ar_gnu_member_header(name: str, content_size: i64) -> str:
+fn ar_gnu_member_header(name: &str, content_size: i64) -> str:
     let name_field = ar_pad_right(name, 16, 32)
     let mtime_field = ar_pad_right("0", 12, 32)
     let uid_field = ar_pad_right("0", 6, 32)
@@ -84,17 +84,17 @@ fn ar_gnu_member_size(content_size: i64) -> i64:
     let raw = 60 + content_size
     if raw % 2 == 0: raw else: raw + 1
 
-fn ar_gnu_member_name_field(name: str, long_name_offset: i32) -> str:
+fn ar_gnu_member_name_field(name: &str, long_name_offset: i32) -> str:
     if long_name_offset >= 0:
         return "/" ++ ar_format_decimal(long_name_offset as i64)
     if name == "/" or name == "//":
         return name
     name ++ "/"
 
-fn ar_gnu_needs_long_name(name: str) -> bool:
+fn ar_gnu_needs_long_name(name: &str) -> bool:
     name.len() + 1 > 16
 
-fn ar_member_size(name: str, content_size: i64) -> i64:
+fn ar_member_size(name: &str, content_size: i64) -> i64:
     let padded_name_len = ar_bsd_name_pad_len(name.len())
     let raw = 60 + padded_name_len + content_size
     let rem = raw % 8
@@ -104,7 +104,7 @@ type ArSymbol:
     name: str
     member_index: i32
 
-fn ar_str_compare(a: str, b: str) -> i32:
+fn ar_str_compare(a: &str, b: &str) -> i32:
     let min_len = if a.len() < b.len(): a.len() else: b.len()
     for i in 0..min_len as i32:
         let ca = a.byte_at(i as i64) as i32
@@ -136,7 +136,7 @@ fn ar_sort_symbols(items: Vec[ArSymbol]) -> Vec[ArSymbol]:
             result.push(tail.remove(0))
     result
 
-fn extract_macho_symbols(data: str) -> Vec[str]:
+fn extract_macho_symbols(data: &str) -> Vec[str]:
     let result: Vec[str] = Vec.new()
     if data.len() < 32:
         return result
@@ -179,7 +179,7 @@ fn extract_macho_symbols(data: str) -> Vec[str]:
                     result.push(data.slice(name_off, name_end))
     result
 
-fn ar_elf_str_at(data: str, start: i64) -> str:
+fn ar_elf_str_at(data: &str, start: i64) -> str:
     if start <= 0 or start >= data.len():
         return ""
     var end = start
@@ -189,7 +189,7 @@ fn ar_elf_str_at(data: str, start: i64) -> str:
         return ""
     data.slice(start, end)
 
-fn extract_elf_symbols(data: str) -> Vec[str]:
+fn extract_elf_symbols(data: &str) -> Vec[str]:
     let result: Vec[str] = Vec.new()
     if data.len() < 64:
         return result
@@ -238,7 +238,7 @@ fn extract_elf_symbols(data: str) -> Vec[str]:
             sym_pos = sym_pos + sym_entsize
     result
 
-fn create_gnu_indexed_archive(output_path: str, member_names: &Vec[str], member_data: &Vec[str], sorted: &Vec[ArSymbol]) -> i32:
+fn create_gnu_indexed_archive(output_path: &str, member_names: &Vec[str], member_data: &Vec[str], sorted: &Vec[ArSymbol]) -> i32:
     var string_table = ""
     for i in 0..sorted.len() as i32:
         string_table = string_table ++ sorted.get(i as i64).name ++ str_from_byte(0)
@@ -296,7 +296,7 @@ fn create_gnu_indexed_archive(output_path: str, member_names: &Vec[str], member_
         return 1
     0
 
-pub fn create_static_archive(output_path: str, member_paths: &Vec[str]) -> i32:
+pub fn create_static_archive(output_path: &str, member_paths: &Vec[str]) -> i32:
     let member_count = member_paths.len() as i32
     let member_names: Vec[str] = Vec.new()
     let member_data: Vec[str] = Vec.new()

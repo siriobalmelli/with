@@ -13,13 +13,13 @@ pub type BuildTool {
     env_name: str,
 }
 
-pub fn build_graph_tool_from_env(env_name: str, fallback: str) -> str:
+pub fn build_graph_tool_from_env(env_name: &str, fallback: &str) -> str:
     let value = with_getenv_str(env_name)
     if value.len() > 0:
         return value
     fallback
 
-pub fn build_graph_tool(name: str, env_name: str, fallback: str) -> BuildTool:
+pub fn build_graph_tool(name: &str, env_name: &str, fallback: &str) -> BuildTool:
     BuildTool {
         name: name,
         executable: build_graph_tool_from_env(env_name, fallback),

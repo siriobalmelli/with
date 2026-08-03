@@ -6,7 +6,7 @@ extern fn with_fs_write_file(path: str, data: str) -> i32
 extern fn with_eprint(s: str) -> Unit
 extern fn exit(code: i32) -> Unit
 
-fn contains_delimiter(text: str, hashes: str) -> bool:
+fn contains_delimiter(text: &str, hashes: &str) -> bool:
     let needle = "\"" ++ hashes
     if needle.len() == 0:
         return false
@@ -26,13 +26,13 @@ fn contains_delimiter(text: str, hashes: str) -> bool:
         i += 1
     false
 
-fn raw_string_literal(text: str) -> str:
+fn raw_string_literal(text: &str) -> str:
     var hashes = ""
     while contains_delimiter(text, hashes):
         hashes = hashes ++ "#"
     "r" ++ hashes ++ "\"" ++ text ++ "\"" ++ hashes
 
-fn normalize_embedded_source(text: str) -> str:
+fn normalize_embedded_source(text: &str) -> str:
     var out = StringBuilder.with_capacity(text.len())
     var i = 0
     while i < text.len() as i32:
@@ -46,7 +46,7 @@ fn normalize_embedded_source(text: str) -> str:
         i = i + 1
     out.to_str()
 
-fn embedded_rel_path(root: str, path: str) -> str:
+fn embedded_rel_path(root: &str, path: &str) -> str:
     let root_lib = root ++ "/lib/"
     if path.starts_with(root_lib):
         return path.slice(root_lib.len(), path.len())
@@ -54,7 +54,7 @@ fn embedded_rel_path(root: str, path: str) -> str:
         return path.slice(4, path.len())
     path
 
-fn path_compare(a: str, b: str) -> i32:
+fn path_compare(a: &str, b: &str) -> i32:
     let min_len = if a.len() < b.len(): a.len() else: b.len()
     var i = 0
     while i < min_len as i32:
@@ -84,7 +84,7 @@ fn sort_paths(paths: Vec[str]):
         sorted = next
     sorted
 
-fn stdlib_tree_files(dir: str):
+fn stdlib_tree_files(dir: &str):
     let listing = with_fs_list_files(dir)
     let excluded = dir ++ "/re/"
     var paths: Vec[str] = Vec.new()

@@ -95,7 +95,7 @@ pub fn codegen_units_apply_global_ownership(unit_module: i64, k: i32) -> Unit:
         g0 = wl_get_next_global(g0)
 
 // Unit object path: unit 0 owns the canonical object path.
-pub fn codegen_unit_object_path(obj_path: str, k: i32) -> str:
+pub fn codegen_unit_object_path(obj_path: &str, k: i32) -> str:
     if k == 0: obj_path else: f"{obj_path}.u{k}.o"
 
 // #681 per-unit generation: assign MIR bodies to units BEFORE any LLVM
@@ -144,7 +144,7 @@ pub fn codegen_units_assign_from_mir(mir_ptr: i64, unit_count: i32) -> CodegenUn
 
 // One GENERATED unit: parse its own small bitcode, optimize, emit. No strip
 // — bodies were filtered at generation time (#681).
-fn codegen_unit_emit_generated(bc_path: str, obj_path: str, opt_level: i32, k: i32, do_profile: bool) -> i32:
+fn codegen_unit_emit_generated(bc_path: &str, obj_path: &str, opt_level: i32, k: i32, do_profile: bool) -> i32:
     let t_unit = runtime_clock_nanos()
     let ctx = wl_context_create()
     let unit_module = wl_parse_bitcode_in_context(ctx, bc_path)
@@ -194,7 +194,7 @@ unsafe fn codegen_unit_emit_thread_entry(arg: *mut u8) -> i32:
 // pattern — memory admission per codegen_units_emit_width). A failed spawn
 // degrades that unit to inline execution. Removes each unit bitcode file
 // on success.
-pub fn codegen_units_emit_generated_all(unit_bc_paths: &Vec[str], obj_path: str, opt_level: i32, do_profile: bool, window: i32) -> i32:
+pub fn codegen_units_emit_generated_all(unit_bc_paths: &Vec[str], obj_path: &str, opt_level: i32, do_profile: bool, window: i32) -> i32:
     let unit_count = unit_bc_paths.len() as i32
     var w = if window < 1: 1 else: window
     if w > unit_count:
@@ -245,7 +245,7 @@ pub fn codegen_units_emit_generated_all(unit_bc_paths: &Vec[str], obj_path: str,
         runtime_eprint(f"error: codegen-units generated emit failed with exit code {unit_rc}")
     unit_rc
 
-pub fn codegen_unit_extra_objects(obj_path: str, unit_count: i32) -> Vec[str]:
+pub fn codegen_unit_extra_objects(obj_path: &str, unit_count: i32) -> Vec[str]:
     let extras: Vec[str] = Vec.new()
     var k = 1
     while k < unit_count:

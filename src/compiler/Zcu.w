@@ -12,7 +12,7 @@ use compiler.Runtime
 use compiler.TrackedInputs
 use std.collections.HashMap
 
-fn zcu_owned_text(text: str) -> str:
+fn zcu_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
     runtime_str_clone(text)
@@ -27,7 +27,7 @@ fn zcu_debug_init_enabled() -> i32:
         return 0
     1
 
-fn zcu_debug_init(msg: str):
+fn zcu_debug_init(msg: &str):
     if zcu_debug_init_enabled() == 0:
         return
     runtime_eprint("[zcu-init] " ++ msg)
@@ -167,17 +167,17 @@ impl Zcu:
     // #592: import dedup compares CANONICAL keys, so different spellings of the
     // same file (root vs import-resolved, ./-prefixed, absolute, via ..) collapse
     // to one import and the loader never parses a file twice.
-    fn has_imported_path(path: str) -> i32:
+    fn has_imported_path(path: &str) -> i32:
         let key = resolve_canonical_module_key(path)
         for i in 0..self.imported_paths.len() as i32:
             if self.imported_paths.get(i as i64) == key:
                 return 1
         0
 
-    fn add_imported_path(path: str) -> Unit:
+    fn add_imported_path(path: &str) -> Unit:
         self.imported_paths.push(zcu_owned_text(resolve_canonical_module_key(path)))
 
-    mut fn seed_decl_source_paths(pool: AstPool, path: str, file_id: i32) -> Unit:
+    mut fn seed_decl_source_paths(pool: AstPool, path: &str, file_id: i32) -> Unit:
         self.decl_source_paths = Vec.new()
         self.decl_source_file_ids = Vec.new()
         self.decl_is_c_import = Vec.new()
@@ -186,13 +186,13 @@ impl Zcu:
             self.decl_source_file_ids.push(file_id)
             self.decl_is_c_import.push(0)
 
-    fn append_decl_source_paths(count: i32, path: str, file_id: i32) -> Unit:
+    fn append_decl_source_paths(count: i32, path: &str, file_id: i32) -> Unit:
         for _ in 0..count:
             self.decl_source_paths.push(zcu_owned_text(path))
             self.decl_source_file_ids.push(file_id)
             self.decl_is_c_import.push(0)
 
-    fn append_c_import_decl_paths(count: i32, path: str, file_id: i32) -> Unit:
+    fn append_c_import_decl_paths(count: i32, path: &str, file_id: i32) -> Unit:
         for _ in 0..count:
             self.decl_source_paths.push(zcu_owned_text(path))
             self.decl_source_file_ids.push(file_id)
@@ -214,13 +214,13 @@ impl Zcu:
             return self.source_dir
         resolve_dirname(path)
 
-    fn c_import_cache_lookup(key: str) -> str:
+    fn c_import_cache_lookup(key: &str) -> str:
         for i in 0..self.c_import_cache_keys.len() as i32:
             if self.c_import_cache_keys.get(i as i64) == key:
                 return self.c_import_cache_values.get(i as i64)
         ""
 
-    fn c_import_cache_store(key: str, value: str) -> Unit:
+    fn c_import_cache_store(key: &str, value: &str) -> Unit:
         self.c_import_cache_keys.push(key)
         self.c_import_cache_values.push(value)
 
@@ -233,7 +233,7 @@ impl Zcu:
         self.cli_diag_source_names = Vec.new()
         self.cli_diag_source_texts = Vec.new()
 
-    fn add_cli_diag_mapping(gen_start: i32, gen_end: i32, source_name: str, source_text: str) -> Unit:
+    fn add_cli_diag_mapping(gen_start: i32, gen_end: i32, source_name: &str, source_text: &str) -> Unit:
         self.cli_diag_gen_starts.push(gen_start)
         self.cli_diag_gen_ends.push(gen_end)
         self.cli_diag_source_names.push(source_name)
@@ -321,7 +321,7 @@ impl Zcu:
     mut fn capture_pending_warnings():
         self.reset_pending_warnings()
 
-    mut fn set_current_source(source_dir: str, path: str, text: str):
+    mut fn set_current_source(source_dir: &str, path: &str, text: &str):
         self.source_dir = source_dir
         self.current_source_path = path
         self.current_source_text = text
@@ -339,7 +339,7 @@ impl Zcu:
         self.extra_source_names = names
         self.extra_source_texts = texts
 
-    fn add_source_text_mapping(file_id: i32, name: str, text: str) -> Unit:
+    fn add_source_text_mapping(file_id: i32, name: &str, text: &str) -> Unit:
         self.source_text_file_ids.push(file_id)
         self.source_text_names.push(zcu_owned_text(name))
         self.source_texts.push(zcu_owned_text(text))
@@ -365,7 +365,7 @@ impl Zcu:
         self.source_text_names = Vec.new()
         self.source_texts = Vec.new()
 
-    mut fn reset_for_new_invocation(source_dir: str, path: str, text: str):
+    mut fn reset_for_new_invocation(source_dir: &str, path: &str, text: &str):
         self.set_current_source(source_dir, path, text)
         self.extra_source_names = Vec.new()
         self.extra_source_texts = Vec.new()
@@ -393,7 +393,7 @@ impl Zcu:
         if zcu_debug_pool_flow_enabled() != 0:
             runtime_eprint(f"[zcu] sync_from_sema:after zcu.pool={self.pool.state.symbol_texts.len() as i32} last_sema.pool={self.last_sema.pool.state.symbol_texts.len() as i32} last_sema.ast.decls={self.last_sema.ast.decl_count()}")
 
-    mut fn set_resolve_snapshot(result: &ResolveResult, root_path: str):
+    mut fn set_resolve_snapshot(result: &ResolveResult, root_path: &str):
         let modules: Vec[ResolvedModule] = Vec.new()
         for i in 0..result.modules.len() as i32:
             let m = result.modules.get(i as i64)
@@ -450,11 +450,11 @@ impl Zcu:
         }
         self.resolved_root_path = zcu_owned_text(root_path)
 
-    mut fn set_typed_snapshot(typed_dump: str, typed_pool: AstPool):
+    mut fn set_typed_snapshot(typed_dump: &str, typed_pool: AstPool):
         self.last_typed_dump = typed_dump
         self.typed_pool_cache = typed_pool
 
-    mut fn set_codegen_snapshot(mir_mod: MirModule, mir_dump: str, async_mod: AsyncMirModule, async_dump: str):
+    mut fn set_codegen_snapshot(mir_mod: MirModule, mir_dump: &str, async_mod: AsyncMirModule, async_dump: &str):
         self.last_mir_module = mir_mod
         self.last_mir_dump = mir_dump
         self.last_async_mir_module = async_mod

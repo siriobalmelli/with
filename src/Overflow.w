@@ -24,7 +24,7 @@ fn overflow_mode_name(mode: i32) -> str:
         return "saturate"
     "panic"
 
-fn overflow_mode_parse(value: str) -> i32:
+fn overflow_mode_parse(value: &str) -> i32:
     if value == "panic":
         return OVERFLOW_MODE_PANIC()
     if value == "wrap":

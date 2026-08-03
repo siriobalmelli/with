@@ -25,7 +25,7 @@ extern fn with_hashmap_new(key_size: i64, val_size: i64) -> *i8
 extern fn i64_to_string(n: i64) -> str
 extern fn abort() -> Unit
 
-fn sema_phase_bug(message: str, origin_file: str = __FILE__, origin_line: u32 = __LINE__, origin_fn: str = __FN__):
+fn sema_phase_bug(message: &str, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):
     with_eprint(f"{message} [{origin_file}:{origin_line} {origin_fn}]")
     abort()
 
@@ -1146,7 +1146,7 @@ fn sema_debug_move_enabled -> i32:
         return 0
     1
 
-fn sema_str_eq(a: str, b: str) -> i32:
+fn sema_str_eq(a: &str, b: &str) -> i32:
     if a.len() != b.len():
         return 0
     var i = 0
@@ -1157,7 +1157,7 @@ fn sema_str_eq(a: str, b: str) -> i32:
     1
 
 impl Sema:
-    fn debug_unknown_type(sym: i32, node: i32, context: str):
+    fn debug_unknown_type(sym: i32, node: i32, context: &str):
         if sema_debug_stage1_enabled() == 0:
             return
         let name = self.pool_resolve_symbol(sym)
@@ -1171,7 +1171,7 @@ impl Sema:
     fn pool_resolve(sym: i32) -> str:
         self.pool_resolve_symbol(sym)
 
-    fn pool_lookup_symbol(name: str) -> i32:
+    fn pool_lookup_symbol(name: &str) -> i32:
         if name.len() == 0:
             return 0
         let existing = self.pool.state.symbol_map.get(name)
@@ -1186,7 +1186,7 @@ impl Sema:
             i = i + 1
         0
 
-    mut fn pool_intern(name: str) -> i32:
+    mut fn pool_intern(name: &str) -> i32:
         if self.symbols_frozen != 0:
             let existing = self.pool_lookup_symbol(name)
             if existing != 0:
@@ -1211,21 +1211,21 @@ impl Sema:
         self.pool.state.symbol_map.insert(owned, id)
         id
 
-fn sema_tier_path_is_std_implementation(path: str) -> i32:
+fn sema_tier_path_is_std_implementation(path: &str) -> i32:
     if path.starts_with("lib/std/") or path.starts_with("<embedded-std>/"):
         return 1
     if path.contains("/lib/std/"):
         return 1
     0
 
-fn sema_vec_str_contains(v: &Vec[str], s: str) -> i32:
+fn sema_vec_str_contains(v: &Vec[str], s: &str) -> i32:
     for i in 0..v.len() as i32:
         if v.get(i as i64) == s:
             return 1
     0
 
 // "<embedded-std>/std/collections.w" or ".../lib/std/collections.w" → "std.collections"
-fn sema_std_module_dotted(path: str) -> str:
+fn sema_std_module_dotted(path: &str) -> str:
     var rel = ""
     if path.starts_with("<embedded-std>/"):
         rel = path.slice("<embedded-std>/".len(), path.len())
@@ -1251,7 +1251,7 @@ fn sema_std_module_dotted(path: str) -> str:
 // gate (they register pathless). c_void and assert_matches_failed are
 // compiler-lowering support: c_import emissions and the assert_matches
 // desugaring reference them in user-tier positions the user never spelled.
-fn sema_prelude_gate_allows_name(name: str) -> i32:
+fn sema_prelude_gate_allows_name(name: &str) -> i32:
     if name == "print" or name == "eprint":
         return 1
     if name == "assert" or name == "assert_eq" or name == "assert_ne":
@@ -1276,14 +1276,14 @@ fn sema_prelude_gate_allows_name(name: str) -> i32:
         return 1
     0
 
-fn sema_path_is_std_box_module(path: str) -> i32:
+fn sema_path_is_std_box_module(path: &str) -> i32:
     if path == "lib/std/box.w" or path == "<embedded-std>/std/box.w":
         return 1
     if path.ends_with("/lib/std/box.w") or path.ends_with("\\lib\\std\\box.w"):
         return 1
     0
 
-fn sema_path_is_std_rc_module(path: str) -> i32:
+fn sema_path_is_std_rc_module(path: &str) -> i32:
     if path == "lib/std/rc.w" or path == "<embedded-std>/std/rc.w":
         return 1
     if path.ends_with("/lib/std/rc.w") or path.ends_with("\\lib\\std\\rc.w"):
@@ -1320,7 +1320,7 @@ impl Sema:
             return 0
         sema_path_is_std_rc_module(self.type_decl_source_path(sym))
 
-fn sema_tier_std_only_module(path: str) -> i32:
+fn sema_tier_std_only_module(path: &str) -> i32:
     if path == "std.io" or path.starts_with("std.io."):
         return 1
     if path == "std.fs" or path.starts_with("std.fs."):
@@ -1347,7 +1347,7 @@ fn sema_tier_std_only_module(path: str) -> i32:
         return 1
     0
 
-fn sema_path_is_compiler_owned_implementation(path: str) -> i32:
+fn sema_path_is_compiler_owned_implementation(path: &str) -> i32:
     if path.starts_with("src/") or path.contains("/src/"):
         return 1
     if path.starts_with("build/") or path.contains("/build/"):
@@ -1360,14 +1360,14 @@ fn sema_path_is_compiler_owned_implementation(path: str) -> i32:
         return 1
     0
 
-fn sema_paths_share_internal_implementation_boundary(a: str, b: str) -> i32:
+fn sema_paths_share_internal_implementation_boundary(a: &str, b: &str) -> i32:
     if sema_path_is_compiler_owned_implementation(a) == 0:
         return 0
     if sema_path_is_compiler_owned_implementation(b) == 0:
         return 0
     1
 
-fn sema_path_is_compiler_hook_runner(path: str) -> i32:
+fn sema_path_is_compiler_hook_runner(path: &str) -> i32:
     if path.contains("__with_compiler_hook_runner."):
         return 1
     0
@@ -1452,7 +1452,7 @@ fn sema_new_vec_i32 -> Vec[i32]:
     let out: Vec[i32] = Vec.new()
     out
 
-fn sema_owned_text(text: str) -> str:
+fn sema_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
     with_str_clone(text)
@@ -1713,7 +1713,7 @@ fn sema_method_lookup_new -> SemaMethodLookup:
         fn_lookup: sema_new_map_i64_i32(),
     }
 
-fn sema_visibility_cache_key(from_path: str, to_path: str) -> str:
+fn sema_visibility_cache_key(from_path: &str, to_path: &str) -> str:
     from_path ++ "->" ++ to_path
 
 fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Sema:
@@ -2435,11 +2435,11 @@ fn Sema.init(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Sema:
     s
 
 impl Sema:
-    mut fn set_tracked_input_context(root: str, paths: &Vec[str]):
+    mut fn set_tracked_input_context(root: &str, paths: &Vec[str]):
         self.tracked_input_root = sema_owned_text(root)
         self.tracked_input_paths = sema_clone_str_vec(paths)
 
-    mut fn record_tracked_input(path: str):
+    mut fn record_tracked_input(path: &str):
         var paths = self.tracked_input_paths
         self.tracked_input_paths = tracked_input_insert_unique(move paths, path)
 
@@ -2447,13 +2447,13 @@ impl Sema:
         var tracked_paths = self.tracked_input_paths
         self.tracked_input_paths = tracked_input_merge_unique(move tracked_paths, paths)
 
-    mut fn read_tracked_embed_file(source_path: str, raw_path: str) -> TrackedReadResult:
+    mut fn read_tracked_embed_file(source_path: &str, raw_path: &str) -> TrackedReadResult:
         let result = tracked_embed_read(source_path, raw_path, self.tracked_input_root)
         if result.ok:
             self.record_tracked_input(result.resolved_path)
         result
 
-    mut fn register_prim(name: str, tid: i32):
+    mut fn register_prim(name: &str, tid: i32):
         let sym = self.pool_intern(name)
         self.record_named_type(sym, tid)
 
@@ -2477,7 +2477,7 @@ impl Sema:
         self.decl_visibility_pub.push(is_pub)
         self.decl_visibility_nodes.push(node)
 
-    fn decl_visible_from_current(target_path: str, is_pub: i32) -> i32:
+    fn decl_visible_from_current(target_path: &str, is_pub: i32) -> i32:
         if target_path.len() == 0:
             return 1
         if self.current_module_path.len() == 0:
@@ -2502,7 +2502,7 @@ impl Sema:
     //      the §18.2 enumerated names; any other std name resolves from user
     //      code only through an explicit import path (never the synthetic
     //      prelude edge). Replaced by the D fallback tier when #751 lands.
-    fn decl_visible_from_current_gated(target_path: str, is_pub: i32, sym: i32) -> i32:
+    fn decl_visible_from_current_gated(target_path: &str, is_pub: i32, sym: i32) -> i32:
         if target_path.len() == 0:
             return 1
         if self.current_module_path.len() == 0:
@@ -2521,13 +2521,13 @@ impl Sema:
                     return 0
         self.decl_visible_from_current(target_path, is_pub)
 
-    fn module_in_prelude_closure(path: str) -> i32:
+    fn module_in_prelude_closure(path: &str) -> i32:
         if self.global_visible_module_paths.contains(path): 1 else: 0
 
     // Reachability over explicit import edges only: the synthetic prelude
     // edge and the global prelude-closure shortcut are excluded, so this
     // answers "did the user actually import a path to this module?".
-    fn module_visible_no_prelude(target_path: str) -> i32:
+    fn module_visible_no_prelude(target_path: &str) -> i32:
         if self.current_module_path.len() == 0:
             return 1
         if target_path == self.current_module_path:
@@ -2677,7 +2677,7 @@ impl Sema:
         else:
             self.emit_error("symbol '" ++ name ++ "' is not visible from this module", node)
 
-    fn module_is_visible_from_current(target_path: str) -> i32:
+    fn module_is_visible_from_current(target_path: &str) -> i32:
         if target_path.len() == 0:
             return 1
         if self.global_visible_module_paths.contains(target_path):
@@ -2818,7 +2818,7 @@ impl Sema:
             return self.ast.get_data2(callee)
         0
 
-    mut fn register_builtin_struct_type(name: str, field_names: &Vec[str], field_types: &Vec[i32], field_count: i32) -> i32:
+    mut fn register_builtin_struct_type(name: &str, field_names: &Vec[str], field_types: &Vec[i32], field_count: i32) -> i32:
         let name_sym = self.pool_intern(name)
         let te_start = self.type_extra.len() as i32
         for fi in 0..field_count:
@@ -3057,7 +3057,7 @@ fn sema_is_space_char(ch: i32) -> i32:
         return 1
     return 0
 
-fn extract_name_after_keyword_in_text(text: str, keyword: str) -> str:
+fn extract_name_after_keyword_in_text(text: &str, keyword: &str) -> str:
     if text.len() == 0 or keyword.len() == 0:
         return ""
     var i = 0
@@ -3098,7 +3098,7 @@ fn extract_name_after_keyword_in_text(text: str, keyword: str) -> str:
         i = i + 1
     ""
 
-fn extract_param_name_from_segment(segment: str) -> str:
+fn extract_param_name_from_segment(segment: &str) -> str:
     if segment.len() == 0:
         return ""
 
@@ -3160,7 +3160,7 @@ fn extract_param_name_from_segment(segment: str) -> str:
         i = i + 1
     segment.slice(start as i64, name_end as i64)
 
-fn extract_fn_param_name_in_text(text: str, param_index: i32) -> str:
+fn extract_fn_param_name_in_text(text: &str, param_index: i32) -> str:
     if text.len() == 0 or param_index < 0:
         return ""
 
@@ -3231,7 +3231,7 @@ impl Sema:
                 return text
         self.source_text
 
-    fn extract_decl_name_after(node: i32, keyword: str) -> str:
+    fn extract_decl_name_after(node: i32, keyword: &str) -> str:
         let source_text = self.source_text_for_decl_node(node)
         if source_text.len() == 0:
             return ""
@@ -3251,7 +3251,7 @@ impl Sema:
         let snippet = source_text.slice(start as i64, end as i64)
         extract_name_after_keyword_in_text(snippet, keyword)
 
-    fn set_pretty_symbol(sym: i32, name: str):
+    fn set_pretty_symbol(sym: i32, name: &str):
         if sym <= 0:
             return
         if name.len() == 0:
@@ -5994,7 +5994,7 @@ impl Sema:
             i = i - 1
         -1
 
-    fn generic_fn_node_matches_symbol(node: i32, sym: i32, target: str) -> i32:
+    fn generic_fn_node_matches_symbol(node: i32, sym: i32, target: &str) -> i32:
         if node == 0:
             return 0
         if self.ast.kind(node) != NodeKind.NK_FN_DECL:
@@ -6261,7 +6261,7 @@ impl Sema:
 
 // ── Utility functions ────────────────────────────────────────────
 
-fn sema_str_has_data(text: str) -> i32:
+fn sema_str_has_data(text: &str) -> i32:
     if text.len() <= 0:
         return 0
     let ptr_ptr = &text as *const *const u8
@@ -6272,7 +6272,7 @@ fn sema_str_has_data(text: str) -> i32:
         return 0
     1
 
-fn sema_str_contains_char(text: str, needle: i32) -> i32:
+fn sema_str_contains_char(text: &str, needle: i32) -> i32:
     if sema_str_has_data(text) == 0:
         return 0
     var i = 0
@@ -6284,7 +6284,7 @@ fn sema_str_contains_char(text: str, needle: i32) -> i32:
 
 // ── "Did you mean?" suggestions ─────────────────────────────────
 
-fn sema_levenshtein(a: str, b: str, max: i32) -> i32:
+fn sema_levenshtein(a: &str, b: &str, max: i32) -> i32:
     let al = a.len() as i32
     let bl = b.len() as i32
     if al == 0: return bl
@@ -6314,7 +6314,7 @@ fn sema_levenshtein(a: str, b: str, max: i32) -> i32:
     prev.get(bl as i64)
 
 impl Sema:
-    fn suggest_name(target: str, node: i32) -> str:
+    fn suggest_name(target: &str, node: i32) -> str:
         if target.len() == 0: return ""
         let max_dist = if target.len() as i32 <= 3: 1 else: 2
         var best_name = ""
@@ -6340,7 +6340,7 @@ impl Sema:
                         best_name = name
         best_name
 
-    fn suggest_type_name(target: str, node: i32) -> str:
+    fn suggest_type_name(target: &str, node: i32) -> str:
         if target.len() == 0 or sema_str_has_data(target) == 0:
             return ""
         let max_dist = if target.len() as i32 <= 3: 1 else: 2
@@ -6360,7 +6360,7 @@ impl Sema:
                             best_name = name
         best_name
 
-    mut fn emit_error_with_suggestion(msg: str, node: i32, suggestion: str, origin_file: str = __FILE__, origin_line: u32 = __LINE__, origin_fn: str = __FN__):
+    mut fn emit_error_with_suggestion(msg: &str, node: i32, suggestion: &str, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):
         if self.suppress_errors != 0:
             return
         let start = self.ast.get_start(node)
@@ -6567,7 +6567,7 @@ impl Sema:
 
     // Codegen queries (text-keyed: codegen and sema intern in different
     // pools). Returns the row index into the dyn_impl flat vecs, or -1.
-    fn dyn_impl_method_row(concrete_resolved: i32, trait_text: str, method_text: str) -> i32:
+    fn dyn_impl_method_row(concrete_resolved: i32, trait_text: &str, method_text: &str) -> i32:
         let trait_sym = self.pool_lookup_symbol(trait_text)
         if trait_sym == 0:
             return -1

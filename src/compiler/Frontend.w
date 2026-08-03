@@ -35,7 +35,7 @@ fn frontend_cimport_lock():
 fn frontend_cimport_unlock():
     frontend_cimport_lock_word.store(0, .Release)
 
-fn frontend_owned_text(text: str) -> str:
+fn frontend_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
     runtime_str_clone(text)
@@ -44,7 +44,7 @@ fn frontend_new_vec_str -> Vec[str]:
     let out: Vec[str] = Vec{ ptr: 0, len: 0, cap: 0, elem_size: 16 }
     out
 
-fn frontend_normalize_source_text(text: str) -> str:
+fn frontend_normalize_source_text(text: &str) -> str:
     var out = StringBuilder.with_capacity(text.len())
     var i = 0
     while i < text.len() as i32:
@@ -58,13 +58,13 @@ fn frontend_normalize_source_text(text: str) -> str:
         i = i + 1
     out.to_str()
 
-fn frontend_str_contains_byte(text: str, target: i32) -> bool:
+fn frontend_str_contains_byte(text: &str, target: i32) -> bool:
     for i in 0..text.len():
         if text.byte_at(i as i64) == target:
             return true
     false
 
-fn frontend_resolve_executable_path(argv0: str) -> str:
+fn frontend_resolve_executable_path(argv0: &str) -> str:
     if argv0.len() == 0:
         return ""
     if runtime_read_file(argv0).len() > 0:
@@ -103,7 +103,7 @@ fn frontend_cimport_compiler_fingerprint_line() -> str:
     frontend_cimport_compiler_fingerprint = frontend_owned_text(f"\n#compiler-hash:{runtime_str_hash(compiler_image)}")
     frontend_cimport_compiler_fingerprint
 
-fn c_import_absolute_quoted_path(header_spec: str) -> str:
+fn c_import_absolute_quoted_path(header_spec: &str) -> str:
     let decoded = c_import_trim(c_import_decode_escapes(header_spec))
     if decoded.len() < 3:
         return ""
@@ -115,7 +115,7 @@ fn c_import_absolute_quoted_path(header_spec: str) -> str:
     path
 
 impl Zcu:
-    mut fn record_frontend_tracked_input(path: str):
+    mut fn record_frontend_tracked_input(path: &str):
         if path.len() == 0:
             return
         if runtime_read_file(path).len() == 0:
@@ -140,7 +140,7 @@ impl Zcu:
         }
         self.diagnostics.emit(Diagnostic.err("import module not found", span))
 
-fn c_import_str_contains(text: str, needle: str) -> bool:
+fn c_import_str_contains(text: &str, needle: &str) -> bool:
     if needle.len() == 0:
         return true
     if needle.len() > text.len():
@@ -171,7 +171,7 @@ fn frontend_debug_type_names_enabled() -> i32:
         return 0
     1
 
-fn frontend_dump_type_decl_names(stage: str, pool: AstPool, intern: InternPool):
+fn frontend_dump_type_decl_names(stage: &str, pool: AstPool, intern: InternPool):
     if frontend_debug_type_names_enabled() == 0:
         return
     runtime_eprint(f"[type-names] stage={stage} decls={pool.decl_count()}")
@@ -438,7 +438,7 @@ impl Zcu:
         frontend_cimport_unlock()
         out
 
-    fn c_import_cache_key_frontend(pool: AstPool, decl: i32, header_spec: str) -> str:
+    fn c_import_cache_key_frontend(pool: AstPool, decl: i32, header_spec: &str) -> str:
         var key = header_spec ++ "\n#format:cimport-v14\n#links:"
         let link_start = pool.get_data1(decl)
         let packed_counts = pool.get_data2(decl)
@@ -481,7 +481,7 @@ impl Zcu:
             key = key ++ "\n#epoch:" ++ epoch
         key
 
-fn c_import_header_content_fingerprint_line(header_spec: str) -> str:
+fn c_import_header_content_fingerprint_line(header_spec: &str) -> str:
     let decoded = c_import_trim(c_import_decode_escapes(header_spec))
     if decoded.len() < 3:
         return ""
@@ -501,7 +501,7 @@ fn c_import_fs_cache_dir() -> str:
         return ""
     home ++ "/.cache/with/c_import"
 
-fn c_import_fs_cache_entry_path(cache_key: str, ext: str) -> str:
+fn c_import_fs_cache_entry_path(cache_key: &str, ext: &str) -> str:
     let dir = c_import_fs_cache_dir()
     if dir.len() == 0:
         return ""
@@ -512,7 +512,7 @@ fn c_import_fs_cache_entry_path(cache_key: str, ext: str) -> str:
         hash_str = f"n{0 - h}"
     f"{dir}/{hash_str}{ext}"
 
-fn cimport_deps_str_compare(a: str, b: str) -> i32:
+fn cimport_deps_str_compare(a: &str, b: &str) -> i32:
     let al = a.len()
     let bl = b.len()
     var i: i64 = 0
@@ -524,7 +524,7 @@ fn cimport_deps_str_compare(a: str, b: str) -> i32:
         i = i + 1
     (al - bl) as i32
 
-fn cimport_deps_sorted_unique_paths(files: str) -> Vec[str]:
+fn cimport_deps_sorted_unique_paths(files: &str) -> Vec[str]:
     var out = frontend_new_vec_str()
     var pos = 0
     let total = files.len() as i32
@@ -559,7 +559,7 @@ fn cimport_deps_sorted_unique_paths(files: str) -> Vec[str]:
 // content hash, and lookup re-validates them. Any mismatch is a cache miss.
 let CIMPORT_DEPS_MANIFEST_HEADER: str = "cimport-deps-v1"
 
-fn c_import_build_deps_manifest(files: str) -> str:
+fn c_import_build_deps_manifest(files: &str) -> str:
     var manifest = CIMPORT_DEPS_MANIFEST_HEADER ++ "\n"
     let paths = cimport_deps_sorted_unique_paths(files)
     for i in 0..paths.len() as i32:
@@ -568,7 +568,7 @@ fn c_import_build_deps_manifest(files: str) -> str:
         manifest = manifest ++ f"{text.len()}|{runtime_str_hash(text)}|{path}\n"
     manifest
 
-fn c_import_deps_manifest_entries_valid(manifest: str) -> bool:
+fn c_import_deps_manifest_entries_valid(manifest: &str) -> bool:
     var pos = 0
     let total = manifest.len() as i32
     var saw_header = false
@@ -604,7 +604,7 @@ fn c_import_deps_manifest_entries_valid(manifest: str) -> bool:
         pos = line_end + 1
     saw_header
 
-fn c_import_deps_manifest_paths(manifest: str) -> Vec[str]:
+fn c_import_deps_manifest_paths(manifest: &str) -> Vec[str]:
     var out = frontend_new_vec_str()
     var pos = 0
     let total = manifest.len() as i32
@@ -626,13 +626,13 @@ fn c_import_deps_manifest_paths(manifest: str) -> Vec[str]:
         pos = line_end + 1
     out
 
-fn c_import_fs_cache_deps_manifest(cache_key: str) -> str:
+fn c_import_fs_cache_deps_manifest(cache_key: &str) -> str:
     let path = c_import_fs_cache_entry_path(cache_key, ".deps")
     if path.len() == 0:
         return ""
     runtime_read_file(path)
 
-fn c_import_fs_cache_lookup(cache_key: str) -> str:
+fn c_import_fs_cache_lookup(cache_key: &str) -> str:
     let path = c_import_fs_cache_entry_path(cache_key, ".w")
     if path.len() == 0:
         return ""
@@ -642,7 +642,7 @@ fn c_import_fs_cache_lookup(cache_key: str) -> str:
         return ""
     runtime_read_file(path)
 
-fn c_import_fs_cache_store(cache_key: str, value: str):
+fn c_import_fs_cache_store(cache_key: &str, value: &str):
     let dir = c_import_fs_cache_dir()
     if dir.len() == 0:
         return
@@ -653,7 +653,7 @@ fn c_import_fs_cache_store(cache_key: str, value: str):
     runtime_write_file(c_import_fs_cache_entry_path(cache_key, ".w"), value)
 
 impl Zcu:
-    fn c_import_record_omissions_frontend(synthetic: str):
+    fn c_import_record_omissions_frontend(synthetic: &str):
         let prefix = "// @with-cimport-omitted|"
         var pos = 0
         let total = synthetic.len() as i32
@@ -681,7 +681,7 @@ impl Zcu:
                 break
             pos = line_end + 1
 
-    mut fn c_import_emit_header_error_detail_frontend(decl: i32, header_spec: str, detail: str):
+    mut fn c_import_emit_header_error_detail_frontend(decl: i32, header_spec: &str, detail: &str):
         let _ = decl
         let span = Span {
             file: 0,
@@ -699,10 +699,10 @@ impl Zcu:
             full_msg = full_msg ++ "; no macOS SDK found for target headers — set SDKROOT/WITH_SDKROOT, configure [c_import] sdk_path in with.toml, or install the Command Line Tools"
         self.diagnostics.emit(Diagnostic.err(full_msg, span))
 
-    mut fn c_import_emit_header_error_frontend(decl: i32, header_spec: str):
+    mut fn c_import_emit_header_error_frontend(decl: i32, header_spec: &str):
         self.c_import_emit_header_error_detail_frontend(decl, header_spec, "")
 
-    mut fn c_import_emit_untranslated_error_frontend(pool: AstPool, decl: i32, kind: str, name: str):
+    mut fn c_import_emit_untranslated_error_frontend(pool: AstPool, decl: i32, kind: &str, name: &str):
         let display_name = if name.len() > 0: name else: "<unknown>"
         let span = Span {
             file: 0,
@@ -757,14 +757,14 @@ impl Zcu:
 // helper decls and the `c_*` C-primitive typedefs (c_int, c_char, …) that the
 // requested symbols resolve through. (A header type a requested symbol depends
 // on must itself be listed in `only`.)
-fn frontend_is_cimport_support_name(name: str) -> bool:
+fn frontend_is_cimport_support_name(name: &str) -> bool:
     if name.len() == 0:
         return true
     name.len() as i32 >= 2 and name.byte_at(0) == 99 and name.byte_at(1) == 95
 
 // True when `dname` is `want` or a `want.member` method of it — so selecting a
 // type keeps its auto-generated methods.
-fn frontend_name_selects(want: str, dname: str) -> bool:
+fn frontend_name_selects(want: &str, dname: &str) -> bool:
     if dname == want:
         return true
     let wl = want.len() as i32
@@ -773,14 +773,14 @@ fn frontend_name_selects(want: str, dname: str) -> bool:
     false
 
 impl Zcu:
-    fn c_import_only_matches_frontend(pool: AstPool, decl: i32, dname: str) -> bool:
+    fn c_import_only_matches_frontend(pool: AstPool, decl: i32, dname: &str) -> bool:
         let n = self.c_import_only_count_frontend(pool, decl)
         for oi in 0..n:
             if frontend_name_selects(self.c_import_only_name_frontend(pool, decl, oi), dname):
                 return true
         false
 
-    fn c_import_produced_name_frontend(pool: AstPool, before: i32, after: i32, want: str) -> bool:
+    fn c_import_produced_name_frontend(pool: AstPool, before: i32, after: i32, want: &str) -> bool:
         var di = before
         while di < after:
             if frontend_name_selects(want, self.c_import_decl_bound_name_frontend(pool, pool.get_decl(di))):
@@ -788,7 +788,7 @@ impl Zcu:
             di = di + 1
         false
 
-    mut fn c_import_emit_selective_missing_frontend(pool: AstPool, decl: i32, name: str):
+    mut fn c_import_emit_selective_missing_frontend(pool: AstPool, decl: i32, name: &str):
         let span = Span { file: 0, start: pool.get_start(decl), end: pool.get_end(decl) }
         var msg = "c_import: requested symbol '" ++ name ++ "' is not available"
         if self.c_import_omitted_symbols.contains(name):
@@ -799,7 +799,7 @@ impl Zcu:
 
     // strict: every omission recorded in `synthetic` that is not acknowledged via
     // allow_untranslated becomes a non-zero import failure.
-    mut fn c_import_emit_strict_omissions_frontend(pool: AstPool, decl: i32, synthetic: str):
+    mut fn c_import_emit_strict_omissions_frontend(pool: AstPool, decl: i32, synthetic: &str):
         let prefix = "// @with-cimport-omitted|"
         var pos = 0
         let total = synthetic.len() as i32
@@ -825,7 +825,7 @@ impl Zcu:
                 break
             pos = line_end + 1
 
-    fn c_import_decl_allows_untranslated_frontend(pool: AstPool, decl: i32, name: str) -> bool:
+    fn c_import_decl_allows_untranslated_frontend(pool: AstPool, decl: i32, name: &str) -> bool:
         if name.len() == 0:
             return false
         let link_start = pool.get_data1(decl)
@@ -838,7 +838,7 @@ impl Zcu:
                 return true
         false
 
-    fn c_import_first_unallowed_untranslated_frontend(pool: AstPool, decl: i32, names: str) -> str:
+    fn c_import_first_unallowed_untranslated_frontend(pool: AstPool, decl: i32, names: &str) -> str:
         var i = 0
         let total = names.len() as i32
         while i < total:
@@ -853,7 +853,7 @@ impl Zcu:
                     return name
         ""
 
-    mut fn c_import_expand_header_spec_frontend(header_spec_raw: str, pool: AstPool, decl: i32) -> str:
+    mut fn c_import_expand_header_spec_frontend(header_spec_raw: &str, pool: AstPool, decl: i32) -> str:
         let decoded = c_import_decode_escapes(header_spec_raw)
         let rendered = c_import_render_header_spec(decoded)
         let header = c_import_trim(rendered)
@@ -909,7 +909,7 @@ impl Zcu:
 
         generated
 
-    mut fn c_import_include_decls_frontend(line: str, decl: i32, header_spec_raw: str) -> str:
+    mut fn c_import_include_decls_frontend(line: &str, decl: i32, header_spec_raw: &str) -> str:
         let rest = c_import_trim(line.slice(8, line.len()))
         if rest.len() < 3:
             self.c_import_emit_header_error_frontend(decl, header_spec_raw)
@@ -981,7 +981,7 @@ impl Zcu:
         self.c_import_emit_header_error_frontend(decl, header_spec_raw)
         ""
 
-fn c_import_render_header_spec(spec_raw: str) -> str:
+fn c_import_render_header_spec(spec_raw: &str) -> str:
     let spec = c_import_trim(spec_raw)
     if spec.len() == 0:
         return ""
@@ -998,7 +998,7 @@ fn c_import_render_header_spec(spec_raw: str) -> str:
         return "#include " ++ spec
     "#include <" ++ spec ++ ">"
 
-fn c_import_macro_decl(line: str) -> str:
+fn c_import_macro_decl(line: &str) -> str:
     var rest = line
     if c_import_starts_with(rest, "#define"):
         rest = c_import_trim(rest.slice(7, rest.len()))
@@ -1031,7 +1031,7 @@ fn c_import_macro_decl(line: str) -> str:
 
     ""
 
-fn c_import_define_name(line: str) -> str:
+fn c_import_define_name(line: &str) -> str:
     var rest = line
     if c_import_starts_with(rest, "#define"):
         rest = c_import_trim(rest.slice(7, rest.len()))
@@ -1044,7 +1044,7 @@ fn c_import_define_name(line: str) -> str:
         return ""
     rest.slice(0, i as i64)
 
-fn c_import_statement_name(stmt_raw: str) -> str:
+fn c_import_statement_name(stmt_raw: &str) -> str:
     let stmt = c_import_trim(stmt_raw)
     if stmt.len() == 0:
         return ""
@@ -1075,7 +1075,7 @@ fn c_import_statement_name(stmt_raw: str) -> str:
         start = start - 1
     stmt.slice((start + 1) as i64, (end + 1) as i64)
 
-fn c_import_function_decl(stmt_raw: str) -> str:
+fn c_import_function_decl(stmt_raw: &str) -> str:
     let stmt = c_import_trim(stmt_raw)
     if stmt.len() == 0:
         return ""
@@ -1146,7 +1146,7 @@ fn c_import_function_decl(stmt_raw: str) -> str:
 
     "extern fn " ++ fn_name ++ "(" ++ params_out ++ ") -> " ++ ret_ty ++ "\n"
 
-fn c_import_param_type(param_raw: str) -> str:
+fn c_import_param_type(param_raw: &str) -> str:
     var param = c_import_trim_outer_parens(c_import_trim(param_raw))
     if param.len() == 0:
         return ""
@@ -1169,7 +1169,7 @@ fn c_import_param_type(param_raw: str) -> str:
 
     c_import_map_c_type(type_spec)
 
-fn c_import_map_c_type(spec_raw: str) -> str:
+fn c_import_map_c_type(spec_raw: &str) -> str:
     let spec = c_import_trim(spec_raw)
     if spec.len() == 0:
         return "i32"
@@ -1224,7 +1224,7 @@ fn c_import_map_c_type(spec_raw: str) -> str:
         out = "*const " ++ out
     out
 
-fn c_import_decode_escapes(raw: str) -> str:
+fn c_import_decode_escapes(raw: &str) -> str:
     var out = ""
     var i = 0
     let len = raw.len() as i32
@@ -1251,13 +1251,13 @@ fn c_import_decode_escapes(raw: str) -> str:
         i = i + 2
     out
 
-fn c_import_trim_outer_parens(value_raw: str) -> str:
+fn c_import_trim_outer_parens(value_raw: &str) -> str:
     var v = c_import_trim(value_raw)
     while v.len() >= 2 and v.byte_at(0) == 40 and v.byte_at(v.len() as i64 - 1) == 41:
         v = c_import_trim(v.slice(1, v.len() - 1))
     v
 
-fn c_import_escape_with_string(value: str) -> str:
+fn c_import_escape_with_string(value: &str) -> str:
     var out = ""
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -1275,7 +1275,7 @@ fn c_import_escape_with_string(value: str) -> str:
             out = out ++ value.slice(i as i64, (i + 1) as i64)
     out
 
-fn c_import_is_int_literal(text_raw: str) -> i32:
+fn c_import_is_int_literal(text_raw: &str) -> i32:
     let text = c_import_trim(text_raw)
     if text.len() == 0:
         return 0
@@ -1310,7 +1310,7 @@ fn c_import_is_int_literal(text_raw: str) -> i32:
 fn c_import_is_space(ch: i32) -> bool:
     ch == 32 or ch == 9 or ch == 10 or ch == 13
 
-fn c_import_trim(s: str) -> str:
+fn c_import_trim(s: &str) -> str:
     var start = 0
     var end = s.len() as i32
     while start < end and c_import_is_space(s.byte_at(start as i64)):
@@ -1319,7 +1319,7 @@ fn c_import_trim(s: str) -> str:
         end = end - 1
     s.slice(start as i64, end as i64)
 
-fn c_import_starts_with(text: str, prefix: str) -> bool:
+fn c_import_starts_with(text: &str, prefix: &str) -> bool:
     if prefix.len() > text.len():
         return false
     text.slice(0, prefix.len()) == prefix
@@ -1367,10 +1367,10 @@ impl Zcu:
             pi = pi + 1
         merged_pool
 
-    mut fn compile_file_frontend(path: str) -> AstPool:
+    mut fn compile_file_frontend(path: &str) -> AstPool:
         self.compile_file_frontend_with_config(path, project_config_load_for_source(path))
 
-    mut fn compile_file_frontend_with_config(path: str, cfg: ProjectConfig) -> AstPool:
+    mut fn compile_file_frontend_with_config(path: &str, cfg: ProjectConfig) -> AstPool:
         let do_profile = runtime_getenv("WITH_PROFILE").len() > 0
         if zcu_debug_init_enabled() != 0:
             runtime_eprint("[frontend] compile_file:start " ++ path)
@@ -1402,10 +1402,10 @@ impl Zcu:
             runtime_eprint("error: compiler produced an empty module for '" ++ path ++ "'")
         pool
 
-    mut fn compile_file_frontend_entry(path: str) -> AstPool:
+    mut fn compile_file_frontend_entry(path: &str) -> AstPool:
         self.compile_file_frontend_entry_with_config(path, project_config_load_for_source(path))
 
-    mut fn compile_file_frontend_entry_with_config(path: str, cfg: ProjectConfig) -> AstPool:
+    mut fn compile_file_frontend_entry_with_config(path: &str, cfg: ProjectConfig) -> AstPool:
         let do_profile = runtime_getenv("WITH_PROFILE").len() > 0
         if zcu_debug_init_enabled() != 0:
             runtime_eprint("[frontend] compile_file_entry:start " ++ path)
@@ -1435,10 +1435,10 @@ impl Zcu:
             runtime_eprint("error: compiler produced an empty module for '" ++ path ++ "'")
         pool
 
-    mut fn compile_source_frontend(text: str, name: str, file_id: i32) -> AstPool:
+    mut fn compile_source_frontend(text: &str, name: &str, file_id: i32) -> AstPool:
         self.compile_source_frontend_mode(text, name, file_id, 0)
 
-    mut fn compile_source_frontend_mode(text: str, name: str, file_id: i32, implicit_main_mode: i32) -> AstPool:
+    mut fn compile_source_frontend_mode(text: &str, name: &str, file_id: i32, implicit_main_mode: i32) -> AstPool:
         let do_profile = runtime_getenv("WITH_PROFILE").len() > 0
         if zcu_debug_init_enabled() != 0:
             runtime_eprint("[frontend] compile_source:parse")
@@ -1701,7 +1701,7 @@ impl Zcu:
             if text.len() > 0:
                 self.add_source_text_mapping(mod.file_id, mod.path, text)
 
-    mut fn merge_resolved_modules_frontend(root_pool: AstPool, root_path: str) -> AstPool:
+    mut fn merge_resolved_modules_frontend(root_pool: AstPool, root_path: &str) -> AstPool:
         var merged_pool = root_pool
 
         for mi in 0..self.last_resolved.modules.len() as i32:
@@ -2010,14 +2010,14 @@ impl Zcu:
         self.decl_is_c_import = rebuilt_c_import
         merged_pool
 
-fn frontend_path_is_std_box_module(path: str) -> bool:
+fn frontend_path_is_std_box_module(path: &str) -> bool:
     if path == "lib/std/box.w" or path == "<embedded-std>/std/box.w":
         return true
     if path.ends_with("/lib/std/box.w") or path.ends_with("\\lib\\std\\box.w"):
         return true
     false
 
-fn frontend_path_is_std_rc_module(path: str) -> bool:
+fn frontend_path_is_std_rc_module(path: &str) -> bool:
     if path == "lib/std/rc.w" or path == "<embedded-std>/std/rc.w":
         return true
     if path.ends_with("/lib/std/rc.w") or path.ends_with("\\lib\\std\\rc.w"):
@@ -2154,7 +2154,7 @@ fn frontend_vec_contains_i32(v: &Vec[i32], target: i32) -> bool:
     false
 
 impl Zcu:
-    fn find_module_id_by_path_frontend(path: str) -> i32:
+    fn find_module_id_by_path_frontend(path: &str) -> i32:
         for mi in 0..self.last_resolved.modules.len() as i32:
             let mod = self.last_resolved.modules.get(mi as i64)
             if mod.path == path:
@@ -2185,7 +2185,7 @@ type ReorderedTier {
 }
 
 impl Zcu:
-    fn collect_module_dependency_order_frontend(path: str, wanted_paths: &HashMap[str, i32], accum: DepOrderAccum) -> Unit:
+    fn collect_module_dependency_order_frontend(path: &str, wanted_paths: &HashMap[str, i32], accum: DepOrderAccum) -> Unit:
         if path.len() == 0:
             return
         if accum.state.seen.contains(path):
@@ -2243,7 +2243,7 @@ impl Zcu:
             out_c_import.push(ci_flags.get(di as i64))
         ReorderedTier { decls: out_decls, paths: out_paths, file_ids: out_file_ids, ci_flags: out_c_import }
 
-fn frontend_parent_module_rel(module_rel: str) -> str:
+fn frontend_parent_module_rel(module_rel: &str) -> str:
     var last_slash = -1
     for i in 0..module_rel.len():
         if module_rel[i] == 47:
@@ -2252,7 +2252,7 @@ fn frontend_parent_module_rel(module_rel: str) -> str:
         return ""
     module_rel.slice(0, last_slash as i64)
 
-fn frontend_resolve_module_rel(module_dir: str, rel_path: str) -> str:
+fn frontend_resolve_module_rel(module_dir: &str, rel_path: &str) -> str:
     let cand1 = resolve_join(module_dir, rel_path)
     if resolve_file_exists(cand1):
         return cand1
@@ -2314,7 +2314,7 @@ impl Zcu:
         let type_sym = pool.get_extra(path_start)
         frontend_pool_has_type_decl_named(pool, type_sym)
 
-    fn resolve_module_path_frontend(module_name: str, source_dir_raw: str) -> str:
+    fn resolve_module_path_frontend(module_name: &str, source_dir_raw: &str) -> str:
         let module_rel = frontend_normalize_module_path(module_name)
         let rel_primary = module_rel ++ ".w"
         let rel_fallback = if frontend_parent_module_rel(module_rel).len() > 0: frontend_parent_module_rel(module_rel) ++ ".w" else: ""
@@ -2347,7 +2347,7 @@ impl Zcu:
                 return frontend_resolve_module_rel(self.source_dir, rel_fallback)
         ""
 
-    mut fn parse_imported_file_frontend(path: str, target_pool: AstPool) -> AstPool:
+    mut fn parse_imported_file_frontend(path: &str, target_pool: AstPool) -> AstPool:
         let embedded_rel = embedded_std_rel_path(path)
         let text = frontend_normalize_source_text(if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: runtime_read_file(path))
         if text.len() == 0:
@@ -2368,7 +2368,7 @@ impl Zcu:
         self.append_decl_source_paths(merged_pool.decl_count() - before, path, file_id)
         merged_pool
 
-fn frontend_normalize_module_path(module_name: str) -> str:
+fn frontend_normalize_module_path(module_name: &str) -> str:
     var out = ""
     for i in 0..module_name.len():
         if module_name[i] == 46: // '.'
@@ -2377,7 +2377,7 @@ fn frontend_normalize_module_path(module_name: str) -> str:
             out = out ++ module_name.slice(i as i64, (i + 1) as i64)
     out
 
-fn frontend_dirname(path: str) -> str:
+fn frontend_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len():
         if path[i] == 47: // '/'

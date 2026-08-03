@@ -22,7 +22,7 @@ pub fn SourceMap.init -> SourceMap:
     sm
 
 impl SourceMap:
-    pub mut fn add_source_text(path: str, text: str) -> FileId:
+    pub mut fn add_source_text(path: &str, text: &str) -> FileId:
         let existing = self.path_index.get(path)
         if existing.is_some():
             return file_id_from_raw(existing.unwrap())
@@ -33,7 +33,7 @@ impl SourceMap:
         self.sources.push(Source.from_string(path, text, id))
         id
 
-    pub mut fn add_source_file(path: str) -> FileId:
+    pub mut fn add_source_file(path: &str) -> FileId:
         let existing = self.path_index.get(path)
         if existing.is_some():
             return file_id_from_raw(existing.unwrap())

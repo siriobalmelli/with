@@ -28,10 +28,10 @@ pub type DiagnosticStore {
     items: Vec[Diagnostic],
 }
 
-fn diagnostic_owned_text(text: str) -> str:
+fn diagnostic_owned_text(text: &str) -> str:
     with_str_clone(text)
 
-pub fn diagnostic_error(message: str, primary: Span) -> Diagnostic:
+pub fn diagnostic_error(message: &str, primary: Span) -> Diagnostic:
     Diagnostic {
         severity: DiagSeverity.Error,
         code: "",
@@ -42,7 +42,7 @@ pub fn diagnostic_error(message: str, primary: Span) -> Diagnostic:
         helps: Vec.new(),
     }
 
-pub fn diagnostic_warning(message: str, primary: Span) -> Diagnostic:
+pub fn diagnostic_warning(message: &str, primary: Span) -> Diagnostic:
     Diagnostic {
         severity: DiagSeverity.Warning,
         code: "",
@@ -54,13 +54,13 @@ pub fn diagnostic_warning(message: str, primary: Span) -> Diagnostic:
     }
 
 impl Diagnostic:
-    pub mut fn set_code(code: str): self.code = diagnostic_owned_text(code)
+    pub mut fn set_code(code: &str): self.code = diagnostic_owned_text(code)
 
-    pub mut fn add_label(span: Span, message: str): self.labels.push(DiagnosticLabel { span, message: diagnostic_owned_text(message) })
+    pub mut fn add_label(span: Span, message: &str): self.labels.push(DiagnosticLabel { span, message: diagnostic_owned_text(message) })
 
-    pub mut fn add_note(message: str): self.notes.push(diagnostic_owned_text(message))
+    pub mut fn add_note(message: &str): self.notes.push(diagnostic_owned_text(message))
 
-    pub mut fn add_help(message: str): self.helps.push(diagnostic_owned_text(message))
+    pub mut fn add_help(message: &str): self.helps.push(diagnostic_owned_text(message))
 
 pub fn DiagnosticStore.init -> DiagnosticStore:
     DiagnosticStore {

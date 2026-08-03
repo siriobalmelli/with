@@ -60,10 +60,10 @@ pub fn empty_build_graph -> BuildGraph:
         generated_sources: Vec.new(),
     }
 
-fn build_graph_generated_source_new(path: str, contents: str) -> BuildGraphGeneratedSource:
+fn build_graph_generated_source_new(path: &str, contents: &str) -> BuildGraphGeneratedSource:
     BuildGraphGeneratedSource { path, contents }
 
-fn build_graph_target_new(kind: i32, name: str, entry: str, target_kind: i32, optimize_mode: i32, output: str) -> BuildGraphTarget:
+fn build_graph_target_new(kind: i32, name: &str, entry: &str, target_kind: i32, optimize_mode: i32, output: &str) -> BuildGraphTarget:
     BuildGraphTarget {
         kind,
         name,
@@ -91,7 +91,7 @@ fn build_graph_target_new(kind: i32, name: str, entry: str, target_kind: i32, op
 pub fn empty_build_graph_target -> BuildGraphTarget:
     build_graph_target_new(-1, "", "", 0, 0, "")
 
-fn build_graph_split_nonempty_lines(text: str) -> Vec[str]:
+fn build_graph_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     let text_len = text.len() as i32
     var start = 0
@@ -110,7 +110,7 @@ fn build_graph_split_nonempty_lines(text: str) -> Vec[str]:
         i = i + 1
     lines
 
-fn build_graph_split_fields(line: str) -> Vec[str]:
+fn build_graph_split_fields(line: &str) -> Vec[str]:
     let fields: Vec[str] = Vec.new()
     var cur = ""
     var escaped = false
@@ -136,7 +136,7 @@ fn build_graph_split_fields(line: str) -> Vec[str]:
     fields.push(cur)
     fields
 
-fn build_graph_escape(value: str) -> str:
+fn build_graph_escape(value: &str) -> str:
     var out = ""
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -197,7 +197,7 @@ pub fn build_graph_emit(graph: &BuildGraph) -> str:
             out = out ++ "parallel\t" ++ f"{ti}\t1\n"
     out
 
-fn build_graph_parse_i32(text: str) -> i32:
+fn build_graph_parse_i32(text: &str) -> i32:
     var sign = 1
     var i = 0
     if text.len() > 0 and text.byte_at(0) == 45:
@@ -212,7 +212,7 @@ fn build_graph_parse_i32(text: str) -> i32:
         i = i + 1
     value * sign
 
-pub fn parse_build_graph(text: str) -> BuildGraph:
+pub fn parse_build_graph(text: &str) -> BuildGraph:
     var graph = empty_build_graph()
     graph.raw_text = text
     if text.len() == 0:
@@ -372,7 +372,7 @@ fn build_graph_target_deep_copy(t: &BuildGraphTarget) -> BuildGraphTarget:
         action_source_paths: bg_clone_str_vec(&t.action_source_paths),
     }
 
-pub fn build_graph_filter_target(graph: &BuildGraph, target_name: str) -> BuildGraph:
+pub fn build_graph_filter_target(graph: &BuildGraph, target_name: &str) -> BuildGraph:
     var out = empty_build_graph()
     out.ok = graph.ok
     out.error_msg = graph.error_msg
@@ -398,7 +398,7 @@ pub fn build_graph_filter_target(graph: &BuildGraph, target_name: str) -> BuildG
         out.raw_text = build_graph_emit(out)
     out
 
-pub fn build_graph_filter_single_target(graph: &BuildGraph, target_name: str) -> BuildGraph:
+pub fn build_graph_filter_single_target(graph: &BuildGraph, target_name: &str) -> BuildGraph:
     var out = empty_build_graph()
     out.ok = graph.ok
     out.error_msg = graph.error_msg
@@ -431,19 +431,19 @@ fn build_graph_selected_targets_new -> BuildGraphSelectedTargets:
         visiting_names: Vec.new(),
     }
 
-fn build_graph_name_vec_contains(names: &Vec[str], name: str) -> bool:
+fn build_graph_name_vec_contains(names: &Vec[str], name: &str) -> bool:
     for i in 0..names.len() as i32:
         if names.get(i as i64) == name:
             return true
     false
 
-fn build_graph_find_target_index(graph: &BuildGraph, name: str) -> i32:
+fn build_graph_find_target_index(graph: &BuildGraph, name: &str) -> i32:
     for i in 0..graph.targets.len() as i32:
         if graph.targets.get(i as i64).name == name:
             return i
     -1
 
-fn build_graph_find_output_producer_index(graph: &BuildGraph, path: str, consumer_name: str) -> i32:
+fn build_graph_find_output_producer_index(graph: &BuildGraph, path: &str, consumer_name: &str) -> i32:
     if path.len() == 0:
         return -1
     for i in 0..graph.targets.len() as i32:
@@ -452,7 +452,7 @@ fn build_graph_find_output_producer_index(graph: &BuildGraph, path: str, consume
             return i
     -1
 
-fn build_graph_selected_targets_add(selected: BuildGraphSelectedTargets, graph: &BuildGraph, name: str) -> BuildGraphSelectedTargets:
+fn build_graph_selected_targets_add(selected: BuildGraphSelectedTargets, graph: &BuildGraph, name: &str) -> BuildGraphSelectedTargets:
     var out = selected
     if not out.ok:
         return out
@@ -488,6 +488,6 @@ fn build_graph_selected_targets_add(selected: BuildGraphSelectedTargets, graph: 
     out.targets.push(build_graph_target_deep_copy(target))
     out
 
-fn build_graph_select_target_closure(graph: &BuildGraph, target_name: str) -> BuildGraphSelectedTargets:
+fn build_graph_select_target_closure(graph: &BuildGraph, target_name: &str) -> BuildGraphSelectedTargets:
     var selected = build_graph_selected_targets_new()
     build_graph_selected_targets_add(move selected, graph, target_name)

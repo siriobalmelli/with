@@ -40,7 +40,7 @@ pub fn type_key_invalid -> TypeKey:
         flags: 0,
     }
 
-pub fn type_key_named(name: str) -> TypeKey:
+pub fn type_key_named(name: &str) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_NAMED(),
         name,
@@ -121,7 +121,7 @@ pub fn type_key_pack2(a: TypeId, b: TypeId) -> str:
 pub fn type_key_pack3(a: TypeId, b: TypeId, c: TypeId) -> str:
     f"{type_id_raw(a)},{type_id_raw(b)},{type_id_raw(c)}"
 
-pub fn type_key_tuplen(elem_pack: str, count: i32) -> TypeKey:
+pub fn type_key_tuplen(elem_pack: &str, count: i32) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_TUPLEN(),
         name: elem_pack,
@@ -130,7 +130,7 @@ pub fn type_key_tuplen(elem_pack: str, count: i32) -> TypeKey:
         flags: 0,
     }
 
-pub fn type_key_fn_sig(param_pack: str, ret: TypeId, arity: i32, is_variadic: bool) -> TypeKey:
+pub fn type_key_fn_sig(param_pack: &str, ret: TypeId, arity: i32, is_variadic: bool) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_FN_SIG(),
         name: param_pack,
@@ -139,7 +139,7 @@ pub fn type_key_fn_sig(param_pack: str, ret: TypeId, arity: i32, is_variadic: bo
         flags: if is_variadic: 1 else: 0,
     }
 
-pub fn type_key_trait_object(trait_name: str) -> TypeKey:
+pub fn type_key_trait_object(trait_name: &str) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_TRAIT_OBJECT(),
         name: trait_name,
@@ -148,7 +148,7 @@ pub fn type_key_trait_object(trait_name: str) -> TypeKey:
         flags: 0,
     }
 
-pub fn type_key_generic_param(param_name: str, index: i32) -> TypeKey:
+pub fn type_key_generic_param(param_name: &str, index: i32) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_GENERIC_PARAM(),
         name: param_name,
@@ -157,7 +157,7 @@ pub fn type_key_generic_param(param_name: str, index: i32) -> TypeKey:
         flags: 0,
     }
 
-pub fn type_key_generic_apply2(base_name: str, a0: TypeId, a1: TypeId, arg_count: i32) -> TypeKey:
+pub fn type_key_generic_apply2(base_name: &str, a0: TypeId, a1: TypeId, arg_count: i32) -> TypeKey:
     TypeKey {
         tag: TYPE_KEY_GENERIC_APPLY2(),
         name: base_name,

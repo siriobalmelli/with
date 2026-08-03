@@ -204,7 +204,7 @@ impl Sema:
 
         0
 
-    mut fn resolve_deferred_value_type_slot(slot: i32, type_node: i32, opaque_message: str):
+    mut fn resolve_deferred_value_type_slot(slot: i32, type_node: i32, opaque_message: &str):
         let current: i32 = self.type_extra.get(slot as i64)
         if current != 0 and self.type_has_unresolved_parts(current) == 0:
             return
@@ -519,7 +519,7 @@ impl Sema:
 // parameters and the return are plain value types for these entries), or -1
 // when the function is not curated. Every curated entry here has its char*
 // parameters in leading position, so a count is sufficient.
-fn ci_overlay_cstr_in_param_count(name: str) -> i32:
+fn ci_overlay_cstr_in_param_count(name: &str) -> i32:
     if name == "atof": return 1
     if name == "atoi": return 1
     if name == "atol": return 1
@@ -545,7 +545,7 @@ fn ci_overlay_cstr_in_param_count(name: str) -> i32:
 // says the *call* is safe; the returned pointer is borrowed (non-owning) and
 // dereferencing it stays `unsafe`. Owning constructors (fopen, strdup) are NOT
 // here — they belong to #357's owning-wrapper mechanism.
-fn ci_overlay_return_is_borrowed_ptr(name: str) -> i32:
+fn ci_overlay_return_is_borrowed_ptr(name: &str) -> i32:
     if name == "getenv": return 1
     if name == "strchr": return 1
     if name == "strpbrk": return 1
@@ -1650,7 +1650,7 @@ impl Sema:
             self.mutable_global_syms.insert(name, 1)
         self.register_top_level_global_decl(name, tid, is_mut, node, GLOBAL_VALUE_DECL_EXTERN)
 
-fn sema_str_find_char(text: str, needle: i32) -> i32:
+fn sema_str_find_char(text: &str, needle: i32) -> i32:
     for i in 0..text.len() as i32:
         if text[i] == needle:
             return i
@@ -1725,7 +1725,7 @@ impl Sema:
                     best_node = cand
         best_node
 
-fn sema_extension_path_hash(path: str) -> i64:
+fn sema_extension_path_hash(path: &str) -> i64:
     var h: i64 = 17
     for i in 0..path.len() as i32:
         h = (h * 131 + path.byte_at(i as i64) as i64) % 2147483647
@@ -2438,7 +2438,7 @@ impl Sema:
                 return decl
         0 as NodeId
 
-    mut fn emit_trait_object_safety_error(trait_sym: i32, method_sym: i32, reason: str, node: i32):
+    mut fn emit_trait_object_safety_error(trait_sym: i32, method_sym: i32, reason: &str, node: i32):
         let trait_name = self.pool_resolve(trait_sym)
         let method_name = self.pool_resolve(method_sym)
         self.emit_error("trait '" ++ trait_name ++ "' is not object-safe: method '" ++ method_name ++ "' " ++ reason, node)

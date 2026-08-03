@@ -21,7 +21,7 @@ fn intern_debug_init_enabled() -> i32:
         return 0
     1
 
-fn intern_debug_init(msg: str):
+fn intern_debug_init(msg: &str):
     if intern_debug_init_enabled() == 0:
         return
     with_eprint("[intern-init] " ++ msg)
@@ -48,7 +48,7 @@ fn InternStringArena.new() -> InternStringArena:
     arena
 
 impl InternStringArena:
-    mut fn store(s: str) -> str:
+    mut fn store(s: &str) -> str:
         if s.len() == 0:
             return ""
         let src = unsafe *(&s as *const *const u8)
@@ -89,7 +89,7 @@ fn intern_new_map_str_i32 -> HashMap[str, i32]:
     let map: HashMap[str, i32] = HashMap.new()
     map
 
-fn intern_text_eq(a: str, b: str) -> bool:
+fn intern_text_eq(a: &str, b: &str) -> bool:
     if a.len() != b.len():
         return false
     var i = 0
@@ -125,7 +125,7 @@ impl InternPool:
     fn deinit():
         return
 
-    fn intern_str(s: str) -> Symbol:
+    fn intern_str(s: &str) -> Symbol:
         let st = self.state
         let existing = st.symbol_map.get(s)
         if existing.is_some():
@@ -197,7 +197,7 @@ impl InternPool:
         (self.state.value_keys.len() as i32) - 1
 
     // Legacy compatibility entrypoints used throughout current parser/sema/codegen.
-    fn intern(s: str) -> Symbol:
+    fn intern(s: &str) -> Symbol:
         self.intern_str(s)
 
     fn resolve(sym: Symbol) -> str:

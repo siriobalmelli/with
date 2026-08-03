@@ -226,7 +226,7 @@ fn cli_is_implicit_run(argc: i32) -> bool:
     let arg = with_arg_at(1)
     arg.ends_with(".w")
 
-fn cli_has_flag(argc: i32, flag: str) -> bool:
+fn cli_has_flag(argc: i32, flag: &str) -> bool:
     var i = 2
     while i < argc:
         if with_arg_at(i) == flag:
@@ -234,7 +234,7 @@ fn cli_has_flag(argc: i32, flag: str) -> bool:
         i = i + 1
     false
 
-fn cli_has_prefix(argc: i32, prefix: str) -> bool:
+fn cli_has_prefix(argc: i32, prefix: &str) -> bool:
     var i = 2
     while i < argc:
         if with_str_starts_with(with_arg_at(i), prefix) != 0:
@@ -242,7 +242,7 @@ fn cli_has_prefix(argc: i32, prefix: str) -> bool:
         i = i + 1
     false
 
-fn cli_value_or_prefix(argc: i32, flag: str, prefix: str) -> str:
+fn cli_value_or_prefix(argc: i32, flag: &str, prefix: &str) -> str:
     var i = 2
     while i < argc:
         let arg = with_arg_at(i)
@@ -253,7 +253,7 @@ fn cli_value_or_prefix(argc: i32, flag: str, prefix: str) -> str:
         i = i + 1
     ""
 
-fn cli_option_takes_value(arg: str) -> bool:
+fn cli_option_takes_value(arg: &str) -> bool:
     arg == "-o" or arg == "--output" or arg == "--target" or
     arg == "--trace-place" or arg == "--explain-mir-origin" or
     arg == "--trace-ownership" or arg == "--trace-cleanup-edge" or
@@ -294,7 +294,7 @@ fn cli_test_verbose(argc: i32) -> bool:
 fn cli_test_quiet(argc: i32) -> bool:
     cli_has_flag(argc, "-q") or cli_has_flag(argc, "--quiet")
 
-fn cli_is_build_target_selector(arg: str) -> bool:
+fn cli_is_build_target_selector(arg: &str) -> bool:
     arg.len() > 1 and arg.byte_at(0) == 58
 
 fn cli_build_target_arg(argc: i32) -> str:
@@ -348,7 +348,7 @@ fn cli_prelude_mode(argc: i32) -> i32:
 fn cli_runtime_available(argc: i32) -> bool:
     not cli_has_flag(argc, "--no-runtime") and not cli_has_flag(argc, "--freestanding")
 
-fn cli_analysis_request(argc: i32, source: str) -> str:
+fn cli_analysis_request(argc: i32, source: &str) -> str:
     var found_source = false
     var i = 2
     while i < argc:
@@ -383,7 +383,7 @@ fn parse_cli_options(argc: i32) -> CliOptions:
     opts.prelude_mode = cli_prelude_mode(argc)
     opts
 
-fn tokenize_text(text: str) -> TokenList:
+fn tokenize_text(text: &str) -> TokenList:
     var lexer = Lexer.init(text, 0)
     return lexer.tokenize()
 
@@ -398,7 +398,7 @@ fn cli_one_liner_default(argc: i32) -> CliOneLiner:
         opt_level: cli_default_opt_level(argc),
     }
 
-fn cli_one_liner_mode_for_flag(arg: str) -> i32:
+fn cli_one_liner_mode_for_flag(arg: &str) -> i32:
     if arg == "-e":
         return CliOneLinerMode.Eval
     if arg == "-n":
@@ -416,10 +416,10 @@ fn cli_one_liner_mode_name(mode: i32) -> str:
         return "-p"
     ""
 
-fn cli_one_liner_known_value_option(arg: str) -> bool:
+fn cli_one_liner_known_value_option(arg: &str) -> bool:
     arg == "-o" or arg == "--output" or arg == "--target"
 
-fn cli_one_liner_known_flag(arg: str) -> bool:
+fn cli_one_liner_known_flag(arg: &str) -> bool:
     arg == "-O0" or arg == "-O1" or arg == "-O2" or arg == "-O3" or
     arg == "--release" or arg == "--alloc" or arg == "--no-std" or
     arg == "--no-runtime" or arg == "--freestanding" or arg == "--no-prelude" or
@@ -490,7 +490,7 @@ fn cli_one_liner_scan(argc: i32) -> CliOneLiner:
         i = i + 1
     result
 
-fn cli_escape_with_string(value: str) -> str:
+fn cli_escape_with_string(value: &str) -> str:
     var out = StringBuilder.with_capacity(value.len())
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -508,7 +508,7 @@ fn cli_escape_with_string(value: str) -> str:
             out.push_str(value.slice(i as i64, (i + 1) as i64))
     out.to_str()
 
-fn cli_rewrite_semicolons(code: str) -> str:
+fn cli_rewrite_semicolons(code: &str) -> str:
     var lexer = Lexer.init(code, 0)
     let tokens = lexer.tokenize()
     var out = StringBuilder.with_capacity(code.len())
@@ -537,7 +537,7 @@ fn cli_rewrite_semicolons(code: str) -> str:
         out.push_str(code.slice(cursor as i64, code.len()))
     out.to_str()
 
-fn cli_indent_code(code: str, indent: str) -> str:
+fn cli_indent_code(code: &str, indent: &str) -> str:
     var out = StringBuilder.with_capacity(code.len() + indent.len())
     out.push_str(indent)
     for i in 0..code.len() as i32:
@@ -548,7 +548,7 @@ fn cli_indent_code(code: str, indent: str) -> str:
     out.to_str()
 
 // §16.5: the C header path beside an artifact (libfoo.a -> libfoo.h).
-fn c_header_path_for(artifact_path: str) -> str:
+fn c_header_path_for(artifact_path: &str) -> str:
     var dot = -1
     var i = 0
     while i < artifact_path.len() as i32:
@@ -560,7 +560,7 @@ fn c_header_path_for(artifact_path: str) -> str:
     stem ++ ".h"
 
 // A valid, unique C include-guard derived from the header's basename.
-fn c_header_guard_for(h_path: str) -> str:
+fn c_header_guard_for(h_path: &str) -> str:
     var start = 0
     var i = 0
     while i < h_path.len() as i32:
@@ -580,7 +580,7 @@ fn c_header_guard_for(h_path: str) -> str:
     g.to_str()
 
 // Write `<artifact>.h` for the module's @[c_export] symbols, if any.
-fn emit_c_header_next_to(comp: &Compilation, artifact_path: str) -> Unit:
+fn emit_c_header_next_to(comp: &Compilation, artifact_path: &str) -> Unit:
     let h_path = c_header_path_for(artifact_path)
     // View: a bare read would MOVE the Sema out of the borrowed Compilation
     // and blank comp.zcu.last_sema (the root-15 class).
@@ -615,7 +615,7 @@ fn cli_synthetic_source_new -> CliSyntheticSource:
         source_texts: Vec.new(),
     }
 
-fn cli_synthetic_add_mapping(syn: CliSyntheticSource, start: i32, text: str, source_name: str) -> CliSyntheticSource:
+fn cli_synthetic_add_mapping(syn: CliSyntheticSource, start: i32, text: &str, source_name: &str) -> CliSyntheticSource:
     syn.gen_starts.push(start)
     syn.gen_ends.push(start + text.len() as i32 + 1)
     syn.source_names.push(source_name)
@@ -974,10 +974,10 @@ fn main -> Unit:
 
 // ── Command implementations ──────────────────────────────────────
 
-fn str_eq_text(a: str, b: str) -> bool:
+fn str_eq_text(a: &str, b: &str) -> bool:
     with_str_eq(a, b) != 0
 
-fn has_output_prefix(arg: str) -> bool:
+fn has_output_prefix(arg: &str) -> bool:
     if with_str_len(arg) < 9:
         return false
     with_str_starts_with(arg, "--output=") != 0
@@ -985,7 +985,7 @@ fn has_output_prefix(arg: str) -> bool:
 // Everything on the command line after the source `.w` is forwarded to the
 // program as its argv, so `with run tool.w a b` runs the program with a, b
 // (no separate build step needed). Returns "" when there are no trailing args.
-fn run_program_args(argc: i32, source: str) -> str:
+fn run_program_args(argc: i32, source: &str) -> str:
     if source == "":
         return ""
     // NUL-terminated argv blob (the format with_exec_argv expects).
@@ -1046,7 +1046,7 @@ fn find_target_selector_arg(argc: i32) -> str:
         i = i + 1
     ""
 
-fn cleanup_binary_artifacts(bin_path: str):
+fn cleanup_binary_artifacts(bin_path: &str):
     if bin_path.len() == 0:
         return
     let _bin = build_graph_rt_remove_file(bin_path)
@@ -1067,7 +1067,7 @@ fn reduce_source_arg(argc: i32) -> str:
         return with_arg_at(2)
     ""
 
-fn reduce_output_arg(argc: i32, source: str) -> str:
+fn reduce_output_arg(argc: i32, source: &str) -> str:
     let out = cli_value_or_prefix(argc, "--out", "--out=")
     if out.len() > 0:
         return out
@@ -1090,7 +1090,7 @@ fn reduce_exit_want(argc: i32) -> i32:
         return 0
     test_parse_i32(v)
 
-fn reduce_split_lines_keep_empty(text: str) -> Vec[str]:
+fn reduce_split_lines_keep_empty(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     var start = 0
     var i = 0
@@ -1115,7 +1115,7 @@ fn reduce_join_lines(lines: &Vec[str], skip_idx: i32) -> str:
         out = out ++ "\n"
     out
 
-fn reduce_make_argv(argc: i32, dashdash: i32, candidate: str) -> str:
+fn reduce_make_argv(argc: i32, dashdash: i32, candidate: &str) -> str:
     var argv = ""
     var used_placeholder = false
     if dashdash < 0 or dashdash + 1 >= argc:
@@ -1143,7 +1143,7 @@ fn reduce_exit_matches(mode: i32, want: i32, original_rc: i32, rc: i32) -> bool:
         return rc == want
     rc == original_rc
 
-fn reduce_candidate_matches(argc: i32, dashdash: i32, candidate_path: str, contains: str, exit_mode: i32, exit_want: i32, original_rc: i32, timeout_ms: i32) -> bool:
+fn reduce_candidate_matches(argc: i32, dashdash: i32, candidate_path: &str, contains: &str, exit_mode: i32, exit_want: i32, original_rc: i32, timeout_ms: i32) -> bool:
     let out_path = "out/reduce/stdout.txt"
     let err_path = "out/reduce/stderr.txt"
     let _rm_out = with_fs_remove_file(out_path)
@@ -1220,19 +1220,19 @@ fn fixpoint_default_left() -> str:
 fn fixpoint_default_right() -> str:
     "out/stage/bin/with-stage3-fixpoint.o"
 
-fn fixpoint_arg(argc: i32, index: i32, fallback: str) -> str:
+fn fixpoint_arg(argc: i32, index: i32, fallback: &str) -> str:
     if argc > index:
         let v = with_arg_at(index)
         if not v.starts_with("-"):
             return v
     fallback
 
-fn fixpoint_byte_at(text: str, idx: i32) -> i32:
+fn fixpoint_byte_at(text: &str, idx: i32) -> i32:
     if idx < 0 or idx >= text.len() as i32:
         return -1
     text.byte_at(idx as i64)
 
-fn fixpoint_diff_report(left_path: str, right_path: str) -> str:
+fn fixpoint_diff_report(left_path: &str, right_path: &str) -> str:
     let left = with_fs_read_file(left_path)
     let right = with_fs_read_file(right_path)
     if left.len() == 0:
@@ -1276,7 +1276,7 @@ fn run_fixpoint_diff_command(argc: i32) -> i32:
         return 1
     0
 
-fn test_unique_binary_path(source_file: str) -> str:
+fn test_unique_binary_path(source_file: &str) -> str:
     let base = link_stage_output_path_for_source(source_file)
     f"{base}.test.{with_getpid()}.{with_clock_nanos()}"
 
@@ -1302,7 +1302,7 @@ fn build_action_run_result(rc: i32) -> BuildActionRunResult:
 fn build_action_run_result_with_effects(rc: i32, effects: Vec[str]) -> BuildActionRunResult:
     BuildActionRunResult { rc: rc, effects: effects }
 
-fn build_action_safe_label(text: str) -> str:
+fn build_action_safe_label(text: &str) -> str:
     var out = ""
     for i in 0..text.len() as i32:
         let ch = text.byte_at(i as i64)
@@ -1315,7 +1315,7 @@ fn build_action_safe_label(text: str) -> str:
         return "unknown"
     out
 
-fn build_action_scratch_dir(target_name: str) -> str:
+fn build_action_scratch_dir(target_name: &str) -> str:
     "out/tmp/action-scratch/" ++ build_action_safe_label(target_name)
 
 fn build_action_worker_env_enabled() -> bool:
@@ -1373,7 +1373,7 @@ fn run_build_action_worker_process(target: &BuildGraphTarget, options: &BuildCom
     let _restore_force = with_setenv_str("WITH_BUILD_ACTION_FORCE", old_force)
     rc
 
-fn build_pool_parse_jobs(value: str) -> i32:
+fn build_pool_parse_jobs(value: &str) -> i32:
     var out = 0
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -1396,7 +1396,7 @@ fn build_pool_width() -> i32:
 // Spawn an allow_parallel action target's worker without blocking; the env
 // dance mirrors run_build_test_worker_process (single-threaded driver, so
 // set-then-spawn-then-restore is race-free). Returns the child pid.
-fn build_pool_spawn(target: &BuildGraphTarget, options: &BuildCommandOptions, stdout_path: str, stderr_path: str) -> i32:
+fn build_pool_spawn(target: &BuildGraphTarget, options: &BuildCommandOptions, stdout_path: &str, stderr_path: &str) -> i32:
     let old_worker = with_getenv_str("WITH_BUILD_ACTION_WORKER")
     let old_force = with_getenv_str("WITH_BUILD_ACTION_FORCE")
     let _set_worker = with_setenv_str("WITH_BUILD_ACTION_WORKER", target.name)
@@ -1440,7 +1440,7 @@ fn build_pool_retire_oldest(pool_names: &Vec[str], pool_pids: &Vec[i32], pool_t0
 // targets still spawn (build_pool_spawn) because processes are what buy
 // their parallelism; this fn is also the pooled worker child's own
 // execution path (worker env set).
-unsafe fn run_build_action_from_build_w(root: str, cfg: &ProjectConfig, target: &BuildGraphTarget, sema_ptr: *mut Sema, options: &BuildCommandOptions) -> BuildActionRunResult:
+unsafe fn run_build_action_from_build_w(root: &str, cfg: &ProjectConfig, target: &BuildGraphTarget, sema_ptr: *mut Sema, options: &BuildCommandOptions) -> BuildActionRunResult:
     build_action_clear_worker_env_for_children()
     if target.output.len() == 0:
         with_eprint("error: action target '" ++ target.name ++ "' requires a declared output")
@@ -1495,7 +1495,7 @@ unsafe fn run_build_action_from_build_w(root: str, cfg: &ProjectConfig, target: 
             return build_action_run_result_with_effects(1, move result.effect_records)
     build_action_run_result_with_effects(0, move result.effect_records)
 
-fn load_build_graph_from_build_w(root: str, cfg: &ProjectConfig, options: &BuildCommandOptions) -> BuildGraphLoadResult:
+fn load_build_graph_from_build_w(root: &str, cfg: &ProjectConfig, options: &BuildCommandOptions) -> BuildGraphLoadResult:
     // D19/#702: the evaluated graph is pure data; when the build sources,
     // runner, with.toml, and graph-shaping options are unchanged, load the
     // serialized graph (~0.2s) instead of re-evaluating build.w (~5s per
@@ -1540,7 +1540,7 @@ fn load_build_graph_from_build_w(root: str, cfg: &ProjectConfig, options: &Build
     build_cache_graph_write(root, graph_cache_key, &materialized.graph)
     BuildGraphLoadResult { graph: materialized.graph, sema: materialized.sema }
 
-fn build_graph_find_build_root(start_dir: str) -> str:
+fn build_graph_find_build_root(start_dir: &str) -> str:
     var cur = if start_dir.len() > 0: start_dir else: "."
     while true:
         let manifest = resolve_join(cur, "with.toml")
@@ -1553,10 +1553,10 @@ fn build_graph_find_build_root(start_dir: str) -> str:
         cur = parent
     ""
 
-fn build_graph_restore_env(name: str, old_value: str) -> i32:
+fn build_graph_restore_env(name: &str, old_value: &str) -> i32:
     with_setenv_str(name, old_value)
 
-fn build_graph_trim_trailing_line_endings(text: str) -> str:
+fn build_graph_trim_trailing_line_endings(text: &str) -> str:
     var end = text.len() as i32
     while end > 0:
         let ch = text.byte_at((end - 1) as i64)
@@ -1565,7 +1565,7 @@ fn build_graph_trim_trailing_line_endings(text: str) -> str:
         end = end - 1
     text.slice(0, end as i64)
 
-fn build_graph_find_substr(text: str, needle: str) -> i32:
+fn build_graph_find_substr(text: &str, needle: &str) -> i32:
     if needle.len() == 0:
         return 0
     if text.len() < needle.len():
@@ -1581,13 +1581,13 @@ fn build_graph_find_substr(text: str, needle: str) -> i32:
             return i
     -1
 
-fn build_graph_replace_once(text: str, needle: str, replacement: str) -> str:
+fn build_graph_replace_once(text: &str, needle: &str, replacement: &str) -> str:
     let at = build_graph_find_substr(text, needle)
     if at < 0:
         return ""
     text.slice(0, at as i64) ++ replacement ++ text.slice((at + needle.len() as i32) as i64, text.len())
 
-fn build_graph_run_tool_capture(root: str, target: &BuildGraphTarget, tool_name: str, argv: str, timeout_ms: i32) -> i32:
+fn build_graph_run_tool_capture(root: &str, target: &BuildGraphTarget, tool_name: &str, argv: &str, timeout_ms: i32) -> i32:
     let capture_dir = resolve_join(resolve_join(root, "out/test-graph"), target.name)
     if with_fs_mkdir_p(capture_dir) != 0:
         with_eprint("error: could not create tool capture directory for target '" ++ target.name ++ "': " ++ capture_dir)
@@ -1606,7 +1606,7 @@ fn build_graph_run_tool_capture(root: str, target: &BuildGraphTarget, tool_name:
     let _remove_stderr = with_fs_remove_file(stderr_path)
     0
 
-fn build_graph_run_cli_capture(root: str, target: &BuildGraphTarget, compiler_path: str, label: str, argv_tail: str, timeout_ms: i32) -> TestRunResult:
+fn build_graph_run_cli_capture(root: &str, target: &BuildGraphTarget, compiler_path: &str, label: &str, argv_tail: &str, timeout_ms: i32) -> TestRunResult:
     let capture_dir = resolve_join(resolve_join(root, "out/test-graph"), target.name)
     let _mkdir = with_fs_mkdir_p(capture_dir)
     let stamp = f"{with_getpid()}.{with_clock_nanos()}"
@@ -1624,7 +1624,7 @@ fn build_graph_run_cli_capture(root: str, target: &BuildGraphTarget, compiler_pa
         let _remove_stderr = with_fs_remove_file(stderr_path)
     TestRunResult { rc, stdout, stderr }
 
-fn build_graph_trim_space_and_newlines(text: str) -> str:
+fn build_graph_trim_space_and_newlines(text: &str) -> str:
     var start = 0
     var end = text.len() as i32
     while start < end:
@@ -1639,7 +1639,7 @@ fn build_graph_trim_space_and_newlines(text: str) -> str:
         end = end - 1
     text.slice(start as i64, end as i64)
 
-fn build_options_for_graph_target(root: str, base: &BuildCommandOptions, target: &BuildGraphTarget) -> BuildCommandOptions:
+fn build_options_for_graph_target(root: &str, base: &BuildCommandOptions, target: &BuildGraphTarget) -> BuildCommandOptions:
     var options = build_command_options_clone(base)
     if target.optimize_mode == 1 and options.opt_level < 2:
         options.opt_level = 2
@@ -1655,7 +1655,7 @@ fn build_options_for_graph_target(root: str, base: &BuildCommandOptions, target:
         options.output_kind = BuildOutputKind.Binary
     options
 
-unsafe fn run_build_graph(root: str, cfg: &ProjectConfig, graph: &BuildGraph, action_sema: *mut Sema, options: &BuildCommandOptions, survey: bool) -> i32:
+unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, action_sema: *mut Sema, options: &BuildCommandOptions, survey: bool) -> i32:
     let no_strings: Vec[str] = Vec.new()
     if graph.targets.len() == 0:
         with_eprint("error: build.w did not declare any targets")
@@ -2036,7 +2036,7 @@ fn explain_kind_name(kind: i32) -> str:
     if kind == 23: return "Action"
     f"Unknown({kind})"
 
-fn explain_build_target(root: str, graph: &BuildGraph, name: str) -> i32:
+fn explain_build_target(root: &str, graph: &BuildGraph, name: &str) -> i32:
     var found = false
     for i in 0..graph.targets.len() as i32:
         let target = &graph.targets[i as i64]
@@ -2085,7 +2085,7 @@ fn explain_build_target(root: str, graph: &BuildGraph, name: str) -> i32:
         return 1
     0
 
-fn run_graph_target_command(target_name: str) -> i32:
+fn run_graph_target_command(target_name: &str) -> i32:
     let build_options = build_command_options_default()
     var graph_options = build_graph_command_options_default()
     graph_options.selected_target = target_name
@@ -2094,7 +2094,7 @@ fn run_graph_target_command(target_name: str) -> i32:
 // Returns the INDEX, not a copy: returning the element bit-copied its
 // inputs/outputs/args vectors out of the caller's graph, and the copy's drop
 // freed buffers the graph still owned (#715 class). Callers borrow the element.
-fn build_graph_find_target_index_by_name(graph: &BuildGraph, target_name: str) -> i32:
+fn build_graph_find_target_index_by_name(graph: &BuildGraph, target_name: &str) -> i32:
     for i in 0..graph.targets.len() as i32:
         if (&graph.targets[i as i64]).name == target_name:
             return i
@@ -2108,7 +2108,7 @@ fn repo_lock_path() -> str:
 fn repo_lock_owner_path() -> str:
     repo_lock_path() ++ "/owner"
 
-fn repo_lock_parse_pid(owner: str) -> i32:
+fn repo_lock_parse_pid(owner: &str) -> i32:
     var start = -1
     for i in 0..(owner.len() as i32 - 4):
         if owner.slice(i as i64, (i + 4) as i64) == "pid=":
@@ -2129,7 +2129,7 @@ fn repo_lock_parse_pid(owner: str) -> i32:
         pid = pid * 10 + (owner.byte_at(i as i64) - 48)
     pid
 
-fn repo_lock_acquire(target_name: str) -> bool:
+fn repo_lock_acquire(target_name: &str) -> bool:
     if with_getenv_str("WITH_REPO_LOCKED").len() > 0:
         return true
     let lock_dir = repo_lock_path()
@@ -2190,7 +2190,7 @@ fn build_command_validate_target(options: &BuildCommandOptions, cfg: &ProjectCon
 // Always-on wall-clock report: every top-level `with build <target>` prints how
 // long it took, unconditionally (worker re-entries — WITH_BUILD_*_WORKER — stay
 // silent). The build measures itself; no external `time` wrapper is ever needed.
-fn build_report_wall(target_name: str, t0: i64):
+fn build_report_wall(target_name: &str, t0: i64):
     if with_getenv_str("WITH_BUILD_ACTION_WORKER").len() > 0 or with_getenv_str("WITH_BUILD_TEST_WORKER").len() > 0:
         return
     let label = if target_name.len() > 0: ":" ++ target_name else: "(default)"
@@ -2200,7 +2200,7 @@ fn build_report_wall(target_name: str, t0: i64):
 // battery reduce to: verify out/release/bin/with is the exact binary
 // last-green blessed, copy it, set 0755. Same guarantee require-last-green
 // enforces, none of the graph machinery.
-fn cli_fast_install_blessed(root: str, target_name: str) -> i32:
+fn cli_fast_install_blessed(root: &str, target_name: &str) -> i32:
     let compiler_path = resolve_join(root, "out/release/bin/with")
     if with_fs_file_exists(compiler_path) == 0:
         with_eprint("error: missing " ++ compiler_path ++ "; run `with build` first")
@@ -2338,7 +2338,7 @@ fn run_build_command(options: BuildCommandOptions, graph_options: &BuildGraphCom
     link_stage_cleanup_current_process_temp_archives()
     0
 
-fn run_run_project_command(selected_target_hint: str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool) -> i32:
+fn run_run_project_command(selected_target_hint: &str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool) -> i32:
     let root = build_graph_find_build_root(".")
     if root.len() == 0:
         with_eprint("error: 'run' requires a source file argument, build.w, or a with.toml project")
@@ -2396,7 +2396,7 @@ fn run_run_project_command(selected_target_hint: str, opt_level: i32, no_std: bo
         return 1
     build_graph_rt_exec_binary(bin_path)
 
-fn run_run_command(source_file: str, selected_target_hint: str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, prog_args: str) -> i32:
+fn run_run_command(source_file: &str, selected_target_hint: &str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, prog_args: &str) -> i32:
     if source_file == "":
         return run_run_project_command(selected_target_hint, opt_level, no_std, alloc_mode, runtime_available, prelude_mode, debug_info)
     var comp = Compilation.init()
@@ -2416,7 +2416,7 @@ fn run_run_command(source_file: str, selected_target_hint: str, opt_level: i32, 
     cleanup_binary_artifacts(bin_path)
     run_rc
 
-fn dump_ast(source_file: str, no_std: bool, alloc_mode: bool, include_header: bool) -> i32:
+fn dump_ast(source_file: &str, no_std: bool, alloc_mode: bool, include_header: bool) -> i32:
     let text = with_fs_read_file(source_file)
     if text.len() == 0:
         with_eprint("error: cannot read '{source_file}'")
@@ -2470,7 +2470,7 @@ fn ast_decl_kind_name(kind: i32) -> str:
     if kind == NodeKind.NK_POISONED_DECL: return "poisoned"
     "unknown"
 
-fn dump_tokens(source_file: str, deterministic: bool) -> i32:
+fn dump_tokens(source_file: &str, deterministic: bool) -> i32:
     let text = with_fs_read_file(source_file)
     if text.len() == 0:
         with_eprint("error: cannot read '{source_file}'")
@@ -2499,7 +2499,7 @@ fn dump_tokens(source_file: str, deterministic: bool) -> i32:
         with_write(tag_text ++ " |" ++ text_slice ++ "|\n")
     0
 
-fn dump_resolved_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn dump_resolved_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2512,7 +2512,7 @@ fn dump_resolved_artifact(source_file: str, no_std: bool, alloc_mode: bool, runt
     with_write(resolved_text)
     0
 
-fn dump_typed_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn dump_typed_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2522,7 +2522,7 @@ fn dump_typed_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime
         return 1
     0
 
-fn dump_project_info_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn dump_project_info_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2533,7 +2533,7 @@ fn dump_project_info_artifact(source_file: str, no_std: bool, alloc_mode: bool, 
     with_write(text)
     0
 
-fn dump_mir_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn dump_mir_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2543,7 +2543,7 @@ fn dump_mir_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_a
         return 1
     0
 
-fn dump_drop_state_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn dump_drop_state_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2554,7 +2554,7 @@ fn dump_drop_state_artifact(source_file: str, no_std: bool, alloc_mode: bool, ru
     with_write(text)
     0
 
-fn trace_place_artifact(source_file: str, spec: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn trace_place_artifact(source_file: &str, spec: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2565,7 +2565,7 @@ fn trace_place_artifact(source_file: str, spec: str, no_std: bool, alloc_mode: b
     with_write(text)
     0
 
-fn explain_mir_origin_artifact(source_file: str, spec: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn explain_mir_origin_artifact(source_file: &str, spec: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2576,7 +2576,7 @@ fn explain_mir_origin_artifact(source_file: str, spec: str, no_std: bool, alloc_
     with_write(text)
     0
 
-fn trace_ownership_artifact(source_file: str, spec: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn trace_ownership_artifact(source_file: &str, spec: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2587,7 +2587,7 @@ fn trace_ownership_artifact(source_file: str, spec: str, no_std: bool, alloc_mod
     with_write(text)
     0
 
-fn dump_drop_plan_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn dump_drop_plan_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2598,7 +2598,7 @@ fn dump_drop_plan_artifact(source_file: str, no_std: bool, alloc_mode: bool, run
     with_write(text)
     0
 
-fn dump_abi_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn dump_abi_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2609,7 +2609,7 @@ fn dump_abi_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_a
     with_write(text)
     0
 
-fn validate_ownership_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn validate_ownership_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2620,7 +2620,7 @@ fn validate_ownership_artifact(source_file: str, no_std: bool, alloc_mode: bool,
     with_write("validate-ownership: ok\n")
     0
 
-fn dump_place_map_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn dump_place_map_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2631,7 +2631,7 @@ fn dump_place_map_artifact(source_file: str, no_std: bool, alloc_mode: bool, run
     with_write(text)
     0
 
-fn trace_cleanup_edge_artifact(source_file: str, spec: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn trace_cleanup_edge_artifact(source_file: &str, spec: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2642,7 +2642,7 @@ fn trace_cleanup_edge_artifact(source_file: str, spec: str, no_std: bool, alloc_
     with_write(text)
     0
 
-fn validate_all_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn validate_all_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2653,7 +2653,7 @@ fn validate_all_artifact(source_file: str, no_std: bool, alloc_mode: bool, runti
     with_write("validate-all: ok\n")
     0
 
-fn dump_async_mir_artifact(source_file: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn dump_async_mir_artifact(source_file: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     var comp = Compilation.init()
     comp.configure(0, no_std, alloc_mode, runtime_available)
     comp.set_prelude_mode(prelude_mode)
@@ -2664,7 +2664,7 @@ fn dump_async_mir_artifact(source_file: str, no_std: bool, alloc_mode: bool, run
     with_write(async_mir_text)
     0
 
-fn escape_dump_lexeme(text: str) -> str:
+fn escape_dump_lexeme(text: &str) -> str:
     var out = StringBuilder.with_capacity(text.len())
     var run_start = 0
     for i in 0..text.len():
@@ -2692,7 +2692,7 @@ fn escape_dump_lexeme(text: str) -> str:
         out.push_str(text.slice(run_start as i64, text.len()))
     out.to_str()
 
-fn dump_tag_name(tag: i32, lexeme: str) -> str:
+fn dump_tag_name(tag: i32, lexeme: &str) -> str:
     // Keep deterministic dump names identical to Stage0 for brace delimiters.
     if tag == TokenKind.TK_L_BRACE:
         return "'" ++ lexeme ++ "'"
@@ -2700,7 +2700,7 @@ fn dump_tag_name(tag: i32, lexeme: str) -> str:
         return "'" ++ lexeme ++ "'"
     return tag_name(tag)
 
-fn discover_test_functions(text: str) -> TestDiscovery:
+fn discover_test_functions(text: &str) -> TestDiscovery:
     var lexer = Lexer.init(text, 0)
     let tokens = lexer.tokenize()
     var intern = InternPool.init()
@@ -2731,7 +2731,7 @@ fn discover_test_functions(text: str) -> TestDiscovery:
                 test_names.push(fn_name)
     TestDiscovery { parse_ok: true, has_main, test_names }
 
-fn discover_bench_functions(text: str) -> BenchDiscovery:
+fn discover_bench_functions(text: &str) -> BenchDiscovery:
     var lexer = Lexer.init(text, 0)
     let tokens = lexer.tokenize()
     var intern = InternPool.init()
@@ -2761,7 +2761,7 @@ fn discover_bench_functions(text: str) -> BenchDiscovery:
                 bench_names.push(fn_name)
     BenchDiscovery { parse_ok: true, has_main, bench_names }
 
-fn synthesize_bench_main_source(text: str, bench_names: &Vec[str]) -> str:
+fn synthesize_bench_main_source(text: &str, bench_names: &Vec[str]) -> str:
     var out = StringBuilder.with_capacity(text.len())
     out.push_str(text)
     if text.len() > 0 and with_str_byte_at(text, with_str_len(text) - 1) != 10:
@@ -2784,7 +2784,7 @@ fn synthesize_bench_main_source(text: str, bench_names: &Vec[str]) -> str:
         out.push_str("\")\n")
     out.to_str()
 
-fn synthesize_test_main_source(text: str, test_names: &Vec[str]) -> str:
+fn synthesize_test_main_source(text: &str, test_names: &Vec[str]) -> str:
     var out = StringBuilder.with_capacity(text.len())
     out.push_str(text)
     if text.len() > 0 and with_str_byte_at(text, with_str_len(text) - 1) != 10:
@@ -2816,7 +2816,7 @@ fn synthesize_test_main_source(text: str, test_names: &Vec[str]) -> str:
         out.push_str("()\n")
     out.to_str()
 
-fn discover_tests_for_target(target: str) -> TestDiscovery:
+fn discover_tests_for_target(target: &str) -> TestDiscovery:
     if not target.ends_with(".w"):
         return empty_test_discovery()
     let text = with_fs_read_file(target)
@@ -2824,7 +2824,7 @@ fn discover_tests_for_target(target: str) -> TestDiscovery:
         return empty_test_discovery()
     discover_test_functions(text)
 
-fn maybe_synthesize_test_source(target: str) -> str:
+fn maybe_synthesize_test_source(target: &str) -> str:
     let discovery = discover_tests_for_target(target)
     if not discovery.parse_ok:
         return ""
@@ -2835,7 +2835,7 @@ fn maybe_synthesize_test_source(target: str) -> str:
         return ""
     synthesize_test_main_source(text, discovery.test_names)
 
-fn test_parse_i32(text: str) -> i32:
+fn test_parse_i32(text: &str) -> i32:
     var sign = 1
     var i = 0
     if text.len() > 0 and text.byte_at(0) == 45:
@@ -2850,7 +2850,7 @@ fn test_parse_i32(text: str) -> i32:
         i = i + 1
     value * sign
 
-fn parse_test_directives_for_target(target: str) -> TestDirectives:
+fn parse_test_directives_for_target(target: &str) -> TestDirectives:
     var result = empty_test_directives()
     let text = with_fs_read_file(target)
     if text.len() == 0:
@@ -2926,7 +2926,7 @@ fn parse_test_directives_for_target(target: str) -> TestDirectives:
 fn test_directives_have_run_expectations(directives: &TestDirectives) -> bool:
     directives.has_expect_exit or directives.expect_stdout.len() > 0 or directives.expect_stderr.len() > 0
 
-fn test_append_extra_args(argv: str, extra_args: str) -> str:
+fn test_append_extra_args(argv: &str, extra_args: &str) -> str:
     var out = argv
     var start = 0
     var i = 0
@@ -2940,12 +2940,12 @@ fn test_append_extra_args(argv: str, extra_args: str) -> str:
         i = i + 1
     out
 
-fn test_capture_dir(target: str, suffix: str) -> str:
+fn test_capture_dir(target: &str, suffix: &str) -> str:
     let base = build_graph_path_basename(target)
     let stem = if base.ends_with(".w"): base.slice(0, base.len() - 2) else: base
     "out/test-native/" ++ stem ++ "." ++ suffix ++ "." ++ f"{with_getpid()}.{with_clock_nanos()}"
 
-fn run_test_compiler_command(target: str, command_name: str, directives: &TestDirectives) -> TestRunResult:
+fn run_test_compiler_command(target: &str, command_name: &str, directives: &TestDirectives) -> TestRunResult:
     let capture_dir = test_capture_dir(target, command_name)
     let _mkdir = with_fs_mkdir_p(capture_dir)
     let stdout_path = capture_dir ++ "/stdout.txt"
@@ -2970,10 +2970,10 @@ fn run_test_compiler_command(target: str, command_name: str, directives: &TestDi
     let _remove_dir = with_fs_remove_dir(capture_dir)
     TestRunResult { rc, stdout, stderr }
 
-fn test_output_contains_expected(actual: str, expected: str) -> bool:
+fn test_output_contains_expected(actual: &str, expected: &str) -> bool:
     expected.len() == 0 or with_str_contains(actual, expected) != 0
 
-fn run_test_directive_command(target: str, directives: &TestDirectives, quiet: bool) -> i32:
+fn run_test_directive_command(target: &str, directives: &TestDirectives, quiet: bool) -> i32:
     if directives.skip:
         if directives.skip_reason.len() == 0:
             emit_test_stage_error("skip missing reason", target, "directives", "")
@@ -3022,7 +3022,7 @@ fn run_test_directive_command(target: str, directives: &TestDirectives, quiet: b
     let _ = quiet
     -1
 
-fn test_extra_arg_present(args: str, wanted: str) -> bool:
+fn test_extra_arg_present(args: &str, wanted: &str) -> bool:
     var start = 0
     var i = 0
     while i <= args.len() as i32:
@@ -3035,14 +3035,14 @@ fn test_extra_arg_present(args: str, wanted: str) -> bool:
         i = i + 1
     false
 
-fn test_effective_opt_level(default_opt: i32, args: str) -> i32:
+fn test_effective_opt_level(default_opt: i32, args: &str) -> i32:
     if test_extra_arg_present(args, "-O0"): return 0
     if test_extra_arg_present(args, "-O1"): return 1
     if test_extra_arg_present(args, "-O2"): return 2
     if test_extra_arg_present(args, "-O3"): return 3
     default_opt
 
-fn test_effective_prelude_mode(default_mode: i32, args: str) -> i32:
+fn test_effective_prelude_mode(default_mode: i32, args: &str) -> i32:
     if test_extra_arg_present(args, "--no-prelude") or test_extra_arg_present(args, "--prelude=none"):
         return PreludeMode.NoneMode as i32
     if test_extra_arg_present(args, "--prelude=core"):
@@ -3051,7 +3051,7 @@ fn test_effective_prelude_mode(default_mode: i32, args: str) -> i32:
         return PreludeMode.FullMode as i32
     default_mode
 
-fn split_nonempty_lines(text: str) -> Vec[str]:
+fn split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     let text_len = text.len() as i32
     var start = 0
@@ -3070,7 +3070,7 @@ fn split_nonempty_lines(text: str) -> Vec[str]:
         i = i + 1
     lines
 
-fn test_target_is_directory(target: str) -> bool:
+fn test_target_is_directory(target: &str) -> bool:
     with_fs_is_dir(target) != 0
 
 fn test_count_label(count: i32) -> str:
@@ -3078,14 +3078,14 @@ fn test_count_label(count: i32) -> str:
         return "test"
     "tests"
 
-fn emit_test_stage_error(message: str, target: str, stage: str, test_name: str):
+fn emit_test_stage_error(message: &str, target: &str, stage: &str, test_name: &str):
     with_eprint("error: " ++ message)
     with_eprint(" = file: " ++ target)
     with_eprint(" = stage: " ++ stage)
     if test_name.len() > 0:
         with_eprint(" = test: " ++ test_name)
 
-fn print_test_summary(target: str, passed: i32, failed: i32, quiet: bool):
+fn print_test_summary(target: &str, passed: i32, failed: i32, quiet: bool):
     if quiet:
         return
     if failed == 0:
@@ -3093,12 +3093,12 @@ fn print_test_summary(target: str, passed: i32, failed: i32, quiet: bool):
         return
     with_eprint(f"error: {failed} of {passed + failed} tests failed in {target}")
 
-fn test_capture_suffix(test_name: str) -> str:
+fn test_capture_suffix(test_name: &str) -> str:
     if test_name.len() > 0:
         return "." ++ test_name
     ".run"
 
-fn run_test_process(bin_path: str, test_name: str, quiet: bool) -> TestRunResult:
+fn run_test_process(bin_path: &str, test_name: &str, quiet: bool) -> TestRunResult:
     let suffix = test_capture_suffix(test_name)
     let out_path = bin_path ++ suffix ++ ".stdout"
     let err_path = bin_path ++ suffix ++ ".stderr"
@@ -3128,7 +3128,7 @@ fn run_test_process(bin_path: str, test_name: str, quiet: bool) -> TestRunResult
             with_ewrite(stderr)
     TestRunResult { rc, stdout, stderr }
 
-fn test_validate_output(stream_name: str, actual: str, expected_values: &Vec[str], target: str, test_name: str) -> bool:
+fn test_validate_output(stream_name: &str, actual: &str, expected_values: &Vec[str], target: &str, test_name: &str) -> bool:
     for ei in 0..expected_values.len() as i32:
         let expected = expected_values.get(ei as i64)
         if with_str_contains(actual, expected) == 0:
@@ -3136,7 +3136,7 @@ fn test_validate_output(stream_name: str, actual: str, expected_values: &Vec[str
             return false
     true
 
-fn validate_test_run(result: &TestRunResult, directives: &TestDirectives, target: str, test_name: str) -> bool:
+fn validate_test_run(result: &TestRunResult, directives: &TestDirectives, target: &str, test_name: &str) -> bool:
     if directives.has_expect_exit:
         if result.rc != directives.expect_exit:
             emit_test_stage_error(f"exit code {result.rc}, expected {directives.expect_exit}", target, "run", test_name)
@@ -3150,7 +3150,7 @@ fn validate_test_run(result: &TestRunResult, directives: &TestDirectives, target
         return false
     true
 
-fn run_test_binary_checked(bin_path: str, target: str, test_name: str, quiet: bool, directives: &TestDirectives) -> i32:
+fn run_test_binary_checked(bin_path: &str, target: &str, test_name: &str, quiet: bool, directives: &TestDirectives) -> i32:
     let result = run_test_process(bin_path, test_name, quiet)
     if validate_test_run(result, directives, target, test_name):
         return 0
@@ -3160,7 +3160,7 @@ fn run_test_binary_checked(bin_path: str, target: str, test_name: str, quiet: bo
 // known-bug model): the fixture documents an open bug and MUST stay red.
 // Both directions are enforced — a red is tolerated (loudly), and a green
 // fails the file until the directive is removed with the issue's fix.
-fn run_test_file_with_build_settings(target: str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> i32:
+fn run_test_file_with_build_settings(target: &str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> i32:
     let known_issue = parse_test_directives_for_target(target).known_issue
     if known_issue.len() == 0:
         return run_test_file_with_build_settings_inner(target, opt_level, no_std, alloc_mode, runtime_available, prelude_mode, debug_info, verbose, quiet, filter, include_paths, defines, link_libs)
@@ -3171,7 +3171,7 @@ fn run_test_file_with_build_settings(target: str, opt_level: i32, no_std: bool, 
     with_eprint("[known-issue " ++ known_issue ++ "] " ++ target ++ " red as expected")
     0
 
-fn run_test_file_with_build_settings_inner(target: str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> i32:
+fn run_test_file_with_build_settings_inner(target: &str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> i32:
     let directives = parse_test_directives_for_target(target)
     let directive_rc = run_test_directive_command(target, directives, quiet)
     if directive_rc >= 0:
@@ -3250,13 +3250,13 @@ fn run_test_file_with_build_settings_inner(target: str, opt_level: i32, no_std: 
     print_test_summary(target, 0, 1, run_quiet)
     run_rc
 
-fn run_test_file(target: str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: str) -> i32:
+fn run_test_file(target: &str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: &str) -> i32:
     let include_paths: Vec[str] = Vec.new()
     let defines: Vec[str] = Vec.new()
     let link_libs: Vec[str] = Vec.new()
     run_test_file_with_build_settings(target, opt_level, no_std, alloc_mode, runtime_available, prelude_mode, debug_info, verbose, quiet, filter, include_paths, defines, link_libs)
 
-fn test_command_option_takes_value(arg: str) -> bool:
+fn test_command_option_takes_value(arg: &str) -> bool:
     arg == "-o" or arg == "--output" or arg == "-f" or arg == "--filter"
 
 fn test_command_collect_targets(argc: i32) -> Vec[str]:
@@ -3275,7 +3275,7 @@ fn test_command_collect_targets(argc: i32) -> Vec[str]:
         i = i + 1
     targets
 
-fn run_test_target(target: str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: str) -> i32:
+fn run_test_target(target: &str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: &str) -> i32:
     if test_target_is_directory(target):
         let test_files = collect_test_files(target)
         if test_files.len() == 0:
@@ -3315,7 +3315,7 @@ fn run_test_command(argc: i32, opt_level: i32, no_std: bool, alloc_mode: bool, r
             return rc
     0
 
-fn run_bench_file(target: str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, filter: str) -> i32:
+fn run_bench_file(target: &str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, filter: &str) -> i32:
     let text = with_fs_read_file(target)
     if text.len() == 0:
         with_eprint("error: could not read '" ++ target ++ "'")
@@ -3378,7 +3378,7 @@ fn run_bench_command(argc: i32, opt_level: i32, no_std: bool, alloc_mode: bool, 
 // carries its imports explicitly. Loops the live gate diagnostics to a
 // fixpoint; anything still gated after that is a loud failure, and non-gate
 // diagnostics stay with the downstream compile that owns them.
-fn migrate_header_insert_offset(text: str) -> i64:
+fn migrate_header_insert_offset(text: &str) -> i64:
     var last_use_end = -1 as i64
     var line_start = 0 as i64
     let n = text.len()
@@ -3394,7 +3394,7 @@ fn migrate_header_insert_offset(text: str) -> i64:
         line_start = line_end + 1
     if last_use_end >= 0: last_use_end else: line_start
 
-fn migrate_apply_std_use_fixits(output_path: str) -> i32:
+fn migrate_apply_std_use_fixits(output_path: &str) -> i32:
     var pass = 0
     while pass < 3:
         let result = compiler_analyze_file(output_path, "select:kind=diagnostic")
@@ -3551,7 +3551,7 @@ fn cli_read_all_stdin() -> str:
             return out.to_str()
     out.to_str()
 
-fn doc_field(line: str, key: str) -> str:
+fn doc_field(line: &str, key: &str) -> str:
     let needle = key ++ "="
     var i = 0
     while i + needle.len() as i32 <= line.len() as i32:
@@ -3565,7 +3565,7 @@ fn doc_field(line: str, key: str) -> str:
         i = i + 1
     ""
 
-fn doc_parse_span_start(span: str) -> i32:
+fn doc_parse_span_start(span: &str) -> i32:
     var value = 0
     var i = 0
     while i < span.len() as i32:
@@ -3576,7 +3576,7 @@ fn doc_parse_span_start(span: str) -> i32:
         i = i + 1
     value
 
-fn doc_path_matches(recorded: str, requested: str) -> bool:
+fn doc_path_matches(recorded: &str, requested: &str) -> bool:
     if recorded == requested:
         return true
     if requested.ends_with("/" ++ recorded):
@@ -3585,7 +3585,7 @@ fn doc_path_matches(recorded: str, requested: str) -> bool:
         return true
     false
 
-fn doc_path_is_project_source(path: str, root: str, requested: str) -> bool:
+fn doc_path_is_project_source(path: &str, root: &str, requested: &str) -> bool:
     if path.starts_with("<"):
         return false
     if doc_path_matches(path, requested):
@@ -3600,7 +3600,7 @@ fn doc_path_is_project_source(path: str, root: str, requested: str) -> bool:
     let prefix = if root.ends_with("/"): root else: root ++ "/"
     path.starts_with(prefix)
 
-fn doc_source_line_at(text: str, offset: i32) -> str:
+fn doc_source_line_at(text: &str, offset: i32) -> str:
     var start = offset
     if start < 0:
         start = 0
@@ -3615,7 +3615,7 @@ fn doc_source_line_at(text: str, offset: i32) -> str:
         end = end + 1
     text.slice(start as i64, end as i64).trim()
 
-fn doc_extract_comment(text: str, decl_start: i32) -> str:
+fn doc_extract_comment(text: &str, decl_start: i32) -> str:
     var pos = decl_start - 1
     while pos >= 0 and (text.byte_at(pos as i64) == 32 or text.byte_at(pos as i64) == 9 or text.byte_at(pos as i64) == 13 or text.byte_at(pos as i64) == 10):
         pos = pos - 1
@@ -3640,7 +3640,7 @@ fn doc_extract_comment(text: str, decl_start: i32) -> str:
         i = i - 1
     out
 
-fn doc_markdown_entry(kind: str, path: str, name: str, detail: str, source_text: str, span_start: i32) -> str:
+fn doc_markdown_entry(kind: &str, path: &str, name: &str, detail: &str, source_text: &str, span_start: i32) -> str:
     var out = "### " ++ name ++ "\n\n"
     out = out ++ "Module: `" ++ path ++ "`\n\n"
     let docs = doc_extract_comment(source_text, span_start)
@@ -3656,7 +3656,7 @@ fn doc_markdown_entry(kind: str, path: str, name: str, detail: str, source_text:
     let _ = kind
     out
 
-fn doc_project_root(info: str) -> str:
+fn doc_project_root(info: &str) -> str:
     let lines = split_nonempty_lines(info)
     for i in 0..lines.len() as i32:
         let line = lines.get(i as i64)
@@ -3664,7 +3664,7 @@ fn doc_project_root(info: str) -> str:
             return doc_field(line, "root")
     ""
 
-fn doc_collect_modules(info: str, root: str, source_path: str) -> str:
+fn doc_collect_modules(info: &str, root: &str, source_path: &str) -> str:
     let lines = split_nonempty_lines(info)
     var out = ""
     for i in 0..lines.len() as i32:
@@ -3677,13 +3677,13 @@ fn doc_collect_modules(info: str, root: str, source_path: str) -> str:
         out = out ++ "- `" ++ path ++ "`\n"
     out
 
-fn doc_path_seen(paths: &Vec[str], path: str) -> bool:
+fn doc_path_seen(paths: &Vec[str], path: &str) -> bool:
     for i in 0..paths.len() as i32:
         if paths.get(i as i64) == path:
             return true
     false
 
-fn doc_module_paths(info: str, root: str, source_path: str) -> Vec[str]:
+fn doc_module_paths(info: &str, root: &str, source_path: &str) -> Vec[str]:
     let paths: Vec[str] = Vec.new()
     let lines = split_nonempty_lines(info)
     for i in 0..lines.len() as i32:
@@ -3699,7 +3699,7 @@ fn doc_module_paths(info: str, root: str, source_path: str) -> Vec[str]:
         paths.push(source_path)
     paths
 
-fn doc_collect_entries(info: str, root: str, source_path: str, fallback_source_text: str, wanted_kind: str) -> str:
+fn doc_collect_entries(info: &str, root: &str, source_path: &str, fallback_source_text: &str, wanted_kind: &str) -> str:
     let lines = split_nonempty_lines(info)
     var out = ""
     for i in 0..lines.len() as i32:
@@ -3727,7 +3727,7 @@ fn doc_collect_entries(info: str, root: str, source_path: str, fallback_source_t
         out = out ++ doc_markdown_entry(wanted_kind, path, name, detail, source_text, start)
     out
 
-fn doc_default_source(source: str) -> str:
+fn doc_default_source(source: &str) -> str:
     if source.len() > 0:
         return source
     let root = build_graph_find_build_root(".")
@@ -3739,12 +3739,12 @@ fn doc_default_source(source: str) -> str:
         return "src/main.w"
     ""
 
-fn doc_output_path(output: str) -> str:
+fn doc_output_path(output: &str) -> str:
     if output.len() > 0:
         return output
     "out/doc/index.md"
 
-fn run_doc_command(argc: i32, source: str, output: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn run_doc_command(argc: i32, source: &str, output: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     let source_path = doc_default_source(source)
     if source_path.len() == 0:
         with_eprint("error: with doc requires a source file or a project with src/main.w")
@@ -3807,7 +3807,7 @@ fn run_doc_command(argc: i32, source: str, output: str, no_std: bool, alloc_mode
         with_eprint("warning: --open generated documentation but browser opening is not implemented in this compiler build")
     0
 
-fn repl_source_for_line(line: str) -> str:
+fn repl_source_for_line(line: &str) -> str:
     "use std.io\n" ++
     "use std.str\n" ++
     "use std.regex\n" ++
@@ -3816,14 +3816,14 @@ fn repl_source_for_line(line: str) -> str:
     "use std.builtins\n\n" ++
     line ++ "\n"
 
-fn repl_line_requires_session_state(line: str) -> bool:
+fn repl_line_requires_session_state(line: &str) -> bool:
     let text = line.trim()
     text.starts_with("let ") or text.starts_with("var ") or text.starts_with("fn ") or text.starts_with("pub ") or text.starts_with("type ") or text.starts_with("trait ") or text.starts_with("impl ") or text.starts_with("extern ") or text.starts_with("use ")
 
 fn repl_bin_path -> str:
     f"out/tmp/with-repl-{with_getpid()}-{with_clock_nanos()}"
 
-fn run_repl_line(line: str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
+fn run_repl_line(line: &str, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32) -> i32:
     if no_std:
         with_eprint("error: repl requires the standard library")
         return 1
@@ -4310,7 +4310,7 @@ fn print_help_attributes:
 
 // ── Package management commands ─────────────────────────────────
 
-fn cli_parse_small_int(s: str) -> i32:
+fn cli_parse_small_int(s: &str) -> i32:
     var result = 0
     var i = 0
     let len = s.len() as i32
@@ -4321,7 +4321,7 @@ fn cli_parse_small_int(s: str) -> i32:
         i = i + 1
     result
 
-fn cli_parse_nonnegative_i64(s: str) -> i64:
+fn cli_parse_nonnegative_i64(s: &str) -> i64:
     if s.len() == 0:
         return -1
     var result: i64 = 0
@@ -4354,7 +4354,7 @@ fn cli_configure_build_memory_limit() -> i32:
     with_set_memory_limit_bytes(limit)
     0
 
-fn cli_trim_line(text: str) -> str:
+fn cli_trim_line(text: &str) -> str:
     var start = 0
     var end = text.len() as i32
     while start < end:
@@ -4369,7 +4369,7 @@ fn cli_trim_line(text: str) -> str:
         end = end - 1
     text.slice(start as i64, end as i64)
 
-fn cli_dep_line_matches(line: str, pkg_name: str) -> bool:
+fn cli_dep_line_matches(line: &str, pkg_name: &str) -> bool:
     let trimmed = cli_trim_line(line)
     var eq = -1
     for i in 0..trimmed.len() as i32:
@@ -4381,11 +4381,11 @@ fn cli_dep_line_matches(line: str, pkg_name: str) -> bool:
     let key = cli_trim_line(trimmed.slice(0, eq as i64))
     key == "c." ++ pkg_name
 
-fn cli_line_is_section(line: str) -> bool:
+fn cli_line_is_section(line: &str) -> bool:
     let trimmed = cli_trim_line(line)
     trimmed.len() >= 2 and trimmed.byte_at(0) == 91 and trimmed.byte_at(trimmed.len() - 1) == 93
 
-fn cli_strip_quotes(value: str) -> str:
+fn cli_strip_quotes(value: &str) -> str:
     let trimmed = cli_trim_line(value)
     if trimmed.len() >= 2 and trimmed.byte_at(0) == 34 and trimmed.byte_at(trimmed.len() - 1) == 34:
         return trimmed.slice(1, trimmed.len() - 1)
@@ -4401,7 +4401,7 @@ type CliManifestDep {
     constraint: str,
 }
 
-fn cli_update_manifest_dep(toml: str, pkg_name: str, pkg_version: str) -> str:
+fn cli_update_manifest_dep(toml: &str, pkg_name: &str, pkg_version: &str) -> str:
     let dep_line = "c." ++ pkg_name ++ " = \"" ++ pkg_version ++ "\""
     var out = ""
     var found_dep = false
@@ -4441,7 +4441,7 @@ fn cli_update_manifest_dep(toml: str, pkg_name: str, pkg_version: str) -> str:
         out = out ++ "\n[deps]\n"
     out ++ dep_line ++ "\n"
 
-fn cli_remove_manifest_dep(toml: str, pkg_name: str) -> CliManifestRemoveResult:
+fn cli_remove_manifest_dep(toml: &str, pkg_name: &str) -> CliManifestRemoveResult:
     var out = ""
     var removed = false
     var in_deps = false
@@ -4468,7 +4468,7 @@ fn cli_remove_manifest_dep(toml: str, pkg_name: str) -> CliManifestRemoveResult:
         i = i + 1
     CliManifestRemoveResult { ok: removed, text: out }
 
-fn cli_manifest_c_deps(toml: str) -> Vec[CliManifestDep]:
+fn cli_manifest_c_deps(toml: &str) -> Vec[CliManifestDep]:
     let deps: Vec[CliManifestDep] = Vec.new()
     var in_deps = false
     var start = 0
@@ -4498,7 +4498,7 @@ fn cli_manifest_c_deps(toml: str) -> Vec[CliManifestDep]:
         i = i + 1
     deps
 
-fn cli_flag_value(argc: i32, flag: str) -> str:
+fn cli_flag_value(argc: i32, flag: &str) -> str:
     var i = 2
     while i < argc - 1:
         if with_arg_at(i) == flag:
@@ -4512,7 +4512,7 @@ fn cli_init_target_dir(argc: i32) -> str:
         return target
     "."
 
-fn cli_path_basename(path_raw: str) -> str:
+fn cli_path_basename(path_raw: &str) -> str:
     if path_raw.len() == 0:
         return ""
     let path = resolve_normalize_path(path_raw)
@@ -4534,7 +4534,7 @@ fn cli_path_basename(path_raw: str) -> str:
         return path.slice(0, end as i64)
     path.slice(start as i64, end as i64)
 
-fn cli_init_default_name(target_dir: str) -> str:
+fn cli_init_default_name(target_dir: &str) -> str:
     if target_dir != ".":
         let target_name = cli_path_basename(target_dir)
         if target_name.len() > 0 and target_name != ".":
@@ -4551,7 +4551,7 @@ fn cli_init_default_name(target_dir: str) -> str:
         return fallback
     "project"
 
-fn cli_init_write_new_file(path: str, contents: str) -> i32:
+fn cli_init_write_new_file(path: &str, contents: &str) -> i32:
     if with_fs_file_exists(path) != 0:
         with_eprint("error: file already exists: " ++ path)
         return 1
@@ -4560,12 +4560,12 @@ fn cli_init_write_new_file(path: str, contents: str) -> i32:
         return 1
     0
 
-fn cli_init_manifest_template(name: str) -> str:
+fn cli_init_manifest_template(name: &str) -> str:
     "[package]\n" ++
     "name = \"" ++ name ++ "\"\n" ++
     "version = \"0.1.0\"\n"
 
-fn cli_init_build_template(name: str, is_lib: bool) -> str:
+fn cli_init_build_template(name: &str, is_lib: bool) -> str:
     let product_kind = if is_lib: "library" else: "executable"
     let entry = if is_lib: "src/lib.w" else: "src/main.w"
     "use std.build\n\n" ++
@@ -4575,7 +4575,7 @@ fn cli_init_build_template(name: str, is_lib: bool) -> str:
     "    out = out.test(\"test\", \"test/*.w\")\n" ++
     "    out.default(\"" ++ name ++ "\")\n"
 
-fn cli_init_readme_template(name: str, is_lib: bool) -> str:
+fn cli_init_readme_template(name: &str, is_lib: bool) -> str:
     let run_line = if is_lib: "with build" else: "with run"
     "# " ++ name ++ "\n\n" ++
     "## Build\n\n" ++
@@ -4594,11 +4594,11 @@ fn cli_init_readme_template(name: str, is_lib: bool) -> str:
 fn cli_init_gitignore_template() -> str:
     "out/\n.with/\n!.with/lock.json\n"
 
-fn cli_init_main_template(name: str) -> str:
+fn cli_init_main_template(name: &str) -> str:
     "fn main:\n" ++
     "    print(\"hello from " ++ name ++ "\")\n"
 
-fn cli_init_lib_template(name: str) -> str:
+fn cli_init_lib_template(name: &str) -> str:
     "pub fn hello -> str:\n" ++
     "    \"hello from " ++ name ++ "\"\n"
 
@@ -4607,16 +4607,16 @@ fn cli_init_test_template() -> str:
     "fn main:\n" ++
     "    print(\"ok\")\n"
 
-fn cli_init_file_must_not_exist(path: str) -> i32:
+fn cli_init_file_must_not_exist(path: &str) -> i32:
     if with_fs_file_exists(path) != 0:
         with_eprint("error: file already exists: " ++ path)
         return 1
     0
 
-fn cli_init_report_path(path: str):
+fn cli_init_report_path(path: &str):
     with_eprint("  " ++ path)
 
-fn cli_init_try_git_init(dir: str):
+fn cli_init_try_git_init(dir: &str):
     let stdout_path = resolve_join(dir, ".git_init_stdout")
     let stderr_path = resolve_join(dir, ".git_init_stderr")
     var argv = ""
@@ -4733,7 +4733,7 @@ fn get_command_usage():
     with_eprint("  <package>       With package (registry not yet available)")
     with_eprint("  (no arguments)  restore dependencies from lock file")
 
-fn get_command_registry_unavailable(name: str):
+fn get_command_registry_unavailable(name: &str):
     with_eprint("error: the With package registry is not available yet; cannot fetch With package '" ++ name ++ "'")
     with_eprint("  With packages (spec §18.8) will come from the With package registry, which is not live yet.")
     with_eprint("  For a C library, use the Conan source instead: with get c.<name>  (e.g. with get c.json-c)")
@@ -4745,7 +4745,7 @@ fn get_command_valid_pkg_start(ch: i32) -> bool:
 fn get_command_valid_pkg_char(ch: i32) -> bool:
     (ch >= 97 and ch <= 122) or (ch >= 48 and ch <= 57) or ch == 95 or ch == 45
 
-fn get_command_with_pkg_name(spec: str) -> str:
+fn get_command_with_pkg_name(spec: &str) -> str:
     if spec.len() == 0:
         return ""
     var name_end = spec.len() as i32

@@ -32,7 +32,7 @@ fn profile_enabled() -> bool:
 fn profile_now() -> i64:
     runtime_clock_nanos()
 
-fn profile_emit(name: str, start: i64, counters: str):
+fn profile_emit(name: &str, start: i64, counters: &str):
     let elapsed_ns = runtime_clock_nanos() - start
     let ms_whole = elapsed_ns / 1000000
     let ms_frac = (elapsed_ns % 1000000) / 1000
@@ -47,7 +47,7 @@ fn compilation_debug_init_enabled() -> i32:
         return 0
     1
 
-fn compilation_debug_init(msg: str):
+fn compilation_debug_init(msg: &str):
     if compilation_debug_init_enabled() == 0:
         return
     runtime_eprint("[comp-init] " ++ msg)
@@ -58,12 +58,12 @@ fn compilation_debug_pool_flow_enabled() -> i32:
         return 0
     1
 
-fn compilation_debug_pool_flow(label: str, pool: InternPool, typed_pool: AstPool, sema: &Sema):
+fn compilation_debug_pool_flow(label: &str, pool: InternPool, typed_pool: AstPool, sema: &Sema):
     if compilation_debug_pool_flow_enabled() == 0:
         return
     runtime_eprint(f"[comp] {label} pool.symbols={pool.state.symbol_texts.len() as i32} typed.decls={typed_pool.decl_count()} sema.pool.symbols={sema.pool.state.symbol_texts.len() as i32} sema.ast.decls={sema.ast.decl_count()}")
 
-fn compilation_ensure_output_dir(path: str) -> bool:
+fn compilation_ensure_output_dir(path: &str) -> bool:
     if path.len() == 0:
         return true
     let rc = runtime_mkdir_p(path)
@@ -72,25 +72,25 @@ fn compilation_ensure_output_dir(path: str) -> bool:
         return false
     true
 
-fn compilation_remove_file_best_effort(path: str):
+fn compilation_remove_file_best_effort(path: &str):
     if path.len() == 0:
         return
     let _ = runtime_remove_file(path)
 
-fn compilation_remove_tree_best_effort(path: str):
+fn compilation_remove_tree_best_effort(path: &str):
     if path.len() == 0:
         return
     let _ = runtime_remove_tree(path)
 
-fn compilation_remove_dsym_best_effort(bin_path: str):
+fn compilation_remove_dsym_best_effort(bin_path: &str):
     if bin_path.len() == 0:
         return
     compilation_remove_tree_best_effort(bin_path ++ ".dSYM")
 
-fn compilation_argv_append(argv: str, arg: str) -> str:
+fn compilation_argv_append(argv: &str, arg: &str) -> str:
     argv ++ arg ++ "\0"
 
-fn compilation_run_dsymutil_best_effort(bin_path: str):
+fn compilation_run_dsymutil_best_effort(bin_path: &str):
     if bin_path.len() == 0:
         return
     var argv = ""
@@ -106,7 +106,7 @@ fn compilation_debug_type_names_enabled() -> i32:
         return 0
     1
 
-fn compilation_dump_type_names(stage: str, pool: AstPool, intern: InternPool):
+fn compilation_dump_type_names(stage: &str, pool: AstPool, intern: InternPool):
     if compilation_debug_type_names_enabled() == 0:
         return
     runtime_eprint(f"[type-names] stage={stage} decls={pool.decl_count()}")
@@ -154,7 +154,7 @@ fn compilation_mir_error_span(zcu: &Zcu, pool: AstPool, fn_sym: i32, raw_span: i
 fn compilation_bool_digit(value: bool) -> str:
     if value: "1" else: "0"
 
-fn compilation_join_strings(values: &Vec[str], separator: str) -> str:
+fn compilation_join_strings(values: &Vec[str], separator: &str) -> str:
     var out = ""
     for i in 0..values.len() as i32:
         if i > 0:
@@ -162,7 +162,7 @@ fn compilation_join_strings(values: &Vec[str], separator: str) -> str:
         out = out ++ values.get(i as i64)
     out
 
-fn compilation_escape_with_string(value: str) -> str:
+fn compilation_escape_with_string(value: &str) -> str:
     var out = ""
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -180,7 +180,7 @@ fn compilation_escape_with_string(value: str) -> str:
             out = out ++ value.slice(i as i64, (i + 1) as i64)
     out
 
-fn compilation_split_escaped_fields(line: str) -> Vec[str]:
+fn compilation_split_escaped_fields(line: &str) -> Vec[str]:
     let fields: Vec[str] = Vec.new()
     var cur = ""
     var escaped = false
@@ -206,7 +206,7 @@ fn compilation_split_escaped_fields(line: str) -> Vec[str]:
     fields.push(cur)
     fields
 
-fn compilation_split_nonempty_lines(text: str) -> Vec[str]:
+fn compilation_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     var start = 0
     for i in 0..text.len() as i32:
@@ -218,7 +218,7 @@ fn compilation_split_nonempty_lines(text: str) -> Vec[str]:
         lines.push(text.slice(start as i64, text.len()))
     lines
 
-fn compilation_parse_i32(text: str) -> i32:
+fn compilation_parse_i32(text: &str) -> i32:
     var sign = 1
     var i = 0
     if text.len() > 0 and text.byte_at(0) == 45:
@@ -239,7 +239,7 @@ fn compilation_decl_index_for_node(pool: AstPool, node: NodeId) -> i32:
             return di
     -1
 
-fn compilation_relative_source_path(root: str, path: str) -> str:
+fn compilation_relative_source_path(root: &str, path: &str) -> str:
     if root.len() == 0:
         return path
     let prefix = if root.ends_with("/"): root else: root ++ "/"
@@ -247,7 +247,7 @@ fn compilation_relative_source_path(root: str, path: str) -> str:
         return path.slice(prefix.len(), path.len())
     path
 
-fn compilation_module_import_name(root: str, path: str) -> str:
+fn compilation_module_import_name(root: &str, path: &str) -> str:
     var rel = compilation_relative_source_path(root, path)
     if rel.ends_with(".w"):
         rel = rel.slice(0, rel.len() - 2)
@@ -260,7 +260,7 @@ fn compilation_module_import_name(root: str, path: str) -> str:
             out = out ++ rel.slice(i as i64, (i + 1) as i64)
     out
 
-fn compilation_span_file_id_for_path(zcu: &Zcu, path: str) -> i32:
+fn compilation_span_file_id_for_path(zcu: &Zcu, path: &str) -> i32:
     if path == zcu.current_source_path:
         return 0
     for di in 0..zcu.last_sema.ast.decl_count():
@@ -377,7 +377,7 @@ impl Compilation:
             out.overflow_mode = self.config.overflow_mode
         out
 
-    fn project_config_for_source(source_path: str) -> ProjectConfig:
+    fn project_config_for_source(source_path: &str) -> ProjectConfig:
         self.apply_runtime_config(project_config_load_for_source(source_path))
 
     mut fn set_prelude_mode(mode: i32):
@@ -404,7 +404,7 @@ impl Compilation:
         cfg.compiler_hooks_enabled = enabled
         self.config = cfg
 
-    mut fn set_tool_mode_entry_path(path: str):
+    mut fn set_tool_mode_entry_path(path: &str):
         var cfg = self.config
         cfg.tool_mode_entry_path = path
         self.config = cfg
@@ -412,7 +412,7 @@ impl Compilation:
         zcu.tool_mode_entry_path = path
         self.zcu = zcu
 
-    fn add_cli_diag_mapping(gen_start: i32, gen_end: i32, source_name: str, source_text: str) -> Unit:
+    fn add_cli_diag_mapping(gen_start: i32, gen_end: i32, source_name: &str, source_text: &str) -> Unit:
         self.cli_diag_gen_starts.push(gen_start)
         self.cli_diag_gen_ends.push(gen_end)
         self.cli_diag_source_names.push(source_name)
@@ -429,7 +429,7 @@ impl Compilation:
             )
         zcu
 
-    mut fn compile_file(path: str) -> AstPool:
+    mut fn compile_file(path: &str) -> AstPool:
         compilation_debug_init("Compilation.compile_file:start " ++ path)
         var zcu = self.zcu
         let pool = zcu.compile_file_frontend_with_config(path, self.project_config_for_source(path))
@@ -437,7 +437,7 @@ impl Compilation:
         compilation_debug_init(f"Compilation.compile_file:done decls={pool.decl_count()}")
         pool
 
-    mut fn compile_file_with_config(path: str, cfg: ProjectConfig) -> AstPool:
+    mut fn compile_file_with_config(path: &str, cfg: ProjectConfig) -> AstPool:
         compilation_debug_init("Compilation.compile_file_with_config:start " ++ path)
         var zcu = self.zcu
         let pool = zcu.compile_file_frontend_with_config(path, self.apply_runtime_config(move cfg))
@@ -445,7 +445,7 @@ impl Compilation:
         compilation_debug_init(f"Compilation.compile_file_with_config:done decls={pool.decl_count()}")
         pool
 
-    mut fn compile_entry_file(path: str) -> AstPool:
+    mut fn compile_entry_file(path: &str) -> AstPool:
         compilation_debug_init("Compilation.compile_entry_file:start " ++ path)
         var zcu = self.zcu
         let pool = zcu.compile_file_frontend_entry_with_config(path, self.project_config_for_source(path))
@@ -453,7 +453,7 @@ impl Compilation:
         compilation_debug_init(f"Compilation.compile_entry_file:done decls={pool.decl_count()}")
         pool
 
-    mut fn compile_entry_file_with_config(path: str, cfg: ProjectConfig) -> AstPool:
+    mut fn compile_entry_file_with_config(path: &str, cfg: ProjectConfig) -> AstPool:
         compilation_debug_init("Compilation.compile_entry_file_with_config:start " ++ path)
         var zcu = self.zcu
         let pool = zcu.compile_file_frontend_entry_with_config(path, self.apply_runtime_config(move cfg))
@@ -461,12 +461,12 @@ impl Compilation:
         compilation_debug_init(f"Compilation.compile_entry_file_with_config:done decls={pool.decl_count()}")
         pool
 
-    mut fn resolve_file(path: str, emit_resolve_diags: bool) -> &ResolveResult:
+    mut fn resolve_file(path: &str, emit_resolve_diags: bool) -> &ResolveResult:
         let _ = emit_resolve_diags
         let _ = self.compile_file(path)
         &self.zcu.last_resolved
 
-    mut fn dump_project_info_file(source_path: str) -> str:
+    mut fn dump_project_info_file(source_path: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
@@ -599,7 +599,7 @@ fn compilation_compiler_hook_call_args(pool: AstPool, intern: InternPool, hook_n
     out
 
 impl Compilation:
-    fn compiler_hook_runner_source(pool: AstPool, source_path: str, diag_path: str, emitted_source_path: str, token: str) -> str:
+    fn compiler_hook_runner_source(pool: AstPool, source_path: &str, diag_path: &str, emitted_source_path: &str, token: &str) -> str:
         let zcu = &self.zcu
         let root = if zcu.project_config.root_dir.len() > 0: zcu.project_config.root_dir else: frontend_dirname(source_path)
         let hook_count = pool.compiler_hook_count()
@@ -640,7 +640,7 @@ impl Compilation:
             out = out ++ "    " ++ hook_name ++ "(" ++ call_args ++ ")\n"
         out
 
-    mut fn emit_compiler_hook_diagnostics(diag_text: str) -> i32:
+    mut fn emit_compiler_hook_diagnostics(diag_text: &str) -> i32:
         if diag_text.len() == 0:
             return 0
         var emitted = 0
@@ -664,7 +664,7 @@ impl Compilation:
             self.zcu.render_all_diagnostics_frontend()
         emitted
 
-    mut fn run_after_typecheck_hooks(pool: AstPool, source_path: str) -> bool:
+    mut fn run_after_typecheck_hooks(pool: AstPool, source_path: &str) -> bool:
         self.compiler_hook_emitted_source = ""
         if pool.compiler_hook_count() == 0:
             return true
@@ -735,7 +735,7 @@ impl Compilation:
         self.compiler_hook_emitted_source = emitted_source
         true
 
-    mut fn prepare_pool_after_typecheck_hooks(pool: AstPool, source_path: str) -> AstPool:
+    mut fn prepare_pool_after_typecheck_hooks(pool: AstPool, source_path: &str) -> AstPool:
         if pool.decl_count() == 0:
             return pool
         if not self.run_after_typecheck_hooks(pool, source_path):
@@ -766,13 +766,13 @@ impl Compilation:
 // #650 codegen units: sibling unit objects (<obj>.u1.o ..) follow the
 // canonical object's lifetime. The env cap bounds the sweep; removals are
 // best-effort so stale higher-K leftovers from earlier runs also clear.
-fn compilation_remove_unit_objects_best_effort(obj_path: str):
+fn compilation_remove_unit_objects_best_effort(obj_path: &str):
     var k = 1
     while k < 64:
         compilation_remove_file_best_effort(f"{obj_path}.u{k}.o")
         k = k + 1
 
-fn compilation_cleanup_build_products(obj_path: str, bin_path: str):
+fn compilation_cleanup_build_products(obj_path: &str, bin_path: &str):
     if obj_path.len() > 0:
         compilation_remove_file_best_effort(obj_path)
         compilation_remove_unit_objects_best_effort(obj_path)
@@ -789,17 +789,17 @@ fn compilation_binary_link_plan_fail() -> CompilationBinaryLinkPlan:
     }
 
 impl Compilation:
-    mut fn build_binary(source_path: str) -> str:
+    mut fn build_binary(source_path: &str) -> str:
         self.build_binary_to_path(source_path, link_stage_output_path_for_source(source_path))
 
-    mut fn build_binary_from_source(source_path: str, source_text: str) -> str:
+    mut fn build_binary_from_source(source_path: &str, source_text: &str) -> str:
         self.build_binary_from_source_to_path(source_path, source_text, link_stage_output_path_for_source(source_path))
 
-    mut fn build_binary_at(source_path: str, output_dir: str) -> str:
+    mut fn build_binary_at(source_path: &str, output_dir: &str) -> str:
         let stem = link_stage_source_stem(source_path)
         self.build_binary_to_path(source_path, output_dir ++ "/" ++ stem)
 
-    mut fn compile_source_text(source_path: str, source_text: str) -> AstPool:
+    mut fn compile_source_text(source_path: &str, source_text: &str) -> AstPool:
         var zcu = self.zcu
         let source_dir = frontend_dirname(source_path)
         zcu.reset_for_new_invocation(source_dir, source_path, "")
@@ -813,7 +813,7 @@ impl Compilation:
         self.zcu = zcu
         pool
 
-    mut fn compile_source_text_with_config(source_path: str, source_text: str, cfg: ProjectConfig) -> AstPool:
+    mut fn compile_source_text_with_config(source_path: &str, source_text: &str, cfg: ProjectConfig) -> AstPool:
         var zcu = self.zcu
         let source_dir = frontend_dirname(source_path)
         zcu.reset_for_new_invocation(source_dir, source_path, "")
@@ -827,7 +827,7 @@ impl Compilation:
         self.zcu = zcu
         pool
 
-    mut fn compile_entry_source_text(source_path: str, source_text: str) -> AstPool:
+    mut fn compile_entry_source_text(source_path: &str, source_text: &str) -> AstPool:
         let source_paths: Vec[str] = Vec.new()
         let source_texts: Vec[str] = Vec.new()
         source_paths.push(source_path)
@@ -860,7 +860,7 @@ impl Compilation:
         self.zcu = zcu
         pool
 
-    mut fn check_pool(pool: AstPool, source_path: str) -> bool:
+    mut fn check_pool(pool: AstPool, source_path: &str) -> bool:
         if pool.decl_count() == 0:
             return false
         let prepared_pool = self.prepare_pool_after_typecheck_hooks(pool, source_path)
@@ -869,7 +869,7 @@ impl Compilation:
         let _ = self.run_mir_lower(prepared_pool)
         not self.has_errors()
 
-    mut fn check_file_with_build_settings(source_path: str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> bool:
+    mut fn check_file_with_build_settings(source_path: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> bool:
         var cfg = self.project_config_for_source(source_path)
         for ii in 0..include_paths.len() as i32:
             cfg.c_import_include_paths.push(include_paths.get(ii as i64))
@@ -886,7 +886,7 @@ impl Compilation:
             return false
         self.check_pool(pool, source_paths.get(0))
 
-    mut fn prepare_binary_link_from_pool(pool: AstPool, source_path: str, obj_path: str, bin_path: str) -> CompilationBinaryLinkPlan:
+    mut fn prepare_binary_link_from_pool(pool: AstPool, source_path: &str, obj_path: &str, bin_path: &str) -> CompilationBinaryLinkPlan:
         self.last_link_command_available = 0
         self.last_link_command = link_stage_empty_command()
         self.last_link_rc = 0
@@ -964,11 +964,11 @@ fn compilation_execute_binary_link_plan(debug_info: bool, plan: CompilationBinar
     link_result
 
 impl Compilation:
-    mut fn finish_binary_from_pool(pool: AstPool, source_path: str, obj_path: str, bin_path: str) -> str:
+    mut fn finish_binary_from_pool(pool: AstPool, source_path: &str, obj_path: &str, bin_path: &str) -> str:
         let link_plan = self.prepare_binary_link_from_pool(pool, source_path, obj_path, bin_path)
         self.execute_binary_link_plan(link_plan)
 
-    mut fn emit_object_to_path(source_path: str, obj_path: str) -> str:
+    mut fn emit_object_to_path(source_path: &str, obj_path: &str) -> str:
         let output_dir = link_stage_dirname(obj_path)
         if not compilation_ensure_output_dir(output_dir):
             return ""
@@ -989,7 +989,7 @@ impl Compilation:
             return ""
         obj_path
 
-    mut fn emit_object_to_path_with_build_settings(source_path: str, obj_path: str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
+    mut fn emit_object_to_path_with_build_settings(source_path: &str, obj_path: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
         let output_dir = link_stage_dirname(obj_path)
         if not compilation_ensure_output_dir(output_dir):
             return ""
@@ -1014,7 +1014,7 @@ impl Compilation:
             return ""
         obj_path
 
-    mut fn emit_archive_to_path_with_build_settings(source_path: str, ar_path: str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
+    mut fn emit_archive_to_path_with_build_settings(source_path: &str, ar_path: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
         if ar_path.len() == 0:
             return ""
         let output_dir = link_stage_dirname(ar_path)
@@ -1028,7 +1028,7 @@ impl Compilation:
         compilation_remove_file_best_effort(obj)
         ar
 
-    mut fn build_binary_to_path(source_path: str, bin_path: str) -> str:
+    mut fn build_binary_to_path(source_path: &str, bin_path: &str) -> str:
         if bin_path.len() == 0:
             return self.build_binary(source_path)
         let obj_path = bin_path ++ ".o"
@@ -1040,7 +1040,7 @@ impl Compilation:
         let pool = self.compile_entry_file(source_path)
         self.finish_binary_from_pool(pool, source_path, obj_path, bin_path)
 
-    mut fn build_binary_to_path_with_build_settings(source_path: str, bin_path: str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
+    mut fn build_binary_to_path_with_build_settings(source_path: &str, bin_path: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
         if bin_path.len() == 0:
             return self.build_binary_to_path(source_path, bin_path)
         let obj_path = bin_path ++ ".o"
@@ -1059,12 +1059,12 @@ impl Compilation:
         let pool = self.compile_entry_file_with_config(source_path, move cfg)
         self.finish_binary_from_pool(pool, source_path, obj_path, bin_path)
 
-    mut fn build_binary_to_path_with_link_libs(source_path: str, bin_path: str, link_libs: &Vec[str]) -> str:
+    mut fn build_binary_to_path_with_link_libs(source_path: &str, bin_path: &str, link_libs: &Vec[str]) -> str:
         let include_paths: Vec[str] = Vec.new()
         let defines: Vec[str] = Vec.new()
         self.build_binary_to_path_with_build_settings(source_path, bin_path, include_paths, defines, link_libs)
 
-    mut fn build_binary_from_source_to_path(source_path: str, source_text: str, bin_path: str) -> str:
+    mut fn build_binary_from_source_to_path(source_path: &str, source_text: &str, bin_path: &str) -> str:
         if bin_path.len() == 0:
             return self.build_binary_from_source(source_path, source_text)
         let obj_path = bin_path ++ ".o"
@@ -1076,7 +1076,7 @@ impl Compilation:
         let pool = self.compile_source_text(source_path, source_text)
         self.finish_binary_from_pool(pool, source_path, obj_path, bin_path)
 
-    mut fn build_binary_from_source_to_path_with_build_settings(source_path: str, source_text: str, bin_path: str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
+    mut fn build_binary_from_source_to_path_with_build_settings(source_path: &str, source_text: &str, bin_path: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> str:
         if bin_path.len() == 0:
             return self.build_binary_from_source_to_path(source_path, source_text, bin_path)
         let obj_path = bin_path ++ ".o"
@@ -1095,14 +1095,14 @@ impl Compilation:
         let pool = self.compile_source_text_with_config(source_path, source_text, move cfg)
         self.finish_binary_from_pool(pool, source_path, obj_path, bin_path)
 
-    mut fn build_entry_binary_from_source_to_path(source_path: str, source_text: str, bin_path: str) -> str:
+    mut fn build_entry_binary_from_source_to_path(source_path: &str, source_text: &str, bin_path: &str) -> str:
         let source_paths: Vec[str] = Vec.new()
         let source_texts: Vec[str] = Vec.new()
         source_paths.push(source_path)
         source_texts.push(source_text)
         self.build_entry_binary_from_sources_to_path(source_paths, source_texts, bin_path)
 
-    mut fn build_entry_binary_from_sources_to_path(source_paths: &Vec[str], source_texts: &Vec[str], bin_path: str) -> str:
+    mut fn build_entry_binary_from_sources_to_path(source_paths: &Vec[str], source_texts: &Vec[str], bin_path: &str) -> str:
         if source_paths.len() == 0 or source_texts.len() == 0 or source_paths.len() != source_texts.len():
             runtime_eprint("error: build_entry_binary_from_sources_to_path requires matching non-empty source paths and texts")
             return ""
@@ -1118,7 +1118,7 @@ impl Compilation:
         let pool = self.compile_entry_source_texts(source_paths, source_texts)
         self.finish_binary_from_pool(pool, source_path, obj_path, bin_path)
 
-    mut fn emit_c(source_path: str, output_path: str) -> str:
+    mut fn emit_c(source_path: &str, output_path: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
@@ -1200,7 +1200,7 @@ impl Compilation:
         self.zcu = zcu
         true
 
-    mut fn emit_typed_file(source_path: str) -> bool:
+    mut fn emit_typed_file(source_path: &str) -> bool:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return false
@@ -1214,7 +1214,7 @@ impl Compilation:
         print_mir_module(self.zcu.last_mir_module, self.zcu.pool, self.zcu.last_sema)
         true
 
-    mut fn print_mir_file(source_path: str) -> bool:
+    mut fn print_mir_file(source_path: &str) -> bool:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return false
@@ -1227,46 +1227,46 @@ impl Compilation:
             return ""
         dump_drop_state_module(self.zcu.last_mir_module, self.zcu.pool, self.zcu.last_sema)
 
-    mut fn dump_drop_state_file(source_path: str) -> str:
+    mut fn dump_drop_state_file(source_path: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
         self.dump_drop_state(pool)
 
-    mut fn trace_place(pool: AstPool, spec: str) -> str:
+    mut fn trace_place(pool: AstPool, spec: &str) -> str:
         if self.zcu.last_mir_module.body_count() == 0:
             let _ = self.run_mir_lower(pool)
         if self.zcu.last_mir_module.body_count() == 0:
             return ""
         trace_place_module(self.zcu.last_mir_module, self.zcu.pool, self.zcu.last_sema, spec)
 
-    mut fn trace_place_file(source_path: str, spec: str) -> str:
+    mut fn trace_place_file(source_path: &str, spec: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
         self.trace_place(pool, spec)
 
-    mut fn explain_mir_origin(pool: AstPool, spec: str) -> str:
+    mut fn explain_mir_origin(pool: AstPool, spec: &str) -> str:
         if self.zcu.last_mir_module.body_count() == 0:
             let _ = self.run_mir_lower(pool)
         if self.zcu.last_mir_module.body_count() == 0:
             return ""
         explain_mir_origin_module(self.zcu.last_mir_module, self.zcu.pool, self.zcu.last_sema, spec)
 
-    mut fn explain_mir_origin_file(source_path: str, spec: str) -> str:
+    mut fn explain_mir_origin_file(source_path: &str, spec: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
         self.explain_mir_origin(pool, spec)
 
-    mut fn trace_ownership(pool: AstPool, spec: str) -> str:
+    mut fn trace_ownership(pool: AstPool, spec: &str) -> str:
         if self.zcu.last_mir_module.body_count() == 0:
             let _ = self.run_mir_lower(pool)
         if self.zcu.last_mir_module.body_count() == 0:
             return ""
         trace_ownership_module(self.zcu.last_mir_module, self.zcu.pool, self.zcu.last_sema, spec)
 
-    mut fn trace_ownership_file(source_path: str, spec: str) -> str:
+    mut fn trace_ownership_file(source_path: &str, spec: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
@@ -1279,7 +1279,7 @@ impl Compilation:
             return ""
         dump_drop_plan_module(self.zcu.last_mir_module, self.zcu.pool, self.zcu.last_sema)
 
-    mut fn dump_drop_plan_file(source_path: str) -> str:
+    mut fn dump_drop_plan_file(source_path: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
@@ -1292,19 +1292,19 @@ impl Compilation:
             return ""
         dump_place_map_module(self.zcu.last_mir_module, self.zcu.pool, self.zcu.last_sema)
 
-    mut fn dump_place_map_file(source_path: str) -> str:
+    mut fn dump_place_map_file(source_path: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
         self.dump_place_map(pool)
 
-    mut fn dump_abi_file(source_path: str) -> str:
+    mut fn dump_abi_file(source_path: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
         self.zcu.last_sema.dump_abi()
 
-fn analysis_request_is_semantic_snapshot(request: str) -> bool:
+fn analysis_request_is_semantic_snapshot(request: &str) -> bool:
     if request == "audit:receivers" or request == "audit:receiver-surface" or request == "audit:effects" or request == "audit:storage": return true
     if request == "audit:methods": return true
     if request == "move-sites": return true
@@ -1318,12 +1318,12 @@ fn analysis_request_is_semantic_snapshot(request: str) -> bool:
     if request.starts_with("explain:method:") or request.starts_with("explain:resolution:"): return true
     request.starts_with("explain:node:")
 
-fn analysis_request_after_mir(request: str): request.starts_with("after-mir:")
-fn analysis_request_inner(request: str):
+fn analysis_request_after_mir(request: &str): request.starts_with("after-mir:")
+fn analysis_request_inner(request: &str):
     if analysis_request_after_mir(request): request.slice(10, request.len()) else: request
 
 impl Compilation:
-    pub mut fn analyze_file(source_path: str, request: str) -> CompilerAnalysisResult:
+    pub mut fn analyze_file(source_path: &str, request: &str) -> CompilerAnalysisResult:
         self.zcu.analysis_partial_semantics = 1
         let pool = self.compile_file(source_path)
         let after_mir = analysis_request_after_mir(request)
@@ -1354,25 +1354,25 @@ impl Compilation:
 
 // Public one-shot entry for compiler-integrated tools. Compilation remains an
 // orchestration implementation detail; tools consume the shared analysis schema.
-pub fn compiler_analyze_file(source_path: str, request: str) -> CompilerAnalysisResult:
+pub fn compiler_analyze_file(source_path: &str, request: &str) -> CompilerAnalysisResult:
     var comp = Compilation.init()
     comp.analyze_file(source_path, request)
 
 impl Compilation:
-    mut fn trace_cleanup_edge(pool: AstPool, spec: str) -> str:
+    mut fn trace_cleanup_edge(pool: AstPool, spec: &str) -> str:
         if self.zcu.last_mir_module.body_count() == 0:
             let _ = self.run_mir_lower(pool)
         if self.zcu.last_mir_module.body_count() == 0:
             return ""
         trace_cleanup_edge_module(self.zcu.last_mir_module, self.zcu.pool, self.zcu.last_sema, spec)
 
-    mut fn trace_cleanup_edge_file(source_path: str, spec: str) -> str:
+    mut fn trace_cleanup_edge_file(source_path: &str, spec: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
         self.trace_cleanup_edge(pool, spec)
 
-    mut fn validate_ownership_file(source_path: str) -> str:
+    mut fn validate_ownership_file(source_path: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return "compile failed before ownership validation"
@@ -1386,7 +1386,7 @@ impl Compilation:
             return err
         "ok"
 
-    mut fn validate_all_file(source_path: str) -> str:
+    mut fn validate_all_file(source_path: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return "compile failed before validation"
@@ -1411,7 +1411,7 @@ impl Compilation:
         self.zcu.set_codegen_snapshot(move mir_snapshot, self.zcu.last_mir_dump, move async_snapshot, text)
         text
 
-    mut fn dump_async_mir_file(source_path: str) -> str:
+    mut fn dump_async_mir_file(source_path: &str) -> str:
         let pool = self.compile_file(source_path)
         if pool.decl_count() == 0:
             return ""
