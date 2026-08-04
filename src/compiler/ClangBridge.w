@@ -515,15 +515,16 @@ unsafe fn session_strdup(s: *mut CImportSession, p: *const u8) -> *mut u8:
     (*s).str_count = (*s).str_count + 1
     dup
 
+// A `-> str` return transfers ownership (#747): the receiver's drop frees
+// the payload. Tracking the same allocation in the session made
+// with_cimport_dispose a second owner — every session str double-freed at
+// dispose. So this hands out an independent owned copy and tracks nothing;
+// session_strdup tracking remains for raw C-string session consumers only.
+// (BOOTSTRAP INTERIM: the seed world has no str drops, so the copy leaks
+// there until reseed — bounded to c_import compilations under stage1.)
 unsafe fn session_make_str(s: *mut CImportSession, p: *const u8) -> str:
-    if p as i64 == 0 or *p == 0:
-        return ""
-    let dup = session_strdup(s, p)
-    if dup as i64 == 0: return ""
-    let len = c_strlen(dup)
-    var raw: [2]i64 = [dup as i64, len]
-    let sp = &raw as *const str
-    *sp
+    let _ = s
+    make_str(p)
 
 unsafe fn clang_str_to_with(s: *mut CImportSession, cxs: CXString) -> str:
     let cstr = clang_getCString(cxs)
