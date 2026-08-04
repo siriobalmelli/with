@@ -2359,6 +2359,14 @@ impl Sema:
             return
 
         // Record direct impl
+        // D29 scaffolding (#750): E1102 keys on the RESOLVED impl target, not
+        // the bare name. For a shadowed sym, a prior record collides only when
+        // it belongs to the tier this impl attaches to (the decl the gated
+        // lookup resolves from this module) — std's impl and the user's impl
+        // of the same trait for same-named types coexist; a true same-tier
+        // duplicate still errors.
+        let dup_shadowed = self.type_sym_is_shadowed(type_name)
+        let dup_want_std = if dup_shadowed != 0: self.type_tid_std_tier(self.resolve_alias(self.lookup_named_type_visible(type_name) as TypeId) as i32) else: 0
         // When appending to an existing type, relocate all entries to keep them
         // contiguous (the flat impl_extra vec is shared across all types).
         if self.impl_lookup.contains(type_name):
@@ -2366,6 +2374,8 @@ impl Sema:
             let old_start = self.impl_starts.get(idx as i64)
             let old_count = self.impl_counts.get(idx as i64)
             for i in 0..old_count:
+                if dup_shadowed != 0 and self.impl_record_matches_tier(old_start + i, dup_want_std) == 0:
+                    continue
                 if self.impl_extra.get((old_start + i) as i64) == trait_sym:
                     self.emit_error_code("duplicate implementation of trait for type", node, "E1102")
                     return
