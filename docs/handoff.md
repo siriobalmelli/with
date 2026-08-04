@@ -685,7 +685,99 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-04m): #747/D28 MIGRATE MEMORY WALL ROOT-CAUSED + FIXED (261M duplicated cursor stores; 12.4 GB -> 333 MB on a 2 MB slice) + three quadratic time rebuilds killed; full 47 MB attempt IN FLIGHT at session end
+## SESSION-RESUME (2026-08-04n): #747 LATE-TRANSLATE BLOW-UP ROOT-CAUSED + FIXED (ci_lookup_known sliced the whole registry per scanned entry; slice5 413 s -> 125 s, translate linear again); 24.4 MB (51% of input) migrates clean under 12 GB — full-input verdict run is READY for the orchestrator
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ 7af076d5 (one fix commit this session; tree
+clean; seed gate `src/main build :stage1` rc=0 158.0s; stage2 rebuilt rc=0;
+/tmp/flip-stage2-probe = that stage2). Census: stage1 `check src/main.w`
+rc=0 72.9s 48.5 GB (matches 04k/04m exactly).
+
+THE LATE-TRANSLATE WALL (04m's residual + the 110 GiB cap-kill at 7846 s
+wall / sys 5471 s vs user 2359 s), ROOT-CAUSED at the line:
+`ci_lookup_known` (src/CImport.w:4804 pre-fix) spelled its per-entry
+prefix test as `ci_starts_with(known.slice(pos, known.len()), key)`.
+Under owned str (#747) every .slice() is an owned copy, so ONE lookup
+allocated+memcpy'd+freed the ENTIRE remaining registry string once per
+scanned entry — O(entries x |registry|) bytes of alloc/mmap churn per
+call, on the per-expression type path (lldb-attached stacks, 4/5
+mid-translate: with_str_slice/alloc/free under ci_lookup_known <-
+ci_normalize_translated_type_name <- CiTypePool.type_from_libclang <-
+lower_value_expr_ir <- ci_trans_stmt_via_ir). A pre-fix full-input
+sample at the 70-min mark: 96% of CPU in mmap/slice/alloc/free under
+ci_trans_stmt_via_ir, mmap alone 51% — churn payload grows with the
+registry as decls accumulate = the cumulative time superlinearity AND
+the sys-dominated TB-scale page traffic (755M page reclaims).
+
+FIX (7af076d5): match in place — `ci_str_matches_at(known, pos, key)`.
+Same bytes compared, zero allocation. Outputs BYTE-IDENTICAL (cmp) on
+slice2 + slice5 + combo12.
+
+CURVES (fixed stage2; RSS peaks are the fix-it sema, unchanged):
+- slice2 (2.17 MB): 37 s -> 37 s (small scale was never lookup-bound)
+- slice5 (5.06 MB): 413 s -> 124.9 s; sys 207 s -> 2.7 s
+- combo12 (11.75 MB): ~1100 s -> 288 s; translate now LINEAR
+  (slice5 125 s : combo12 288 s : combo16 translate 133 s for 24.4 MB)
+- translate-end committed: 130 MB @5 MB, 347 MB @11.75, 935 MB @24.4 —
+  linear with content density (90-160 AST nodes/KB region variance;
+  cursor-kind histogram of a 3.8M-cursor session dump shows a normal
+  expression-dominated shape, dedupe healthy, no pathological kind)
+- combo16 (24.4 MB = 51% of the full input, preamble + windows 1-6):
+  COMPLETES rc=0 under a 12 GB cap, 53 MB output written; translate
+  133 s; peak ~5.2 GB (fix-it sema of the 53 MB output).
+
+HOW IT WAS CORNERED (for the record — the blow-up resisted slicing):
+- 12 windowed slices (preamble + each ~6 MB region at fn boundaries)
+  covering ALL 1.97M definition lines: every region clean standalone
+  (peaks 1.46-1.57 GB) -> not construct/region-local.
+- biggest emitted function (24.6k lines, Codegen_mir_emit_call_term)
+  alone: 110 s / 486 MB -> not function-size.
+- win12 content re-padded to ORIGINAL byte/line offsets in a 47.6 MB
+  whitespace file: clean -> not offset-proportional.
+- phase-bracketed lldb (rt_alloc_committed_bytes at
+  ci_collect_demoted_types / ci_migrate_translate_vars /
+  ci_migrate_normalize_output breakpoints): translate-end committed
+  linear at every scale -> cumulative-scale churn was the only
+  superlinear load; attach-at-phase bt named the line.
+- the 04m full run died BEFORE the output write (no .w file), i.e.
+  inside migrate_c_file, at ~the extrapolated end of pre-fix translate.
+
+READY FOR ORCHESTRATOR — full-input verdict run (fixed probe):
+  WITH_MEMORY_LIMIT_BYTES=118111600640 /usr/bin/time -l \
+  /tmp/flip-stage2-probe migrate out/emit-c-roundtrip/main.c \
+  -o <scratchpad>/main_migrated.w -I runtime -include out/gen/wl_decls.h \
+  --no-c-export     (cwd /Users/eric/with, or absolute -I/-include paths)
+Expect: parse+prescan minutes, translate ~5 min (linear), then the
+fix-it pass (up to 3 full sema passes of the ~95 MB output) dominating
+wall; committed at translate end ~2-2.5 GB; peak in fix-it sema ~10-15 GB
+projected. Then `check` the output with the probe and COUNT the errors
+(the count is the roundtrip's next stage — do NOT fix them there).
+
+RESIDUALS / JUDGMENT CALLS:
+- The pre-fix 118 GiB LIVE committed at full scale was never reproduced
+  at <=24 MB (post-fix committed extrapolates to ~2.5 GB). A pre-fix
+  capped-lldb full-input trap (bp rt_alloc_report_limit_exceeded, bt)
+  was in flight to name the pre-fix live site exactly but was torn down
+  by the harness ~105 min in; not rerun (2 h pre-fix diagnostic vs the
+  orchestrator's verdict run with the FIXED binary answering the only
+  question that matters). If the verdict run still trips a cap, run
+  <scratchpad>/fulldiag.lldb — it breakpoints the limit-exceeded
+  branch and prints the offending allocation's full backtrace.
+- Fix-it sema of the migrated megamodule is now the peak-memory phase
+  (~5.2 GB @53 MB output) and runs up to 3 full compiler_analyze_file
+  passes + renders every warning (04m residual, unchanged; Eric's call).
+- 04l instance I (deps-manifest UAF) untouched.
+- Slice artifacts for future sessions (session scratchpad): win1-12.c,
+  combo12/14/16.c, win12pad.c (offset-preserving builder mkpad.w),
+  gslice1.c, phase_mem5/combo16/curdump lldb scripts, cursors.bin
+  kind-histogram tool curhist.w.
+
+WHAT REMAINS for #747 (delta from 04m): unchanged list, minus the
+late-translate migrate wall (fixed above); the full-input migrate
+verdict + error count of the migrated output is the next gate.
+
+## SESSION-RESUME (2026-08-04m, SUPERSEDED by 04n above): #747/D28 MIGRATE MEMORY WALL ROOT-CAUSED + FIXED (261M duplicated cursor stores; 12.4 GB -> 333 MB on a 2 MB slice) + three quadratic time rebuilds killed; full 47 MB attempt IN FLIGHT at session end
 
 MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
 
