@@ -663,12 +663,7 @@ fn emitc_migrate_compiler_c(ctx: &ActionCtx, compiler_path: str, main_c: str, ou
     argv |> push("-include")
     argv |> push(emitc_abs(root, "out/gen/wl_decls.h"))
     argv |> push("--no-c-export")
-    // D28 ruling 3 pin: migrating the 48 MB compiler C allocates ~68 GB of
-    // transient strings that cannot free until the #691 str flip lands
-    // (#744). The default 64 GiB cap therefore kills this one step by
-    // construction. Disable it HERE ONLY; every other step keeps the cap.
-    // REVERT with the str flip: delete the env override and this comment.
-    emitc_run_capture_env(ctx, "migrate-compiler-c", argv, 900000, "WITH_MEMORY_LIMIT_BYTES", "0")
+    emitc_run_capture(ctx, "migrate-compiler-c", argv, 900000)
 
 fn emitc_build_with_compiler(ctx: &ActionCtx, compiler_path: str, source_w: str, output_path: str, label: str) -> i32:
     let root = ctx.project_info().project_root()
