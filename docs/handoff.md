@@ -685,7 +685,99 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-04i): #747 SELF-CHECK GREEN (rc=0, 68.9s, 428 MB!) + STAGE3 BUILT AND WORKING; instances C/D/E fixed; LAST KNOWN WALL: instance F (link-plan path view robbed by base consume) — value-only, binaries work
+## SESSION-RESUME (2026-08-04j): #747 INSTANCE F FIXED + THE FLIP HAS REACHED FIXPOINT (bit-identical stage1-built vs stage2-built binaries); -e/run/build all rc=0; 5/5 behavior smoke
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ 1777e5ef (one commit this session, tree
+clean, seed gate rc=0 153.7s). stage1 rebuilt; /tmp/flip-stage2-probe
+rebuilt (rc=0, 127.0s, 66.8 GB peak, 107,011,536 B);
+/tmp/flip-stage3-probe rebuilt by the fixed stage2 (rc=0 — this exact
+command exited 1 before the fix — 125.6s, 13.2 GB). Census rc=0 75.3s
+31.8 GB (down from 48.35 GB; not investigated, favorable). Honest
+self-check `WITH_MEMORY_LIMIT_BYTES=118111600640 /tmp/flip-stage2-probe
+check src/main.w`: rc=0, 73.0s, 428.5 MB peak, positive phase evidence
+(parse 751 decls, frontend.sema 42.2s decls=9244, sema types=10054,
+mir.lower 20.5s bodies=7150).
+
+FIX 6 (1777e5ef, instance F) — consuming a whole base materializes its
+live str views into owned captures. Compilation.execute_binary_link_plan
+(src/compiler/Compilation.w:938): `let bin_path = plan.bin_path` is a
+view; the next call consumes `plan` by value; reset-on-move blanks the
+base storage and the tail read returned "" after a successful link, so
+every -e/run/build exited 1 with working artifacts. General mechanism in
+MirLower (NOT a Compilation.w spot edit):
+`materialize_str_views_of_consumed_base(local_id)` — called from
+consume_moved_operand's plain-local branch and (pre-drop, since the drop
+statement precedes the consume there) from lower_drop_glue_and_consume.
+For each live same-scope alias whose place is a pure field path rooted at
+the consumed base and whose binding type is str: new owned local bound to
+the same name, StorageLive, `RK_STR_CONCAT_N([copy field, ""], 2,
+move_first=0)` — a 1-part concat is a codegen PASS-THROUGH (shallow), so
+the "" second part forces str_concat_n_copy = an independent owner;
+guarded DK_VALUE drop; alias entry dead-named. Unlike fix 2 the consumer
+OWNS the base (callee drops it), so the capture must CLONE, not transfer
+— a shallow copy + drop would double-free, a copy without drop would
+dangle. RESIDUE (deliberate): non-str view types and cross-scope
+consumes keep the robbed-view behavior (same-scope-only for the same
+re-execution reason as fix 2's residue).
+
+VERIFIED: repro_basecons.w (scratchpad) pre-fix 13/0/<empty>, post-fix
+13/11/hello-world, debug-alloc 0 leaks 0 double-frees (callee saw full
+values AND the view kept its value). repro_basecons_drop.w (explicit
+drop(x) with live view): correct, 0 leaks. repro_saverestore_call /
+repro_stamp / repro_sr5 unchanged vs 04i expectations (sr5's 10 leaks =
+9x pre-existing (b) f-string-in-loop + 1x (a) var-c-fields; sr5 has no
+whole-base consume — not a regression). Probe acceptance: `-e
+'print_i32(42)'` -> 42 rc=0; `run` rc=0; `build` rc=0 + binary runs.
+
+FIXPOINT — REACHED, and stronger than the normalized bar:
+- Canonical mechanism (build.w `:fixpoint`): byte-compare of `--emit-obj
+  -O1` objects (build_graph_compare_files, src/BuildGraphOps.w:20);
+  normalization = objects have no UUID/signature.
+- Definitive compare run instead at full-binary strength: stage1 and the
+  fixed stage2 each built `src/main.w -O1` to the SAME output path
+  (/tmp/fpx/with, sequentially). Result: **bit-for-bit identical**,
+  107,011,376 B, `cmp -l` = 0 differing bytes (even LC_UUID and the
+  ad-hoc signature reproduce), SHA-256
+  fcfd2bea47f2a7638f0beb106b6998ab18105d300186baf68b584ea521b6af0a.
+- The differently-named probes (107,011,536 B; stage2
+  63124f94deac62167d7fee04ecbfd20a919fc670e81947ce2d0516c7388a74d4,
+  stage3 f986f229b12a3988292f90d486629893e7463f004e0c52e82eafab6db69de577)
+  differ in exactly 89 bytes, all classified: 8 LC_UUID + 16 embedded
+  output-path digit chars ('2'->'3' in N_OSO stabs from the differing -o
+  names) + 65 code-signature bytes over those pages; 0 unexplained.
+
+INSTANCE G — NAMED, NOT CHASED (out of fixpoint scope, no fix per brief):
+the canonical object-level compare itself is unusable because `--emit-obj`
+(module_object_mode) DIVERGES BEHAVIORALLY: seed-built stage1 emits the
+root-module-only object (1,355,736 B, 2,290 defined syms, __with_mod_*
+prefixed — matching main's Copy-world compiler), while the flip-built
+stage2 emits a whole-program object (23,081,728 B, 50,843 defined syms,
+Lexer/drop-glue included). Same source both sides => the flip-BUILT
+binary misbehaves on the module-object filter path — smells like the
+robbed/blanked-str family (module path comparisons in
+Backend/CodegenUnits filtering). Value-only; the build path is
+unaffected (bit-identical above). Root-cause when the de-Copy tail is
+worked.
+
+SMOKE: stage3-probe as a compiler: -e 42 rc=0, run rc=0, check rc=0.
+Flipped stage2 on test/behavior/: behav_arithmetic, behav_vec_is_empty,
+behav_match_unit_pattern, behav_str_large_literal, behav_veciter_iter_sum
+— 5/5 pass (outputs match //! expect-stdout).
+
+WHAT REMAINS for #747:
+- De-Copy tail: print/eprint consuming str (a `print(s); s.len()` is a
+  move error today — design question for Eric) + the JsonView question;
+  see D22/D27 notes.
+- Instance G (emit-obj module filter, above) + the also-observed 04i
+  issues (a) var-c mut-receiver Maybe drop state, (b) f-string loop temp
+  leaks, (c) document the rt trap hook in docs/debug-allocator.md.
+- Corpus sweep; un-pin the emitc_migrate cap.
+- :move-audit / :drop-audit, then the full battery ALONE on the merge
+  (ownership-semantics isolation rule), then reseed.
+
+## SESSION-RESUME (2026-08-04i, SUPERSEDED by 04j above): #747 SELF-CHECK GREEN (rc=0, 68.9s, 428 MB!) + STAGE3 BUILT AND WORKING; instances C/D/E fixed; LAST KNOWN WALL: instance F (link-plan path view robbed by base consume) — value-only, binaries work
 
 MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
 
