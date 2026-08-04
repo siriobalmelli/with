@@ -685,7 +685,91 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-04l): #747 INSTANCE H FIXED (session_make_str double-ownership) — 29/44 c_import invalid-free tests recovered + migrate UNBLOCKED past the 4.5s dispose wall; instance I (deps-manifest UAF) forensically characterized, NOT yet fixed
+## SESSION-RESUME (2026-08-04m): #747/D28 MIGRATE MEMORY WALL ROOT-CAUSED + FIXED (261M duplicated cursor stores; 12.4 GB -> 333 MB on a 2 MB slice) + three quadratic time rebuilds killed; full 47 MB attempt IN FLIGHT at session end
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ c0c29868 (one fix commit this session; tree
+clean; seed gate `src/main build :stage1` rc=0 280.0s on the committed
+content; stage2 rebuilt rc=0; /tmp/flip-stage2-probe = that stage2).
+Census: stage1 `check src/main.w` rc=0 70.1s 48.5 GB (un-pressured;
+matches 04k's 48.5 GB — seed world retains by design until reseed).
+
+THE MEMORY WALL (04l's 110 GiB cap-kill), ROOT-CAUSED at the line:
+`store_cursor`/`store_type` had un-memoized minters (with_ci_type_declaration
+ClangBridge store_cursor; every with_ci_type_* store_type) handing out a
+FRESH index per query. Each fresh index had cold children caches, so every
+subtree walk re-collected and re-stored whole subtrees. Measured by
+conditioned-bp reads of rt_alloc_committed_bytes + session counters at
+dispose entry (phase_mem lldb scripts in the session scratchpad):
+2.17 MB slice = 261,647,123 stored cursors + 261,599,055 child_indices
+for 10,165 decls (~25.7k stores/decl) = cursors 8.37 GB + child arrays
+~3.1 GB of the 12.44 GB peak. Committed profile per phase (slice2):
+parse 4.9 MB -> macro+prescan 5.53 GB -> translate end 12.44 GB ->
+dispose 14.6 MB (ALL of it session-lifetime, freed at dispose — the
+44 GB+ committed on the full input was the same curve x22 decl count).
+
+FIX (c0c29868, all outputs BYTE-IDENTICAL before/after on slice2+slice5):
+1. ClangBridge.w: store_cursor/store_type dedupe via FNV open-addressing
+   index tables keyed on node identity bytes (CXType pad excluded);
+   cursor-spelling memo per stored index (clang_getCursorSpelling's
+   DeclarationName printer alone was 34% of translate CPU);
+   with_cimport_decl_name routes through the memoized decl cursor;
+   session allocs use sizeof[CImportSession]() (were hardcoded 232).
+2. CImport.w ci_str_replace: parts+join (was byte-by-byte `result ++ c`
+   rebuild — ci_migrate_normalize_output made it O(n^2) over the WHOLE
+   output: 9 of slice2's 10.5 min, TBs of memcpy, lldb-verified
+   x1=942856 x3=1 per concat).
+3. CImport.w ci_trans_stmt_via_ir: fn-var registry snapshot by LENGTH
+   (append-only during stmt lowering; ci_temp_reset only at fn entry) —
+   was a whole-registry clone PER STATEMENT.
+4. Zcu.w render loops: ONE Source per file, not per diagnostic
+   (each rebuild cloned the whole file text + recomputed line offsets;
+   the migrate fix-it pass renders 32k+ warnings on slice5 output).
+
+CURVE (peak RSS / wall, byte-identical outputs at each step):
+- slice2 (2.17 MB): 12.31 GB / 633 s  ->  333 MB / 37 s
+- slice5 (5.06 MB): ~13.4+ GB / never finished -> 1.03 GB / 413 s
+- Memory is FLAT (bounded by the fix-it phase's sema of the output).
+- Slices: head -n cuts of out/emit-c-roundtrip/main.c at `^}$` decl
+  boundaries (lines 11727 / 136952 / 345688 / 786001 for 2/5/10/20 MB);
+  slice files + all logs/samples in the session scratchpad.
+
+RESIDUAL (report, not fixed — investigation budget reached):
+- Translate TIME still superlinear (slice2 37 s -> slice5 413 s, x11 for
+  x2.33): late-translate samples show ~60% in with_str_slice + rt_mmap/
+  munmap churn on >4 KB payloads under ci_trans_stmt_via_ir (leaf-only
+  attribution; sample cannot unwind With frames). Suspect class: owned
+  materialization of large extent/source-text slices per statement in
+  huge emitted-C functions (with_ci_cursor_source_text family / big
+  .slice() owned demands). A conditioned rt_mmap bp ($x0>500000) is too
+  slow to reach mid-translate; next session should bp with_str_slice
+  with a length condition on the LIVE process after attach-at-phase, or
+  add a temporary counter. NOT a memory problem anymore.
+- The fix-it pass prints every warning of the migrated output (32k on
+  slice5, likely 300k+ full-input) — linear now, but the stderr flood
+  dwarfs the useful output; consider whether migrate's analyze pass
+  should render warnings at all (Eric's call, behavior change).
+- 04l's instance I (deps-manifest UAF) untouched, still next mechanical
+  wall for the c_import corpus files.
+
+FULL-INPUT ATTEMPT (the ONE detached run): started at session end,
+pid-tracked keep-awake hold taken;
+  WITH_MEMORY_LIMIT_BYTES=118111600640 /usr/bin/time -l
+  /tmp/flip-stage2-probe migrate out/emit-c-roundtrip/main.c
+  -o <scratchpad>/main_migrated.w -I runtime -include out/gen/wl_decls.h
+  --no-c-export
+Logs: <scratchpad>/fullrun.log (+ fullrun_rss.log, 2-min RSS samples;
+fullrun.start epoch). Expect: memory fine (est. <10 GB), wall dominated
+by the residual translate superlinearity (hours). Verdict criteria per
+the campaign: completes under cap; then `check` the output with the
+probe and COUNT the errors (that count is the roundtrip's next stage —
+do NOT fix them in this campaign).
+
+WHAT REMAINS for #747 (delta from 04l): unchanged list, minus the
+migrate memory wall (fixed above); plus the translate-time residual.
+
+## SESSION-RESUME (2026-08-04l, SUPERSEDED by 04m above): #747 INSTANCE H FIXED (session_make_str double-ownership) — 29/44 c_import invalid-free tests recovered + migrate UNBLOCKED past the 4.5s dispose wall; instance I (deps-manifest UAF) forensically characterized, NOT yet fixed
 
 MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
 
