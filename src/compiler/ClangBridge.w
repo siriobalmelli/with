@@ -388,6 +388,23 @@ type CImportSession:
     // caches (~125M duplicated cursors migrating the compiler C).
     decl_cursor_indices: *mut i32
     decl_cursor_cap: i32
+    // #747: store_cursor/store_type dedupe by node identity. Un-memoized
+    // minters (with_ci_type_declaration, per-query store_type) handed out a
+    // fresh index per call; each fresh index had cold child caches, so every
+    // subtree walk re-collected and re-stored whole subtrees — 261M stored
+    // cursors (11.5 GB) migrating a 2 MB slice of the emitted compiler C.
+    // Open-addressing tables of stored indexes, -1 empty; the entry count is
+    // cursor_count/type_count (exactly one entry per stored node).
+    cursor_hash: *mut i32
+    cursor_hash_cap: i64
+    type_hash: *mut i32
+    type_hash_cap: i64
+    // #747: cursor_idx -> owned spelling C string (NULL = uncached). Every
+    // lowering pass re-queried clang_getCursorSpelling for the same nodes;
+    // libclang's DeclarationName printer alone was ~34% of migrate translate
+    // CPU on the emitted compiler C. Entries and array freed at dispose.
+    cursor_spellings: *mut *mut u8
+    cursor_spellings_cap: i32
 
 type ChildCollector:
     session: *mut CImportSession
@@ -1300,6 +1317,15 @@ pub fn with_cimport_dispose(session: i64) -> Unit:
         if (*s).child_counts as i64 != 0: with_free((*s).child_counts as *mut u8)
         if (*s).child_indices as i64 != 0: with_free((*s).child_indices as *mut u8)
         if (*s).decl_cursor_indices as i64 != 0: with_free((*s).decl_cursor_indices as *mut u8)
+        if (*s).cursor_hash as i64 != 0: with_free((*s).cursor_hash as *mut u8)
+        if (*s).type_hash as i64 != 0: with_free((*s).type_hash as *mut u8)
+        if (*s).cursor_spellings as i64 != 0:
+            var spi: i32 = 0
+            while spi < (*s).cursor_spellings_cap:
+                let sp_entry = *(((*s).cursor_spellings as i64 + spi as i64 * 8) as *const *mut u8)
+                if sp_entry as i64 != 0: with_free(sp_entry)
+                spi = spi + 1
+            with_free((*s).cursor_spellings as *mut u8)
         // Cleanup temp file
         if (*s).tmp_path as i64 != 0:
             let _ = unlink((*s).tmp_path as *const u8)
@@ -1374,8 +1400,9 @@ pub fn with_cimport_decl_name(session: i64, idx: i32) -> str:
     unsafe:
         let s = session as *mut CImportSession
         if s as i64 == 0 or idx < 0 or idx >= (*s).decl_count: return ""
-        let cursor = *(((*s).decls as i64 + idx as i64 * 32) as *const CXCursor)
-        clang_str_to_with(s, clang_getCursorSpelling(cursor))
+        // Route through the memoized decl cursor + spelling cache (#747):
+        // the driver's pre-scan passes re-query every decl's name.
+        with_ci_cursor_spelling(session, with_cimport_decl_cursor(session, idx))
 
 pub fn with_cimport_decl_cursor(session: i64, idx: i32) -> i32:
     unsafe:
@@ -2257,7 +2284,7 @@ unsafe fn collect_macro_def(cursor: CXCursor, parent: CXCursor, data: *mut u8) -
     CXChildVisit_Continue
 
 unsafe fn cimport_collect_macros_from_libclang(ms: *mut MacroSession, header_code: &str) -> i32:
-    let size = 232  // sizeof(CImportSession)
+    let size = sizeof[CImportSession]()
     let s = with_alloc(size) as *mut CImportSession
     if s as i64 == 0:
         return 0
@@ -2334,7 +2361,7 @@ pub fn with_cimport_collect_object_macro_types(header_code: &str, macro_names: &
         if macro_names.len() == 0:
             return ""
 
-        let size = 232  // sizeof(CImportSession)
+        let size = sizeof[CImportSession]()
         let s = with_alloc(size) as *mut CImportSession
         if s as i64 == 0:
             return ""
@@ -2428,7 +2455,7 @@ pub fn with_cimport_parse_macro_probe(header_code: &str, macro_name: &str) -> i6
         if macro_name.len() == 0:
             return 0
 
-        let size = 232  // sizeof(CImportSession)
+        let size = sizeof[CImportSession]()
         let s = with_alloc(size) as *mut CImportSession
         if s as i64 == 0:
             return 0
@@ -2641,7 +2668,70 @@ pub fn with_cimport_typedef_anon_is_union(session: i64, idx: i32) -> i32:
 
 // ── Phase 1: AST traversal ─────────────────────────────────
 
+// FNV-1a over the identity words of a node handle (rt's fnv_hash is private
+// to the runtime module). Word-granular mixing is enough for pointer keys.
+fn ci_node_hash(w0: i64, w1: i64, w2: i64, w3: i64) -> i64:
+    var h: u64 = 14695981039346656037
+    h = (h ^ (w0 as u64)) *% 1099511628211
+    h = (h ^ (w1 as u64)) *% 1099511628211
+    h = (h ^ (w2 as u64)) *% 1099511628211
+    h = (h ^ (w3 as u64)) *% 1099511628211
+    (h & 0x7fffffffffffffff) as i64
+
+unsafe fn cursor_hash_of(cursor: CXCursor) -> i64:
+    ci_node_hash((cursor.kind as u32 as i64) | ((cursor.xdata as u32 as i64) << 32), cursor.data[0], cursor.data[1], cursor.data[2])
+
+// pad0 is C struct padding (undefined bytes in a by-value CXType) — hash and
+// compare only kind + data so identical types always collide into one entry.
+unsafe fn type_hash_of(ty: CXType) -> i64:
+    ci_node_hash(ty.kind as u32 as i64, ty.data[0], ty.data[1], 0)
+
+unsafe fn cursor_hash_insert(tbl: *mut i32, cap: i64, h: i64, idx: i32):
+    var slot = h & (cap - 1)
+    while *((tbl as i64 + slot * 4) as *const i32) >= 0:
+        slot = (slot + 1) & (cap - 1)
+    *((tbl as i64 + slot * 4) as *mut i32) = idx
+
+unsafe fn cursor_hash_grow(s: *mut CImportSession):
+    let new_cap = if (*s).cursor_hash_cap > 0: (*s).cursor_hash_cap * 2 else: 4096
+    let tbl = with_alloc(new_cap * 4)
+    with_memset(tbl, -1, new_cap * 4)
+    var i: i32 = 0
+    while i < (*s).cursor_count:
+        let c = *(((*s).cursors as i64 + i as i64 * 32) as *const CXCursor)
+        cursor_hash_insert(tbl as *mut i32, new_cap, cursor_hash_of(c), i)
+        i = i + 1
+    if (*s).cursor_hash as i64 != 0: with_free((*s).cursor_hash as *mut u8)
+    (*s).cursor_hash = tbl as *mut i32
+    (*s).cursor_hash_cap = new_cap
+
+unsafe fn type_hash_grow(s: *mut CImportSession):
+    let new_cap = if (*s).type_hash_cap > 0: (*s).type_hash_cap * 2 else: 4096
+    let tbl = with_alloc(new_cap * 4)
+    with_memset(tbl, -1, new_cap * 4)
+    var i: i32 = 0
+    while i < (*s).type_count:
+        let t = *(((*s).types as i64 + i as i64 * 24) as *const CXType)
+        cursor_hash_insert(tbl as *mut i32, new_cap, type_hash_of(t), i)
+        i = i + 1
+    if (*s).type_hash as i64 != 0: with_free((*s).type_hash as *mut u8)
+    (*s).type_hash = tbl as *mut i32
+    (*s).type_hash_cap = new_cap
+
 unsafe fn store_cursor(s: *mut CImportSession, cursor: CXCursor) -> i32:
+    if ((*s).cursor_count as i64) * 10 >= (*s).cursor_hash_cap * 7:
+        cursor_hash_grow(s)
+    let h = cursor_hash_of(cursor)
+    let cap = (*s).cursor_hash_cap
+    let tbl = (*s).cursor_hash as i64
+    var slot = h & (cap - 1)
+    while true:
+        let e = *((tbl + slot * 4) as *const i32)
+        if e < 0: break
+        let sc = *(((*s).cursors as i64 + e as i64 * 32) as *const CXCursor)
+        if sc.kind == cursor.kind and sc.xdata == cursor.xdata and sc.data[0] == cursor.data[0] and sc.data[1] == cursor.data[1] and sc.data[2] == cursor.data[2]:
+            return e
+        slot = (slot + 1) & (cap - 1)
     if (*s).cursor_count >= (*s).cursor_cap:
         (*s).cursor_cap = if (*s).cursor_cap > 0: (*s).cursor_cap * 2 else: 256
         let new_buf = with_alloc((*s).cursor_cap as i64 * 32)
@@ -2653,9 +2743,23 @@ unsafe fn store_cursor(s: *mut CImportSession, cursor: CXCursor) -> i32:
     *dst = cursor
     let idx = (*s).cursor_count
     (*s).cursor_count = (*s).cursor_count + 1
+    *((tbl + slot * 4) as *mut i32) = idx
     idx
 
 unsafe fn store_type(s: *mut CImportSession, ty: CXType) -> i32:
+    if ((*s).type_count as i64) * 10 >= (*s).type_hash_cap * 7:
+        type_hash_grow(s)
+    let h = type_hash_of(ty)
+    let cap = (*s).type_hash_cap
+    let tbl = (*s).type_hash as i64
+    var slot = h & (cap - 1)
+    while true:
+        let e = *((tbl + slot * 4) as *const i32)
+        if e < 0: break
+        let st = *(((*s).types as i64 + e as i64 * 24) as *const CXType)
+        if st.kind == ty.kind and st.data[0] == ty.data[0] and st.data[1] == ty.data[1]:
+            return e
+        slot = (slot + 1) & (cap - 1)
     if (*s).type_count >= (*s).type_cap:
         (*s).type_cap = if (*s).type_cap > 0: (*s).type_cap * 2 else: 256
         let new_buf = with_alloc((*s).type_cap as i64 * 24)
@@ -2667,6 +2771,7 @@ unsafe fn store_type(s: *mut CImportSession, ty: CXType) -> i32:
     *dst = ty
     let idx = (*s).type_count
     (*s).type_count = (*s).type_count + 1
+    *((tbl + slot * 4) as *mut i32) = idx
     idx
 
 @[callconv("c")]
@@ -2778,8 +2883,30 @@ pub fn with_ci_cursor_spelling(session: i64, cursor_idx: i32) -> str:
     unsafe:
         let s = session as *mut CImportSession
         if s as i64 == 0 or cursor_idx < 0 or cursor_idx >= (*s).cursor_count: return ""
+        // Memoized per stored cursor (see cursor_spellings). Store-dedupe
+        // (#747) makes cursor_idx canonical for a node, so one libclang
+        // spelling print per distinct node serves every lowering pass.
+        if cursor_idx >= (*s).cursor_spellings_cap:
+            let new_cap = if (*s).cursor_cap > cursor_idx: (*s).cursor_cap else: cursor_idx + 256
+            let buf = with_alloc(new_cap as i64 * 8)
+            with_memset(buf, 0, new_cap as i64 * 8)
+            if (*s).cursor_spellings as i64 != 0 and (*s).cursor_spellings_cap > 0:
+                with_memcpy(buf, (*s).cursor_spellings as *const u8, (*s).cursor_spellings_cap as i64 * 8)
+            if (*s).cursor_spellings as i64 != 0: with_free((*s).cursor_spellings as *mut u8)
+            (*s).cursor_spellings = buf as *mut *mut u8
+            (*s).cursor_spellings_cap = new_cap
+        let slot = ((*s).cursor_spellings as i64 + cursor_idx as i64 * 8) as *mut *mut u8
+        if (*slot) as i64 != 0:
+            return make_str(*slot as *const u8)
         let cursor = *(((*s).cursors as i64 + cursor_idx as i64 * 32) as *const CXCursor)
-        clang_str_to_with(s, clang_getCursorSpelling(cursor))
+        let cxs = clang_getCursorSpelling(cursor)
+        let cstr = clang_getCString(cxs)
+        let dup = c_strdup(cstr)
+        clang_disposeString(cxs)
+        if dup as i64 == 0:
+            return ""
+        *slot = dup
+        make_str(dup as *const u8)
 
 pub fn with_ci_cursor_kind_name(session: i64, cursor_idx: i32) -> str:
     unsafe:

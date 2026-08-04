@@ -259,13 +259,22 @@ impl Zcu:
     // drop freed the stored diagnostic's label/note buffers (#715 class,
     // reproduced as a DOUBLE FREE under --debug-alloc).
     fn render_diag_frontend(diag: &Diagnostic):
+        let source = self.source_for_file_id_frontend(diag.primary.file)
+        self.render_diag_frontend_with(diag, &source)
+
+    // Renders against a caller-supplied primary Source so diagnostic loops
+    // can reuse one Source per file. Building a fresh Source per diagnostic
+    // clones the whole file text and recomputes its line-offset table —
+    // quadratic on a warning/error flood over a large file (#747: the
+    // migrate fix-it pass spent minutes here on the emitted compiler C).
+    // CLI-mapped diagnostics resolve their own source and ignore `source`.
+    fn render_diag_frontend_with(diag: &Diagnostic, source: &Source):
         let map_idx = self.cli_diag_mapping_index(diag.primary.start)
         if map_idx >= 0:
             let gen_start = self.cli_diag_gen_starts.get(map_idx as i64)
-            let source = Source.from_string(self.cli_diag_source_names.get(map_idx as i64), self.cli_diag_source_texts.get(map_idx as i64), 0)
-            diag.render_at_offset(source, gen_start)
+            let mapped = Source.from_string(self.cli_diag_source_names.get(map_idx as i64), self.cli_diag_source_texts.get(map_idx as i64), 0)
+            diag.render_at_offset(mapped, gen_start)
             return
-        let source = self.source_for_file_id_frontend(diag.primary.file)
         // #670: labels can point into other files (e.g. E0921's concurrency
         // evidence in the std prelude); resolve each one against its own file.
         let label_paths: Vec[str] = Vec.new()
@@ -301,21 +310,33 @@ impl Zcu:
         Source.from_string(self.current_source_path, self.current_source_text, 0)
 
     fn render_all_diagnostics_frontend():
+        // One Source per file, not per diagnostic (#747; see
+        // render_diag_frontend_with).
+        var cached_file = -2147483648
+        var cached_source = Source.from_string("", "", 0)
         for i in 0..self.diagnostics.items.len() as i32:
-            self.render_diag_frontend(&self.diagnostics.items[i as i64])
+            let diag = &self.diagnostics.items[i as i64]
+            if self.cli_diag_mapping_index(diag.primary.start) < 0 and diag.primary.file != cached_file:
+                cached_source = self.source_for_file_id_frontend(diag.primary.file)
+                cached_file = diag.primary.file
+            self.render_diag_frontend_with(diag, &cached_source)
             if i + 1 < self.diagnostics.items.len() as i32:
                 runtime_eprint("")
 
     fn render_warnings_frontend():
         var printed = 0
+        var cached_file = -2147483648
+        var cached_source = Source.from_string("", "", 0)
         for i in 0..self.diagnostics.items.len() as i32:
             let diag = &self.diagnostics.items[i as i64]
             if diag.severity != DiagSeverity.Warning:
                 continue
             if printed != 0:
                 runtime_eprint("")
-            let source = self.source_for_file_id_frontend(diag.primary.file)
-            diag.render(source)
+            if diag.primary.file != cached_file:
+                cached_source = self.source_for_file_id_frontend(diag.primary.file)
+                cached_file = diag.primary.file
+            diag.render(cached_source)
             printed = printed + 1
 
     fn print_warnings():

@@ -10667,9 +10667,13 @@ fn ci_cursor_kind_is_expression(kind: i32) -> bool:
     false
 
 fn ci_trans_stmt_via_ir(session: i64, cursor: i32, kind: i32, indent: i32, scope: CiScope) -> str:
-    // Snapshot must CLONE: a move would leave the global in moved state for
-    // every other reader on the success path (#747).
-    let saved_fn_var_names = with_str_clone_ref(g_ci_fn_var_names)
+    // Snapshot by LENGTH, not by clone: the registry is append-only inside
+    // statement lowering (ci_temp_reset only runs at function entry), so the
+    // failure path can truncate back. The old unconditional clone copied the
+    // whole function-wide registry once per statement — quadratic in
+    // (statements x registered names), ~50% of migrate wall time on the
+    // emitted compiler C (#747).
+    let saved_fn_var_names_len = g_ci_fn_var_names.len()
     let saved_temp_cursor_len = g_ci_temp_cursors.len() as i32
     let saved_temp_id_len = g_ci_temp_ids.len() as i32
     let saved_temp_next = g_ci_temp_next
@@ -10679,7 +10683,8 @@ fn ci_trans_stmt_via_ir(session: i64, cursor: i32, kind: i32, indent: i32, scope
 
     let id = stmts.lower_stmt_ir(session, cursor, exprs, types, indent, scope)
     if (id as i32) == 0:
-        g_ci_fn_var_names = saved_fn_var_names
+        if g_ci_fn_var_names.len() > saved_fn_var_names_len:
+            g_ci_fn_var_names = with_str_clone_ref(g_ci_fn_var_names.slice(0, saved_fn_var_names_len))
         while (g_ci_temp_cursors.len() as i32) > saved_temp_cursor_len:
             let _ = g_ci_temp_cursors.pop()
         while (g_ci_temp_ids.len() as i32) > saved_temp_id_len:
@@ -11555,18 +11560,29 @@ fn ci_str_replace(text: &str, needle: &str, replacement: &str) -> str:
         return with_str_clone_ref(text)
     if needle.len() > text.len():
         return with_str_clone_ref(text)
-    var result = ""
-    var i = 0
-    let limit = text.len() as i32
-    while i < limit:
-        if i as i64 + needle.len() <= text.len():
-            if text.slice(i as i64, i as i64 + needle.len()) == needle:
-                result = result ++ replacement
-                i = i + needle.len() as i32
-                continue
-        result = result ++ text.slice(i as i64, i as i64 + 1)
-        i = i + 1
-    result
+    // Collect parts then join: the old byte-by-byte `result = result ++ c`
+    // rebuild was O(n²) — 9 minutes and terabytes of memcpy normalizing a
+    // 1.6 MB migrate output, unreachable at compiler-C scale.
+    var parts: Vec[str] = Vec.new()
+    let n = text.len()
+    let nlen = needle.len()
+    let first = needle.byte_at(0)
+    var start: i64 = 0
+    var i: i64 = 0
+    while i + nlen <= n:
+        if text.byte_at(i) == first and text.slice(i, i + nlen) == needle:
+            if i > start:
+                parts.push(text.slice(start, i))
+            parts.push(with_str_clone_ref(replacement))
+            i = i + nlen
+            start = i
+        else:
+            i = i + 1
+    if parts.len() == 0:
+        return with_str_clone_ref(text)
+    if start < n:
+        parts.push(text.slice(start, n))
+    parts.join("")
 
 fn ci_indent_block(text: &str, indent: i32) -> str:
     if text.len() == 0:
