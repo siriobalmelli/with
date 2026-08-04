@@ -5195,13 +5195,49 @@ impl MirBuilder:
                 if self.places_are_identical(place, self.body.operand_d0.get(rhs as i64)) != 0:
                     return rhs
         if dest_ty != 0 and self.sema.is_copy_frozen(dest_ty) == 0 and self.sema.type_needs_drop_frozen(dest_ty) != 0:
+            // #747 (03h): D27 — a binding names WHAT'S THERE. A live view
+            // binding aliasing exactly this place names the OLD value, so
+            // re-targeting the place must not free or re-read it through the
+            // alias. The save/overwrite/restore idiom (`let saved = self.f;
+            // self.f = fresh; …; self.f = saved`) freed the saved handle at
+            // the overwrite and restored `fresh` onto itself at the restore —
+            // check_trait_default_method_body_for_impl's assoc_type_bindings
+            // save was the transform_sema hashmap double free. Materialize
+            // each such view into an owned local bound to the same name
+            // BEFORE the store: the binding keeps the original value and owns
+            // it (guarded scope-exit drop), a later `self.f = saved` moves it
+            // back, and the overwrite drop is skipped — ownership of the old
+            // value transferred to the binding.
+            // Same-scope only: the capture statement executes exactly as often
+            // as the binding is created. A binding in an OUTER scope with the
+            // reassignment in a loop/branch would re-run the capture per
+            // iteration and clobber the saved value — that residue class keeps
+            // the old drop-before-overwrite (recorded in the #747 handoff).
+            var alias_took_old_value = 0
+            let cap_scope_start = if self.alias_scope_starts.len() as i32 > 0: self.alias_scope_starts.get(self.alias_scope_starts.len() - 1) else: 0
+            var cap_ai = self.alias_places.len() as i32 - 1
+            while cap_ai >= cap_scope_start:
+                if self.places_are_identical(place, self.alias_places.get(cap_ai as i64)) != 0:
+                    let cap_sym: i32 = self.alias_syms.get(cap_ai as i64)
+                    let cap_local = self.body.new_local(dest_ty, 0, cap_sym, 1)
+                    self.body.push_stmt(self.cur_bb, StmtKind.StorageLive, cap_local, 0, self.ast.get_start(place_expr))
+                    let cap_place = self.place_for_local(cap_local)
+                    let cap_rv = self.body.new_rvalue(RvalueKind.RK_USE, self.body.new_operand(OperandKind.OK_COPY, place), 0, 0)
+                    self.body.push_stmt(self.cur_bb, StmtKind.Assign, cap_place, cap_rv, self.ast.get_start(place_expr))
+                    self.schedule_drop(cap_local, DropKind.DK_VALUE)
+                    self.bind_local(cap_sym, cap_local)
+                    // Dead-name the alias entry; the scope pop still removes it
+                    // positionally, but lookups now resolve to the owned local.
+                    self.alias_syms.set_i32(cap_ai as i64, 0)
+                    alias_took_old_value = 1
+                cap_ai = cap_ai - 1
             // §16.11 / decisions D8: `*p = v` and `p[i] = v` through a RAW
             // pointer are raw stores — the old pointee may be uninitialized
             // (fresh allocation) or already moved out, so the compiler cannot
             // prove a live old value to drop. The programmer drops explicitly
             // (`let old = *p; drop(old)`). Safe places (bindings, `&mut`
             // derefs, fields) keep drop-before-overwrite.
-            if self.assign_target_is_raw_pointer_store(place_expr) == 0:
+            if self.assign_target_is_raw_pointer_store(place_expr) == 0 and alias_took_old_value == 0:
                 self.emit_drop_place_respecting_moved_fields(place, dest_ty)
         self.assign_operand_to_place(place, rhs, self.ast.get_start(place_expr))
         rhs
