@@ -685,7 +685,95 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-04o): #747 CHECK-SCALE i32 OVERFLOW ROOT-CAUSED + FIXED (fn_param_defaults key `param_start * 1000` overflowed at 3M-line scale); the migrated 3M-line compiler source now CHECKS to a clean diagnostics verdict — 6 errors, ONE root defect, and it is #750 (name-keyed trait coherence), which is now the roundtrip census's first wall
+## SESSION-RESUME (2026-08-04p): #750 E1102 COHERENCE FIX LANDED (duplicate-impl scan tier-discriminates shadowed syms) + THE FULL BODY-LEVEL ROUNDTRIP CENSUS IS IN: 188,427 errors, only 9 kinds, three mechanical migrator classes cover 99.7% — the migrate-fix worklist is now concrete
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ 31fc99c6 (one fix commit this session; tree
+clean). Seed gate `src/main build :stage1` rc=0 146.7s; stage2 rebuilt rc=0
+129.3s; /tmp/flip-stage2-probe = that stage2. Census gate: stage1
+`check src/main.w` ok 69.3s / 48.5 GB (matches 04k/04m/04n/04o exactly).
+Worktree path unchanged (scratchpad/wt-flip; main_migrated.w and all census
+tools in the same scratchpad).
+
+THE #750 FIX (31fc99c6 — MAIN-LINE-worthy, must ride the flip merge):
+`collect_impl_decl`'s "Record direct impl" duplicate scan (SemaDecl.w
+~2361-2381) treated any prior record under the same interned type NAME as a
+duplicate, so the migrated file's one `impl Copy for RegexFlags` collided
+with the prelude's impl for std's DIFFERENT RegexFlags (lib/std/regex.w:43).
+Fix composes with the D29 tier machinery instead of bypassing it: for a
+shadowed sym (`type_sym_tier_mask == 3`) the scan now skips records whose
+`impl_extra_is_std` tier differs from the tier of the type the gated lookup
+resolves from the impl's own module — the exact pattern the function's
+existing Copy/Drop conflict checks already use (`type_sym_is_shadowed` +
+`type_tid_std_tier(resolve_alias(lookup_named_type_visible(...)))` +
+`impl_record_matches_tier`). Unshadowed syms keep the flat scan
+bit-for-bit. VERIFIED: shadow-coexistence repro (user RegexFlags + impl
+Copy alongside std's) compiles AND runs; shadowed true-dup AND flat
+true-dup both still E1102 (e1102repro.w / e1102dup.w / e1102dup2.w);
+behavior smoke 3 c_import + 3 plain green on the rebuilt probe.
+(behav_c_import_auto_constructor rc=139 is PRE-EXISTING — 04l invalid-free
+residual family, evidence behavior_diffs.txt `DIFF probe=1 base=0` and
+battery.log; the fix only adds a `continue` to an error scan, accepted
+programs untouched.)
+
+THE CENSUS (the campaign's number): `WITH_MEMORY_LIMIT_BYTES=118111600640
+/tmp/flip-stage2-probe check main_migrated.w` rc=1, 312.5s, 2.27 GB peak,
+ZERO panics, ZERO E1102 — the decl gate cleared and the body phase ran to
+completion. 188,427 error diagnostics (188,165 after collapsing 262
+adjacent #759-style double-renders — the decl-phase doubling barely touches
+body errors; warnings double much more: 448,267 rendered / 297,540
+adjacent-distinct). Only 76 of all 636,694 diagnostics are located in
+embedded-std; the rest are in main_migrated.w. Kind table (census_04p.w
+bucketer; full tables in census-04p-buckets.txt):
+
+  111524  type mismatch in assignment
+   62359  wrong argument type in call to '_'
+   13942  undefined variable
+     559  return type does not implement Default
+      30  return type mismatch
+       5  match arms do not establish one compatible owned result type
+       4  unknown type 'WithVec'
+       3  right operand of ++ must be str
+       1  @[effect] pin mismatch (preamble 'worker')
+
+ROOT CHARACTERIZATION (exact lines; these are MIGRATOR classes — the next
+migrate-fix worklist; do NOT hand-edit main_migrated.w):
+1. bool-local int assignment (dominant, most of the 111k): C `_Bool`
+   locals migrate to `var x: bool = false` but every assignment feeds a C
+   int expr — `(x = 0)`, `(x = (if cond: 1 else: 0))`. See
+   main_migrated.w:484 (decl) vs :505/:522 (stores).
+2. runtime-extern signature collision (most of the 62k): the roundtrip
+   file redeclares the with_* runtime ABI (`extern fn with_memcpy(dst:
+   *i8, src: *i8, n: i64)`, line 75) and calls collide with the
+   prelude/internal signatures under the flat extern namespace
+   (with_memcpy/with_str_len/with_str_eq/with_vec_*...). See :1064. The
+   76 embedded-std-located errors are the same collision seen from std's
+   side. This is the #750 EXTERN lane (issue Fix: delete extern-shadow
+   diagnostic / resolve externs by tier) — sema-side, not migrator-side.
+3. param-name mismatch (the 13,942 undefined variables): the signature
+   emitter names parameters from the C source (`__param_c` for C param
+   `c`) while bodies reference index-derived `__param__1`. See
+   `pub fn wl_context_dispose(__param_c: c_longlong)` :326 vs :343.
+4. uninitialized non-Default locals (559): `var __local__0...: with_str`
+   with no initializer (:30895; Result_CString__CStringError_ :60135).
+
+Top error-bearing regions (single-file input, so the "top files" table is
+by enclosing migrated fn and its module prefix): Sema 37,769; Codegen
+25,186; ci 19,728; CCodegen 12,114; MirBuilder 10,087; ComptimeEvaluator
+9,460; Parser 5,846. Top fn: Codegen_mir_emit_call_term__34534 (2,189).
+
+SESSION ARTIFACTS (scratchpad): census-04p.time (256 MB stderr = the
+diagnostics), census-04p-buckets.txt (tables), census_04p.w + dedup_04p.w
+(With scanners), e1102repro.w/e1102dup.w/e1102dup2.w, seedgate-04p.log,
+s2rebuild-04p.log.
+
+NEXT: classes 1/3/4 are migrator fixes (fix `with migrate`, re-migrate,
+re-census — never hand-edit output); class 2 is the #750 extern lane in
+Sema. RESIDUALS: 04l instance I (deps-manifest UAF) untouched;
+behav_c_import_auto_constructor still red (04l family).
+
+## SESSION-RESUME (2026-08-04o, SUPERSEDED by 04p above): #747 CHECK-SCALE i32 OVERFLOW ROOT-CAUSED + FIXED (fn_param_defaults key `param_start * 1000` overflowed at 3M-line scale); the migrated 3M-line compiler source now CHECKS to a clean diagnostics verdict — 6 errors, ONE root defect, and it is #750 (name-keyed trait coherence), which is now the roundtrip census's first wall
 
 MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
 
