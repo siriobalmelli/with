@@ -685,7 +685,104 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-03f): #747 STR_SLICE view-drop ROOT-CAUSED+FIXED (stage2 parses whole modules); NEXT WALL: fn_meta_map table freed-while-live + a FALSE-GREEN check exit
+## SESSION-RESUME (2026-08-03h): #747 TWO view-ownership classes FIXED (comptime transform + trait-default check run clean); NEXT WALL: fn_may_alloc handle freed-while-live via a str/raw-path free
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ 5aa97340 (two commits this session, each
+seed-gated rc=0, stage1 walls 154s/156s). stage1 rebuilt twice;
+/tmp/flip-stage2-probe rebuilt twice (rc=0, 135.8s, 68.0 GB peak,
+107,009,376 B). Census after both fixes: ok, rc=0, 75.0s, 48.35 GB.
+
+FIX 1 (72c609e1) — view reads from frame-owned dropping storage are
+TRANSFERS: comptime_eval_finish (src/ComptimeEval.w:1115) drains the
+consumed evaluator through let-bindings; lower_binding_alias_place made
+them views of the param's field places and lower_var's alias branch
+lowered every use as bare OK_COPY. MIR (sym7851): `_1.* = copy _2.f924`
++ aggregate `copy _2.f7697/f7714/f1318/f1319` + whole `drop(_2)` — two
+owners per drained field; the evaluator drop freed Sema's hashmap
+tables, the next ct_eval_truthy freed them again (128 B DOUBLE FREE,
+bt: with_hashmap_free <- __drop_struct_365 <- comptime_eval_finish).
+Fix in MirLower.lower_var alias branch: pure field path + base local
+with a scheduled VALUE drop + drop-needing type => OK_MOVE (consumers
+run consume_moved_operand: static exclusion + reset-on-move). Borrowed
+bases (mut-fn receiver, share params) keep the pure view — lex_ident's
+`let src = self.source` unaffected. Post-fix MIR: moves + zst resets,
+drop(_2) collapsed to residual drop(_2.f642).
+
+FIX 2 (5aa97340) — a view binding takes ownership when its place is
+reassigned: check_trait_default_method_body_for_impl (SemaCheck.w:2380/
+2388/2424) does `let saved_assoc = self.assoc_type_bindings;
+self.assoc_type_bindings = fresh; ...; self.assoc_type_bindings =
+saved_assoc` (same class: saved_subst_syms/tys Vecs). The let is a VIEW
+of the field place, so the overwrite's drop-before-overwrite freed the
+saved handle AND the restore re-read the CURRENT value through the
+alias (restored fresh onto itself). lldb free-trace (same-bp-set layout
+replay): one handle freed 5x — prepare_comptime_eval_copy inlined
+(+416/+464) then ctm epilogue field drops at Sema offsets 7464 and 7352
+(x27=sp+0x4B98), identical headers, no alloc between = true two-field
+alias. Fix in MirLower.finish_assignment_to_place: before the
+overwrite drop, each LIVE same-scope view binding aliasing exactly the
+assigned place is materialized into an owned local bound to the same
+name (StorageLive + copy + guarded DK_VALUE drop), the alias entry is
+dead-named, the overwrite drop is skipped. The later `self.f = saved`
+resolves to the owned local and MOVES it back via fix 1's rule.
+Repro: pre-fix 2/1/0/panic; post-fix 2/1/2/6, debug-alloc leak 0.
+RESIDUE: a binding in an OUTER scope whose place is reassigned inside
+a loop/branch keeps the old drop-before-overwrite (the capture stmt
+would re-execute per iteration and clobber the saved value) — cross-
+scope instances of the idiom are still the pre-fix class.
+
+VERIFIED THIS SESSION:
+- repro_finish.w (consumed carrier drain -> raw-ptr store + returned
+  struct): pre-fix DOUBLE FREE 32 B origin=Vec; post-fix correct
+  output (4 leaks = the repro's own raw-store abandonment of the old
+  pointee — §16.11 raw-store semantics, not a fix defect).
+- repro_saverestore.w: above.
+- stage2 now gets THROUGH comptime transform and trait-default checks
+  into Sema.check_bodies (previous wall was the first ct_eval_truthy).
+
+NEXT WALL (instance C — evidence pinned, NOT root-caused; the two-fix
+budget for this session was spent):
+- stage2 -e/check panic: invalid free in hm_grow <- with_hashmap_insert
+  <- Sema.check_fn_body_with_sig_at <- check_bodies. The insert is
+  `self.fn_may_alloc.insert(fn_name, 0/1)` (SemaCheck.w:2297-2300;
+  disasm: map at Sema offset 0xc68, flag at 0x1ef4). Debug-alloc:
+  DOUBLE FREE size=32 origin=Vec first_drop=__drop_struct_93 (= Vec
+  glue label) — hm_grow's free of "old keys" read through a STALE
+  handle hit a block last legally owned as a Vec buffer.
+- The fn_may_alloc HANDLE block itself was recycled while live: at the
+  report stop, [x19+0xc68] (frame 8) = a block that earlier appears as
+  the VALS array of a DIFFERENT map freed in the merge loop
+  (Zcu/Frontend merge_resolved_modules_frontend). Traced ALL
+  with_hashmap_free + with_vec_free + with_vec_free_drop_origin calls
+  (16,277 events, same-bp-set replay): the handle is NEVER an x0 of
+  any of them => the first wrong free of that block came from the
+  str-free or raw rt_free space (with_str_free untraced — too many
+  hits for per-hit lldb logging; needs a targeted approach: condition
+  a str-free bp on the address learned from a first same-bp-set run,
+  or add a temporary rt-side trap-on-address env hook).
+- merge_resolved_modules_frontend MIR (sym14434) itself looks clean:
+  parser fields moved/reset correctly, per-module residual drops are
+  the parser-owned 8 (tokens/source/6 Vecs), pool/ast/intern types are
+  drop-excluded, `_0 = copy _4` return. The cascade root is upstream
+  of the fn_may_alloc symptom.
+- FALSE-GREEN reminder from 03f still applies: stage2 `check
+  src/main.w rc=0` is only real with ~48 GB peak + all WITH_PROFILE
+  phases (the 8f66f566 gate now enforces positive sema evidence).
+  Self-check NOT attempted this session (blocked on instance C);
+  stage3 not attempted.
+
+LLDB PROTOCOL NOTES (add to 03f traps): on this box's lldb, multiple
+`--one-liner` flags on `breakpoint command add` keep ONLY THE LAST —
+use the multi-line DONE-block form in a `-s` script file. Same-bp-set
+runs replay heap addresses exactly (verified twice); ANY bp-set change
+shifts them. `process launch -X false -- args` avoids the argdumper
+shell-expansion failure. Guarded field drops pair as: `mov w8,#OFF ;
+add x0,x27,w8 ; bl rt_value_is_zero ; cbnz -> skip ; ldr x0,[sp,#S] ;
+bl <free>` with x27 = sp + const — the guard word IS the freed word.
+
+## SESSION-RESUME (2026-08-03f, SUPERSEDED by 03h above): #747 STR_SLICE view-drop ROOT-CAUSED+FIXED (stage2 parses whole modules); NEXT WALL: fn_meta_map table freed-while-live + a FALSE-GREEN check exit
 
 MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
 
