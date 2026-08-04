@@ -754,6 +754,88 @@ fn rt_parse_limit_cstr(p: *const u8) -> i64:
         value = value * 10 + digit
         i = i + 1
 
+// Trap-on-address (#747 instrument, debug-allocator extension): set
+// WITH_DEBUG_ALLOC_TRAP_FREE=<decimal payload addr> to print every rt alloc and
+// free of that exact payload address (with the drop origin when the free path
+// carries one). When WITH_DEBUG_ALLOC_TRAP_FREE_HIT=<n> is nonzero, the n-th
+// free of the address panics so a debugger stops on the freeing call chain.
+// Works without WITH_DEBUG_ALLOC, so the allocation pattern under test is
+// unchanged. Values may be zero-padded (learn/trap lldb runs keep identical
+// env-block lengths for exact heap-layout replay).
+var dbg_trap_free_state: i32 = 0
+var dbg_trap_free_addr_v: i64 = 0
+var dbg_trap_free_hit_state: i32 = 0
+var dbg_trap_free_hit_v: i64 = 0
+var dbg_trap_free_count: i64 = 0
+var dbg_trap_alloc_hit_state: i32 = 0
+var dbg_trap_alloc_hit_v: i64 = 0
+var dbg_trap_alloc_count: i64 = 0
+
+fn dbg_trap_free_addr() -> i64:
+    if dbg_trap_free_state == 0:
+        let parsed = rt_parse_limit_cstr(rt_getenv(c"WITH_DEBUG_ALLOC_TRAP_FREE".ptr))
+        if parsed > 0:
+            dbg_trap_free_addr_v = parsed
+            dbg_trap_free_state = 2
+        else:
+            dbg_trap_free_state = 1
+    if dbg_trap_free_state == 2:
+        return dbg_trap_free_addr_v
+    0
+
+fn dbg_trap_free_hit() -> i64:
+    if dbg_trap_free_hit_state == 0:
+        let parsed = rt_parse_limit_cstr(rt_getenv(c"WITH_DEBUG_ALLOC_TRAP_FREE_HIT".ptr))
+        if parsed > 0:
+            dbg_trap_free_hit_v = parsed
+            dbg_trap_free_hit_state = 2
+        else:
+            dbg_trap_free_hit_state = 1
+    if dbg_trap_free_hit_state == 2:
+        return dbg_trap_free_hit_v
+    0
+
+fn dbg_trap_free_check(ptr_addr: i64, drop_origin_ptr: i64, drop_origin_len: i64):
+    if dbg_trap_free_addr() != ptr_addr:
+        return
+    dbg_trap_free_count = dbg_trap_free_count + 1
+    dbg_puts("debug-alloc: trap-free hit=" as *const u8, 27)
+    dbg_put_i64(dbg_trap_free_count)
+    dbg_puts(" addr=" as *const u8, 6)
+    dbg_put_i64(ptr_addr)
+    if drop_origin_ptr != 0 and drop_origin_len > 0:
+        dbg_puts(" origin=" as *const u8, 8)
+        dbg_puts(drop_origin_ptr as *const u8, drop_origin_len)
+    dbg_puts("\n" as *const u8, 1)
+    if dbg_trap_free_hit() == dbg_trap_free_count:
+        with_panic_core(make_str("debug-alloc: trapped free of watched address" as *const u8, 44), make_str("" as *const u8, 0), 0)
+
+fn dbg_trap_alloc_hit() -> i64:
+    if dbg_trap_alloc_hit_state == 0:
+        let parsed = rt_parse_limit_cstr(rt_getenv(c"WITH_DEBUG_ALLOC_TRAP_ALLOC_HIT".ptr))
+        if parsed > 0:
+            dbg_trap_alloc_hit_v = parsed
+            dbg_trap_alloc_hit_state = 2
+        else:
+            dbg_trap_alloc_hit_state = 1
+    if dbg_trap_alloc_hit_state == 2:
+        return dbg_trap_alloc_hit_v
+    0
+
+fn dbg_trap_alloc_check(ptr_addr: i64, origin: i64):
+    if dbg_trap_free_addr() != ptr_addr:
+        return
+    dbg_trap_alloc_count = dbg_trap_alloc_count + 1
+    dbg_puts("debug-alloc: trap-alloc hit=" as *const u8, 28)
+    dbg_put_i64(dbg_trap_alloc_count)
+    dbg_puts(" addr=" as *const u8, 6)
+    dbg_put_i64(ptr_addr)
+    dbg_puts(" origin=" as *const u8, 8)
+    dbg_put_i64(origin)
+    dbg_puts("\n" as *const u8, 1)
+    if dbg_trap_alloc_hit() == dbg_trap_alloc_count:
+        with_panic_core(make_str("debug-alloc: trapped alloc of watched address" as *const u8, 45), make_str("" as *const u8, 0), 0)
+
 fn rt_alloc_effective_limit_unlocked() -> i64:
     if rt_alloc_limit_state == 0:
         let raw = rt_getenv(c"WITH_MEMORY_LIMIT_BYTES".ptr)
@@ -1145,6 +1227,7 @@ fn rt_alloc_with_origin(size_arg: i64, origin: i64) -> *mut u8:
     rt_allocator_unlock()
     if payload_ok == 0:
         with_panic_core(make_str("allocator returned invalid payload" as *const u8, 34), make_str("" as *const u8, 0), 0)
+    dbg_trap_alloc_check(ptr as i64, origin)
     ptr
 
 fn rt_alloc(size_arg: i64) -> *mut u8:
@@ -1153,6 +1236,7 @@ fn rt_alloc(size_arg: i64) -> *mut u8:
 fn rt_free_unlocked_with_drop_origin(ptr: *mut u8, drop_origin_ptr: i64, drop_origin_len: i64):
     if ptr as i64 == 0:
         return
+    dbg_trap_free_check(ptr as i64, drop_origin_ptr, drop_origin_len)
     // #606 debug allocator: detect double-free before the generic ownership
     // panic so the report names the address; poison freed small payloads.
     if dbg_on() != 0:
