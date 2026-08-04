@@ -685,7 +685,123 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-03h): #747 TWO view-ownership classes FIXED (comptime transform + trait-default check run clean); NEXT WALL: fn_may_alloc handle freed-while-live via a str/raw-path free
+## SESSION-RESUME (2026-08-04i): #747 SELF-CHECK GREEN (rc=0, 68.9s, 428 MB!) + STAGE3 BUILT AND WORKING; instances C/D/E fixed; LAST KNOWN WALL: instance F (link-plan path view robbed by base consume) — value-only, binaries work
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ 2bceaa86 (4 commits this session, tree
+clean, final seed gate rc=0 153.7s on the committed tree). stage1
+rebuilt 4x; /tmp/flip-stage2-probe current (rc=0, 128-134s, ~66 GB
+peak, 106,978,768 B). Census: rc=0, 70.9s, 48.35 GB.
+
+THE HONEST SELF-CHECK PASSED (first flipped-built compiler self-check):
+`WITH_MEMORY_LIMIT_BYTES=118111600640 /tmp/flip-stage2-probe check
+src/main.w` -> rc=0, 68.9s wall, **428 MB peak RSS**. NOT false-green:
+WITH_PROFILE shows every phase with positive evidence — parse 751
+decls, resolve 1.57s, comptime 5.4s, frontend.sema 39.8s decls=9243,
+sema 2.5s types=10052, mir.lower 19.0s bodies=7149, validate, async.
+The 48 GB the seed-built stage1 needs for the same check is seed-leak
+behavior; the flip compiler actually frees — 112x memory reduction is
+the flip paying off, not skipped work.
+
+STAGE3 BUILT: `/tmp/flip-stage2-probe build src/main.w -O1 -o
+/tmp/flip-stage3-probe` wrote a 106,978,768 B binary (same size as
+stage2; raw cmp differs at char 2028 = Mach-O header region, likely
+LC_UUID — run a real `:fixpoint`-style normalized compare next).
+123.5s, 13.7 GB peak. Exit rc=1 is instance F's FALSE FAIL (below) —
+the artifact is good: stage3 `check` rc=0, stage3-built tiny binary
+prints and exits 0. Both probes smoke: check tiny ok; built binaries
+run. `-e`/`run`/`build` still exit 1 (instance F, value-only).
+
+FIX 3 (97146391, instance C) — identical-place copy assignment is a
+no-op: the restore half of `let saved = self.f; <callee reassigns
+self.f>; self.f = saved` lowers its RHS through the alias as `copy
+self.f`. finish_assignment_to_place emitted drop-before-overwrite plus
+the 03h cap-local whose scheduled drop freed the payload the field
+still owned -> dangling field -> next overwrite freed the recycled
+block. In the probe that block had become fn_may_alloc's occ array
+(installed by the 16->32 grow), so the 32->64 grow hit `invalid free`
+under check_fn_body_with_sig_at. Instrumented trap-hook bisect
+(free-hit predicate: [handle+0x10] == occ addr, k*=14) pinned the
+freeing site: the per-body epilogue restore of current_module_path
+(SemaCheck.w:2348, Sema field +0x2138; -O1 load-forwarding makes the
+cap-drop read the field directly in disasm). Fix in
+MirLower.finish_assignment_to_place: extend the `x = move x`
+identical-place no-op to OK_COPY (never drop/materialize/store), plus
+SemaCheck source fix: capture module path by `move` (like
+save_label_registry) so the restore is value-correct.
+NOTE the semantics ruling implied: `self.f = saved` where saved is a
+live VIEW of self.f is a NO-OP (a binding names what's there, AT USE
+TIME). Capture-intent must be spelled `move`/clone. Other save/restore
+idioms of this shape in the tree keep no-op restores (memory-safe,
+value = callee's last write) — grep candidates before relying on one.
+
+FIX 4 (35fe609d, instance D) — observer probe args must not re-deref a
+consumed contextual-copy adjustment: lower_observer_probe_arg
+(MAP_GET/MAP_CONTAINS/VEC_CONTAINS keys, str reader needles) saw
+TY_REF and lowered materialize-then-deref; when Sema recorded a D22
+contextual-copy adjustment, lower_expr already yields the deref'd
+owned key value, so the helper deref'd the VALUE (MIR: `_50: &i32 =
+copy _49.*; ... copy _50.*`). First victim past C:
+stamp_move_site_liveness segfaulted dereferencing a sym id (0x12) on
+binding_last_use.contains(root), root = &i32 element view of
+consume_call_sites. Guard mirrors the f-string ref path's existing
+adjustment check. Standalone repro: repro_stamp.w (scratchpad).
+
+FIX 5 (2bceaa86, instance E) — `var actual_source =
+actual_options.source_path` in run_build_command is a flip TRANSFER
+(reset); the explicit-source branch never wrote the field back ->
+every `with build file.w` compiled with source_path == "" ("cannot
+open ''"). Restore the field at branch end, mirroring the
+empty-source arm.
+
+INSTANCE F — NAMED, NOT FIXED (budget: C + two more spent):
+Compilation.execute_binary_link_plan (src/compiler/Compilation.w:938):
+`let bin_path = plan.bin_path` binds a VIEW of the param field; the
+next line passes `plan` BY VALUE into
+compilation_execute_binary_link_plan (whole-base consume -> reset);
+the tail `bin_path` re-reads the reset storage and returns "" AFTER A
+SUCCESSFUL LINK. Every -e/run/build exits 1 while writing a working
+binary. Class: live view of a field place whose BASE local is consumed
+by a later call — the cross-statement sibling of fixes 1/2. Fix
+direction: when a whole base local is consumed
+(consume_moved_operand on a struct-typed arg), materialize live
+aliases of its field places into owned locals first — fix 2's
+cap-local machinery, triggered at base-consume instead of
+place-assign. (Or classify such field reads as OK_MOVE at binding when
+the base is later consumed, like fix 1.)
+
+ALSO OBSERVED (file issues when back on main): (a) `var c` in main
+passed as mut-receiver leaves drop state Maybe -> struct fields never
+dropped at main exit (1 leak per repro run, pre-existing); (b)
+f-string temps inside a for-loop leak (repro_sr5.w, 3 leaks); (c) the
+rt trap hook (2753858c) is a permanent debug-alloc extension —
+document in docs/debug-allocator.md when it next gets touched.
+
+VERIFIED THIS SESSION:
+- repro_saverestore_call/sr2/sr4/sr5/sr6.w: pre-fix corruption or
+  wrong-value+cap-drop; post-fix consistent view semantics, debug-alloc
+  0 double-frees (the 1 leak = pre-existing (a) above).
+- repro_stamp.w: pre-fix rc=139; post-fix correct output rc=0.
+- stage2 -e/check/build under WITH_DEBUG_ALLOC: zero
+  double-free/invalid-free reports end to end.
+- census 70.9s/48.35 GB rc=0; self-check + stage3 as above.
+
+TRAP-HOOK PROTOCOL (what actually worked for C): learn the doomed
+address under lldb (same-bp-set replay; {with_panic_core} only), then
+env-only iterations — WITH_DEBUG_ALLOC_TRAP_FREE=<addr, zero-padded
+12> prints that block's whole alloc/free life with origins;
+TRAP_FREE_HIT/TRAP_ALLOC_HIT=<n, padded 4> panic on the n-th event for
+a bt or a thread-return-resume plant point. Env VALUE changes of equal
+width do NOT shift the heap; adding/removing a bp or a CONDITIONED bp
+DOES (a conditioned hm_grow bp shifted everything — learn addresses
+under the final bp set). `frame select 1` before `thread return` (the
+inlined-frame refusal). Watchpoints planted mid-run work (W3b/W4) but
+planted too early they silently never fire (W6) — prefer the hook's
+panic-at-hit + free-hit bisect on a place-content predicate; it needs
+no wp at all.
+
+## SESSION-RESUME (2026-08-03h, SUPERSEDED by 04i above): #747 TWO view-ownership classes FIXED (comptime transform + trait-default check run clean); NEXT WALL: fn_may_alloc handle freed-while-live via a str/raw-path free
 
 MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
 
