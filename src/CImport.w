@@ -4798,10 +4798,15 @@ fn ci_is_c_ident(s: &str) -> bool:
 
 fn ci_lookup_known(name: &str, known: &str) -> str:
     // Search "name=value|name2=value2|..." for name
+    // #747: match in place. Under owned str every .slice() is an owned
+    // copy, so the old `ci_starts_with(known.slice(pos, len), key)` spelling
+    // allocated+copied+freed the whole remaining registry once per scanned
+    // entry — the dominant translate cost on the emitted compiler C
+    // (with_str_slice + mmap churn under ci_trans_stmt_via_ir).
     let key = name ++ "="
     var pos = 0
     while pos < known.len() as i32:
-        if ci_starts_with(known.slice(pos as i64, known.len()), key):
+        if ci_str_matches_at(known, pos, key):
             let val_start = pos + key.len() as i32
             var val_end = val_start
             while val_end < known.len() as i32 and known.byte_at(val_end as i64) != 124:
