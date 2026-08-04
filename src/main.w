@@ -2300,6 +2300,11 @@ fn run_build_command(options: BuildCommandOptions, graph_options: &BuildGraphCom
         actual_options = build_command_apply_project_target_default(move actual_options, cfg)
         if build_command_validate_target(actual_options, cfg) != 0:
             return 1
+        // #747 instance E: `var actual_source = actual_options.source_path`
+        // MOVES the field out (flip var-binding transfer), so this branch must
+        // give it back like the empty-source branch does — the compile below
+        // reads actual_options.source_path ("cannot open ''" otherwise).
+        actual_options.source_path = actual_source
     if graph_options.no_deps:
         with_eprint("error: --no-deps is only supported for build.w action and test targets")
         return 1
