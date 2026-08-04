@@ -685,7 +685,123 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-04j): #747 INSTANCE F FIXED + THE FLIP HAS REACHED FIXPOINT (bit-identical stage1-built vs stage2-built binaries); -e/run/build all rc=0; 5/5 behavior smoke
+## SESSION-RESUME (2026-08-04k): #747 INSTANCE G FIXED (emit-obj module filter) + THE CANONICAL OBJECT-LEVEL FIXPOINT NOW PASSES; corpus swept+classified; migrate cap un-pinned (smoke blocked by a c_import invalid-free); move-audit clean; drop-audit 15 red cells = ONE visibility family
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ ef25dd52 (two commits this session:
+c7bad93c instance G, ef25dd52 migrate un-pin; tree clean; seed gate
+rc=0 166.9s on the exact committed content). stage1 rebuilt;
+/tmp/flip-stage2-probe rebuilt (rc=0, 135.9s, 65.9 GB peak,
+106,962,752 B). Census rc=0 74.4s **48.5 GB** — 04j's favorable
+31.8 GB did NOT reproduce (back at the 04i level; unexplained, not
+chased). 5/5 behavior run-smoke repeated with the new probe.
+
+FIX 7 (c7bad93c, instance G) — exactly the predicted robbed-str-family,
+one line: CodegenTraits.w sync_decl_context did
+`self.sema.current_module_path = self.current_decl_source_file`; under
+the flip that plain field read is a MOVE and reset-on-move blanked
+current_decl_source_file right after it was set. Every decl then failed
+current_decl_is_imported_module_symbol() (len==0 -> "root"), so
+--emit-obj emitted definitions for the WHOLE program, and
+module_link_name_for_path skipped the __with_mod_ prefix on the blank
+path — one robbed place, both symptoms. Fix: with_str_clone_ref (sema
+retains an independent copy; the codegen field stays the live owner).
+Mechanism proven in isolation (mimic program: seed keeps the field, flip
+blanks it), then by verdict flip: two-module repro --emit-obj went
+263 defined syms (whole program, unprefixed) -> 8 syms, byte-for-byte
+the seed's symbol table.
+
+FIXPOINT — BOTH BARS, with the G fix in:
+- CANONICAL (the `:fixpoint` mechanism, build_graph_compare_files
+  byte-equality over `--emit-obj -O1` objects, src/BuildGraphOps.w:20):
+  stage1-emitted vs probe(stage2)-emitted objects of src/main.w are
+  **byte-identical** — 1,355,736 B, 2,290 defined syms, SHA-256
+  5751e9b04f879f712105eee21810c3f0e5dfb677b75ed8fd003558c80adb9b17.
+  04j had this compare UNUSABLE (23 MB vs 1.36 MB objects); it is now a
+  usable gate again.
+- Full-binary re-run (04j method, same -o path sequentially):
+  bit-identical, 106,962,592 B, SHA-256
+  27a5df02754b0dd234b58b79370b77a9e92484425ee61af9373bb7ca991aafa2.
+
+CORPUS SWEEP (probe `check` per file; baseline = main seed; verdict
+diff = real fallout):
+- test/behavior: 937 files — probe 776 pass/161 fail; seed 913/24;
+  **137 verdict diffs**. test/spec: 210 files — probe 186/24; seed
+  206/4; **20 diffs**. 157 total, classified (tools in scratchpad:
+  sweep_check.w / compare_sweeps.w / classify_diffs.w):
+  - 44x invalid free "pointer is not an allocated payload start" — the
+    probe PANICS while checking c_import/FFI tests. lldb: with_free <-
+    with_cimport_dispose (ClangBridge.w:1262) <-
+    cimport_collect_macros_from_libclang (ClangBridge.w:2258) <-
+    with_cimport_parse_macros. Compiler bug, flip-only, ONE family.
+  - 31x rc=134 abort "BUG: struct_field_type_frozen generic-inst field
+    type miss [SemaCheck.w:10530]" — generic-struct field types
+    (Box/StateBox/Cell/Wrapper shapes). Compiler bug family.
+  - 25x comptime regressions ("method 'push'/'insert'/'call'/'len' is
+    not comptime-evaluable yet", step limit, no match arm) — ComptimeEval
+    lost capability under the flip; family, not per-test.
+  - 17x use-of-moved: 8x = ONE test-lib line
+    (test/behavior/lib/pre_d_build_runner.w:38 `return staged_stage2`),
+    5x = embedded std/compiler.w:89, 4 singles. Test-source/lib fallout;
+    correct diagnostics under the new semantics.
+  - 8x "symbol 'X' is not visible from this module" — see drop-audit
+    below; MINIMAL REPRO EXISTS.
+  - Misc (~32): 5x K-inference 'str' vs '&str' (std/collections.w:97),
+    4x+ Package cannot-implement-Copy (std/build.w:259 — the known
+    lib/std de-Copy leftover), D22 §13.6 ownership-through-borrow in
+    test sources (correct), &T-vs-T arg mismatches, singles.
+  NOT fixed per brief; classes + counts recorded for the tail work.
+
+MIGRATE (D28 cap): un-pinned in ef25dd52 (emit_c.w back to plain
+emitc_run_capture, per D28 ruling 3's own REVERT note). Smoke BLOCKED —
+no RSS gold number: `/tmp/flip-stage2-probe migrate
+out/emit-c-roundtrip/main.c -I runtime -include out/gen/wl_decls.h
+--no-c-export` dies at 4.5s / 1.18 GB RSS with the SAME
+with_cimport_dispose invalid-free as the 44 corpus files (migrate parses
+C through the same session). Fix that family and the roundtrip's
+94.4 GiB question answers itself.
+
+AUDITS (candidate=/tmp/flip-stage2-probe, baseline=/Users/eric/with/
+src/main; harness = MAIN repo's tools — the WORKTREE copies of
+move_audit.w/drop_audit.w do not compile under the probe (classify's
+consuming-str params + looped call sites; needs the campaign's &str
+wrapper treatment — mechanical, not done)):
+- move-audit: 15 cells, 0 vs-expected FAIL, 0 vs-baseline DIFF. GREEN,
+  including both [FLIPPED:#691] vec cells.
+- drop-audit: 115 cells, 15 REGRESSION vs baseline — ALL are candidate
+  COMPILE-FAILs of the visibility family above, on box/rc shapes
+  (reassign_over, move_then_reassign, consume_cond_*, consume_call,
+  field_take x boxbare/rcbare/boxfield). Drop scheduling itself is NOT
+  indicted — those cells never reach codegen. All other 100 cells `same`.
+  MINIMAL REPRO (8 lines; seed ok, probe errors):
+    use std.builtins.print_i32 + use std.box; fn helper(x: i32) -> i32;
+    main: let b = Box.new(41); print_i32(helper(*b.as_ref()))
+    -> "error: symbol 'helper' is not visible from this module".
+  Generic std import (Box/Rc/sync) robs the checker's module identity —
+  smells like sema.current_module_path save/restore blanking (the
+  SemaCheck/MirLower/ComptimeEval save/set/restore sites), which is
+  EXACTLY the save/restore ruling review reserved for Eric. Also
+  plausibly adjacent to the struct_field_type_frozen and comptime
+  families (all generic-instantiation-shaped); not verified, do not
+  assume.
+
+WHAT REMAINS for #747:
+- ERIC'S (untouched per brief): merge decision; de-Copy tail design
+  (print/eprint consuming str, JsonView); save/restore ruling review.
+- c_import invalid-free family (44 corpus + migrate blocker) — next
+  mechanical wall, single family, lldb path recorded above.
+- Visibility family (drop-audit 15 + corpus 8 + likely spec singles) —
+  overlaps the save/restore review; repro above.
+- struct_field_type_frozen generic-inst aborts (31); comptime family
+  (25); lib/std de-Copy leftovers (build.w Package Copy, collections.w
+  K-inference, string.w:109, compiler.w:89); test-source fixes incl.
+  the ONE pre_d_build_runner.w:38 line (clears 8 files).
+- Worktree tools/move_audit.w+drop_audit.w &str adaptation.
+- Then: full battery ALONE on the merge (ownership-semantics isolation
+  rule) + :move-audit/:drop-audit via the build targets, then reseed.
+
+## SESSION-RESUME (2026-08-04j, SUPERSEDED by 04k above): #747 INSTANCE F FIXED + THE FLIP HAS REACHED FIXPOINT (bit-identical stage1-built vs stage2-built binaries); -e/run/build all rc=0; 5/5 behavior smoke
 
 MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
 
