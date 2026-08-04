@@ -9752,6 +9752,14 @@ impl MirBuilder:
         let arg_ty = self.expr_type(arg_node)
         let resolved = if arg_ty != 0: self.sema.resolve_alias(arg_ty as TypeId) else: 0
         if self.sema.get_type_kind(resolved) == TypeKind.TY_REF:
+            // #747 instance D: when Sema recorded a D22 contextual-copy
+            // adjustment on this arg, lower_expr consumes it and already yields
+            // the deref'd owned key value. Materializing that VALUE at the ref
+            // type and dereferencing again reads memory at the key's value
+            // (stamp_move_site_liveness segfaulted on `contains(root)` with
+            // root: &i32). Same guard the f-string ref path already carries.
+            if self.has_contextual_copy_adjustment(arg_node) != 0:
+                return self.lower_expr(arg_node)
             let ref_op = self.lower_expr(arg_node)
             let ref_place = self.materialize_operand(ref_op, resolved as i32, self.ast.get_start(arg_node))
             return self.body.new_operand(OperandKind.OK_COPY, self.new_deref_place(ref_place))
