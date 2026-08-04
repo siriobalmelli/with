@@ -3218,6 +3218,23 @@ impl MirBuilder:
             return self.body.new_operand(OperandKind.OK_MOVE, place)
         let alias_place = self.lookup_alias_place(sym)
         if alias_place >= 0:
+            // #747 (03h): a view binding rooted in storage THIS frame owns and
+            // will drop (consumed param / owned local with a scheduled value
+            // drop) read in value position is an ownership TRANSFER, not a
+            // share — a bare copy mints a second owner of the same buffers and
+            // the base's scope-exit drop frees what the copy carried out
+            // (comptime_eval_finish's drain of the evaluator double-freed
+            // Sema's hashmap tables). Lower it as a field MOVE so consumers
+            // run consume_moved_operand: static drop exclusion plus
+            // reset-on-move (§2.5.1). Borrowed bases — mut-fn receiver place,
+            // share/ref params — have no scheduled value drop here and keep
+            // the pure view.
+            let alias_path_count = self.place_field_projection_count(alias_place)
+            if alias_path_count > 0:
+                let alias_base = self.place_base_local(alias_place)
+                let alias_ty = self.place_local_type(alias_place)
+                if alias_base >= 0 and alias_ty > 0 and self.sema.type_needs_drop_frozen(alias_ty) != 0 and self.local_has_scheduled_value_drop(alias_base) != 0:
+                    return self.body.new_operand(OperandKind.OK_MOVE, alias_place)
             if self.place_type_is_str(alias_place) != 0:
                 self.mark_string_place_copied(alias_place)
             else:
