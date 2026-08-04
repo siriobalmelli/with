@@ -5190,8 +5190,19 @@ impl MirBuilder:
         // owner out and immediately back into the same storage. Decide that it is a
         // no-op before drop-before-overwrite; dropping here would destroy the value
         // that the RHS is meant to restore.
+        // #747 instance C: the same holds for `x = copy x`. The restore half of a
+        // save/restore idiom whose save stayed a VIEW (`let saved = self.f; …;
+        // self.f = saved` with no intervening same-scope overwrite) lowers its RHS
+        // through the alias as `copy self.f` — an identical-place copy. Emitting the
+        // overwrite drop would free the value being "restored", and the 03h cap-local
+        // materialization below would capture the CURRENT value and schedule a drop
+        // that frees the payload the field still owns (check_fn_body_with_sig_at's
+        // current_module_path froze fn_may_alloc's occ array this way). An
+        // identical-place store is a no-op for every type; never drop, never
+        // materialize, never store.
         if rhs >= 0 and rhs < self.body.operand_kinds.len() as i32:
-            if self.body.operand_kinds.get(rhs as i64) == OperandKind.OK_MOVE:
+            let rhs_kind = self.body.operand_kinds.get(rhs as i64)
+            if rhs_kind == OperandKind.OK_MOVE or rhs_kind == OperandKind.OK_COPY:
                 if self.places_are_identical(place, self.body.operand_d0.get(rhs as i64)) != 0:
                     return rhs
         if dest_ty != 0 and self.sema.is_copy_frozen(dest_ty) == 0 and self.sema.type_needs_drop_frozen(dest_ty) != 0:

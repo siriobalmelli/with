@@ -1998,7 +1998,11 @@ impl Sema:
         self.union_tracked_syms = Vec.new()
         self.union_in_assign_target = 0
         let saved_body_file_id = self.local_file_id
-        let saved_body_module_path = self.current_module_path
+        // #747 instance C: capture by move, not view. update_decl_source_context
+        // reassigns current_module_path during the body, so a view here names the
+        // callee's value at restore time (and its drop froze the old payload).
+        // Ownership round-trips exactly like save_label_registry's moves.
+        let saved_body_module_path = move self.current_module_path
         let saved_body_module_has_ci = self.current_module_has_ci
         let fn_di = decl_index
         if fn_di >= 0:
