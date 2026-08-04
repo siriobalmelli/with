@@ -685,7 +685,82 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-04n): #747 LATE-TRANSLATE BLOW-UP ROOT-CAUSED + FIXED (ci_lookup_known sliced the whole registry per scanned entry; slice5 413 s -> 125 s, translate linear again); 24.4 MB (51% of input) migrates clean under 12 GB — full-input verdict run is READY for the orchestrator
+## SESSION-RESUME (2026-08-04o): #747 CHECK-SCALE i32 OVERFLOW ROOT-CAUSED + FIXED (fn_param_defaults key `param_start * 1000` overflowed at 3M-line scale); the migrated 3M-line compiler source now CHECKS to a clean diagnostics verdict — 6 errors, ONE root defect, and it is #750 (name-keyed trait coherence), which is now the roundtrip census's first wall
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ 01c8248f (one fix commit this session; tree
+clean; seed gate `src/main build :stage1` rc=0 148.5s; stage2 rebuilt rc=0
+137.0s; /tmp/flip-stage2-probe = that stage2). Census: stage1
+`check src/main.w` rc=0 70.9s 48.5 GB (matches 04k/04m/04n exactly).
+Worktree path this arc:
+/private/tmp/claude-501/-Users-eric-with/17fe1e89-880a-4f21-a24e-7646e0127fda/scratchpad/wt-flip
+(main_migrated.w, logs, and probe tools live in that same scratchpad dir).
+
+THE OVERFLOW, ROOT-CAUSED at the line: `AstPool.set_fn_param_default` /
+`get_fn_param_default` (src/Ast.w:1426-1434) packed their map key as
+`param_start * 1000 + param_idx` in i32. `param_start` is an extra-array
+index; past ~2.147M entries the multiply trips the overflow trap. On the
+freshly migrated compiler source (103.5 MB, 3,011,786 lines) `check`
+panicked `integer overflow: i32 multiplication out of range` at ~191 s
+with ZERO diagnostics (lldb `b with_panic` bt: get_fn_param_default <-
+astpool_clone_deep <- Sema.comptime_transform_module <-
+Zcu.compile_source_frontend_mode). FIX (01c8248f): key widened to i64
+(`(param_start as i64) * 1000 + (param_idx as i64)`), map to
+HashMap[i64, i32]. Whole-src survey for the class (composite-key i32
+multiplies): the ONLY sema/check-path instance. Two latent CODEGEN-path
+siblings left untouched (codegen isolation discipline; check never runs
+them): Codegen.w:1354 `type_sym * 10007 + trait_sym` (overflows past
+~214k interned syms) and the bitpack `bit_offset * 65536 + bit_width`
+pair (Codegen.w:2235, CodegenDispatch.w:1398; overflows for bitfields at
+struct bit-offset >= 32768). Widen those when the codegen path first
+meets roundtrip scale.
+
+MIGRATE POST-WRITE SHARES THE SITE (no rerun needed): the rc=134 panic
+after the output write was the fix-it pass — main.w:3404-3406
+`migrate_apply_std_use_fixits` runs `compiler_analyze_file` over the
+output, i.e. the same frontend path through comptime_transform_module.
+One fix covers both.
+
+THE VERDICT (the campaign's number): `/tmp/flip-stage2-probe check
+main_migrated.w` rc=1, 216.8 s, 1.78 GB peak RSS, NO panic; byte-identical
+diagnostics across the lldb and plain runs (deterministic). 6 error
+diagnostics = 3 unique kinds x2 (the x2 is #759, decl-phase double-render):
+
+  count  kind
+    2    duplicate implementation of trait for type [E1102]   (line 58353, impl Copy for RegexFlags)
+    2    type 'Result_RegexFlags__RegexError__anon_0' cannot implement Copy: field 'payload0' is not Copy  (59141)
+    2    type 'Result_RegexFlags__RegexError_' cannot implement Copy: field 'anon_0' is not Copy           (59143)
+
+ONE ROOT DEFECT, AND IT IS NOT THE MIGRATOR'S: the file contains exactly
+one `impl Copy for RegexFlags`; the E1102 collision is with the PRELUDE's
+lib/std/regex.w:43 impl — Sema's direct-impl coherence table is keyed by
+the bare interned type NAME (impl_lookup, SemaDecl.w ~2365-2371, and the
+duplicate scan ignores impl_extra_is_std). That is exactly #750
+(prelude/std names not shadowable; its Fix section already prescribes
+E1102 keying on resolved type identity). The other two errors are pure
+cascades (rejected impl leaves user RegexFlags non-Copy; the Result
+union/struct wrapping it then fail). 5-line repro errors on the
+main-world installed compiler too — pre-existing, not flip-specific.
+Evidence commented on #750; the diagnostic double-render filed as #759.
+The check aborts after the decl phase ("check failed during
+compilation"), so the full body-level census is UNREACHABLE until the
+#750 coherence fix lands. Do NOT hand-fix the migrated output.
+
+NEXT GATE for the roundtrip: fix #750's E1102 keying (resolved type
+identity, or at minimum skip is_std entries in the duplicate scan), then
+re-check main_migrated.w for the real body-level census. The decl phase
+runs in ~217 s at 1.78 GB, so iteration at full scale is cheap now.
+
+SESSION ARTIFACTS (this scratchpad): verdict-check.log (lldb run),
+verdict-plain.log, bucket_diags.w (diagnostic bucketer, `with run`),
+e1102repro.w, dblrender.w.
+
+RESIDUALS: 04l instance I (deps-manifest UAF) untouched. Migrate rerun
+not required this session (output already on disk; post-write panic
+explained above).
+
+## SESSION-RESUME (2026-08-04n, SUPERSEDED by 04o above): #747 LATE-TRANSLATE BLOW-UP ROOT-CAUSED + FIXED (ci_lookup_known sliced the whole registry per scanned entry; slice5 413 s -> 125 s, translate linear again); 24.4 MB (51% of input) migrates clean under 12 GB — full-input verdict run is READY for the orchestrator
 
 MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
 
