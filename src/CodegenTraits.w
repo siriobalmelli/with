@@ -1165,8 +1165,11 @@ impl Codegen:
         // alias like Mir.BlockId in MirLower's structs resolved for the
         // compiler root but not for tool-mode roots (#705). Same save/set
         // pattern as ComptimeEval.eval_decl and MirLower's module switch.
+        // #747 instance G: sema retains its own copy — a plain field read here
+        // is a move under the flip, and the reset-on-move blank made every decl
+        // look like the root module (whole-program --emit-obj objects).
         if self.current_decl_source_file.len() > 0:
-            self.sema.current_module_path = self.current_decl_source_file
+            self.sema.current_module_path = with_str_clone_ref(self.current_decl_source_file)
 
     fn find_module_fn_decl_index(sym: i32) -> i32:
         for di in 0..self.pool.decl_count():
