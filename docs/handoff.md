@@ -685,7 +685,140 @@ Battery and reseed: DONE on `d3d55c6a`.
 - last-green, seed, installed compiler updated only from the exact verified
   commit — pending
 
-## SESSION-RESUME (2026-08-04k): #747 INSTANCE G FIXED (emit-obj module filter) + THE CANONICAL OBJECT-LEVEL FIXPOINT NOW PASSES; corpus swept+classified; migrate cap un-pinned (smoke blocked by a c_import invalid-free); move-audit clean; drop-audit 15 red cells = ONE visibility family
+## SESSION-RESUME (2026-08-04l): #747 INSTANCE H FIXED (session_make_str double-ownership) — 29/44 c_import invalid-free tests recovered + migrate UNBLOCKED past the 4.5s dispose wall; instance I (deps-manifest UAF) forensically characterized, NOT yet fixed
+
+MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
+
+#747 STATE: branch `747-flip` @ b3178278 (one fix commit this session;
+tree clean; seed gate rc=0 189.8s on the committed content). stage1
+rebuilt; /tmp/flip-stage2-probe rebuilt (rc=0). Probe self-check
+rc=0 71.6s 428 MB. Stage1 census rc=0 78.5s 25.6 GiB (better than
+04k's 48.5 GB; ran under memory pressure, not chased). Probe run-smoke:
+string_interp/assoc_type/async/-e all rc=0.
+
+FIX 8 (b3178278, instance H) — the predicted bridge-helper
+double-ownership, one site: ClangBridge.w session_make_str fabricated
+an OWNED str (raw [2]i64 -> *const str) over the SAME allocation
+session_strdup registers in (*s).strings. Under the flip every
+receiving local's drop freed the payload, then with_cimport_dispose's
+tracked-strings loop freed it again — the whole
+"invalid free: pointer is not an allocated payload start" family in
+with_cimport_dispose <- cimport_collect_macros_from_libclang.
+Evidence chain: WITH_DEBUG_ALLOC verdict (DOUBLE FREE size=64,
+first_drop=drop#struct, second=<untagged>); trap-hook lldb bt named
+with_str_free_drop_origin in collect_macro_def as first free and
+dispose as second; payload content at the trap = the macro location
+string ("/tmp/with_cimport_macro_XXXX:2:9") = the session_make_str
+result robbed at collect_macro_def scope end. Fix: session_make_str =
+make_str(p) — a -> str return transfers ownership; nothing tracked.
+BOOTSTRAP INTERIM: seed world (no drops) leaks the copy until reseed,
+bounded to c_import compilations under stage1.
+
+FAMILY VERDICT (the 44 sweep files from 04k, probe check, user cache
+restored): 29 pass stable (was 0). Remainder is NOT one bucket:
+- ~9-10 files = INSTANCE I, the deps-manifest UAF family (below);
+  flaky by heap shape/cache state (macros_no_cc flips ok/fail between
+  runs; auto_constructor/nullable_ptr_none/sdk_header/
+  imported_alias_struct_field/raw_ptr_arithmetic/issue44/issue114/
+  spec_ss16 x2 fail rc=139 or interior-NUL rc=1).
+- 5 files = issue59_demo_*: now surface `type 'BindEntry' cannot
+  implement Copy: field 'name' is not Copy` — CORRECT flip diagnostics
+  (test-source de-Copy fallout class, not crashes; they died at the
+  dispose free before H).
+
+MIGRATE SMOKE (the 04k blocker): the dispose invalid-free that killed
+migrate at 4.5 s / 1.18 GB is GONE — the step now runs the full 47 MB
+emit-C roundtrip parse+translate. BUT the memory wall stands:
+`WITH_MEMORY_LIMIT_BYTES=118111600640 /usr/bin/time -l
+/tmp/flip-stage2-probe migrate out/emit-c-roundtrip/main.c -o <out.w>
+-I runtime -include out/gen/wl_decls.h --no-c-export` dies CLEANLY at
+the cap: "memory limit exceeded: committed=118111558320" (110 GiB
+committed), peak memory footprint 102,152,184,096 B (95.1 GiB), max
+RSS 35.6 GB, 8650 s wall (2858 user / 5764 sys — the box was
+swap-bound; committed-bytes is pressure-independent, so the 110 GiB
+allocation volume is real). Verdict: #747's flip alone does NOT fix
+the D28 transient-retention blow-up (old wall 94.4 GiB OS-kill,
+new 110 GiB cap-kill — same class). The un-pin (ef25dd52) can stay:
+the limiter now fails loudly instead of the OS kill. Next lever is
+the D28 bridge-retention work itself, or profiling the migrate
+child's allocation sites (the session_strdup i64-counter fix's
+un-indexed-lookup family notes at handoff "Roundtrip attempt 2" still
+apply). Note the fs-cache instance-I UAF did NOT fire in migrate
+(different path — no Frontend fs-cache store).
+
+INSTANCE I (NOT fixed; next mechanical wall) — deps-manifest UAF.
+Symptom: probe `check` of a c_import test dies rc=139 (EXC_BAD_ACCESS
+in with_str_byte_at) or "str to C string conversion: interior NUL
+byte", both under c_import_fs_cache_store -> c_import_build_deps_manifest
+-> cimport_deps_sorted_unique_paths(c_import_included_files())
+(Frontend.w:654/566/529; also the 337 lookup consumers on warm cache).
+The payload of g_cimport_included_files (the newline-joined inclusion
+list, ~10.7 KB for an SDK header) is gone by the time the SECOND
+consumer walks it.
+
+Synchronous-stop-proven facts (single lldb layouts; env-width trap
+protocol; addresses are per-layout):
+1. with_cimport_included_files returns [X, 10710]; at that finish-stop
+   X is mapped, has correct path content, a valid rt large header
+   (0x29e0 = align(10711)), and IS recorded in rt_large_range_starts
+   (read in-run). CImport.w:601 assignment stores exactly [X, len]
+   into the global; a watchpoint shows NO further header writes.
+2. A conditioned `munmap` bp armed from that stop NEVER fires covering
+   X_base before:
+3. a later with_alloc (origin=1) RETURNS X (trap-alloc panic bt:
+   session_strdup <- translate_type_recursive_mode <-
+   with_cimport_struct_field_type_translated <- ci_is_directly_demoted
+   <- ci_collect_demoted_types), header at X_base UNCHANGED 0x29e0
+   (indistinguishable from a fresh large alloc of exactly 10711 B,
+   i.e. c_strdup of a 10710-byte C string); freelist heads and
+   slab_ptr sane at that stop (read in-run);
+4. then with_free (session_strdup grow, bt in-run) frees X -> large ->
+   rt_munmap(X_base, 0x29f0) (caught by conditioned bp in a sibling
+   layout) -> consumers fault / read scribble.
+5. WITH_ALLOC_NO_REUSE=1 makes the whole family PASS (reuse-dependent),
+   with NO double-free report (so the enabler is a UAF write/read into
+   a freed-and-recycled block, not a plain double free).
+6. HOME= (fs-cache dir empty => single consumption of
+   c_import_included_files) also makes 6/7 pass; fresh-vs-poisoned
+   cache does NOT matter (purged cache still crashes; cache restored
+   after the experiment).
+
+Eliminated by running (do not re-chase): bare-global return tail
+(fn f() -> str: g), the `let out = g; g = ""; out` swap, slice->push->
+vec-drop, and the VERBATIM cimport_deps_sorted_unique_paths fed by a
+global-tail return — all CLEAN under the probe with runtime-built
+payloads (mimic_global_ret3/mimic_slice_push/mimic_combo3.w in the
+session scratchpad; first mimic invalidated itself via comptime-folded
+static payloads — build test payloads at runtime).
+
+Open contradiction for next session (the exact robbing line is NOT
+named): X is rt-recorded at finish yet NO trap-alloc ever fired for
+its creation, and the step-3 alloc returns a VA the kernel should
+consider live. Two candidate blind spots: (a) an unmap path invisible
+to both rt_munmap and the libc `munmap` symbol (macOS
+mach_vm_deallocate — bp that next, conditioned on covering X_base);
+(b) a stale rt_large_range entry + heap-shape UAF in the translation
+loop (ci_collect_demoted_types / ci_translate_function churn) — the
+brief's class (a)-(d) greps of the session/type-translation caches
+(DeclCache name/type_spelling, g_emitted_names, translate buffers)
+are the next hunt. Trap protocol notes that held: lldb print ordering
+of inferior stderr vs command echoes LIES — only synchronous stops
+(bp/panic/finish) order events; bp-set and env-var-COUNT changes shift
+the heap (equal-width value swaps do not); learn addresses under the
+final bp set.
+
+WHAT REMAINS for #747 (delta from 04k):
+- Instance I (above) — 9-10 corpus files; fs-cache path only.
+- Migrate memory wall (110 GiB committed) — D28 retention, not a
+  flip crash; needs its own campaign.
+- Visibility family, struct_field_type_frozen (31), comptime family
+  (25), lib/std de-Copy leftovers, pre_d_build_runner.w:38 — unchanged
+  from 04k.
+- issue59_demo_* x5: test-source fix (BindEntry Copy w/ str field) or
+  the de-Copy tail design (Eric's).
+- Eric's reserved: merge; print/eprint+JsonView; save/restore review.
+
+## SESSION-RESUME (2026-08-04k, SUPERSEDED by 04l above): #747 INSTANCE G FIXED (emit-obj module filter) + THE CANONICAL OBJECT-LEVEL FIXPOINT NOW PASSES; corpus swept+classified; migrate cap un-pinned (smoke blocked by a c_import invalid-free); move-audit clean; drop-audit 15 red cells = ONE visibility family
 
 MAIN LINE: healthy (docs-only commit here). Worktree recipe unchanged.
 
