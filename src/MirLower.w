@@ -715,6 +715,10 @@ impl MirBuilder:
         let place = self.body.operand_d0.get(operand_id as i64)
         let local_id = mir_place_plain_local(&self.body, place)
         if local_id >= 0:
+            // #747 instance F: a live same-scope view binding rooted in this
+            // base would be robbed by the whole-base consume below — see
+            // materialize_str_views_of_consumed_base.
+            self.materialize_str_views_of_consumed_base(local_id)
             // Reset-on-move (spec §2.5.1): record the moved owned local; the
             // statement boundary (flush_stmt_temp_frame) zeroes it so its later
             // drops — drop-before-overwrite, scope-exit — free nothing. The reset
@@ -771,6 +775,47 @@ impl MirBuilder:
             // of the blanked field — must keep its niche guard (§2.5.2).
             if base_local >= 0:
                 self.body.mark_local_ever_moved(base_local)
+
+    // #747 instance F: a live same-scope view binding whose BASE local is
+    // consumed whole (moved as a call argument, assignment source, or
+    // explicitly dropped) is robbed — reset-on-move blanks the base's storage
+    // and the view's later reads see zeroes (execute_binary_link_plan returned
+    // "" after every successful link, failing every -e/run/build). The consumer
+    // OWNS the whole base including the viewed field, so unlike the
+    // place-reassignment capture in finish_assignment_to_place (which
+    // transfers the doomed old value), this capture must mint an INDEPENDENT
+    // owner. For str that is a fresh copy via the concat runtime — a one-part
+    // RK_STR_CONCAT_N is a pass-through in codegen, so concat with "" forces
+    // str_concat_n_copy. The binding is re-bound to the owned local (guarded
+    // scope-exit drop) and the alias entry is dead-named.
+    // Same-scope only, mirroring the reassignment capture: the capture
+    // statement executes exactly as often as the binding is created. Residue
+    // (recorded in the #747 handoff): a cross-scope consume and a non-str view
+    // type keep the robbed-view behavior.
+    mut fn materialize_str_views_of_consumed_base(local_id: i32) -> Unit:
+        if self.sema.type_needs_drop_frozen(self.local_type(local_id)) == 0:
+            return
+        let cap_scope_start = if self.alias_scope_starts.len() as i32 > 0: self.alias_scope_starts.get(self.alias_scope_starts.len() - 1) else: 0
+        var cap_ai = self.alias_places.len() as i32 - 1
+        while cap_ai >= cap_scope_start:
+            let cap_sym: i32 = self.alias_syms.get(cap_ai as i64)
+            let cap_place: i32 = self.alias_places.get(cap_ai as i64)
+            let cap_ty: i32 = self.alias_types.get(cap_ai as i64)
+            if cap_sym != 0 and self.place_base_local(cap_place) == local_id and self.place_field_projection_count(cap_place) > 0 and self.type_id_is_str(cap_ty) != 0:
+                let cap_local = self.body.new_local(cap_ty, 0, cap_sym, 1)
+                self.body.push_stmt(self.cur_bb, StmtKind.StorageLive, cap_local, 0, 0)
+                let cap_parts: Vec[i32] = Vec.new()
+                cap_parts.push(self.body.new_operand(OperandKind.OK_COPY, cap_place))
+                cap_parts.push(self.lower_str_lit(self.pool.intern("")))
+                let cap_args = self.body.new_call_args(cap_parts)
+                let cap_rv = self.body.new_rvalue(RvalueKind.RK_STR_CONCAT_N, cap_args, 2, 0)
+                self.body.push_stmt(self.cur_bb, StmtKind.Assign, self.place_for_local(cap_local), cap_rv, 0)
+                self.schedule_drop(cap_local, DropKind.DK_VALUE)
+                self.bind_local(cap_sym, cap_local)
+                // Dead-name the alias entry; the scope pop still removes it
+                // positionally, but lookups now resolve to the owned local.
+                self.alias_syms.set_i32(cap_ai as i64, 0)
+            cap_ai = cap_ai - 1
 
     mut fn flush_stmt_temp_frame() -> Unit:
         if self.stmt_temp_starts.len() as i32 == 0:
@@ -8559,6 +8604,12 @@ impl MirBuilder:
     // and a later reassign re-arms cleanly.
     mut fn lower_drop_glue_and_consume(recv_node: i32, origin: &str, node: i32) -> i32:
         let place = self.lower_expr_place(recv_node)
+        // #747 instance F: capture live views BEFORE the drop destroys the
+        // storage — consume_moved_operand's own capture would clone freed
+        // bytes here. It finds the aliases already dead-named and is a no-op.
+        let drop_local = mir_place_plain_local(&self.body, place)
+        if drop_local >= 0:
+            self.materialize_str_views_of_consumed_base(drop_local)
         self.emit_drop_stmt(place, origin, self.ast.get_start(recv_node))
         let mv = self.body.new_operand(OperandKind.OK_MOVE, place)
         self.consume_moved_operand(mv)
