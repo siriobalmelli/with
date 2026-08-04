@@ -513,7 +513,7 @@ type AstPoolState {
     fn_param_pattern_meta_map: HashMap[i32, i32],
     for_meta_map: HashMap[i32, i32],
     block_meta_map: HashMap[i32, i32],
-    fn_param_defaults: HashMap[i32, i32],
+    fn_param_defaults: HashMap[i64, i32],
     must_use_type_set: HashMap[i32, i32],
     no_await_guard_type_set: HashMap[i32, i32],
     no_alloc_fn_set: HashMap[i32, i32],
@@ -1424,11 +1424,11 @@ impl AstPool:
         self.get_extra(param_start + param_idx * FN_PARAM_STRIDE + 2)
 
     fn set_fn_param_default(param_start: i32, param_idx: i32, default_node: i32):
-        let key = param_start * 1000 + param_idx
+        let key = (param_start as i64) * 1000 + (param_idx as i64)
         self.state.fn_param_defaults.insert(key, default_node)
 
     fn get_fn_param_default(param_start: i32, param_idx: i32) -> i32:
-        let key = param_start * 1000 + param_idx
+        let key = (param_start as i64) * 1000 + (param_idx as i64)
         if self.state.fn_param_defaults.contains(key):
             return self.state.fn_param_defaults.get(key).unwrap()
         0
