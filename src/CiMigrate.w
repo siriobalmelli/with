@@ -1399,10 +1399,14 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, pr
             has_unsupported = true
             unsupported_reason = ptype.slice(14, ptype.len())
 
-        // Use cursor API name if available, fall back to old API
-        var pname = with_cimport_fn_param_name(session, idx, pi)
+        // Definition param names are authoritative: the translated body
+        // references the DEFINITION's spellings, and a -include'd prototype
+        // may name the same params differently — naming the signature from
+        // the registry cursor then skews it against every body reference
+        // (#740 census: `__param_c` signature vs `__param__1` body).
+        var pname = ci_get_nth_pipe_entry(cursor_param_names, pi)
         if pname.len() == 0:
-            pname = ci_get_nth_pipe_entry(cursor_param_names, pi)
+            pname = with_cimport_fn_param_name(session, idx, pi)
         let escaped_pname = if pname.len() > 0: ci_escape_reserved(pname) else: ""
         let sig_pname = ci_param_signature_name(escaped_pname, pi)
         params = params ++ sig_pname ++ ": " ++ ci_unsafe_fn_ptr_type(ptype)
