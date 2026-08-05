@@ -7982,9 +7982,7 @@ impl CiExprPool:
             let inner_id = self.lower_expr_ir(session, inner_cursor, types, scope)
             if (inner_id as i32) == 0:
                 return 0 as CiExprId
-            let zero_s = self.add_string("0")
-            let zero = self.int_lit(zero_s, 0 as CiTypeId)
-            return self.binary(CiBinOp.CIBO_NEQ, inner_id, zero, 0 as CiTypeId)
+            return self.int_to_bool_bridge(inner_id)
 
         if cast_kind == CI_CAST_PTR_TO_BOOL:
             let inner_id = self.lower_expr_ir(session, inner_cursor, types, scope)
@@ -8169,6 +8167,16 @@ impl CiExprPool:
                 return value_id
         let value_ty = self.get_type(value_id)
         if types.kind(target_ty_id) != CiTypeKind.CT_POINTER:
+            // #740 roundtrip class 1: a _Bool target whose value lowered to an
+            // int costume (`{0}` init lists fold to `0`; comparisons lower to
+            // `(if cond: 1 else: 0)`) — unwrap to the bool. cast_if_needed
+            // cannot see this: the C cursor's static type is already _Bool.
+            // Values not wearing a known int shape pass through untouched.
+            if types.kind(target_ty_id) == CiTypeKind.CT_BOOL:
+                let shaped = self.int_shape_to_bool(value_id)
+                if (shaped as i32) != 0:
+                    return shaped
+                return value_id
             if types.kind(target_ty_id) == CiTypeKind.CT_ARRAY or types.kind(target_ty_id) == CiTypeKind.CT_STRUCT:
                 return value_id
             if types.kind(target_ty_id) == CiTypeKind.CT_NAMED:
@@ -9031,6 +9039,36 @@ impl CiExprPool:
         stmts.deinit()
         value_expr
 
+    // #740 roundtrip class 1: recognize the int-costumed bool shapes the
+    // migrator itself produces — `(if cond: 1 else: 0)` (comparisons, logical
+    // ops, `!`) and 0/1 literals — and give back the underlying bool instead
+    // of appending `!= 0`. Returns 0 when the value is not one of the shapes.
+    fn int_shape_to_bool(value_id: CiExprId) -> CiExprId:
+        var peeled = value_id
+        while self.kind(peeled) == CiExprKind.CIE_PAREN:
+            peeled = (self.get_d0(peeled)) as CiExprId
+        if self.kind(peeled) == CiExprKind.CIE_TERNARY:
+            let then_e = (self.get_d1(peeled)) as CiExprId
+            let else_e = (self.get_d2(peeled)) as CiExprId
+            if self.kind(then_e) == CiExprKind.CIE_INT_LIT and self.kind(else_e) == CiExprKind.CIE_INT_LIT:
+                if self.get_string(self.get_d0(then_e)) == "1" and self.get_string(self.get_d0(else_e)) == "0":
+                    return self.add(CiExprKind.CIE_PAREN, self.get_d0(peeled), 0, 0, 0 as CiTypeId)
+        if self.kind(peeled) == CiExprKind.CIE_INT_LIT:
+            let text = self.get_string(self.get_d0(peeled))
+            if text == "0": return self.bool_lit(0, 0 as CiTypeId)
+            if text == "1": return self.bool_lit(1, 0 as CiTypeId)
+        0 as CiExprId
+
+    // C's implicit int→_Bool conversion, materialized: known int shapes
+    // unwrap losslessly, everything else compares against zero.
+    fn int_to_bool_bridge(inner_id: CiExprId) -> CiExprId:
+        let shaped = self.int_shape_to_bool(inner_id)
+        if (shaped as i32) != 0:
+            return shaped
+        let zero_idx = self.add_string("0")
+        let zero = self.int_lit(zero_idx, 0 as CiTypeId)
+        self.binary(CiBinOp.CIBO_NEQ, inner_id, zero, 0 as CiTypeId)
+
     fn apply_implicit_cast_to_value_id(session: i64, cursor: i32, inner_cursor: i32, inner_id: CiExprId, types: CiTypePool, scope: CiScope) -> CiExprId:
         let cast_kind = ci_classify_implicit_cast_safe(session, cursor, inner_cursor)
 
@@ -9040,9 +9078,7 @@ impl CiExprPool:
             return inner_id
 
         if cast_kind == CI_CAST_INT_TO_BOOL:
-            let zero_idx = self.add_string("0")
-            let zero = self.int_lit(zero_idx, 0 as CiTypeId)
-            return self.binary(CiBinOp.CIBO_NEQ, inner_id, zero, 0 as CiTypeId)
+            return self.int_to_bool_bridge(inner_id)
         if cast_kind == CI_CAST_PTR_TO_BOOL:
             let null_e = self.null_ptr(0 as CiTypeId)
             return self.binary(CiBinOp.CIBO_NEQ, inner_id, null_e, 0 as CiTypeId)
@@ -9350,6 +9386,29 @@ impl CiStmtPool:
             if ci_unexposed_expr_is_va_arg(session, cursor):
                 ci_note_unsupported_va_arg(session, cursor)
                 return ci_value_ir_invalid()
+            // #740 roundtrip class 1: C's implicit scalar→_Bool conversion
+            // must materialize — With has no implicit int→bool, so peeling
+            // this wrapper transparently silently retypes the value. All
+            // other implicit casts stay transparent on the value path,
+            // matching the historical shape (lower_expr_ir dispatches them).
+            let cast_inner = ci_find_last_expr_child(session, cursor)
+            if cast_inner >= 0:
+                let cast_kind = ci_classify_implicit_cast_safe(session, cursor, cast_inner)
+                if cast_kind == CI_CAST_INT_TO_BOOL or cast_kind == CI_CAST_PTR_TO_BOOL or cast_kind == CI_CAST_FLOAT_TO_BOOL:
+                    if with_ci_eval_int_valid(session, cursor) != 0 and not ci_expr_children_need_rvalue_lowering(session, cursor):
+                        let bval = with_ci_eval_int_value(session, cursor)
+                        if bval == 0 or bval == 1:
+                            return ci_value_ir_plain(exprs.bool_lit(bval as i32, 0 as CiTypeId))
+                    let inner_v = self.lower_value_expr_ir(session, cast_inner, exprs, types, scope)
+                    if not ci_value_ir_valid(inner_v):
+                        return ci_value_ir_invalid()
+                    let bridged = exprs.apply_implicit_cast_to_value_id(session, cursor, cast_inner, inner_v.value_expr, types, scope)
+                    if (bridged as i32) == 0:
+                        return ci_value_ir_invalid()
+                    return CiValueExprIR {
+                        setup_stmt: inner_v.setup_stmt,
+                        value_expr: bridged,
+                    }
             if with_ci_eval_int_valid(session, cursor) != 0 and not ci_expr_children_need_rvalue_lowering(session, cursor):
                 let text_idx = exprs.add_string(ci_eval_int_text(session, cursor))
                 return ci_value_ir_plain(exprs.int_lit(text_idx, 0 as CiTypeId))
