@@ -8310,6 +8310,38 @@ fn ci_record_index_struct(session: i64, ty_name: &str) -> i32:
     ci_record_index_ensure(session)
     if g_ci_record_struct_by_name.contains(ty_name): g_ci_record_struct_by_name.get(ty_name).unwrap() else: -1
 
+// #740 roundtrip class 4: a hoisted C struct local always carries C's `{0}`
+// zero-init, but its With decl was emitted uninitialized — struct stores
+// print as with_memcpy raw-pointer writes, which definite-assignment cannot
+// see, so the checker demands Default at the first opaque write. When every
+// field of the record's emitted With decl carries a default, `Ty {  }` IS
+// the `{0}` init. Records with nested-record/union/array fields return
+// false and the decl stays uninitialized exactly as before (still loud).
+fn ci_record_all_fields_defaulted(session: i64, ty_name: &str) -> bool:
+    let sidx = ci_record_index_struct(session, ty_name)
+    if sidx >= 0:
+        if with_cimport_decl_kind(session, sidx) == CK_UNION:
+            return false
+        let n = with_cimport_struct_field_count(session, sidx)
+        if n == 0: return false
+        var fi = 0
+        while fi < n:
+            if ci_default_for_type(with_cimport_struct_field_type_translated(session, sidx, fi)).len() == 0:
+                return false
+            fi = fi + 1
+        return true
+    let tidx = ci_record_index_typedef(session, ty_name)
+    if tidx >= 0 and with_cimport_typedef_anon_is_union(session, tidx) == 0:
+        let n = with_cimport_typedef_anon_record_field_count(session, tidx)
+        if n == 0: return false
+        var fi = 0
+        while fi < n:
+            if ci_default_for_type(with_cimport_typedef_anon_field_type(session, tidx, fi)).len() == 0:
+                return false
+            fi = fi + 1
+        return true
+    false
+
 fn ci_record_index_typedef(session: i64, ty_name: &str) -> i32:
     ci_record_index_ensure(session)
     if g_ci_record_typedef_by_name.contains(ty_name): g_ci_record_typedef_by_name.get(ty_name).unwrap() else: -1
@@ -14949,6 +14981,12 @@ impl CiStmtPool:
             var init_id = exprs.default_for_ci_type(ty_id, types)
             if (init_id as i32) == 0 and decl.default_text.len() > 0:
                 init_id = exprs.default_expr_from_text(decl.default_text)
+            // #740 class 4: flat record locals carry C's `{0}` as `Ty {  }` —
+            // every later struct store is an opaque with_memcpy write that
+            // definite-assignment cannot count as initialization.
+            if (init_id as i32) == 0 and ci_type_needs_memcpy_assignment(types, ty_id):
+                if ci_record_all_fields_defaulted(session, ci_print_type(types, ty_id)):
+                    init_id = exprs.add(CiExprKind.CIE_DESIGNATED_INIT, exprs.extra_len() as i32, 0, 0, ty_id)
             if (init_id as i32) == 0 and not ci_type_needs_memcpy_assignment(types, ty_id):
                 g_ci_bail_location = with_ci_cursor_location(session, body_cursor)
                 g_ci_bail_kind = CXK_COMPOUND_STMT
