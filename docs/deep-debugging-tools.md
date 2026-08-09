@@ -137,7 +137,8 @@ One TSV row per deduped `(fn, class, place)`; classes:
 
 Findings are seams, not automatic bugs — a `copy-view-drop` may be a
 deliberate leak-class read — but every double-free root-caused in the D22
-batch (handoff.md §3 roots 15, 18, 19) matches exactly one of these rows.
+batch (docs/handoff.md, D22 Stage 6 era, §3 roots 15, 18, 19) matches
+exactly one of these rows.
 Burn the list down with clones/views (see the `bg_clone_str_vec` /
 `&vec[i]` idioms), or classify a row as intended where the disposition is a
 known pinned leak.
