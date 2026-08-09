@@ -3866,12 +3866,15 @@ impl MirBuilder:
         let place: i32 = self.body.operand_d0.get(lowered as i64)
         if self.str_concat_part_is_explicit_move(node) == 0:
             // Ordinary ++ observes its operands. Named owners retain their
-            // scope drops; owned rvalues retain their statement-temp drops.
-            return self.body.new_operand(OperandKind.OK_COPY, place)
+            // scope drops; an anonymous rvalue part has no later owner, so
+            // the statement takes it (below) and drops it at the flush.
+            if self.place_source_is_named(place) != 0:
+                return self.body.new_operand(OperandKind.OK_COPY, place)
 
-        // `move x ++ y` still performs D16's explicit move. Materialize the
-        // transferred value as a statement temporary, borrow that temporary
-        // for concat, then drop it at the pending-reset flush.
+        // `move x ++ y` performs D16's explicit move, and an owned rvalue
+        // part dies with the statement. Materialize the transferred value
+        // as a statement temporary, borrow that temporary for concat, then
+        // drop it at the pending-reset flush.
         let moved_ty = self.operand_type(lowered)
         let moved_tmp = self.new_temp(moved_ty)
         let moved_place = self.place_for_local(moved_tmp)
