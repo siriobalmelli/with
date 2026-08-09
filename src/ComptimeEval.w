@@ -2276,7 +2276,7 @@ impl ComptimeEvaluator:
         if meta < 0:
             return 0
         let flags = self.ast.fn_meta_flags(meta)
-        if (flags / BOOT_FN_COMPTIME) % 2 == 1:
+        if (flags / FnFlags.COMPTIME) % 2 == 1:
             return 1
         0
 
@@ -4042,7 +4042,7 @@ impl ComptimeEvaluator:
         let module_name = comptime_module_name_for_path(comp.zcu.project_config.root_dir, path)
         let name = comp.zcu.pool.resolve(pool.get_data0(decl))
         let flags = pool.get_data2(decl)
-        let is_pub = (flags / BOOT_FN_PUB) % 2 == 1
+        let is_pub = (flags / FnFlags.PUB) % 2 == 1
         let meta = pool.find_fn_meta(decl)
         var param_count = 0
         var generic_param_count = 0

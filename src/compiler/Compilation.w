@@ -516,7 +516,7 @@ impl Compilation:
             if kind == NodeKind.NK_FN_DECL:
                 let name = zcu.pool.resolve(pool.get_data0(decl))
                 let flags = pool.get_data2(decl)
-                let is_pub = (flags / BOOT_FN_PUB) % 2 == 1
+                let is_pub = (flags / FnFlags.PUB) % 2 == 1
                 let meta = pool.find_fn_meta(decl)
                 var param_count = 0
                 var return_type = "void"
@@ -553,7 +553,7 @@ impl Compilation:
             if kind == NodeKind.NK_FN_DECL:
                 let name = zcu.pool.resolve(pool.get_data0(decl))
                 let flags = pool.get_data2(decl)
-                let is_pub = (flags / BOOT_FN_PUB) % 2 == 1
+                let is_pub = (flags / FnFlags.PUB) % 2 == 1
                 let meta = pool.find_fn_meta(decl)
                 var param_count = 0
                 var return_type = "void"

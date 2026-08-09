@@ -1097,13 +1097,13 @@ impl Parser:
         if self.pool.kind(decl) != NodeKind.NK_FN_DECL:
             return
         let flags = self.pool.get_data2(decl)
-        if (flags / BOOT_FN_COMPTIME) % 2 == 0:
-            self.pool.set_data2(decl, flags + BOOT_FN_COMPTIME)
+        if (flags / FnFlags.COMPTIME) % 2 == 0:
+            self.pool.set_data2(decl, flags + FnFlags.COMPTIME)
         let meta = self.pool.find_fn_meta(decl)
         if meta >= 0:
             let meta_flags = self.pool.fn_meta_flags(meta)
-            if (meta_flags / BOOT_FN_COMPTIME) % 2 == 0:
-                self.pool.state.fn_meta.set_i32((meta + 1) as i64, meta_flags + BOOT_FN_COMPTIME)
+            if (meta_flags / FnFlags.COMPTIME) % 2 == 0:
+                self.pool.state.fn_meta.set_i32((meta + 1) as i64, meta_flags + FnFlags.COMPTIME)
 
     fn mark_new_comptime_decls(start_decl_count: i32):
         var di = start_decl_count
@@ -1252,37 +1252,37 @@ impl Parser:
         // Build flags
         var flags = 0
         if is_pub == Visibility.Public:
-            flags = flags + BOOT_FN_PUB
+            flags = flags + FnFlags.PUB
         if is_async != 0:
-            flags = flags + BOOT_FN_ASYNC
+            flags = flags + FnFlags.ASYNC
         if is_gen != 0:
-            flags = flags + BOOT_FN_GEN
+            flags = flags + FnFlags.GEN
         if is_comptime != 0:
-            flags = flags + BOOT_FN_COMPTIME
+            flags = flags + FnFlags.COMPTIME
         if self.pending_tailrec != 0:
-            flags = flags + BOOT_FN_TAILREC
+            flags = flags + FnFlags.TAILREC
         if self.pending_must_use != 0:
-            flags = flags + BOOT_FN_MUST_USE
+            flags = flags + FnFlags.MUST_USE
         if self.pending_inline != 0:
-            flags = flags + BOOT_FN_INLINE
+            flags = flags + FnFlags.INLINE
         if self.pending_noinline != 0:
-            flags = flags + BOOT_FN_NOINLINE
+            flags = flags + FnFlags.NOINLINE
         if self.pending_panic_handler != 0:
-            flags = flags + BOOT_FN_PANIC_HANDLER
+            flags = flags + FnFlags.PANIC_HANDLER
         if self.pending_entry != 0:
-            flags = flags + BOOT_FN_ENTRY
+            flags = flags + FnFlags.ENTRY
         if self.pending_no_main != 0:
-            flags = flags + BOOT_FN_NO_MAIN
+            flags = flags + FnFlags.NO_MAIN
         if self.pending_test != 0:
-            flags = flags + BOOT_FN_TEST
+            flags = flags + FnFlags.TEST
         if self.pending_before != 0:
-            flags = flags + BOOT_FN_BEFORE
+            flags = flags + FnFlags.BEFORE
         if self.pending_after != 0:
-            flags = flags + BOOT_FN_AFTER
+            flags = flags + FnFlags.AFTER
         if self.pending_bench != 0:
-            flags = flags + BOOT_FN_BENCH
+            flags = flags + FnFlags.BENCH
         if is_variadic != 0:
-            flags = flags + BOOT_FN_VARIADIC
+            flags = flags + FnFlags.VARIADIC
 
         // Store extra: type params then params already in extra from parsing.
         // We encode: d0=name, d1=body, d2=flags
@@ -2975,11 +2975,11 @@ impl Parser:
             method_ends.push(self.prev_end())
             var mflags = 0
             if is_async_method != 0:
-                mflags = mflags + BOOT_FN_ASYNC
+                mflags = mflags + FnFlags.ASYNC
             if is_pub_method != 0:
-                mflags = mflags + BOOT_FN_PUB
+                mflags = mflags + FnFlags.PUB
             if m_tp_count > 0:
-                mflags = mflags + BOOT_FN_GEN
+                mflags = mflags + FnFlags.GEN
             method_flags.push(mflags)
             self.skip_newlines()
 
@@ -3255,9 +3255,9 @@ impl Parser:
 
             var flags = 0
             if method_vis == Visibility.Public:
-                flags = flags + BOOT_FN_PUB
+                flags = flags + FnFlags.PUB
             if m_async != 0:
-                flags = flags + BOOT_FN_ASYNC
+                flags = flags + FnFlags.ASYNC
 
             var final_method_body = body
             if m_unsafe != 0:

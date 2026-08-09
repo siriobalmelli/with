@@ -13344,9 +13344,9 @@ fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody
     let fn_flags = builder.ast.get_data2(fn_node)
     if sig_idx >= 0:
         var body_ret_ty = builder.sema.sig_return_type(sig_idx)
-        if (fn_flags / BOOT_FN_ASYNC) % 2 == 1:
+        if (fn_flags / FnFlags.ASYNC) % 2 == 1:
             body_ret_ty = builder.sema.unwrap_task_type(body_ret_ty as TypeId) as i32
-        if (fn_flags / BOOT_FN_GEN) % 2 == 1 and builder.in_generator != 0:
+        if (fn_flags / FnFlags.GEN) % 2 == 1 and builder.in_generator != 0:
             body_ret_ty = builder.sema.ty_void as i32
         builder.body.local_type_ids.set_i32(0, body_ret_ty)
     else:
@@ -13494,7 +13494,7 @@ fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody
     builder.terminate(TermKind.TK_RETURN, 0, 0, 0, 0)
 
     // Self-tail-call optimization for @[tailrec] functions.
-    if (fn_flags / BOOT_FN_TAILREC) % 2 == 1:
+    if (fn_flags / FnFlags.TAILREC) % 2 == 1:
         builder.body.optimize_self_tail_calls()
 
     builder.body
@@ -14184,7 +14184,7 @@ fn lower_module(input_sema: Sema, ast_pool: AstPool, pool: InternPool) -> MirLow
 
         sema.update_decl_source_context(di)
         let fn_flags = ast_pool.get_data2(decl)
-        if (fn_flags / BOOT_FN_GEN) % 2 == 1:
+        if (fn_flags / FnFlags.GEN) % 2 == 1:
             let sig_idx = sema.get_sig(fn_sym)
             if sig_idx < 0:
                 continue
@@ -14246,7 +14246,7 @@ fn collect_tailrec_fn_syms(sema: &Sema, ast_pool: AstPool, pool: InternPool) -> 
         if mir_fn_is_generic_template(sema, ast_pool, pool, decl as i32):
             continue
         let fn_flags = ast_pool.get_data2(decl)
-        if (fn_flags / BOOT_FN_TAILREC) % 2 == 1:
+        if (fn_flags / FnFlags.TAILREC) % 2 == 1:
             tailrec_syms.push(ast_pool.get_data0(decl))
     tailrec_syms
 
@@ -14367,7 +14367,7 @@ fn mir_fn_is_tailrec(ast_pool: AstPool, fn_sym: i32) -> i32:
     if fn_node == 0:
         return 0
     let flags = ast_pool.get_data2(fn_node)
-    if (flags / BOOT_FN_TAILREC) % 2 == 1:
+    if (flags / FnFlags.TAILREC) % 2 == 1:
         return 1
     0
 

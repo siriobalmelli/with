@@ -28,11 +28,11 @@ fn render_decl(pool: AstPool, intern: InternPool, node: NodeId, indent: i32) -> 
         let flags = pool.get_data2(node)
         let body = pool.get_data1(node)
         var out = prefix
-        if has_flag(flags, BOOT_FN_PUB):
+        if has_flag(flags, FnFlags.PUB):
             out = out ++ "pub "
-        if has_flag(flags, BOOT_FN_ASYNC):
+        if has_flag(flags, FnFlags.ASYNC):
             out = out ++ "async "
-        if has_flag(flags, BOOT_FN_GEN):
+        if has_flag(flags, FnFlags.GEN):
             out = out ++ "gen "
         out = out ++ "fn " ++ name
 

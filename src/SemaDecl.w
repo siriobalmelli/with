@@ -1284,7 +1284,7 @@ impl Sema:
         body_sym
 
     mut fn fn_signature_return_type(flags: i32, declared_ret_type: TypeId) -> TypeId:
-        if (flags / BOOT_FN_ASYNC) % 2 == 0:
+        if (flags / FnFlags.ASYNC) % 2 == 0:
             return declared_ret_type
         let task_args: Vec[i32] = Vec.new()
         task_args.push(declared_ret_type as i32)
@@ -1292,9 +1292,9 @@ impl Sema:
         if task_ty != 0: task_ty else: declared_ret_type
 
     fn record_fn_behavior_metadata(fn_name: i32, node: i32, flags: i32):
-        if (flags / BOOT_FN_MUST_USE) % 2 == 1:
+        if (flags / FnFlags.MUST_USE) % 2 == 1:
             self.must_use_fns.insert(fn_name, 1)
-        if (flags / BOOT_FN_ASYNC) % 2 == 1:
+        if (flags / FnFlags.ASYNC) % 2 == 1:
             self.task_fns.insert(fn_name, 1)
         if self.ast.state.fn_stack_sizes.contains(node):
             self.fn_stack_sizes.insert(fn_name, self.ast.state.fn_stack_sizes.get(node).unwrap())
@@ -1321,7 +1321,7 @@ impl Sema:
         if is_local != 0:
             self.set_pretty_symbol(fn_name, self.extract_decl_name_after(node, "fn"))
         let fn_flags = self.ast.get_data2(node)
-        let decl_is_pub = if (fn_flags / BOOT_FN_PUB) % 2 == 1: 1 else: 0
+        let decl_is_pub = if (fn_flags / FnFlags.PUB) % 2 == 1: 1 else: 0
         self.record_decl_visibility(fn_name, node, decl_is_pub)
         if self.fn_decl_nodes.contains(fn_name):
             let existing_node: i32 = self.fn_decl_nodes.get(fn_name).unwrap()
@@ -1357,7 +1357,7 @@ impl Sema:
         let param_start = self.ast.fn_meta_param_start(meta)
         let param_count = self.ast.fn_meta_param_count(meta)
         let tp_count = self.ast.fn_meta_tp_count(meta)
-        if (flags / BOOT_FN_ASYNC) % 2 == 1:
+        if (flags / FnFlags.ASYNC) % 2 == 1:
             self.require_async_runtime(node, "async fn")
         self.record_fn_behavior_metadata(fn_name, node, flags)
 
@@ -1521,8 +1521,8 @@ impl Sema:
 
         // For generator functions, the public call returns an internal state value.
         // The declared return type remains the yield type tracked for `yield expr`.
-        if (flags / BOOT_FN_GEN) % 2 == 1:
-            if (flags / BOOT_FN_ASYNC) % 2 == 1:
+        if (flags / FnFlags.GEN) % 2 == 1:
+            if (flags / FnFlags.ASYNC) % 2 == 1:
                 self.emit_error("gen fn cannot also be async", node)
             if ret_node == 0:
                 self.emit_error("generator function requires a yield type", node)
@@ -1543,7 +1543,7 @@ impl Sema:
             self.type_extra.push(self.sig_params.get((sig_param_start + pi) as i64))
         let fn_tid = self.add_type(TypeKind.TY_FN, fn_extra_start, param_count, sig_ret_type)
 
-        let is_variadic = (flags / BOOT_FN_VARIADIC) % 2
+        let is_variadic = (flags / FnFlags.VARIADIC) % 2
         self.add_sig(fn_name, fn_tid, sig_ret_type, sig_param_start, param_count, is_variadic)
         let fn_sig_idx = self.get_sig(fn_name)
         if fn_sig_idx >= 0:
@@ -2070,7 +2070,7 @@ impl Sema:
             let mt_param_count = self.ast.get_extra(pos + TRAIT_METHOD_PARAM_COUNT)
             let mt_ret_node = self.ast.get_extra(pos + TRAIT_METHOD_RETURN_TYPE)
             let mt_default_body = self.ast.get_extra(pos + TRAIT_METHOD_DEFAULT_BODY)
-            if (mt_flags / BOOT_FN_ASYNC) % 2 == 1:
+            if (mt_flags / FnFlags.ASYNC) % 2 == 1:
                 self.require_async_runtime(node, "async trait method")
             // docs/mutability.md — trait method must declare explicit receiver mode.
             if mt_param_count > 0:

@@ -4276,7 +4276,7 @@ impl Codegen:
                 self.generic_struct_methods.insert(name_sym, fn_node)
                 return
 
-        if (flags / BOOT_FN_GEN) % 2 == 1:
+        if (flags / FnFlags.GEN) % 2 == 1:
             let sig_idx = self.sema.get_sig(name_sym)
             if sig_idx >= 0:
                 self.declare_function_from_sig(name_sym, sig_idx, 0)
@@ -4475,14 +4475,14 @@ impl Codegen:
                     byval_types.push(0)
                     direct_types.push(0)
         let actual_param_count = actual_param_types.len() as i32
-        let is_variadic = (flags / BOOT_FN_VARIADIC) % 2
+        let is_variadic = (flags / FnFlags.VARIADIC) % 2
         let fn_type = wl_function_type(actual_ret_ty, vec_data_i64(&actual_param_types), actual_param_count, is_variadic)
 
         // Use "main" for @[entry] functions
         var effective_name = if sema_name_str.len() > 0: sema_name_str else: self.function_symbol_name(name_sym)
         if parsed_name.len() > 0:
             effective_name = parsed_name
-        if (flags / BOOT_FN_ENTRY) % 2 == 1:
+        if (flags / FnFlags.ENTRY) % 2 == 1:
             effective_name = "main"
         else if self.module_object_mode != 0:
             if not codegen_preserve_runtime_link_name(self.current_decl_source_file, effective_name) and
@@ -4531,9 +4531,9 @@ impl Codegen:
                     wl_set_call_conv(function, cc_id)
 
         // Apply attributes
-        if (flags / BOOT_FN_INLINE) % 2 == 1:
+        if (flags / FnFlags.INLINE) % 2 == 1:
             wl_add_fn_attr(self.context, function, "alwaysinline")
-        if (flags / BOOT_FN_NOINLINE) % 2 == 1:
+        if (flags / FnFlags.NOINLINE) % 2 == 1:
             wl_add_fn_attr(self.context, function, "noinline")
 
         if has_sret != 0 or byval_mask != 0 or direct_mask != 0 or direct_ret_ty != 0:
@@ -6085,7 +6085,7 @@ impl Codegen:
                     self.declare_function_at(decl, i)
                 else if is_sema_generic:
                     continue
-                else if (flags / BOOT_FN_ASYNC) % 2 == 1:
+                else if (flags / FnFlags.ASYNC) % 2 == 1:
                     self.declare_async_function(decl)
                 else:
                     self.declare_function_at(decl, i)

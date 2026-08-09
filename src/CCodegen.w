@@ -1031,7 +1031,7 @@ impl CCodegen:
         if decl == 0 as NodeId:
             return 0
         let flags = self.ast.get_data2(decl)
-        if (flags / BOOT_FN_PUB) % 2 == 1:
+        if (flags / FnFlags.PUB) % 2 == 1:
             return 1
         0
 
