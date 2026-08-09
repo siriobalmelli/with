@@ -41,12 +41,12 @@ pub fn args -> Vec[str]:
     out
 
 /// Get an environment variable. Returns "" if not set.
-pub fn env(name: str) -> str:
+pub fn env(name: &str) -> str:
     let v = with_getenv_str(name)
     if with_str_len(v) == 0: "" else: v
 
 /// Set an environment variable. Returns 0 on success.
-pub fn set_env(name: str, value: str) -> i32:
+pub fn set_env(name: &str, value: &str) -> i32:
     with_setenv_str(name, value)
 
 fn argv_blob(items: &Vec[str]) -> str:

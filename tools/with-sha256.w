@@ -8,6 +8,8 @@ use std.crypto.sha256
 // dedup would marry those decls to the flipped &str runtime — silent
 // garbage I/O. So this tool must not touch any runtime symbol the seed
 // prelude declares; it uses its own decls below, which match rt/.
+// std.internal.str_abi also copies through the borrowed header directly so
+// this seed-built tool never enters the legacy consuming byte-at ABI.
 extern fn with_write_stdout(s: &str) -> Unit
 extern fn with_libc_write(fd: i32, buf: *mut u8, count: u64) -> i64
 extern fn with_fs_file_exists(path: &str) -> i32

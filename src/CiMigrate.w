@@ -425,6 +425,27 @@ fn ci_migrate_render_preamble_fn(signature: &str, colon_expr: &str, brace_expr: 
         return signature ++ " {\n    " ++ brace_expr ++ "\n}\n"
     signature ++ ": " ++ colon_expr ++ "\n"
 
+fn ci_migrate_render_overflow_helper(op: &str, ty: &str, is_signed: bool):
+    let token = if op == "add": "+%" else if op == "sub": "-%" else: "*%"
+    let overflow = if op == "add":
+        if is_signed: "((result ^ a) & (result ^ b)) < 0" else: "result < a"
+    else if op == "sub":
+        if is_signed: "((a ^ b) & (result ^ a)) < 0" else: "a < b"
+    else if is_signed:
+        "if a == 0 or b == 0: false else if a == -1: result == b else if b == -1: result == a else: result / b != a"
+    else:
+        "if b == 0: false else: result / b != a"
+    let signature = "unsafe fn __with_builtin_" ++ op ++ "_overflow_" ++ ty ++ "(a: " ++ ty ++ ", b: " ++ ty ++ ", out: *mut " ++ ty ++ ") -> bool"
+    let body = "    let result = a " ++ token ++ " b\n    unsafe { (*out = result) }\n    " ++ overflow ++ "\n"
+    if migrate_prefer_brace():
+        return signature ++ " {\n" ++ body ++ "}\n"
+    signature ++ ":\n" ++ body
+
+fn ci_migrate_render_overflow_helpers(ty: &str, is_signed: bool):
+    ci_migrate_render_overflow_helper("add", ty, is_signed) ++
+    ci_migrate_render_overflow_helper("sub", ty, is_signed) ++
+    ci_migrate_render_overflow_helper("mul", ty, is_signed)
+
 // Write the shared defs module (defs.w) to output_dir.
 // Contains: preamble + hardcoded extras + shared declarations.
 fn ci_migrate_write_shared_defs(output_dir: &str):
@@ -596,6 +617,19 @@ fn ci_migrate_preamble_text() -> str:
     p = p ++ "type c_longlong = i64\n"
     p = p ++ "type c_ulonglong = u64\n"
     p = p ++ "type c_longdouble = f64\n"
+    // Clang's overflow builtins both store the wrapped result and report the
+    // overflow bit. Keep both effects: the structural call lowerer selects
+    // the helper from the result-pointer type and rejects mixed types loudly.
+    p = p ++ ci_migrate_render_overflow_helpers("i8", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u8", false)
+    p = p ++ ci_migrate_render_overflow_helpers("i16", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u16", false)
+    p = p ++ ci_migrate_render_overflow_helpers("i32", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u32", false)
+    p = p ++ ci_migrate_render_overflow_helpers("i64", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u64", false)
+    p = p ++ ci_migrate_render_overflow_helpers("i128", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u128", false)
     // Builtin and runtime wrappers
     p = p ++ "extern fn with_clz(x: i32) -> i32\n"
     p = p ++ "extern fn with_ctz(x: i32) -> i32\n"
@@ -619,6 +653,55 @@ fn ci_migrate_preamble_text() -> str:
     p = p ++ "extern fn with_va_start(ap: *mut i8) -> Unit\n"
     p = p ++ "extern fn with_va_end(ap: *mut i8) -> Unit\n\n"
     p
+
+// The with_* runtime externs the preamble above declares. A C prototype for
+// one of these names is a redeclaration of the same flat-namespace symbol —
+// the preamble's spelling is the one every migrator-generated call matches.
+fn ci_migrate_preamble_declares_runtime_extern(name: &str) -> bool:
+    name == "with_clz" or name == "with_ctz" or name == "with_popcount" or
+    name == "with_bswap16" or name == "with_bswap32" or name == "with_bswap64" or
+    name == "with_clzl" or name == "with_clzll" or name == "with_ctzl" or
+    name == "with_ctzll" or name == "with_abs" or name == "with_alloc" or
+    name == "with_alloc_zeroed" or name == "with_realloc" or name == "with_free" or
+    name == "with_memcpy" or name == "with_memmove" or name == "with_memset" or
+    name == "with_memcmp" or name == "with_va_start" or name == "with_va_end"
+
+fn ci_migrate_is_runtime_cabi_function(name: &str) -> bool:
+    if ci_starts_with(name, "with_"):
+        return true
+    name == "i32_to_str" or name == "i64_to_string" or name == "str_from_byte"
+
+// The compiler's emitted C ABI uses with_* names plus three legacy conversion
+// names and C-layout types such as with_str. Migrated source also embeds std,
+// whose canonical declarations use the same physical symbols with humane With
+// types (`str`, `Never`, and so on). Keep those two type surfaces out of With's
+// flat namespace while preserving the original linker symbol. The fixed
+// preamble externs are already canonical migrator declarations, so their names
+// remain unchanged.
+pub fn ci_migrate_c_function_name(name: &str) -> str:
+    let safe_name = ci_escape_reserved(name)
+    if ci_translate_in_migrate_mode() and ci_migrate_is_runtime_cabi_function(name) and not ci_migrate_preamble_declares_runtime_extern(name):
+        return "__with_cabi_" ++ safe_name
+    safe_name
+
+// Pre-D5 emitted C flattened borrowed str parameters to by-value with_str.
+// The current runtime's canonical signatures borrow those places, so linking
+// the old C declaration directly would pass {ptr,len} where FnAbi expects one
+// place address. This is the single compatibility descriptor for that ABI
+// transition; each bit is a canonical borrowed-with_str parameter index.
+fn ci_migrate_runtime_borrowed_str_param_mask(name: &str) -> i32:
+    if name == "with_regex_compile" or name == "with_str_len" or
+       name == "with_println_str" or name == "with_eprint" or
+       name == "with_write" or name == "with_ewrite":
+        return 1
+    if name == "with_regex_match_spans_alloc_at" or name == "with_regex_group_name_to_index":
+        return 2
+    if name == "with_regex_substitute":
+        return 6
+    0
+
+fn ci_migrate_runtime_param_is_borrowed_str(mask: i32, param_index: i32) -> bool:
+    mask != 0 and param_index >= 0 and (mask & (1 << (param_index as u32))) != 0
 
 // ── Migrate entry points (moved from CImport.w in D3) ─────────
 pub fn migrate_add_define(define: &str) -> Unit:
@@ -858,6 +941,14 @@ impl CiProject:
         with_cimport_dispose(session)
         0
 
+fn ci_migrate_decl_is_filtered(session: i64, name: &str):
+    if name.len() == 0 or ci_is_system_decl(name):
+        return true
+    let loc = ci_get_decl_location(session, name)
+    if loc.len() > 0 and ci_is_system_path(loc):
+        return true
+    ci_migrate_is_width_family_name(name)
+
 fn ci_migrate_file_inner(input_path: &str, output_path: &str, project_active: bool, project: &CiProject) -> i32:
     if with_cimport_available() == 0:
         eprint("migrate: libclang not available")
@@ -956,17 +1047,7 @@ fn ci_migrate_file_inner(input_path: &str, output_path: &str, project_active: bo
     var i = 0
     while i < count:
         let decl_name = with_cimport_decl_name(session, i)
-        // Skip system types/functions by name pattern
-        if ci_is_system_decl(decl_name):
-            i = i + 1
-            continue
-        // Skip declarations from system headers (check source location)
-        let decl_loc = ci_get_decl_location(session, decl_name)
-        if decl_loc.len() > 0 and ci_is_system_path(decl_loc):
-            i = i + 1
-            continue
-        // C2: skip width-family declarations when width slicing is active
-        if ci_migrate_is_width_family_name(decl_name):
+        if ci_migrate_decl_is_filtered(session, decl_name):
             i = i + 1
             continue
         let kind = with_cimport_decl_kind(session, i)
@@ -1324,12 +1405,9 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, pr
     if name.len() == 0:
         return ""
 
-    // Skip system internal names (__ prefix or _[A-Z] prefix)
-    // but keep application-internal names like _pcre2_*
-    if name.len() >= 2 and name.byte_at(0) == 95:
-        let second = name.byte_at(1)
-        if second == 95 or (second >= 65 and second <= 90):
-            return ""
+    // The declaration walk already filters actual system declarations through
+    // ci_is_system_decl and their source paths. Do not repeat a spelling-only
+    // filter here: emit-C deliberately owns the reserved __with_* namespace.
 
     // Skip libc functions that are mapped to With equivalents
     if ci_is_mapped_libc_fn(name):
@@ -1347,9 +1425,10 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, pr
         return ""
 
     let storage = with_cimport_fn_storage_class(session, idx)
-    let safe_name = ci_escape_reserved(name)
+    let safe_name = ci_migrate_c_function_name(name)
     let param_count = with_cimport_fn_param_count(session, idx)
     let is_variadic = with_cimport_fn_is_variadic(session, idx)
+    let runtime_borrow_mask = ci_migrate_runtime_borrowed_str_param_mask(name)
 
     // Build parameter list — use cursor API for real param names
     // (the old decl API returns "" for many PCRE2 functions)
@@ -1386,12 +1465,16 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, pr
             let msg = f"migrate: untranslatable function '{name}': setjmp/longjmp (call to '{sj_name}') is not supported{loc_suffix}"
             return ci_migrate_fail_function(msg)
     var params = ""
+    var physical_params = ""
+    var call_args = ""
     var has_unsupported = false
     var unsupported_reason = ""
 
     for pi in 0..param_count:
         if pi > 0:
             params = params ++ ", "
+            physical_params = physical_params ++ ", "
+            call_args = call_args ++ ", "
         let raw_ptype = with_cimport_fn_param_type_translated(session, idx, pi)
         var ptype = ci_pointer_type_explicit_mut(raw_ptype)
 
@@ -1410,6 +1493,14 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, pr
         let escaped_pname = if pname.len() > 0: ci_escape_reserved(pname) else: ""
         let sig_pname = ci_param_signature_name(escaped_pname, pi)
         params = params ++ sig_pname ++ ": " ++ ci_unsafe_fn_ptr_type(ptype)
+        if ci_migrate_runtime_param_is_borrowed_str(runtime_borrow_mask, pi):
+            if ptype != "with_str":
+                has_unsupported = true
+                unsupported_reason = f"runtime borrow bridge expected with_str parameter {pi}, found {ptype}"
+            physical_params = physical_params ++ sig_pname ++ ": &with_str"
+        else:
+            physical_params = physical_params ++ sig_pname ++ ": " ++ ci_unsafe_fn_ptr_type(ptype)
+        call_args = call_args ++ sig_pname
 
     if is_variadic != 0:
         if param_count > 0:
@@ -1433,6 +1524,14 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, pr
     if fn_cursor < 0 or with_ci_cursor_is_definition(session, fn_cursor) == 0:
         if storage == CX_SC_STATIC:
             return ""
+        // #740 census class 2: the migrate preamble already declares the fixed
+        // with_* runtime externs (with_memcpy & co, *i8-shaped). Re-emitting a
+        // C prototype for the same symbol under its C spelling (`void*` →
+        // *mut c_void) leaves one flat extern name with two signatures and
+        // every preamble-shaped call mismatched. Prototype-only redeclarations
+        // skip; definitions still translate (and collide loudly).
+        if ci_migrate_preamble_declares_runtime_extern(name):
+            return ""
         let owner_path = ci_migrate_project_fn_owner_path(project_active, project, name)
         if ci_migrate_shared_defs_active() and g_migrate_no_c_export != 0 and owner_path.len() > 0:
             return ""
@@ -1440,10 +1539,14 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, pr
         g_migrate_fn_translated = g_migrate_fn_translated + 1
         let cc = with_cimport_fn_calling_conv(session, idx)
         let cc_prefix = if cc != "c" and cc.len() > 0: "@[callconv(\"" ++ cc ++ "\")]\n" else: ""
+        let ret_render = ci_unsafe_fn_ptr_type(ret)
+        if runtime_borrow_mask != 0:
+            let physical_name = "__with_cabi_physical_" ++ ci_escape_reserved(name)
+            return "@[link_name(\"" ++ name ++ "\")]\n" ++ cc_prefix ++ "extern fn " ++ physical_name ++ "(" ++ physical_params ++ ") -> " ++ ret_render ++ "\n" ++
+                "unsafe fn " ++ safe_name ++ "(" ++ params ++ ") -> " ++ ret_render ++ ":\n    " ++ physical_name ++ "(" ++ call_args ++ ")\n"
         // A renamed extern (keyword or prelude collision) keeps its C
         // linkage through the original symbol.
         let link_prefix = if safe_name != name: "@[link_name(\"" ++ name ++ "\")]\n" else: ""
-        let ret_render = ci_unsafe_fn_ptr_type(ret)
         return link_prefix ++ cc_prefix ++ "extern fn " ++ safe_name ++ "(" ++ params ++ ") -> " ++ ret_render ++ "\n"
 
     // @[c_export] for non-static functions (preserves C ABI)
@@ -1557,25 +1660,20 @@ fn ci_migrate_collect_unsafe_extern_fns(session: i64, count: i32, primary_path: 
             i = i + 1
             continue
         let name = with_cimport_decl_name(session, i)
-        let cursor = with_cimport_decl_cursor(session, i)
-        let loc = if cursor >= 0: with_ci_cursor_location(session, cursor) else: ""
-        if name.len() == 0 or ci_is_system_decl(name) or (loc.len() > 0 and ci_is_system_path(loc)):
-            i = i + 1
-            continue
-        if ci_migrate_is_width_family_name(name):
+        if ci_migrate_decl_is_filtered(session, name):
             i = i + 1
             continue
         let owner_path = ci_migrate_project_fn_owner_path(project_active, project, name)
         let local_def = ci_find_fn_cursor(session, name)
         if local_def >= 0 and (owner_path.len() == 0 or owner_path == primary_path) and ci_migrate_fn_has_raw_pointer_param(session, i):
-            ci_migrate_note_unsafe_extern_fn(ci_escape_reserved(name))
+            ci_migrate_note_unsafe_extern_fn(ci_migrate_c_function_name(name))
         if with_cimport_fn_storage_class(session, i) == CX_SC_STATIC:
             i = i + 1
             continue
         if (owner_path.len() > 0 and owner_path != primary_path) and ci_migrate_fn_has_raw_pointer_param(session, i):
-            ci_migrate_note_unsafe_extern_fn(ci_escape_reserved(name))
+            ci_migrate_note_unsafe_extern_fn(ci_migrate_c_function_name(name))
         if owner_path.len() == 0 and local_def < 0:
-            ci_migrate_note_unsafe_extern_fn(ci_escape_reserved(name))
+            ci_migrate_note_unsafe_extern_fn(ci_migrate_c_function_name(name))
         i = i + 1
     return
 
@@ -1663,11 +1761,9 @@ fn ci_migrate_translate_var(session: i64, idx: i32, count: i32, primary_path: &s
     if name.len() == 0:
         return ""
 
-    // Skip reserved C internal names (__foo or _Uppercase), keep _lowercase (e.g., _pcre2_*)
-    if name.len() >= 2 and name.byte_at(0) == 95:
-        let second = name.byte_at(1)
-        if second == 95 or (second >= 65 and second <= 90):
-            return ""
+    // The declaration walk already filters actual system declarations through
+    // ci_is_system_decl and their source paths. Do not repeat a spelling-only
+    // filter here: emit-C deliberately owns the reserved __with_* namespace.
 
     if ci_migrate_find_best_var_decl(session, count, name, primary_path) != idx:
         return ""

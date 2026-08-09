@@ -149,7 +149,7 @@ impl Default for str:
         ""
 
 impl Eq for str:
-    fn eq(self: &Self, other: str) -> bool: *self == other
+    fn eq(self: &Self, other: &str) -> bool: *self == other
 
 impl Eq for i64:
     fn eq(self: &Self, other: i64) -> bool: *self == other
@@ -179,7 +179,7 @@ impl Ord for bool:
         1
 
 impl Ord for str:
-    fn cmp(self: &Self, other: str) -> i32:
+    fn cmp(self: &Self, other: &str) -> i32:
         let value = *self
         var i = 0
         let left_len = value.len()

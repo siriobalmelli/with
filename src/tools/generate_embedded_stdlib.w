@@ -151,7 +151,7 @@ fn main:
     out.push_str("let EMBEDDED_STD_MODULE_LIST: str = ")
     out.push_str(raw_string_literal(listing.to_str()))
     out.push_str("\n\n")
-    out.push_str("pub fn embedded_std_source_data(path: str) -> str:\n")
+    out.push_str("pub fn embedded_std_source_data(path: &str) -> str:\n")
 
     i = 0
     index = 0

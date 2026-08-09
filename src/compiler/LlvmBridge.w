@@ -530,7 +530,7 @@ fn codegen_level(level: i32) -> i32:
 
 fn llvm_host_object_triple(default_triple: *mut u8) -> *const u8:
     if rt_sysinfo_os() == "Macos" and (rt_sysinfo_arch() == "armv8" or rt_sysinfo_arch() == "aarch64"):
-        return c"arm64-apple-macosx11.0.0".ptr
+        return c"arm64-apple-macosx11.0.0".ptr as *const u8
     default_triple as *const u8
 
 pub fn wl_init_target_machine(mod_ref: i64, level: i32) -> i64:

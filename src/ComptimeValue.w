@@ -4,6 +4,8 @@ use CapabilityRegistry
 extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_str_eq(a: str, b: str) -> i32
 extern fn with_str_clone(s: str) -> str
+extern fn with_alloc(size: i64) -> *mut u8
+extern fn with_free(ptr: *mut u8) -> Unit
 
 enum ComptimeValueKind: i32:
     CV_INVALID = 0
@@ -30,10 +32,33 @@ type ComptimeValue {
     data0: i64,
     data1: i64,
     text: str,
+    text_refs: *mut i64,
     extra_start: i32,
     extra_count: i32,
 }
 // #747: str field — owned, non-Copy now; moves/clones spell intent.
+
+fn comptime_text_refs(value: &str) -> *mut i64:
+    if value.len() == 0:
+        return 0 as *mut i64
+    let refs = with_alloc(8) as *mut i64
+    unsafe { *refs = 1 }
+    refs
+
+impl Drop for ComptimeValue:
+    move fn drop():
+        if self.text_refs as i64 != 0:
+            let next = unsafe { *self.text_refs } - 1
+            unsafe { *self.text_refs = next }
+            if next == 0:
+                with_free(self.text_refs as *mut u8)
+            else:
+                // Another ComptimeValue still owns this immutable text. Blank
+                // this header before automatic field cleanup so only the last
+                // shared value releases the allocation.
+                unsafe:
+                    *(&raw mut self.text as *mut i64) = 0
+                    *((&raw mut self.text as *mut i64) + 1) = 0
 
 fn comptime_value_invalid() -> ComptimeValue:
     ComptimeValue {
@@ -42,6 +67,7 @@ fn comptime_value_invalid() -> ComptimeValue:
         data0: 0,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start: 0,
         extra_count: 0,
     }
@@ -53,6 +79,7 @@ fn comptime_value_void(type_id: i32) -> ComptimeValue:
         data0: 0,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start: 0,
         extra_count: 0,
     }
@@ -64,6 +91,7 @@ fn comptime_value_int(type_id: i32, value: i64) -> ComptimeValue:
         data0: value,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start: 0,
         extra_count: 0,
     }
@@ -75,6 +103,7 @@ fn comptime_value_bool(value: i32) -> ComptimeValue:
         data0: value as i64,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start: 0,
         extra_count: 0,
     }
@@ -86,6 +115,7 @@ fn comptime_value_str(value: &str) -> ComptimeValue:
         data0: 0,
         data1: 0,
         text: with_str_clone_ref(value),
+        text_refs: comptime_text_refs(value),
         extra_start: 0,
         extra_count: 0,
     }
@@ -97,6 +127,7 @@ fn comptime_value_array(type_id: i32, extra_start: i32, extra_count: i32) -> Com
         data0: 0,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start,
         extra_count,
     }
@@ -108,6 +139,7 @@ fn comptime_value_tuple(type_id: i32, extra_start: i32, extra_count: i32) -> Com
         data0: 0,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start,
         extra_count,
     }
@@ -119,6 +151,7 @@ fn comptime_value_range(type_id: i32, start_value: i64, end_value: i64, inclusiv
         data0: start_value,
         data1: end_value,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start: inclusive,
         extra_count: 0,
     }
@@ -130,6 +163,7 @@ fn comptime_value_struct(type_id: i32, extra_start: i32, extra_count: i32) -> Co
         data0: 0,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start,
         extra_count,
     }
@@ -141,6 +175,7 @@ fn comptime_value_vec(type_id: i32, extra_start: i32, extra_count: i32) -> Compt
         data0: 0,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start,
         extra_count,
     }
@@ -152,6 +187,7 @@ fn comptime_value_map(type_id: i32, extra_start: i32, extra_count: i32) -> Compt
         data0: 0,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start,
         extra_count,
     }
@@ -163,6 +199,7 @@ fn comptime_value_capability(type_id: i32, capability_kind: i32, handle_id: i32,
         data0: capability_kind as i64,
         data1: handle_id as i64,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start: generation,
         extra_count: 0,
     }
@@ -174,6 +211,7 @@ fn comptime_value_fn(type_id: i32, fn_sym: i32) -> ComptimeValue:
         data0: fn_sym as i64,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start: 0,
         extra_count: 0,
     }
@@ -185,6 +223,7 @@ fn comptime_value_enum(type_id: i32, variant_sym: i32, extra_start: i32, extra_c
         data0: variant_sym as i64,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start,
         extra_count,
     }
@@ -196,6 +235,7 @@ fn comptime_value_bytes(type_id: i32, data: &str) -> ComptimeValue:
         data0: 0,
         data1: 0,
         text: with_str_clone_ref(data),
+        text_refs: comptime_text_refs(data),
         extra_start: 0,
         extra_count: 0,
     }
@@ -207,6 +247,7 @@ fn comptime_value_string_builder(type_id: i32, head: i32, chunk_count: i32, byte
         data0: byte_count,
         data1: 0,
         text: "",
+        text_refs: 0 as *mut i64,
         extra_start: head,
         extra_count: chunk_count,
     }
@@ -218,6 +259,7 @@ fn comptime_value_string_chunk(prev: i32, data: &str) -> ComptimeValue:
         data0: prev as i64,
         data1: 0,
         text: with_str_clone_ref(data),
+        text_refs: comptime_text_refs(data),
         extra_start: 0,
         extra_count: 0,
     }
@@ -427,14 +469,15 @@ fn comptime_values_equal(lhs: &ComptimeValue, rhs: &ComptimeValue, extras: &Vec[
 
 // #747: explicit owned copy — ComptimeValue's text is an owned str now.
 pub fn comptime_value_clone(v: &ComptimeValue) -> ComptimeValue:
-    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: with_str_clone_ref(v.text), extra_start: v.extra_start, extra_count: v.extra_count }
+    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: with_str_clone_ref(v.text), text_refs: comptime_text_refs(v.text), extra_start: v.extra_start, extra_count: v.extra_count }
 
-// Read-path share: the evaluator hands out transient copies of stored values
-// on every identifier/field READ — deep-cloning there is quadratic on big
-// string accumulators (a source-concat build.w loop allocated 64 GiB in
-// seconds) and the store sites already clone. The text field is SHARED, which
-// is exactly the pre-#747 Copy semantics; under the flipped classifier this
-// helper is a migration site — the checker flags the owned-str field read
-// through the borrow, forcing true view typing here.
+// Read-path share: the evaluator reads a parameter on every loop iteration.
+// Deep-cloning a large immutable string there is quadratic (the build.w source
+// hash loop allocated 64 GiB in seconds). A tiny single-threaded refcount keeps
+// the familiar value-shaped evaluator API while making either destruction
+// order safe; retained semantic values still use comptime_value_clone above.
 pub fn comptime_value_share(v: &ComptimeValue) -> ComptimeValue:
-    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: with_str_clone_ref(v.text), extra_start: v.extra_start, extra_count: v.extra_count }
+    if v.text_refs as i64 != 0:
+        unsafe { *v.text_refs = *v.text_refs + 1 }
+    let text_ptr = &raw const v.text as *const str
+    ComptimeValue { kind: v.kind, type_id: v.type_id, data0: v.data0, data1: v.data1, text: unsafe *text_ptr, text_refs: v.text_refs, extra_start: v.extra_start, extra_count: v.extra_count }

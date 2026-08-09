@@ -67,6 +67,8 @@ fn analysis_receiver_mode_name(mode: ReceiverMode) -> str:
 
 fn analysis_param_class(sema: &Sema, sig: i32, param: i32) -> str:
     let ty = sema.sig_param_type(sig, param)
+    if ty > 0 and sema.get_type_kind(sema.resolve_alias(ty as TypeId)) == TypeKind.TY_REF:
+        return "borrowed"
     let copy_type = ty > 0 and sema.types_frozen != 0 and sema.is_copy_frozen(ty as TypeId) != 0
     if copy_type:
         return "copy"
@@ -121,10 +123,10 @@ fn analysis_collect_declarations(report: &AnalysisReport, sema: &Sema, source_pa
         fact.effects = receiver_effects
         fact.flags = (mode as i32) |
             (if explicit_receiver: AnalysisDeclarationFlag.ExplicitReceiver as i32 else: 0) |
-            (if type_params > 0: AnalysisDeclarationFlag.Generic as i32 else: 0) |
+            (if type_params > 0: 512 else: 0) |
             (if receiver_proven: AnalysisDeclarationFlag.ReceiverProven as i32 else: 0) |
             (if in_impl: AnalysisDeclarationFlag.InImpl as i32 else: 0) |
-            (if trait_impl: AnalysisDeclarationFlag.TraitImpl as i32 else: 0) |
+            (if trait_impl: 4096 else: 0) |
             (if top_level_method: AnalysisDeclarationFlag.TopLevelMethod as i32 else: 0) |
             (if synthetic_receiver: AnalysisDeclarationFlag.SyntheticReceiver as i32 else: 0)
         fact.source_file = source_file
@@ -1222,7 +1224,7 @@ fn analysis_audit_receiver_surface(report: &AnalysisReport, sema: &Sema):
         explicit = explicit + 1
         if fact.flags & (AnalysisDeclarationFlag.InImpl as i32) != 0:
             explicit_in_impl = explicit_in_impl + 1
-            if fact.flags & (AnalysisDeclarationFlag.TraitImpl as i32) != 0:
+            if fact.flags & 4096 != 0:
                 explicit_trait_impl = explicit_trait_impl + 1
         if fact.flags & (AnalysisDeclarationFlag.TopLevelMethod as i32) != 0:
             explicit_top_level = explicit_top_level + 1

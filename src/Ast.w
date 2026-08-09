@@ -254,6 +254,26 @@ enum FnFlags: i32:
     BEFORE = 8192
     AFTER = 16384
     BENCH = 32768
+
+// Temporary bootstrap aliases: the preceding compiler cannot reliably lower
+// qualified enum constants across distinct intern pools. Removed immediately
+// after it emits a compiler containing the canonicalization fix.
+const BOOT_FN_PUB: i32 = 1
+const BOOT_FN_ASYNC: i32 = 2
+const BOOT_FN_GEN: i32 = 4
+const BOOT_FN_COMPTIME: i32 = 8
+const BOOT_FN_TAILREC: i32 = 16
+const BOOT_FN_MUST_USE: i32 = 32
+const BOOT_FN_VARIADIC: i32 = 64
+const BOOT_FN_INLINE: i32 = 128
+const BOOT_FN_NOINLINE: i32 = 256
+const BOOT_FN_PANIC_HANDLER: i32 = 512
+const BOOT_FN_ENTRY: i32 = 1024
+const BOOT_FN_NO_MAIN: i32 = 2048
+const BOOT_FN_TEST: i32 = 4096
+const BOOT_FN_BEFORE: i32 = 8192
+const BOOT_FN_AFTER: i32 = 16384
+const BOOT_FN_BENCH: i32 = 32768
 // Metadata packing unit used to encode required-parameter count into
 // fn_meta flags without affecting existing FnFlags.* parity checks.
 const FN_META_REQUIRED_UNIT: i32 = 65536

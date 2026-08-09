@@ -313,6 +313,8 @@ enum MirIntrinsic: i32:
     SLOTMAP_LEN32
     SLOTMAP_LEN64
     SLOTMAP_ULEN32
+    FMT_BUF_WRITE_STR_REF
+    STR_CLONE_REF
 
 // Copy: MirIntrinsic is a lightweight integer tag passed by value, stored in
 // Vec/HashMap, and compared throughout MIR lowering and codegen.
@@ -500,6 +502,8 @@ type MirModule {
     sema_type_d2: Vec[i32],
     sema_type_extra: Vec[i32],
     sema_bitpacked_types: HashMap[i32, i32],
+    sema_disc_repr_types: HashMap[i32, i32],
+    sema_distinct_type_names: HashMap[i32, i32],
 }
 
 // ── MirModule helpers ────────────────────────────────────────────
@@ -515,6 +519,8 @@ fn MirModule.init -> MirModule:
         sema_type_d2: Vec.new(),
         sema_type_extra: Vec.new(),
         sema_bitpacked_types: HashMap.new(),
+        sema_disc_repr_types: HashMap.new(),
+        sema_distinct_type_names: HashMap.new(),
     }
 
 impl MirModule:
@@ -535,6 +541,14 @@ impl MirModule:
         for i in 0..bitpacked_tids.len() as i32:
             let tid = bitpacked_tids.get(i as i64)
             self.sema_bitpacked_types.insert(tid, sema.bitpacked_types.get(tid).unwrap())
+        let disc_repr_tids = sema.disc_repr_types.keys()
+        for i in 0..disc_repr_tids.len() as i32:
+            let tid = disc_repr_tids.get(i as i64)
+            self.sema_disc_repr_types.insert(tid, sema.disc_repr_types.get(tid).unwrap())
+        let distinct_type_syms = sema.distinct_type_names.keys()
+        for i in 0..distinct_type_syms.len() as i32:
+            let sym = distinct_type_syms.get(i as i64)
+            self.sema_distinct_type_names.insert(sym, sema.distinct_type_names.get(sym).unwrap())
 
     fn mir_is_bitpacked(tid: i32) -> bool:
         self.sema_bitpacked_types.contains(tid)
@@ -3166,6 +3180,48 @@ fn mir_validate_type_compatible_fast(mir_mod: &MirModule, expected: i32, actual:
             return if mir_mod.mir_get_type_d0(exp_r) == mir_mod.mir_get_type_d0(act_r): 1 else: 0
     0
 
+fn mir_validate_use_assign_compatible(mir_mod: &MirModule, expected: i32, actual: i32) -> bool:
+    if mir_validate_type_compatible_fast(mir_mod, expected, actual) != 0:
+        return true
+    let expected_inner = mir_validate_distinct_inner(mir_mod, expected)
+    if expected_inner > 0 and expected_inner != expected:
+        if mir_validate_use_assign_compatible(mir_mod, expected_inner, actual):
+            return true
+    let actual_inner = mir_validate_distinct_inner(mir_mod, actual)
+    if actual_inner > 0 and actual_inner != actual:
+        if mir_validate_use_assign_compatible(mir_mod, expected, actual_inner):
+            return true
+    let expected_kind = mir_mod.mir_get_type_kind(mir_mod.mir_resolve_alias(expected))
+    let actual_kind = mir_mod.mir_get_type_kind(mir_mod.mir_resolve_alias(actual))
+    if expected_kind == TypeKind.TY_INT and actual_kind == TypeKind.TY_ENUM:
+        let actual_repr = mir_validate_enum_repr_type(mir_mod, actual)
+        return actual_repr > 0 and mir_validate_type_compatible_fast(mir_mod, expected, actual_repr) != 0
+    if expected_kind == TypeKind.TY_ENUM and actual_kind == TypeKind.TY_INT:
+        let expected_repr = mir_validate_enum_repr_type(mir_mod, expected)
+        return expected_repr > 0 and mir_validate_type_compatible_fast(mir_mod, expected_repr, actual) != 0
+    let expected_numeric = expected_kind == TypeKind.TY_INT or expected_kind == TypeKind.TY_FLOAT
+    let actual_numeric = actual_kind == TypeKind.TY_INT or actual_kind == TypeKind.TY_FLOAT
+    expected_numeric and actual_numeric
+
+fn mir_validate_enum_repr_type(mir_mod: &MirModule, tid: i32) -> i32:
+    let resolved = mir_mod.mir_resolve_alias(tid)
+    if mir_mod.mir_get_type_kind(resolved) != TypeKind.TY_ENUM:
+        return 0
+    let repr = mir_mod.sema_disc_repr_types.get(resolved)
+    if repr.is_some(): repr.unwrap() else: 0
+
+fn mir_validate_distinct_inner(mir_mod: &MirModule, tid: i32) -> i32:
+    let resolved = mir_mod.mir_resolve_alias(tid)
+    if mir_mod.mir_get_type_kind(resolved) != TypeKind.TY_STRUCT:
+        return 0
+    let name_sym = mir_mod.mir_get_type_d0(resolved)
+    if name_sym == 0 or not mir_mod.sema_distinct_type_names.contains(name_sym):
+        return 0
+    if mir_mod.mir_get_type_d2(resolved) != 1:
+        return 0
+    let extra_start = mir_mod.mir_get_type_d1(resolved)
+    mir_mod.mir_get_type_extra(extra_start + 1)
+
 fn mir_validate_single_field_inner(mir_mod: &MirModule, tid: i32) -> i32:
     let resolved = mir_mod.mir_resolve_alias(tid)
     if mir_mod.mir_get_type_kind(resolved) != TypeKind.TY_STRUCT:
@@ -3326,7 +3382,13 @@ fn validate_typed_mir_body(mir_mod: &MirModule, body: &MirBody) -> MirValidation
             let rv_d1 = body.rval_d1.get(d1 as i64)
             let rv_d2 = body.rval_d2.get(d1 as i64)
 
-            if rk == RvalueKind.RK_REF:
+            if rk == RvalueKind.RK_USE:
+                let src_ty = mir_validate_operand_type(mir_mod, body, rv_d0)
+                if src_ty == 0:
+                    return mir_validation_fail(body.fn_sym, span, "use rvalue does not resolve to a concrete MIR type")
+                if not mir_validate_use_assign_compatible(mir_mod, dest_ty, src_ty):
+                    return mir_validation_fail(body.fn_sym, span, "use rvalue type is incompatible with assign destination")
+            else if rk == RvalueKind.RK_REF:
                 if mir_validate_place_type(mir_mod, body, rv_d1) == 0:
                     return mir_validation_fail(body.fn_sym, span, "ref rvalue does not resolve to a concrete place type")
             else if rk == RvalueKind.RK_ADDR_OF or rk == RvalueKind.RK_DISCRIMINANT or rk == RvalueKind.RK_LEN:

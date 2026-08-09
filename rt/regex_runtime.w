@@ -37,6 +37,7 @@ use std.re.pcre2_script_run
 
 extern fn with_panic(msg: str, file: str, line: i32) -> Unit
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_str_from_cstr(s: *const u8) -> str
 extern fn with_str_from_bytes(s: *const u8, len: i64) -> str
 
@@ -48,18 +49,17 @@ fn regex_runtime_free(ptr: *mut c_void, data: *mut c_void):
     let _ = data
     with_free(ptr as *i8)
 
-fn regex_to_cstr(s: str) -> *const u8:
+fn regex_to_cstr(s: &str) -> *const u8:
     let out = with_alloc(s.len() + 1)
     var i: i64 = 0
     while i < s.len():
-        unsafe *((out as i64 + i) as *mut u8) = s.byte_at(i)
+        unsafe { *((out as i64 + i) as *mut u8) = s.byte_at(i) }
         i = i + 1
-    unsafe *((out as i64 + s.len()) as *mut u8) = 0
+    unsafe { *((out as i64 + s.len()) as *mut u8) = 0 }
     out as *const u8
 
-fn regex_str_data(s: str) -> *const u8:
-    let p = &s as *const *const u8
-    unsafe *p
+fn regex_str_data(s: &str) -> *const u8:
+    unsafe { **(&s as *const *const *const u8) }
 
 pub fn with_regex_error_message(code: i32) -> str:
     let buf = with_alloc(256)
@@ -242,7 +242,7 @@ pub fn with_regex_group_name_to_index(code: *const i8, name: &str) -> i32:
 
 pub fn with_regex_substitute(code: *const i8, text: &str, repl: &str, replace_all: i32) -> str:
     if code as i64 == 0:
-        return text
+        return with_str_clone_ref(text)
     let gcontext = pcre2_general_context_create_8(regex_runtime_malloc, regex_runtime_free, null)
     if gcontext as i64 == 0:
         with_panic("with_regex_substitute(): general context creation failed", "", 0)

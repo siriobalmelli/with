@@ -5,13 +5,13 @@
 
 extern fn with_ewrite(s: &str) -> Unit
 extern fn with_i64_to_str(n: i64) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_fiber_in_fiber() -> i32
 extern fn with_fiber_panic_capture(msg: *const u8, msg_len: i32) -> Unit
 extern fn _exit(code: i32) -> Unit
 
-fn str_data(s: str) -> *const u8:
-    let p = &s as *const *const u8
-    unsafe *p
+fn str_data(s: &str) -> *const u8:
+    unsafe **(&s as *const *const *const u8)
 
 fn panic_render(msg: str, file: str, line: i32) -> str:
     if file.len() > 0:
@@ -28,3 +28,6 @@ pub fn with_panic(msg: str, file: str, line: i32) -> Unit:
     with_ewrite(rendered)
     with_ewrite("\n")
     _exit(134)
+
+pub fn with_panic_ref(msg: &str, file: &str, line: i32) -> Unit:
+    with_panic(with_str_clone_ref(msg), with_str_clone_ref(file), line)

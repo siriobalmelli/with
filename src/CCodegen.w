@@ -171,6 +171,8 @@ enum CcBuiltin: i32:
     ARR_LEN64
     ARR_ULEN32
     VECRANGE
+    FMT_BUF_WRITE_STR_REF
+    STR_CLONE_REF
 
 impl Copy for CcBuiltin
 
@@ -1029,7 +1031,7 @@ impl CCodegen:
         if decl == 0 as NodeId:
             return 0
         let flags = self.ast.get_data2(decl)
-        if (flags / FnFlags.PUB) % 2 == 1:
+        if (flags / BOOT_FN_PUB) % 2 == 1:
             return 1
         0
 
@@ -5285,11 +5287,11 @@ impl CCodegen:
             if dst != 0 and self.is_void_tid(dst) == 0:
                 return dst
             return self.sema.ty_f64 as i32
-        if kind == CcBuiltin.FMT_TO_STR or kind == CcBuiltin.FMT_DEBUG_STR or kind == CcBuiltin.FMT_DEBUG or kind == CcBuiltin.FMT_SPEC:
+        if kind == CcBuiltin.FMT_TO_STR or kind == CcBuiltin.FMT_DEBUG_STR or kind == CcBuiltin.FMT_DEBUG or kind == CcBuiltin.FMT_SPEC or kind == CcBuiltin.STR_CLONE_REF:
             return self.sema.ty_str as i32
         if kind == CcBuiltin.FMT_BUF_NEW:
             return CC_PSEUDO_TID_FMT_BUF
-        if kind == CcBuiltin.FMT_BUF_WRITE_STR or kind == CcBuiltin.FMT_BUF_WRITE_FMT:
+        if kind == CcBuiltin.FMT_BUF_WRITE_STR or kind == CcBuiltin.FMT_BUF_WRITE_STR_REF or kind == CcBuiltin.FMT_BUF_WRITE_FMT:
             return self.sema.ty_void as i32
         if kind == CcBuiltin.FMT_BUF_FINISH:
             return self.sema.ty_str as i32
@@ -5925,6 +5927,8 @@ fn cc_builtin_from_mir_intrinsic(intrinsic: MirIntrinsic) -> CcBuiltin:
     if intrinsic == MirIntrinsic.FMT_SPEC: return CcBuiltin.FMT_SPEC
     if intrinsic == MirIntrinsic.FMT_BUF_NEW: return CcBuiltin.FMT_BUF_NEW
     if intrinsic == MirIntrinsic.FMT_BUF_WRITE_STR: return CcBuiltin.FMT_BUF_WRITE_STR
+    if intrinsic == MirIntrinsic.FMT_BUF_WRITE_STR_REF: return CcBuiltin.FMT_BUF_WRITE_STR_REF
+    if intrinsic == MirIntrinsic.STR_CLONE_REF: return CcBuiltin.STR_CLONE_REF
     if intrinsic == MirIntrinsic.FMT_BUF_WRITE_FMT: return CcBuiltin.FMT_BUF_WRITE_FMT
     if intrinsic == MirIntrinsic.FMT_BUF_FINISH: return CcBuiltin.FMT_BUF_FINISH
     if intrinsic == MirIntrinsic.VEC_SLOT: return CcBuiltin.VEC_SLOT
@@ -7113,6 +7117,29 @@ impl CCodegen:
             let buf = self.operand_text(body, self.call_arg_operand(body, args_id, 0))
             let text = self.operand_text(body, self.call_arg_operand(body, args_id, 1))
             var out = "    with_fmt_buf_write_str((uint8_t*)(" ++ buf ++ "), " ++ text ++ ");\n"
+            out = out ++ f"    goto bb{next_bb};"
+            return out
+
+        if kind == CcBuiltin.FMT_BUF_WRITE_STR_REF:
+            if argc < 2:
+                self.fail("fmt_buf_write_str_ref expects two arguments")
+                return "    abort();"
+            let buf = self.operand_text(body, self.call_arg_operand(body, args_id, 0))
+            let text = self.operand_text(body, self.call_arg_operand(body, args_id, 1))
+            var out = "    with_fmt_buf_write_str_ref((uint8_t*)(" ++ buf ++ "), " ++ text ++ ");\n"
+            out = out ++ f"    goto bb{next_bb};"
+            return out
+
+        if kind == CcBuiltin.STR_CLONE_REF:
+            if argc < 1:
+                self.fail("str_clone_ref expects one argument")
+                return "    abort();"
+            let text = self.operand_text(body, self.call_arg_operand(body, args_id, 0))
+            var out = ""
+            if has_ret != 0:
+                out = out ++ "    " ++ self.place_text(body, dest_place) ++ " = with_str_clone_ref(" ++ text ++ ");\n"
+            else:
+                out = out ++ "    (void)with_str_clone_ref(" ++ text ++ ");\n"
             out = out ++ f"    goto bb{next_bb};"
             return out
 
@@ -9338,6 +9365,8 @@ impl CCodegen:
         out.write("#define fmt_buf_finish with_fmt_buf_finish\n")
         out.write("extern uint8_t* with_fmt_buf_new(void);\n")
         out.write("extern void with_fmt_buf_write_str(uint8_t*, with_str);\n")
+        out.write("extern void with_fmt_buf_write_str_ref(uint8_t*, const with_str*);\n")
+        out.write("extern with_str with_str_clone_ref(const with_str*);\n")
         out.write("extern void with_fmt_buf_write_i64_spec(uint8_t*, int64_t, int32_t, int64_t, int32_t, int32_t, int32_t);\n")
         out.write("extern void with_fmt_buf_write_f64_spec(uint8_t*, double, int64_t, int32_t, int32_t, int32_t);\n")
         out.write("extern void with_fmt_buf_write_str_spec(uint8_t*, with_str, int64_t, int32_t, int32_t);\n")

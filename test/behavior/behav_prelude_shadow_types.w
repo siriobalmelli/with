@@ -13,6 +13,7 @@ type CString { p: i32 }
 type StringBuilder { n: i32 }
 type Box { v: i32 }
 type Rc { n: i32 }
+type Match { text: i32 }
 
 impl Copy for CString
 
@@ -29,4 +30,6 @@ fn main:
     let bx = Box { v: 5 }
     let rc = Rc { n: 6 }
     assert(bx.v + rc.n == 11, "Box/Rc shadow without frontend decl drops")
+    let found = Match { text: 42 }
+    assert(found.text == 42, "user Match does not rebind std.regex internals")
     print("ok")

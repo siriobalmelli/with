@@ -1,5 +1,7 @@
 //! expect-stdout: ok
 
+use magic_const.helper
+
 fn default_file(file: str = __FILE__) -> str:
     file
 
@@ -42,4 +44,5 @@ fn main:
     let expected_line = __LINE__ + 1
     assert(default_line() == expected_line)
     assert(default_fn() == "main")
+    assert(imported_magic_is_precise())
     print("ok")

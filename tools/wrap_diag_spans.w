@@ -1,10 +1,11 @@
 // #747 Phase C step 2: wrap flipped-checker diagnostic spans in
-// with_str_clone_ref(...) by byte edit. The flipped stage1 owns the error
+// owned_text(...) by byte edit. The flipped stage1 owns the error
 // decision and the exact span; this tool only validates span shape and
 // applies back-to-front source edits. Dry-run is the default.
 //
 //   out/bootstrap/bin/with-stage1 check src/main.w 2> diags.txt
 //   with run tools/wrap_diag_spans.w [--apply] [--skip skips.txt] diags.txt
+//   with run tools/wrap_diag_spans.w --finalize-existing diags.txt
 //
 // Handled kinds (clones are CORRECT under the flip; #748 view tokens
 // recover the copies later):
@@ -53,6 +54,14 @@ fn parse_int(text: &str) -> i32:
 fn source_path(path: &str) -> str:
     let embedded = "<embedded-std>/"
     if path.starts_with(embedded): "lib/" ++ path.slice(embedded.len(), path.len()) else: path.slice(0, path.len())
+
+fn owned_fn_name(path: &str) -> str:
+    var start: i64 = 0
+    var end = path.len()
+    for i in 0..path.len():
+        if path.byte_at(i) == 47: start = i + 1
+        if path.byte_at(i) == 46: end = i
+    path.slice(start, end).replace("-", "_") ++ "_owned_text"
 
 fn classify(line: &str) -> i32:
     if line == "error: wrong argument type in call to 'Vec.push'": return 1
@@ -122,12 +131,11 @@ fn kind_name(kind: i32) -> str:
 fn load_skips(skip_path: &str) -> Vec[str]:
     var skips: Vec[str] = Vec.new()
     if skip_path.len() == 0: return skips
-    let skip_text = read_file(skip_path)
+    let skip_text = read_file(skip_path ++ "")
     let skip_lines = skip_text.split("\n")
     for i in 0..skip_lines.len() as i32:
-        // #755: element views must materialize before a consuming push
-        let s: str = skip_lines.get(i as i64)
-        if s.len() > 0: skips.push(s)
+        let s = skip_lines.get(i as i64)
+        if s.len() > 0: skips.push(s ++ "")
     skips
 
 // Vec.push sites must carry a `has type &str` label when any type label is
@@ -205,12 +213,11 @@ fn collect_sites(dlines: &Vec[str]) -> Vec[Site]:
 fn unique_files(sites: &Vec[Site]) -> Vec[str]:
     var files: Vec[str] = Vec.new()
     for si in 0..sites.len() as i32:
-        // #755: element views must materialize before a consuming push
-        let p: str = sites.get(si as i64).path
+        let p = sites.get(si as i64).path
         var have = false
         for fi in 0..files.len() as i32:
             if files.get(fi as i64) == p: have = true
-        if not have: files.push(p)
+        if not have: files.push(p ++ "")
     files
 
 fn in_list(items: &Vec[str], key: &str) -> bool:
@@ -232,6 +239,7 @@ fn plan_edits(path: &str, text: &str, sites: &Vec[Site], skips: &Vec[str]) -> Ed
     var starts: Vec[i64] = Vec.new()
     var ends: Vec[i64] = Vec.new()
     var texts: Vec[str] = Vec.new()
+    let clone_fn = owned_fn_name(path)
     for si in 0..sites.len() as i32:
         let site = sites.get(si as i64)
         if site.path != path: continue
@@ -260,7 +268,7 @@ fn plan_edits(path: &str, text: &str, sites: &Vec[Site], skips: &Vec[str]) -> Ed
             // rename the consuming clone call instead of double-cloning
             ed_start = start - 15
             ed_end = start
-            new_text = "with_str_clone_ref("
+            new_text = clone_fn ++ "("
         else if site.kind == 5 or site.kind == 9:
             let eq = find_assign_eq(span)
             if eq < 0:
@@ -271,7 +279,7 @@ fn plan_edits(path: &str, text: &str, sites: &Vec[Site], skips: &Vec[str]) -> Ed
                 print("skip-branch-rhs " ++ tag)
                 continue
             ed_start = start + eq + 3
-            new_text = "with_str_clone_ref(" ++ rhs ++ ")"
+            new_text = clone_fn ++ "(" ++ rhs ++ ")"
         else if site.kind == 6:
             // span may be a full `return <expr>` statement or a bare tail
             // expression; wrap just the expression. Any single-line span is
@@ -285,7 +293,7 @@ fn plan_edits(path: &str, text: &str, sites: &Vec[Site], skips: &Vec[str]) -> Ed
                 print("skip-branch-span " ++ tag)
                 continue
             ed_start = start + expr_off
-            new_text = "with_str_clone_ref(" ++ expr ++ ")"
+            new_text = clone_fn ++ "(" ++ expr ++ ")"
         else:
             if site.kind == 4:
                 if not is_ident_or_field(span):
@@ -298,7 +306,7 @@ fn plan_edits(path: &str, text: &str, sites: &Vec[Site], skips: &Vec[str]) -> Ed
             if span.starts_with("if ") or span.starts_with("match "):
                 print("skip-branch-span " ++ tag)
                 continue
-            new_text = "with_str_clone_ref(" ++ span ++ ")"
+            new_text = clone_fn ++ "(" ++ span ++ ")"
         var overlap = false
         for ei in 0..starts.len() as i32:
             if ed_start < ends.get(ei as i64) and starts.get(ei as i64) < ed_end: overlap = true
@@ -340,8 +348,9 @@ fn apply_edits(text_in: str, plan: &EditPlan) -> str:
         text = splice(text, s, e, plan.texts.get(ei))
     text
 
-fn ensure_decl(text_in: str) -> str:
-    if text_in.contains("extern fn with_str_clone_ref"): return text_in
+fn ensure_decl(path: &str, text_in: str) -> str:
+    let clone_fn = owned_fn_name(path)
+    if text_in.contains("fn " ++ clone_fn ++ "(s: &str)"): return text_in
     let out_lines = text_in.split("\n")
     var insert_at: i64 = -1
     for li in 0..out_lines.len() as i32:
@@ -357,13 +366,30 @@ fn ensure_decl(text_in: str) -> str:
     var sb = StringBuilder.new()
     for li in 0..out_lines.len() as i32:
         if li as i64 == insert_at:
-            sb.push_str("extern fn with_str_clone_ref(s: &str) -> str\n")
+            sb.push_str("fn " ++ clone_fn ++ "(s: &str): s ++ \"\"\n")
         sb.push_str(out_lines.get(li as i64))
         if (li as i64) < out_lines.len() - 1: sb.push_str("\n")
     sb.to_str()
 
+fn finalize_existing(path: &str) -> i32:
+    var text = read_file(path ++ "")
+    if text.len() == 0: return -1
+    let clone_fn = owned_fn_name(path)
+    let prefix = clone_fn.slice(0, clone_fn.len() - 11)
+    let doubled = prefix ++ "_" ++ clone_fn
+    text = text.replace("fn " ++ doubled ++ "(s: &str): unsafe { with_str_clone_ref(s) }\n", "")
+    text = text.replace(doubled ++ "(", clone_fn ++ "(")
+    if text.contains("fn owned_text(s: &str)"):
+        text = text.replace("owned_text(", clone_fn ++ "(")
+    text = text.replace("fn " ++ clone_fn ++ "(s: &str): unsafe { with_str_clone_ref(s) }", "fn " ++ clone_fn ++ "(s: &str): s ++ \"\"")
+    text = text.replace("extern fn with_str_clone_ref(s: &str) -> str\n", "")
+    text = ensure_decl(path, text)
+    if write_file(path ++ "", text) != 0: return -1
+    print("finalized " ++ path)
+    0
+
 fn process_file(path: &str, sites: &Vec[Site], skips: &Vec[str], apply: i32) -> i32:
-    var text: str = read_file(path)
+    var text = read_file(path ++ "")
     if text.len() == 0:
         print("wrap-diag-spans: could not read source " ++ path)
         return -1
@@ -371,8 +397,8 @@ fn process_file(path: &str, sites: &Vec[Site], skips: &Vec[str], apply: i32) -> 
     let edit_count = plan.starts.len() as i32
     if edit_count == 0 or apply == 0: return edit_count
     text = apply_edits(text, &plan)
-    text = ensure_decl(text)
-    if write_file(path, text) != 0:
+    text = ensure_decl(path, text)
+    if write_file(path ++ "", text) != 0:
         print("wrap-diag-spans: write failed: " ++ path)
         return -1
     print("wrote " ++ path)
@@ -381,6 +407,7 @@ fn process_file(path: &str, sites: &Vec[Site], skips: &Vec[str], apply: i32) -> 
 fn main -> i32:
     let argv = args()
     var apply = 0
+    var finalize = 0
     var diag_path = ""
     var skip_path = ""
     var ai: i64 = 1
@@ -388,20 +415,22 @@ fn main -> i32:
         let arg = argv.get(ai)
         if arg == "--apply":
             apply = 1
+        else if arg == "--finalize-existing":
+            finalize = 1
         else if arg == "--skip":
             ai = ai + 1
             if ai >= argv.len():
                 print("wrap-diag-spans: --skip needs a file argument")
                 return 1
-            skip_path = argv.get(ai)
+            skip_path = argv.get(ai) ++ ""
         else:
-            diag_path = argv.get(ai)
+            diag_path = argv.get(ai) ++ ""
         ai = ai + 1
     if diag_path.len() == 0:
         print("usage: wrap_diag_spans [--apply] [--skip skips.txt] diags.txt")
         return 1
     let skips = load_skips(skip_path)
-    let diag_text = read_file(diag_path)
+    let diag_text = read_file(diag_path ++ "")
     if diag_text.len() == 0:
         print("wrap-diag-spans: could not read " ++ diag_path)
         return 1
@@ -410,6 +439,10 @@ fn main -> i32:
     let site_count = sites.len()
     print(f"sites collected: {site_count}")
     let files = unique_files(&sites)
+    if finalize == 1:
+        for fi in 0..files.len() as i32:
+            if finalize_existing(files.get(fi as i64)) != 0: return 1
+        return 0
     var total = 0
     for fi in 0..files.len() as i32:
         let n = process_file(files.get(fi as i64), &sites, &skips, apply)

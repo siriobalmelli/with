@@ -4,7 +4,7 @@ use std.zlib
 
 extern fn with_str_from_vec_u8(bytes: *const Vec[u8]) -> str
 
-fn bytes_from_str(data: str) -> Vec[u8]:
+fn bytes_from_str(data: &str) -> Vec[u8]:
     let out: Vec[u8] = Vec.new()
     var i: i64 = 0
     while i < data.len():

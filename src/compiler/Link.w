@@ -635,7 +635,7 @@ fn link_stage_link_with_extras_and_libs_plan(obj_path: &str, bin_path: &str, ext
     let link_args: Vec[str] = Vec.new()
     link_stage_link_with_extras_libs_args_plan(obj_path, bin_path, extras, link_libs, link_args)
 
-fn link_stage_link_with_extras_libs_args_plan(obj_path: &str, bin_path: &str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str]) -> LinkStagePlan:
+fn link_stage_link_with_extras_libs_args_plan(obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStagePlan:
     if runtime_sysinfo_os() == "Windows":
         let root = link_stage_resolve_runtime_root()
         let ld_path = link_stage_read_file_trimmed(root ++ "/llvm_ld")
@@ -652,11 +652,11 @@ fn link_stage_link_with_llvm(obj_path: &str, bin_path: &str, extras: Vec[str], l
 fn link_stage_link_with_llvm_result(obj_path: &str, bin_path: &str, extras: Vec[str], link_libs: Vec[str], llvm_ld: &str) -> LinkStageResult:
     link_stage_result_for_plan(link_stage_link_with_llvm_plan(obj_path, bin_path, extras, link_libs, llvm_ld))
 
-fn link_stage_link_with_llvm_plan(obj_path: &str, bin_path: &str, extras: Vec[str], link_libs: Vec[str], llvm_ld: &str) -> LinkStagePlan:
+fn link_stage_link_with_llvm_plan(obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], llvm_ld: &str) -> LinkStagePlan:
     let link_args: Vec[str] = Vec.new()
     link_stage_link_with_llvm_args_plan(obj_path, bin_path, extras, link_libs, link_args, llvm_ld)
 
-fn link_stage_link_with_llvm_args_plan(obj_path: &str, bin_path: &str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str], llvm_ld: &str) -> LinkStagePlan:
+fn link_stage_link_with_llvm_args_plan(obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str], llvm_ld: &str) -> LinkStagePlan:
     let command = link_stage_make_llvm_link_command(llvm_ld, obj_path, bin_path, extras, link_libs, link_args)
     if command.linker.len() == 0:
         return link_stage_plan_fail()
@@ -946,7 +946,7 @@ fn link_stage_output_path_for_source(source_path: &str) -> str:
         return base ++ ".exe"
     base
 
-fn link_stage_link_object_to_binary(obj_path: &str, bin_path: &str, link_libs: Vec[str], link_search_paths: Vec[str], needs_async_runtime: bool) -> bool:
+fn link_stage_link_object_to_binary(obj_path: &str, bin_path: &str, link_libs: Vec[str], link_search_paths: &Vec[str], needs_async_runtime: bool) -> bool:
     let link_args: Vec[str] = Vec.new()
     link_stage_link_object_to_binary_result(obj_path, bin_path, link_libs, link_search_paths, move link_args, needs_async_runtime).ok
 

@@ -36,6 +36,14 @@ fn test_string_multi_concat:
     let s = "a" ++ "b" ++ "c" ++ "d"
     assert(s == "abcd")
 
+fn append_src(base: &str): base ++ "/" ++ "src"
+
+fn test_borrowed_string_multi_concat:
+    let base = "owned" ++ "-prefix"
+    let path = append_src(base)
+    assert(path == "owned-prefix/src")
+    assert(base == "owned-prefix")
+
 fn test_string_length:
     let s = "hello"
     assert(s.len() == 5)
@@ -63,6 +71,7 @@ fn main:
     test_string_concat_empty()
     test_string_in_function()
     test_string_multi_concat()
+    test_borrowed_string_multi_concat()
     test_string_length()
     test_string_from_condition()
     test_string_in_match()

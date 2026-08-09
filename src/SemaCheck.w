@@ -1530,11 +1530,11 @@ impl Sema:
             if self.ast.kind(decl) != NodeKind.NK_FN_DECL:
                 continue
             let flags = self.ast.get_data2(decl)
-            if (flags / FnFlags.PANIC_HANDLER) % 2 == 1:
+            if (flags / BOOT_FN_PANIC_HANDLER) % 2 == 1:
                 has_panic_handler = 1
-            if (flags / FnFlags.ENTRY) % 2 == 1:
+            if (flags / BOOT_FN_ENTRY) % 2 == 1:
                 has_entry = 1
-            if (flags / FnFlags.NO_MAIN) % 2 == 1:
+            if (flags / BOOT_FN_NO_MAIN) % 2 == 1:
                 has_no_main = 1
 
         if has_user_decl == 0:
@@ -1974,7 +1974,7 @@ impl Sema:
         // matches the trait (#652).
         if contract.ret_type != 0 and has_ret_annotation:
             var expected_ret = contract.ret_type
-            if (contract.method_flags / FnFlags.ASYNC) % 2 == 1:
+            if (contract.method_flags / BOOT_FN_ASYNC) % 2 == 1:
                 let task_sym = self.pool_intern("Task")
                 let task_args: Vec[i32] = Vec.new()
                 task_args.push(contract.ret_type)
@@ -2118,7 +2118,7 @@ impl Sema:
         let saved_ret = self.current_return_type
         let saved_gen_yield_type = self.current_gen_yield_type
         let saved_has_gen_yield_type = self.has_gen_yield_type
-        let is_gen = (flags / FnFlags.GEN) % 2
+        let is_gen = (flags / BOOT_FN_GEN) % 2
         if is_gen == 1:
             let yield_ty =
                 if self.generator_fn_yield_types.contains(fn_name):
@@ -2134,7 +2134,7 @@ impl Sema:
             var body_ret_type = if has_ret_annotation: ret_type as TypeId else: 0 as TypeId
             if trait_contract.ok != 0 and trait_contract.ret_type != 0:
                 body_ret_type = trait_contract.ret_type as TypeId
-            if (flags / FnFlags.ASYNC) % 2 == 1:
+            if (flags / BOOT_FN_ASYNC) % 2 == 1:
                 let resolved_ret = self.resolve_alias(ret_type as TypeId)
                 if self.get_type_kind(resolved_ret) == TypeKind.TY_GENERIC_INST:
                     let arg_count = self.get_generic_inst_arg_count(resolved_ret as i32)
@@ -2144,10 +2144,10 @@ impl Sema:
             self.current_gen_yield_type = 0 as TypeId
             self.has_gen_yield_type = 0
         let saved_comptime = self.in_comptime_fn
-        if (flags / FnFlags.COMPTIME) % 2 == 1:
+        if (flags / BOOT_FN_COMPTIME) % 2 == 1:
             self.in_comptime_fn = self.in_comptime_fn + 1
         let saved_async = self.in_async_fn
-        if (flags / FnFlags.ASYNC) % 2 == 1:
+        if (flags / BOOT_FN_ASYNC) % 2 == 1:
             self.in_async_fn = self.in_async_fn + 1
 
         // Check body — set expected type to return type for tail expression resolution.
@@ -2253,7 +2253,7 @@ impl Sema:
                         self.emit_error("return type mismatch", body)
 
         // @[tailrec] enforcement: verify all recursive calls are in tail position
-        if (flags / FnFlags.TAILREC) % 2 == 1:
+        if (flags / BOOT_FN_TAILREC) % 2 == 1:
             self.verify_tail_position(body, fn_name, 1)
 
         // Write accumulated per-param effects into sig_param_effects.
@@ -2479,7 +2479,7 @@ impl Sema:
     // Consumes: the fields move back into self (a view here silently
     // bit-copies and the caller's drop frees what self now owns — #730).
     mut fn restore_label_registry(state: LabelRegistryState):
-        self.fn_label_syms = state.label_syms
+        self.fn_label_syms = move state.label_syms
         self.fn_label_nodes = state.label_nodes
         self.fn_label_paths = state.label_paths
         self.fn_label_orders = state.label_orders
@@ -3132,7 +3132,7 @@ impl Sema:
         if fn_name == "main":
             return 1
         let flags = self.ast.get_data2(fn_node)
-        if (flags / FnFlags.ENTRY) % 2 == 1:
+        if (flags / BOOT_FN_ENTRY) % 2 == 1:
             return 1
         if self.fn_decl_has_c_export(fn_node) != 0:
             return 1
@@ -9090,7 +9090,7 @@ impl Sema:
         if meta < 0:
             return 0
         let flags = self.ast.fn_meta_flags(meta)
-        if (flags / FnFlags.COMPTIME) % 2 == 1:
+        if (flags / BOOT_FN_COMPTIME) % 2 == 1:
             return 1
         0
 
@@ -11036,6 +11036,10 @@ impl Sema:
                 let elem_ty = self.get_type_d0(container_tid)
                 self.typed_expr_types.insert(node, elem_ty)
                 return elem_ty
+        if container_tk == TypeKind.TY_STR:
+            self.check_runtime_index_operand(index)
+            self.typed_expr_types.insert(node, self.ty_i32 as i32)
+            return self.ty_i32 as i32
         if container_tk == TypeKind.TY_ARRAY:
             self.check_runtime_index_operand(index)
             let elem_ty = self.get_type_d0(container_tid)
@@ -15033,6 +15037,14 @@ impl Sema:
             if arg_count != 1:
                 self.emit_error("distinct type constructor requires exactly 1 argument", node)
                 return 0
+            let dt_inner = self.unwrap_builtin_arg_distinct(dt_tid)
+            let dt_arg_ty = arg_types.get(0)
+            let dt_arg_node = if has_resolved != 0: self.get_resolved_call_arg(node, 0) else: self.ast.get_extra(resolved_extra_start)
+            let dt_materializes_copy = self.record_contextual_copy_adjustment(dt_arg_node, dt_inner, dt_arg_ty)
+            if self.types_compatible(dt_inner, dt_arg_ty) == 0 and dt_materializes_copy == 0:
+                if self.arithmetic_result_type(dt_inner, dt_arg_ty) == 0:
+                    let dt_name: str = with_str_clone_ref(self.pool_resolve(fn_sym))
+                    self.emit_argument_type_mismatch(dt_name, fn_sym, 0, 0, dt_inner, dt_arg_ty, dt_arg_node)
             self.typed_expr_types.insert(node, dt_tid)
             return dt_tid
 
@@ -15127,7 +15139,7 @@ impl Sema:
                     if self.fn_decl_nodes.contains(callee_sym):
                         let callee_node: i32 = self.fn_decl_nodes.get(callee_sym).unwrap()
                         let callee_flags = self.ast.get_data2(callee_node)
-                        if (callee_flags / FnFlags.TAILREC) % 2 == 1:
+                        if (callee_flags / BOOT_FN_TAILREC) % 2 == 1:
                             self.emit_error("call to @[tailrec] function is not in tail position", node)
             // Check args are NOT in tail position
             let extra_start = self.ast.get_data1(node)
@@ -18774,7 +18786,7 @@ impl Sema:
             return 0
         if self.ensure_trait_object_safe(trait_sym, node) == 0:
             return 0
-        if (info.method_flags / FnFlags.ASYNC) % 2 == 1:
+        if (info.method_flags / BOOT_FN_ASYNC) % 2 == 1:
             self.record_global_concurrency_evidence(node, "async function call")
         if info.param_count <= 0:
             self.emit_error("dyn trait method has no self parameter", node)

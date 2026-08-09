@@ -10,7 +10,6 @@ use SemaCheck
 use Overflow
 extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_eprint(s: &str) -> Unit
-extern fn with_fs_read_file(path: &str) -> str
 
 // ── Builder state ────────────────────────────────────────────────
 
@@ -2000,8 +1999,10 @@ impl MirBuilder:
             return self.sema.get_type_d0(resolved)
         if tk == TypeKind.TY_STR:
             return self.sema.ty_i32 as i32
-        if tk == TypeKind.TY_PTR or tk == TypeKind.TY_REF:
+        if tk == TypeKind.TY_PTR:
             return self.sema.get_type_d0(resolved)
+        if tk == TypeKind.TY_REF:
+            return self.indexed_element_type(self.sema.get_type_d0(resolved))
         if tk == TypeKind.TY_GENERIC_INST:
             let base_sym = self.sema.get_generic_inst_base(resolved)
             if self.pool.resolve_symbol(base_sym) == "Vec" and self.sema.get_generic_inst_arg_count(resolved) > 0:
@@ -2257,6 +2258,12 @@ impl MirBuilder:
                     return rhs_ty
             if lhs_ty != 0 and lhs_ty == rhs_ty:
                 return lhs_ty
+            // Keep place materialization aligned with ordinary binary lowering.
+            // Repr-enum arithmetic such as `i32 + FnFlags` has an i32 result
+            // even though the two operand type IDs are not identical.
+            let arithmetic_ty = self.sema.arithmetic_result_type(lhs_ty as TypeId, rhs_ty as TypeId)
+            if arithmetic_ty != 0:
+                return arithmetic_ty as i32
         if kind == NodeKind.NK_UNARY:
             let uop = self.ast.get_data0(node)
             if uop == UnaryOp.UOP_NOT:
@@ -2710,29 +2717,11 @@ impl MirBuilder:
         let canonical_sym = self.sema.pool_lookup_symbol(self.pool.resolve(sym))
         if canonical_sym == self.sema.syms.src: 1 else: 0
 
-fn mir_source_text_for_path(fallback_text: &str, path: &str) -> str:
-    if path.len() > 0 and path != "<unknown>":
-        let text = with_fs_read_file(path)
-        if text.len() > 0:
-            return text
-    with_str_clone_ref(fallback_text)
-
 impl MirBuilder:
     mut fn source_location_operand(node: i32) -> i32:
         let path = if self.sema.current_module_path.len() > 0: self.sema.current_module_path else: "<unknown>"
-        let text = mir_source_text_for_path(self.sema.source_text, path)
-        let span_start = self.ast.get_start(node)
-        var line = 1
-        var col = 1
-        var i = 0
-        while i < span_start and i < text.len() as i32:
-            if text.byte_at(i as i64) == 10:
-                line = line + 1
-                col = 1
-            else:
-                col = col + 1
-            i = i + 1
-        self.lower_str_lit(self.pool.intern(f"{path}:{line}:{col}"))
+        let loc = self.sema.source_location_for_file_id(self.sema.local_file_id, self.ast.get_start(node))
+        self.lower_str_lit(self.pool.intern(f"{path}:{loc.line + 1}:{loc.col + 1}"))
 
     mut fn source_file_operand(node: i32) -> i32:
         let _ = node
@@ -2740,16 +2729,8 @@ impl MirBuilder:
         self.lower_str_lit(self.pool.intern(path))
 
     mut fn source_line_operand(node: i32) -> i32:
-        let path = if self.sema.current_module_path.len() > 0: self.sema.current_module_path else: "<unknown>"
-        let text = mir_source_text_for_path(self.sema.source_text, path)
-        let span_start = self.ast.get_start(node)
-        var line = 1
-        var i = 0
-        while i < span_start and i < text.len() as i32:
-            if text.byte_at(i as i64) == 10:
-                line = line + 1
-            i = i + 1
-        self.int_const_operand(line as i64, self.sema.ty_u32 as i32)
+        let loc = self.sema.source_location_for_file_id(self.sema.local_file_id, self.ast.get_start(node))
+        self.int_const_operand((loc.line + 1) as i64, self.sema.ty_u32 as i32)
 
     mut fn source_fn_operand(node: i32) -> i32:
         let _ = node
@@ -3073,19 +3054,29 @@ impl MirBuilder:
                 let spec_node = self.ast.get_extra(pos + 2)
                 var expr_op = self.lower_expr(expr_node)
                 var resolved_ty = if self.expr_type(expr_node) > 0: self.sema.resolve_alias(self.expr_type(expr_node)) else: 0
+                var borrowed_str_ref_op = -1
                 // A view interpolant formats its POINTEE — formatting observes
                 // (D22 transparency); reference bits must never reach the
                 // formatter (#728: stage2's own MIR dump printed sym garbage).
                 // Skip when lower_expr consumed a recorded adjustment: the
                 // operand is already the owned pointee.
                 if resolved_ty != 0 and self.sema.get_type_kind(resolved_ty) == TypeKind.TY_REF and self.has_contextual_copy_adjustment(expr_node) == 0:
+                    let fmt_ref_ty = resolved_ty
                     let fmt_pointee = self.sema.get_type_d0(resolved_ty)
-                    let fmt_ref_place = self.materialize_operand(expr_op, resolved_ty as i32, self.ast.get_start(expr_node))
-                    expr_op = self.body.new_operand(OperandKind.OK_COPY, self.new_deref_place(fmt_ref_place))
                     resolved_ty = self.sema.resolve_alias(fmt_pointee as TypeId)
+                    if resolved_ty == self.sema.ty_str:
+                        // Preserve the &str for the observing fast path. Format
+                        // modes whose existing runtime helpers consume str clone
+                        // it explicitly below before crossing that ABI.
+                        borrowed_str_ref_op = expr_op
+                    else:
+                        let fmt_ref_place = self.materialize_operand(expr_op, fmt_ref_ty, self.ast.get_start(expr_node))
+                        expr_op = self.body.new_operand(OperandKind.OK_COPY, self.new_deref_place(fmt_ref_place))
 
                 var handled = false
                 if spec_node != 0:
+                    if borrowed_str_ref_op >= 0:
+                        expr_op = self.lower_str_clone_ref(borrowed_str_ref_op, node)
                     let spec_flags = self.ast.get_data0(spec_node)
                     let spec_mode = spec_flags & 255
                     let spec_width = self.ast.get_data1(spec_node)
@@ -3102,7 +3093,10 @@ impl MirBuilder:
                 if not handled:
                     if resolved_ty == self.sema.ty_str:
                         // String: write directly
-                        self.lower_fstring_buf_write_str(buf_op, expr_op, node)
+                        if borrowed_str_ref_op >= 0:
+                            self.lower_fstring_buf_write_str_ref(buf_op, borrowed_str_ref_op, node)
+                        else:
+                            self.lower_fstring_buf_write_str(buf_op, expr_op, node)
                     else:
                         // Non-str: format to str then write
                         let formatted = self.lower_fmt_to_str(expr_op, node)
@@ -3143,6 +3137,32 @@ impl MirBuilder:
         self.switch_to(next_bb)
         self.body.set_call_intrinsic(args_id, MirIntrinsic.FMT_BUF_WRITE_STR)
 
+    mut fn lower_fstring_buf_write_str_ref(buf_op: i32, str_ref_op: i32, node: i32):
+        let fn_op = self.const_operand(ConstKind.CK_FN, self.pool.intern("fmt_buf_write_str_ref"), self.sema.ty_void)
+        let call_args: Vec[i32] = Vec.new()
+        call_args.push(buf_op)
+        call_args.push(str_ref_op)
+        let args_id = self.body.new_call_args(call_args)
+        let result_local = self.new_temp(self.sema.ty_void)
+        let result_place = self.place_for_local(result_local)
+        let next_bb = self.new_block()
+        self.terminate(TermKind.TK_CALL, fn_op, args_id, result_place, next_bb)
+        self.switch_to(next_bb)
+        self.body.set_call_intrinsic(args_id, MirIntrinsic.FMT_BUF_WRITE_STR_REF)
+
+    mut fn lower_str_clone_ref(str_ref_op: i32, node: i32) -> i32:
+        let fn_op = self.const_operand(ConstKind.CK_FN, self.pool.intern("str_clone_ref"), self.sema.ty_str)
+        let call_args: Vec[i32] = Vec.new()
+        call_args.push(str_ref_op)
+        let args_id = self.body.new_call_args(call_args)
+        let result_local = self.new_temp(self.sema.ty_str)
+        let result_place = self.place_for_local(result_local)
+        let next_bb = self.new_block()
+        self.terminate(TermKind.TK_CALL, fn_op, args_id, result_place, next_bb)
+        self.switch_to(next_bb)
+        self.body.set_call_intrinsic(args_id, MirIntrinsic.STR_CLONE_REF)
+        self.body.new_operand(OperandKind.OK_MOVE, result_place)
+
     mut fn lower_fstring_buf_write_fmt(buf_op: i32, val_op: i32, flags: i32, width: i32, precision: i32, sema_ty: i32, node: i32):
         let fn_op = self.const_operand(ConstKind.CK_FN, self.pool.intern("fmt_buf_write_fmt"), self.sema.ty_void)
         let flags_const = self.const_operand(ConstKind.CK_INT, flags, self.sema.ty_i32)
@@ -3175,7 +3195,12 @@ impl MirBuilder:
         self.terminate(TermKind.TK_CALL, fn_op, args_id, result_place, next_bb)
         self.switch_to(next_bb)
         self.body.set_call_intrinsic(args_id, MirIntrinsic.FMT_BUF_FINISH)
-        self.body.new_operand(OperandKind.OK_COPY, result_place)
+        // The finished buffer is a new owned str. Keep it alive through the
+        // enclosing expression, then either transfer it to its destination or
+        // drop it at the statement boundary. Returning an unregistered copy
+        // loses both ownership paths when an f-string is only observed by ++.
+        self.register_stmt_temp(result_local, self.sema.ty_str)
+        self.body.new_operand(OperandKind.OK_MOVE, result_place)
 
     mut fn lower_float_lit(sym: i32, type_id: i32) -> i32:
         let ty = if type_id == 0 or self.sema.get_type_kind(type_id) == TypeKind.TY_VOID: self.sema.ty_f64 else: type_id
@@ -3810,7 +3835,7 @@ impl MirBuilder:
         self.expected_type = self.sema.ty_str as i32
         let operands: Vec[i32] = Vec.new()
         for i in 0..parts.len() as i32:
-            operands.push(self.lower_expr(parts.get(i as i64)))
+            operands.push(self.lower_str_concat_part(parts.get(i as i64)))
         self.expected_type = saved_expected
 
         let args_id = self.body.new_call_args(operands)
@@ -3823,6 +3848,38 @@ impl MirBuilder:
         if self.sema.is_copy_frozen(ty) != 0:
             return self.body.new_operand(OperandKind.OK_COPY, place)
         self.body.new_operand(OperandKind.OK_MOVE, place)
+
+    fn str_concat_part_is_explicit_move(node: i32) -> i32:
+        if node == 0:
+            return 0
+        let kind = self.ast.kind(node)
+        if kind == NodeKind.NK_MOVE_ARG:
+            return 1
+        if kind == NodeKind.NK_GROUPED or kind == NodeKind.NK_UNSAFE_BLOCK or kind == NodeKind.NK_NO_SUSPEND:
+            return self.str_concat_part_is_explicit_move(self.ast.get_data0(node))
+        0
+
+    mut fn lower_str_concat_part(node: i32) -> i32:
+        let lowered = self.lower_expr(node)
+        if self.body.operand_kinds.get(lowered as i64) != OperandKind.OK_MOVE:
+            return lowered
+        let place: i32 = self.body.operand_d0.get(lowered as i64)
+        if self.str_concat_part_is_explicit_move(node) == 0:
+            // Ordinary ++ observes its operands. Named owners retain their
+            // scope drops; owned rvalues retain their statement-temp drops.
+            return self.body.new_operand(OperandKind.OK_COPY, place)
+
+        // `move x ++ y` still performs D16's explicit move. Materialize the
+        // transferred value as a statement temporary, borrow that temporary
+        // for concat, then drop it at the pending-reset flush.
+        let moved_ty = self.operand_type(lowered)
+        let moved_tmp = self.new_temp(moved_ty)
+        let moved_place = self.place_for_local(moved_tmp)
+        let moved_rv = self.body.new_rvalue(RvalueKind.RK_USE, lowered, 0, 0)
+        self.body.push_stmt(self.cur_bb, StmtKind.Assign, moved_place, moved_rv, self.ast.get_start(node))
+        self.consume_moved_operand(lowered)
+        self.pending_move_temp_locals.push(moved_tmp)
+        self.body.new_operand(OperandKind.OK_COPY, moved_place)
 
     fn same_ident_symbol(lhs: i32, rhs: i32) -> i32:
         if lhs == 0 or rhs == 0:
@@ -4052,7 +4109,7 @@ impl MirBuilder:
         let operands: Vec[i32] = Vec.new()
         operands.push(self.body.new_operand(OperandKind.OK_MOVE, dest_place))
         for i in 1..parts.len() as i32:
-            operands.push(self.lower_expr(parts.get(i as i64)))
+            operands.push(self.lower_str_concat_part(parts.get(i as i64)))
         self.expected_type = saved_expected
 
         let args_id = self.body.new_call_args(operands)
@@ -4106,7 +4163,13 @@ impl MirBuilder:
             let folded = self.try_fold_literal_str_concat(node, parts)
             if folded >= 0:
                 return folded
-            if parts.len() as i32 > 2:
+            // #747: every built-in str concat goes through RK_STR_CONCAT_N so
+            // codegen retains the MIR operand modes. The old two-part
+            // RK_BIN_OP path erased them and called the consuming
+            // with_str_concat ABI even for `copy &str`; its callee drop freed
+            // the borrowed owner's buffer. The concat-N path preserves its
+            // borrow-only operand contract in MIR.
+            if parts.len() as i32 >= 2:
                 return self.lower_str_concat_chain(node, parts)
         let saved_expected = self.expected_type
         // #634: for a comparison, lower each operand with the OTHER operand's
@@ -5682,6 +5745,15 @@ impl MirBuilder:
             self.lower_block_mode(node, 0)
         else if kind == NodeKind.NK_IF_EXPR:
             self.lower_if(self.ast.get_data0(node), self.ast.get_data1(node), self.ast.get_data2(node), node, 0)
+        else if kind == NodeKind.NK_MATCH:
+            self.lower_match(self.ast.get_data0(node), self.ast.get_data1(node), self.ast.get_data2(node), node, 0)
+        else if kind == NodeKind.NK_GROUPED or kind == NodeKind.NK_UNSAFE_BLOCK:
+            self.lower_expr_discard(self.ast.get_data0(node))
+        else if kind == NodeKind.NK_NO_SUSPEND:
+            self.no_suspend_nodes.push(node)
+            let inner_result = self.lower_expr_discard(self.ast.get_data0(node))
+            self.no_suspend_nodes.pop()
+            inner_result
         else:
             self.lower_expr(node)
         self.expected_type = saved_expected
@@ -5906,7 +5978,10 @@ impl MirBuilder:
         // assign_operand_to_place before the frame closes.
         let then_temp_frame = self.push_stmt_temp_frame()
         let then_op = if want_result != 0: self.lower_expr(then_expr) else: self.lower_expr_discard(then_expr)
-        if want_result != 0:
+        // A diverging branch has no value to contribute to the join. lower_return
+        // leaves a Unit operand in its unreachable continuation; assigning that
+        // operand to the if result place corrupts typed MIR.
+        if want_result != 0 and self.sema.body_can_fall_through(then_expr) != 0:
             self.assign_operand_to_place(result_place, then_op, self.ast.get_start(then_expr))
         self.finish_stmt_temp_frame(then_temp_frame)
         // Reset-on-move (spec §2.5.1): flush this branch's pending source-resets
@@ -5926,7 +6001,7 @@ impl MirBuilder:
             if want_result != 0: self.lower_expr(else_expr_opt) else: self.lower_expr_discard(else_expr_opt)
         else:
             self.unit_operand()
-        if want_result != 0:
+        if want_result != 0 and (else_expr_opt == 0 or self.sema.body_can_fall_through(else_expr_opt) != 0):
             self.assign_operand_to_place(result_place, else_op, self.ast.get_start(node))
         self.finish_stmt_temp_frame(else_temp_frame)
         self.flush_pending_resets_since(pending_reset_start, pending_reset_field_start, pending_move_temp_start)
@@ -8315,7 +8390,7 @@ impl MirBuilder:
     // owned-value demand. Preserve an Option[&V] payload as &V in every
     // instantiation, and materialize Copy only at a later recorded demand.
     // Join lowering must consume the one Sema-resolved D22 join decision.
-    mut fn lower_match(scrutinee_expr: i32, arms_start: i32, arms_count: i32, node: i32) -> i32:
+    mut fn lower_match(scrutinee_expr: i32, arms_start: i32, arms_count: i32, node: i32, want_result: i32) -> i32:
         if arms_count == 0:
             return self.unit_operand()
 
@@ -8330,7 +8405,7 @@ impl MirBuilder:
         let scrutinee_place = self.materialize_operand(scrutinee_op, scrutinee_ty, self.ast.get_start(scrutinee_expr))
 
         let result_ty = self.expr_type(node)
-        let result_is_void = if result_ty == 0 or result_ty == self.sema.ty_void as i32: 1 else: 0
+        let result_is_void = if want_result == 0 or result_ty == 0 or result_ty == self.sema.ty_void as i32: 1 else: 0
         var result_place = -1
         if result_is_void == 0:
             let result_local = self.new_temp(result_ty)
@@ -8400,7 +8475,12 @@ impl MirBuilder:
                     self.expected_type = result_ty
                 let arm_value = self.lower_expr(body_node)
                 self.expected_type = saved_arm_expected
-                self.assign_operand_to_place(result_place, arm_value, self.ast.get_start(body_node))
+                // A diverging arm has no value to contribute to the join. Like
+                // lower_if, lower_return leaves Unit in its unreachable
+                // continuation; assigning that placeholder to the match result
+                // corrupts typed MIR when the result type is non-Unit.
+                if self.sema.body_can_fall_through(body_node) != 0:
+                    self.assign_operand_to_place(result_place, arm_value, self.ast.get_start(body_node))
             // Reset-on-move (spec §2.5.1): flush this arm's pending source-resets
             // inside the arm, before it merges to the join (same reason as lower_if).
             self.flush_pending_resets_since(pending_reset_start, pending_reset_field_start, pending_move_temp_start)
@@ -12207,17 +12287,19 @@ impl MirBuilder:
                     return self.lower_expr(fa_base)
             // Enum variant access: Color.Red → discriminant value constant
             if self.ast.kind(fa_base) == NodeKind.NK_IDENT:
-                let fa_base_sym = self.ast.get_data0(fa_base)
+                let fa_base_ast_sym = self.ast.get_data0(fa_base)
+                let fa_base_sym = self.sema.pool_lookup_symbol(self.pool.resolve(fa_base_ast_sym))
                 if self.sema.named_types.contains(fa_base_sym):
                     let fa_base_ty: i32 = self.sema.named_types.get(fa_base_sym).unwrap()
                     let fa_resolved = self.sema.resolve_alias(fa_base_ty)
                     let fa_tk = self.sema.get_type_kind(fa_resolved)
                     if fa_tk == TypeKind.TY_ENUM:
                         // Build qualified variant key: "Color.Red"
-                        let fa_type_name = self.pool.resolve(fa_base_sym)
+                        let fa_type_name = self.sema.pool_resolve(fa_base_sym)
                         let fa_field_name = self.pool.resolve(fa_field)
+                        let fa_field_sym = self.sema.pool_lookup_symbol(fa_field_name)
                         let fa_qual_name = fa_type_name ++ "." ++ fa_field_name
-                        let fa_qual_sym = self.pool.intern(fa_qual_name)
+                        let fa_qual_sym = self.sema.pool_lookup_symbol(fa_qual_name)
                         if self.sema.variant_lookup.contains(fa_qual_sym):
                             let fa_disc_tag = self.enum_variant_discriminant_for_type(fa_base_ty, fa_qual_sym)
                             // Plain enums are always lowered as full aggregate values.
@@ -12234,10 +12316,10 @@ impl MirBuilder:
                                 return self.body.new_operand(OperandKind.OK_COPY, fa_place)
                             return self.int_const_operand(fa_disc_tag as i64, fa_base_ty)
                         // Also try bare variant sym (some enums register just "Red")
-                        if self.sema.variant_lookup.contains(fa_field):
-                            let fa_var_tid = self.sema.variant_type_ids.get(fa_field).unwrap()
+                        if self.sema.variant_lookup.contains(fa_field_sym):
+                            let fa_var_tid = self.sema.variant_type_ids.get(fa_field_sym).unwrap()
                             if fa_var_tid == fa_resolved:
-                                let fa_disc_tag2 = self.enum_variant_discriminant_for_type(fa_base_ty, fa_field)
+                                let fa_disc_tag2 = self.enum_variant_discriminant_for_type(fa_base_ty, fa_field_sym)
                                 let fa_is_disc_enum2 = self.sema.disc_repr_types.contains(fa_resolved as i32)
                                 if not fa_is_disc_enum2 or self.sema.disc_has_payload.contains(fa_resolved as i32):
                                     let fa_fields2: Vec[i32] = Vec.new()
@@ -12421,7 +12503,7 @@ impl MirBuilder:
             return self.lower_return(node)
 
         if kind == NodeKind.NK_MATCH:
-            return self.lower_match(self.ast.get_data0(node), self.ast.get_data1(node), self.ast.get_data2(node), node)
+            return self.lower_match(self.ast.get_data0(node), self.ast.get_data1(node), self.ast.get_data2(node), node, 1)
 
         if kind == NodeKind.NK_CALL:
             let callee = self.ast.get_data0(node)
@@ -13246,37 +13328,12 @@ impl MirBuilder:
         self.mark_unsupported()
         self.unit_operand()
 
-fn lower_fn(builder: MirBuilder, fn_node: i32) -> MirBody:
-    let fn_sym = builder.body.fn_sym
-    var sig_idx = builder.sema.get_sig(fn_sym)
-    // If sig not found, try translating fn_sym from AST pool to sema pool.
-    // Sema registers sigs under sema pool symbols, not AST pool symbols.
-    if sig_idx < 0:
-        let sema_fn_sym = builder.sema.pool_lookup_symbol(builder.pool.resolve_symbol(fn_sym))
-        sig_idx = builder.sema.get_sig(sema_fn_sym)
-    // Also try method lookup for methods: "Type.method" → fn_sym for (type_sym, method_sym)
-    if sig_idx < 0:
-        let fn_name = builder.pool.resolve_symbol(fn_sym)
-        // Split "Type.method" on the dot
-        var dot_pos = -1
-        for ci in 0..fn_name.len() as i32:
-            if fn_name.byte_at(ci as i64) == 46:
-                dot_pos = ci
-                break
-        if dot_pos > 0:
-            let type_part = fn_name.slice(0, dot_pos as i64)
-            let method_part = fn_name.slice((dot_pos + 1) as i64, fn_name.len())
-            let sema_type_sym = builder.sema.pool_lookup_symbol(type_part)
-            let sema_method_sym = builder.sema.pool_lookup_symbol(method_part)
-            sig_idx = builder.sema.lookup_method_sig(sema_type_sym, sema_method_sym)
-    lower_fn_with_sig(move builder, fn_node, sig_idx)
-
 fn mir_symbol_for_pool(sema: &Sema, pool: InternPool, sym: i32) -> i32:
     if sym == 0:
         return 0
-    let pool_name = pool.resolve_symbol(sym)
-    if pool_name.len() > 0:
-        return sym
+    // sym is a Sema-pool identity. Numeric symbol IDs have meaning only in
+    // their originating pool; probing the output pool with this integer can
+    // silently select an unrelated symbol when both pools contain that slot.
     let sema_name = sema.pool_resolve(sym)
     if sema_name.len() > 0:
         return pool.intern(sema_name)
@@ -13287,9 +13344,9 @@ fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody
     let fn_flags = builder.ast.get_data2(fn_node)
     if sig_idx >= 0:
         var body_ret_ty = builder.sema.sig_return_type(sig_idx)
-        if (fn_flags / FnFlags.ASYNC) % 2 == 1:
+        if (fn_flags / BOOT_FN_ASYNC) % 2 == 1:
             body_ret_ty = builder.sema.unwrap_task_type(body_ret_ty as TypeId) as i32
-        if (fn_flags / FnFlags.GEN) % 2 == 1 and builder.in_generator != 0:
+        if (fn_flags / BOOT_FN_GEN) % 2 == 1 and builder.in_generator != 0:
             body_ret_ty = builder.sema.ty_void as i32
         builder.body.local_type_ids.set_i32(0, body_ret_ty)
     else:
@@ -13388,11 +13445,12 @@ fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody
     // every temp the inner statement frames don't; it flushes in the
     // epilogue, after the return value is captured.
     let body_frame = builder.push_stmt_temp_frame()
+    let body_falls_through = builder.sema.body_can_fall_through(body_expr)
     var result = if ret_is_void:
         builder.lower_expr_discard(body_expr)
     else:
         let body_result = builder.lower_expr(body_expr)
-        if builder.sema.body_can_fall_through(body_expr) != 0 and builder.operand_type(body_result) == builder.sema.ty_void:
+        if body_falls_through != 0 and builder.operand_type(body_result) == builder.sema.ty_void:
             builder.lower_implicit_default_return(ret_ty, builder.ast.get_end(fn_node))
         else:
             body_result
@@ -13400,7 +13458,7 @@ fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody
     // Implicit Ok wrapping: if return type is Result[T, E] and body type is T,
     // wrap the result in Ok(value) — an enum variant construction with tag 0.
     let ret_resolved = builder.sema.resolve_alias(ret_ty)
-    if not ret_is_void and builder.sema.get_type_kind(ret_resolved) == TypeKind.TY_GENERIC_INST:
+    if body_falls_through != 0 and not ret_is_void and builder.sema.get_type_kind(ret_resolved) == TypeKind.TY_GENERIC_INST:
         let ret_base = builder.sema.get_generic_inst_base(ret_resolved)
         if builder.sema.pool_resolve(ret_base) == "Result" and builder.sema.get_generic_inst_arg_count(ret_resolved) == 2:
             let result_body_ty = builder.expr_type(body_expr)
@@ -13420,7 +13478,7 @@ fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody
                     result = builder.body.new_operand(OperandKind.OK_COPY, ok_place)
 
     // Implicit return value assignment for non-diverging tail expressions.
-    if not ret_is_void:
+    if body_falls_through != 0 and not ret_is_void:
         let ret_place = builder.place_for_local(0)
         builder.assign_operand_to_place(ret_place, result, builder.ast.get_end(fn_node))
 
@@ -13436,7 +13494,7 @@ fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody
     builder.terminate(TermKind.TK_RETURN, 0, 0, 0, 0)
 
     // Self-tail-call optimization for @[tailrec] functions.
-    if (fn_flags / FnFlags.TAILREC) % 2 == 1:
+    if (fn_flags / BOOT_FN_TAILREC) % 2 == 1:
         builder.body.optimize_self_tail_calls()
 
     builder.body
@@ -14111,6 +14169,7 @@ fn lower_concrete_specialization(sema: Sema, ast_pool: AstPool, pool: InternPool
 
 fn lower_module(input_sema: Sema, ast_pool: AstPool, pool: InternPool) -> MirLowerResult:
     var sema = input_sema
+    sema.prepare_source_line_offsets()
     var mir_mod = MirModule.init()
 
     for di in 0..ast_pool.decl_count():
@@ -14125,7 +14184,7 @@ fn lower_module(input_sema: Sema, ast_pool: AstPool, pool: InternPool) -> MirLow
 
         sema.update_decl_source_context(di)
         let fn_flags = ast_pool.get_data2(decl)
-        if (fn_flags / FnFlags.GEN) % 2 == 1:
+        if (fn_flags / BOOT_FN_GEN) % 2 == 1:
             let sig_idx = sema.get_sig(fn_sym)
             if sig_idx < 0:
                 continue
@@ -14137,8 +14196,13 @@ fn lower_module(input_sema: Sema, ast_pool: AstPool, pool: InternPool) -> MirLow
             mir_mod.add_body(move ctor_body)
             mir_mod.add_body(move next_body)
             continue
+        let sig_idx = sema.get_sig(fn_sym)
         var builder = MirBuilder.init(&sema, ast_pool, pool, mir_fn_sym)
-        let body = lower_fn(move builder, decl as i32)
+        // fn_sym is the declaration's authoritative Sema-pool identity.
+        // mir_fn_sym belongs to the output pool; treating its numeric ID as a
+        // Sema symbol can select an unrelated but valid signature in large
+        // combined modules and corrupt every parameter type during lowering.
+        let body = lower_fn_with_sig(move builder, decl as i32, sig_idx)
         mir_mod.add_body(move body)
 
     for gi in 0..sema.fn_clause_group_count():
@@ -14182,7 +14246,7 @@ fn collect_tailrec_fn_syms(sema: &Sema, ast_pool: AstPool, pool: InternPool) -> 
         if mir_fn_is_generic_template(sema, ast_pool, pool, decl as i32):
             continue
         let fn_flags = ast_pool.get_data2(decl)
-        if (fn_flags / FnFlags.TAILREC) % 2 == 1:
+        if (fn_flags / BOOT_FN_TAILREC) % 2 == 1:
             tailrec_syms.push(ast_pool.get_data0(decl))
     tailrec_syms
 
@@ -14303,7 +14367,7 @@ fn mir_fn_is_tailrec(ast_pool: AstPool, fn_sym: i32) -> i32:
     if fn_node == 0:
         return 0
     let flags = ast_pool.get_data2(fn_node)
-    if (flags / FnFlags.TAILREC) % 2 == 1:
+    if (flags / BOOT_FN_TAILREC) % 2 == 1:
         return 1
     0
 

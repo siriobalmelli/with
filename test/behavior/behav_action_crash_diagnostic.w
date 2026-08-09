@@ -20,4 +20,8 @@ fn main:
     p7_assert_failure_contains(result, "panic-action", "action crash target")
     p7_assert_failure_contains(result, "failed with exit code", "action crash rc")
     p7_assert_failure_contains(result, "build.w:5:5", "action crash source location")
+    // #743: the intended action failure must not be followed by a teardown
+    // panic from pushing into the reset-sentinel last_sema diagnostic Vec.
+    assert(not result.stdout.contains("corrupt vec header"))
+    assert(not result.stderr.contains("corrupt vec header"))
     print("ok")

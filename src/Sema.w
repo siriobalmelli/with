@@ -57,6 +57,12 @@ enum TypeKind: i32:
 
 type TypeId = i32
 
+type SemaSourceLocation {
+    line: i32,
+    col: i32,
+}
+impl Copy for SemaSourceLocation
+
 enum VarState: i32:
     LIVE = 0
     MOVED = 1
@@ -1103,6 +1109,7 @@ type Sema {
     source_text_file_ids: Vec[i32],  // imported/extra source text file ids
     source_text_names: Vec[str],     // source display names aligned with source_text_file_ids
     source_texts: Vec[str],          // source buffers aligned with source_text_file_ids
+    source_line_offsets: Vec[Vec[i32]], // root first, then one index per source_texts entry
     current_module_path: str,        // module path being checked right now
     tool_mode_entry_path: str,        // compiler-generated tool runner allowed to mint capabilities
     module_paths: Vec[str],          // resolved module graph paths
@@ -2243,6 +2250,7 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         source_text_file_ids: Vec.new(),
         source_text_names: sema_new_vec_str(),
         source_texts: sema_new_vec_str(),
+        source_line_offsets: Vec.new(),
         current_module_path: "",
         tool_mode_entry_path: "",
         module_paths: sema_new_vec_str(),
@@ -3204,20 +3212,64 @@ fn extract_fn_param_name_in_text(text: &str, param_index: i32) -> str:
         i = i + 1
     ""
 
+fn sema_source_line_offsets(text: &str):
+    let offsets: Vec[i32] = Vec.new()
+    offsets.push(0)
+    for i in 0..text.len():
+        if text.byte_at(i) == 10:
+            offsets.push(i as i32 + 1)
+    offsets
+
 impl Sema:
-    fn source_text_for_file_id(file_id: i32) -> str:
+    mut fn prepare_source_line_offsets():
+        self.source_line_offsets = Vec.new()
+        self.source_line_offsets.push(sema_source_line_offsets(self.source_text))
+        for si in 0..self.source_texts.len() as i32:
+            self.source_line_offsets.push(sema_source_line_offsets(self.source_texts.get(si as i64)))
+
+    fn source_location_for_file_id(file_id: i32, offset: i32) -> SemaSourceLocation:
+        var source_index = 0
+        if file_id != 0:
+            for si in 0..self.source_text_file_ids.len() as i32:
+                if self.source_text_file_ids.get(si as i64) == file_id:
+                    source_index = si + 1
+                    break
+        if source_index >= self.source_line_offsets.len() as i32:
+            sema_phase_bug("source line offsets were not prepared before MIR lowering")
+        let offsets = self.source_line_offsets.get(source_index as i64)
+        var clamped = offset
+        if clamped < 0:
+            clamped = 0
+        let source_len = if source_index == 0: self.source_text.len() as i32 else: self.source_texts.get((source_index - 1) as i64).len() as i32
+        if clamped > source_len:
+            clamped = source_len
+        var lo = 0
+        var hi = offsets.len() as i32
+        while lo < hi:
+            let mid = lo + (hi - lo) / 2
+            if offsets.get(mid as i64) <= clamped:
+                lo = mid + 1
+            else:
+                hi = mid
+        let line = if lo > 0: lo - 1 else: 0
+        SemaSourceLocation { line, col: clamped - offsets.get(line as i64) }
+
+    fn source_text_view_for_file_id(file_id: i32) -> &str:
         if file_id == 0:
-            return self.source_text
+            return &self.source_text
         for si in 0..self.source_text_file_ids.len() as i32:
             if self.source_text_file_ids.get(si as i64) == file_id:
-                return with_str_clone_ref(self.source_texts.get(si as i64))
+                return self.source_texts.get(si as i64)
         ""
 
-    fn source_text_for_decl_node(node: i32) -> str:
+    fn source_text_for_file_id(file_id: i32) -> str:
+        with_str_clone_ref(self.source_text_view_for_file_id(file_id))
+
+    fn source_text_for_decl_node(node: i32) -> &str:
         let di = self.find_decl_index(node)
         if di >= 0 and di < self.decl_source_file_ids.len() as i32:
             let file_id = self.decl_source_file_ids.get(di as i64)
-            let text = self.source_text_for_file_id(file_id)
+            let text = self.source_text_view_for_file_id(file_id)
             if text.len() > 0:
                 return text
         // Body nodes never match a top-level decl, so the lookup above fails
@@ -3229,10 +3281,10 @@ impl Sema:
         // checker's per-decl context, which update_decl_source_context /
         // update_fn_source_context keep current for diagnostics.
         if self.local_file_id != 0:
-            let text = self.source_text_for_file_id(self.local_file_id)
+            let text = self.source_text_view_for_file_id(self.local_file_id)
             if text.len() > 0:
                 return text
-        self.source_text
+        &self.source_text
 
     fn extract_decl_name_after(node: i32, keyword: &str) -> str:
         let source_text = self.source_text_for_decl_node(node)

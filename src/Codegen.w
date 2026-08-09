@@ -1101,7 +1101,7 @@ impl Codegen:
         var dir = "."
         // #747: an owned copy — plain field assignment would move source_file
         // out of self and poison the slice reads below.
-        var file = with_str_clone(self.source_file)
+        var file = with_str_clone_ref(self.source_file)
         if last_slash >= 0:
             dir = self.source_file.slice(0, last_slash as i64)
             file = self.source_file.slice((last_slash + 1) as i64, self.source_file.len())
@@ -1637,7 +1637,7 @@ impl Codegen:
 
     // Consumes: fields move back into self (see restore_label_registry).
     mut fn restore_loop_state(state: LoopState):
-        self.loop_break_bbs = state.break_bbs
+        self.loop_break_bbs = move state.break_bbs
         self.loop_continue_bbs = state.continue_bbs
         self.loop_result_allocas = state.result_allocas
         self.loop_labels = state.labels
@@ -2096,6 +2096,8 @@ impl Codegen:
         let byval_types_opt = self.extern_fn_byval_types.get(fn_sym)
         if byval_types_opt.is_some():
             byval_types = vec_copy_i64(byval_types_opt.unwrap())
+        let direct_opt = self.extern_fn_direct_params.get(fn_sym)
+        let direct_mask = if direct_opt.is_some(): direct_opt.unwrap() as i64 else: 0
         let param_offset = if has_sret != 0: 1 else: 0
         for ai in 0..arg_count:
             var arg_val: i64 = args.get(ai as i64)
@@ -2116,6 +2118,15 @@ impl Codegen:
                             arg_val = self.build_dyn_trait_value_from_ptr(arg_val, info.type_sym, trait_sym)
                         else:
                             arg_val = self.build_dyn_trait_value(arg_val, info.type_sym, trait_sym)
+                // Read the ABI transform recorded when the declaration was made.
+                // A @[link_name] extern can occupy the same canonical symbol as
+                // an internal runtime helper. On Darwin arm64 its small aggregate
+                // parameter is physically an LLVM array, so coercing the native
+                // value directly would reject str -> array. Pack through the one
+                // recorded C-ABI descriptor before ordinary type coercion.
+                if (direct_mask & ((1 as i64) << (ai as u32))) != 0:
+                    out.push(self.c_abi_pack_direct_value(arg_val, param_ty))
+                    continue
                 arg_val = self.coerce_call_arg_to_param(arg_node, arg_val, param_ty, call_context, call_node, ai)
                 if (byval_mask & ((1 as i64) << (ai as u32))) != 0:
                     var indirect_ty = param_ty
@@ -2157,6 +2168,12 @@ impl Codegen:
         self.apply_c_abi_call_attrs(call_val, has_sret, sret_ty, byval_mask, byval_types, arg_count, 0)
         if has_sret != 0 and sret_buf != 0 and sret_ty != 0:
             return wl_build_load(self.builder, sret_ty, sret_buf)
+        var direct_ret_ty: i64 = 0
+        let direct_ret_opt = self.extern_fn_direct_ret_type.get(fn_sym)
+        if direct_ret_opt.is_some():
+            direct_ret_ty = direct_ret_opt.unwrap() as i64
+        if direct_ret_ty != 0:
+            return self.c_abi_unpack_direct_value(call_val, direct_ret_ty)
         call_val
 
     fn mir_call_context(body: &MirBody, callee_operand: i32) -> str:
@@ -2332,34 +2349,31 @@ impl Codegen:
         wl_const_int(wl_i32_type(self.context), 0, 0)
 
     fn get_with_str_eq_fn_type() -> i64:
-        let str_ty = self.resolve_named_type(self.intern.intern("str"))
         let param_types: Vec[i64] = Vec.new()
-        param_types.push(str_ty)
-        param_types.push(str_ty)
+        param_types.push(wl_ptr_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
         wl_function_type(wl_i32_type(self.context), vec_data_i64(&param_types), 2, 0)
 
     mut fn ensure_with_str_eq_declared() -> i64:
-        let str_ty = self.resolve_named_type(self.intern.intern("str"))
         let param_types: Vec[i64] = Vec.new()
-        param_types.push(str_ty)
-        param_types.push(str_ty)
-        self.ensure_internal_runtime_fn("with_str_eq", param_types, 2, wl_i32_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
+        self.ensure_internal_runtime_fn("with_str_eq_ref", param_types, 2, wl_i32_type(self.context))
 
     mut fn ensure_with_str_cmp_declared() -> i64:
-        let str_ty = self.resolve_named_type(self.intern.intern("str"))
         let param_types: Vec[i64] = Vec.new()
-        param_types.push(str_ty)
-        param_types.push(str_ty)
-        self.ensure_internal_runtime_fn("with_str_cmp", param_types, 2, wl_i32_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
+        self.ensure_internal_runtime_fn("with_str_cmp_ref", param_types, 2, wl_i32_type(self.context))
 
     mut fn compare_str_eq(lhs: i64, rhs: i64, op: i32) -> i64:
         let fn_val = self.ensure_with_str_eq_declared()
-        let fn_sym = self.intern.intern("with_str_eq")
+        let fn_sym = self.intern.intern("with_str_eq_ref")
         let fn_ty = self.fn_fn_types.get(fn_sym).unwrap() as i64
         let args: Vec[i64] = Vec.new()
-        args.push(lhs)
-        args.push(rhs)
-        let cmp = self.build_call_fn_value(fn_sym, fn_val, fn_ty, -1, 0, args, 2, "with_str_eq", 0)
+        args.push(self.build_str_ref_from_value(lhs))
+        args.push(self.build_str_ref_from_value(rhs))
+        let cmp = self.build_call_fn_value(fn_sym, fn_val, fn_ty, -1, 0, args, 2, "with_str_eq_ref", 0)
         let zero = wl_const_int(wl_i32_type(self.context), 0, 0)
         if op == BinaryOp.OP_EQ:
             return wl_build_icmp(self.builder, wl_int_ne(), cmp, zero)
@@ -2367,12 +2381,12 @@ impl Codegen:
 
     mut fn compare_str_order(lhs: i64, rhs: i64, op: i32) -> i64:
         let fn_val = self.ensure_with_str_cmp_declared()
-        let fn_sym = self.intern.intern("with_str_cmp")
+        let fn_sym = self.intern.intern("with_str_cmp_ref")
         let fn_ty = self.fn_fn_types.get(fn_sym).unwrap() as i64
         let args: Vec[i64] = Vec.new()
-        args.push(lhs)
-        args.push(rhs)
-        let cmp = self.build_call_fn_value(fn_sym, fn_val, fn_ty, -1, 0, args, 2, "with_str_cmp", 0)
+        args.push(self.build_str_ref_from_value(lhs))
+        args.push(self.build_str_ref_from_value(rhs))
+        let cmp = self.build_call_fn_value(fn_sym, fn_val, fn_ty, -1, 0, args, 2, "with_str_cmp_ref", 0)
         let zero = wl_const_int(wl_i32_type(self.context), 0, 0)
         if op == BinaryOp.OP_LT:
             return wl_build_icmp(self.builder, wl_int_slt(), cmp, zero)
@@ -4262,7 +4276,7 @@ impl Codegen:
                 self.generic_struct_methods.insert(name_sym, fn_node)
                 return
 
-        if (flags / FnFlags.GEN) % 2 == 1:
+        if (flags / BOOT_FN_GEN) % 2 == 1:
             let sig_idx = self.sema.get_sig(name_sym)
             if sig_idx >= 0:
                 self.declare_function_from_sig(name_sym, sig_idx, 0)
@@ -4366,8 +4380,10 @@ impl Codegen:
                 pi = pi + 1
                 continue
 
-            // Reference params
-            if p_kind == NodeKind.NK_TYPE_REF:
+            // Reference params. The finalized Sema signature is canonical; the
+            // AST check is only for declarations that have no signature yet.
+            if (sema_sig_idx >= 0 and self.sig_param_is_explicit_ref(sema_sig_idx, pi)) or
+               (sema_sig_idx < 0 and p_kind == NodeKind.NK_TYPE_REF):
                 var ref_ty = self.resolve_type(p_type_node)
                 if ref_ty == 0:
                     ref_ty = wl_ptr_type(self.context)
@@ -4459,14 +4475,14 @@ impl Codegen:
                     byval_types.push(0)
                     direct_types.push(0)
         let actual_param_count = actual_param_types.len() as i32
-        let is_variadic = (flags / FnFlags.VARIADIC) % 2
+        let is_variadic = (flags / BOOT_FN_VARIADIC) % 2
         let fn_type = wl_function_type(actual_ret_ty, vec_data_i64(&actual_param_types), actual_param_count, is_variadic)
 
         // Use "main" for @[entry] functions
         var effective_name = if sema_name_str.len() > 0: sema_name_str else: self.function_symbol_name(name_sym)
         if parsed_name.len() > 0:
             effective_name = parsed_name
-        if (flags / FnFlags.ENTRY) % 2 == 1:
+        if (flags / BOOT_FN_ENTRY) % 2 == 1:
             effective_name = "main"
         else if self.module_object_mode != 0:
             if not codegen_preserve_runtime_link_name(self.current_decl_source_file, effective_name) and
@@ -4515,9 +4531,9 @@ impl Codegen:
                     wl_set_call_conv(function, cc_id)
 
         // Apply attributes
-        if (flags / FnFlags.INLINE) % 2 == 1:
+        if (flags / BOOT_FN_INLINE) % 2 == 1:
             wl_add_fn_attr(self.context, function, "alwaysinline")
-        if (flags / FnFlags.NOINLINE) % 2 == 1:
+        if (flags / BOOT_FN_NOINLINE) % 2 == 1:
             wl_add_fn_attr(self.context, function, "noinline")
 
         if has_sret != 0 or byval_mask != 0 or direct_mask != 0 or direct_ret_ty != 0:
@@ -4563,6 +4579,15 @@ impl Codegen:
             p_ty = wl_i32_type(self.context)
         p_ty
 
+    fn sig_param_is_explicit_ref(sig_idx: i32, pi: i32) -> bool:
+        if sig_idx < 0 or pi < 0 or pi >= self.sema.sig_get_param_count(sig_idx):
+            return false
+        let ty = self.sema.sig_param_type(sig_idx, pi)
+        if ty <= 0:
+            return false
+        let resolved = self.sema.resolve_alias(ty as TypeId) as i32
+        self.sema.get_type_kind(resolved) == TypeKind.TY_REF
+
     mut fn arg_pass_mode(sig_idx: i32, pi: i32) -> i32:
         if self.sema.sig_param_uses_value_ref_abi(sig_idx, pi) != 0:
             return PM_INDIRECT_PLACE
@@ -4594,8 +4619,10 @@ impl Codegen:
             var p_ty = self.abi_param_source_type(sig_idx, pi)
             // #D6: the prologue reads the single ABI classifier — an IndirectPlace
             // param is a pointer to the caller's place (value_ref_abi / share-place).
-            if self.arg_pass_mode(sig_idx, pi) == PM_INDIRECT_PLACE:
+            let pass_mode = self.arg_pass_mode(sig_idx, pi)
+            if pass_mode == PM_INDIRECT_PLACE:
                 p_ty = wl_ptr_type(self.context)
+            if pass_mode == PM_INDIRECT_PLACE or self.sig_param_is_explicit_ref(sig_idx, pi):
                 self.record_ref_param(cg_sym, pi, param_count)
                 if cg_sym != fn_sym:
                     self.record_ref_param(fn_sym, pi, param_count)
@@ -5105,6 +5132,7 @@ impl Codegen:
         let ret_type_node = self.pool.fn_meta_ret(meta)
         let param_start = self.pool.fn_meta_param_start(meta)
         let param_count = self.pool.fn_meta_param_count(meta)
+        let sema_sig_idx = self.sema.get_sig(name_sym)
 
         let ret_ty = self.resolve_type(ret_type_node)
         let name_str = self.intern.resolve(name_sym)
@@ -5116,6 +5144,9 @@ impl Codegen:
         for pi in 0..param_count:
             let p_type_node = self.pool.fn_param_type(param_start, pi)
             orig_param_types.push(self.resolve_type(p_type_node))
+            if (sema_sig_idx >= 0 and self.sig_param_is_explicit_ref(sema_sig_idx, pi)) or
+               (sema_sig_idx < 0 and self.pool.kind(p_type_node) == NodeKind.NK_TYPE_REF):
+                self.record_ref_param(name_sym, pi, param_count)
 
         // ABI transformation for C interop on aarch64:
         // - Struct params > 16 bytes → ptr (caller passes pointer to copy)
@@ -6054,7 +6085,7 @@ impl Codegen:
                     self.declare_function_at(decl, i)
                 else if is_sema_generic:
                     continue
-                else if (flags / FnFlags.ASYNC) % 2 == 1:
+                else if (flags / BOOT_FN_ASYNC) % 2 == 1:
                     self.declare_async_function(decl)
                 else:
                     self.declare_function_at(decl, i)

@@ -1976,7 +1976,7 @@ fn ci_strip_struct_prefix(fn_name: &str, struct_name: &str) -> str:
 // Emit a method wrapper: fn StructName.method(self: *mut Struct, ...) -> Ret: fn_name(self, ...)
 fn ci_emit_member_fn_wrapper(session: i64, idx: i32, struct_name: &str, method_name: &str, first_param_type: &str) -> str:
     let fn_name = with_cimport_decl_name(session, idx)
-    let safe_fn_name = ci_escape_reserved(fn_name)
+    let safe_fn_name = ci_migrate_c_function_name(fn_name)
     let safe_struct = ci_escape_reserved(struct_name)
     let safe_method = ci_escape_reserved(method_name)
     let param_count = with_cimport_fn_param_count(session, idx)
@@ -2032,7 +2032,7 @@ fn ci_emit_member_fn_wrapper(session: i64, idx: i32, struct_name: &str, method_n
 // Emit a constructor wrapper: fn StructName.new(params...) -> Ret: fn_name(params...)
 fn ci_emit_constructor_wrapper(session: i64, idx: i32, struct_name: &str, method_name: &str) -> str:
     let fn_name = with_cimport_decl_name(session, idx)
-    let safe_fn_name = ci_escape_reserved(fn_name)
+    let safe_fn_name = ci_migrate_c_function_name(fn_name)
     let safe_struct = ci_escape_reserved(struct_name)
     let safe_method = ci_escape_reserved(method_name)
     let param_count = with_cimport_fn_param_count(session, idx)
@@ -8188,9 +8188,18 @@ impl CiExprPool:
                 if self.kind(value_id) != CiExprKind.CIE_CAST:
                     return self.cast(target_ty_id, value_id)
             return self.cast_if_needed(target_ty_id, value_id, value_cursor, session, types)
-        // Skip if already coerced
-        if self.kind(value_id) == CiExprKind.CIE_ARRAY_DECAY or self.kind(value_id) == CiExprKind.CIE_CAST:
+        // Skip if already coerced — but a cast whose target differs from the
+        // pointer type this position expects still needs the final hop. C
+        // converts freely at the call boundary (`const with_vec*` passed to a
+        // `with_vec *` param drops const with at most a warning); With needs
+        // the cast spelled (#740 census class 2, with_vec_get_ptr & co).
+        if self.kind(value_id) == CiExprKind.CIE_ARRAY_DECAY:
             return value_id
+        if self.kind(value_id) == CiExprKind.CIE_CAST:
+            let cast_ty = self.get_type(value_id)
+            if (cast_ty as i32) == 0 or ci_print_type(types, cast_ty) == ci_print_type(types, target_ty_id):
+                return value_id
+            return self.cast(target_ty_id, value_id)
         let peeled = ci_peel_transparent(session, value_cursor)
         if with_ci_cursor_kind(session, peeled) == CXK_STRING_LITERAL and self.kind(value_id) == CiExprKind.CIE_STRING_LIT and ci_cimport_type_is_const_c_string_input(ci_print_type(types, target_ty_id)):
             let lit_text = self.get_string(self.get_d0(value_id))
@@ -8238,7 +8247,7 @@ fn ci_fn_decl_index_ensure(session: i64):
         if with_cimport_decl_kind(session, i) == CK_FUNCTION:
             let raw_name = with_cimport_decl_name(session, i)
             if raw_name.len() > 0:
-                let escaped = ci_escape_reserved(raw_name)
+                let escaped = ci_migrate_c_function_name(raw_name)
                 if not by_raw.contains(raw_name):
                     by_raw.insert(ci_ir_owned_text(raw_name), i)
                 if not by_escaped.contains(escaped):
@@ -8502,7 +8511,9 @@ impl CiExprPool:
 
         if kind == CXK_DECL_REF:
             let name = with_ci_cursor_spelling(session, cursor)
-            let escaped = ci_escape_reserved(name)
+            let ordinary_name = ci_escape_reserved(name)
+            let function_name = ci_migrate_c_function_name(name)
+            let escaped = if not ci_scope_contains(scope, ordinary_name) and ci_lookup_c_function_decl_idx(session, function_name) >= 0: function_name else: ordinary_name
             let mangled = ci_scope_lookup(scope, escaped)
             if mangled.len() == 0 and not ci_has_value_libc_call_mapping(name):
                 if ci_libc_symbol_allowed_as(name, CI_LIBC_KIND_FN):
@@ -9155,6 +9166,60 @@ impl CiExprPool:
             return self.cast_if_needed(dest_ty, inner_id, inner_cursor, session, types)
         inner_id
 
+    fn overflow_builtin_canonical_type(ty_id: CiTypeId, types: CiTypePool):
+        if (ty_id as i32) == 0:
+            return ""
+        let name = ci_print_type(types, ty_id)
+        if name == "c_char" or name == "i8": return "i8"
+        if name == "u8": return "u8"
+        if name == "c_short" or name == "i16": return "i16"
+        if name == "c_ushort" or name == "u16": return "u16"
+        if name == "c_int" or name == "i32": return "i32"
+        if name == "c_uint" or name == "u32": return "u32"
+        if name == "c_long" or name == "c_longlong" or name == "i64": return "i64"
+        if name == "c_ulong" or name == "c_ulonglong" or name == "u64": return "u64"
+        if name == "i128": return "i128"
+        if name == "u128": return "u128"
+        ""
+
+    fn reject_builtin_call(session: i64, cursor: i32, callee_text: &str, reason: &str):
+        if g_ci_bail_message.len() == 0:
+            g_ci_bail_location = with_ci_cursor_location(session, cursor)
+            g_ci_bail_kind = with_ci_cursor_kind(session, cursor)
+            g_ci_bail_message = "unsupported compiler builtin '" ++ callee_text ++ "': " ++ reason
+        0 as CiExprId
+
+    fn build_overflow_builtin_call(session: i64, cursor: i32, callee_text: &str, arg_ids: &Vec[i32], types: CiTypePool) -> CiExprId:
+        if arg_ids.len() != 3:
+            return self.reject_builtin_call(session, cursor, callee_text, "expected three arguments")
+        let first_arg = with_ci_num_children(session, cursor) - arg_ids.len() as i32
+        if first_arg < 0:
+            return self.reject_builtin_call(session, cursor, callee_text, "could not locate the argument cursors")
+        let lhs_cursor = with_ci_child(session, cursor, first_arg)
+        let rhs_cursor = with_ci_child(session, cursor, first_arg + 1)
+        let out_cursor = with_ci_child(session, cursor, first_arg + 2)
+        let lhs_cursor_ty = types.type_from_libclang(session, with_ci_cursor_type(session, lhs_cursor))
+        let rhs_cursor_ty = types.type_from_libclang(session, with_ci_cursor_type(session, rhs_cursor))
+        let out_ptr_ty = types.pointer_type_from_libclang_or_canonical(session, with_ci_cursor_type(session, out_cursor))
+        if (out_ptr_ty as i32) == 0 or types.kind(out_ptr_ty) != CiTypeKind.CT_POINTER or types.get_d1(out_ptr_ty) != 0:
+            return self.reject_builtin_call(session, cursor, callee_text, "result argument is not a mutable pointer")
+        let out_ty = self.overflow_builtin_canonical_type((types.get_d0(out_ptr_ty)) as CiTypeId, types)
+        let lhs_ty = self.overflow_builtin_canonical_type(lhs_cursor_ty, types)
+        let rhs_ty = self.overflow_builtin_canonical_type(rhs_cursor_ty, types)
+        if out_ty.len() == 0 or lhs_ty != out_ty or rhs_ty != out_ty:
+            return self.reject_builtin_call(session, cursor, callee_text, "operand and result types must be the same supported integer type")
+        let op = if callee_text == "__builtin_add_overflow": "add" else if callee_text == "__builtin_sub_overflow": "sub" else: "mul"
+        let canonical_ty = types.named_type_from_text(out_ty)
+        if (canonical_ty as i32) == 0:
+            return self.reject_builtin_call(session, cursor, callee_text, "could not materialize the integer type")
+        let canonical_ptr_ty = types.ty_pointer(canonical_ty, 0)
+        let args: Vec[i32] = Vec.new()
+        args.push(self.cast(canonical_ty, (arg_ids.get(0)) as CiExprId) as i32)
+        args.push(self.cast(canonical_ty, (arg_ids.get(1)) as CiExprId) as i32)
+        args.push(self.cast(canonical_ptr_ty, (arg_ids.get(2)) as CiExprId) as i32)
+        let call = self.build_named_call_expr("__with_builtin_" ++ op ++ "_overflow_" ++ out_ty, &args)
+        self.unsafe_expr(call)
+
     fn build_libc_call_value_expr(session: i64, cursor: i32, callee_text: &str, arg_ids: &Vec[i32], types: CiTypePool) -> CiExprId:
         let renamed = ci_libc_simple_rename(callee_text)
         if renamed.len() > 0:
@@ -9178,7 +9243,7 @@ impl CiExprPool:
                 call_id = self.unsafe_expr(call_id)
             let void_ptr_ty = types.ty_pointer(c_void_ty, 0)
             return self.cast(void_ptr_ty, call_id)
-        if callee_text == "free":
+        if callee_text == "free" or callee_text == "with_free":
             if arg_ids.len() != 1:
                 return 0 as CiExprId
             let i8_ty = types.named_type_from_text("i8")
@@ -9236,15 +9301,15 @@ impl CiExprPool:
             return self.cast(void_ptr_ty, call_id)
         let i64_ty = types.named_type_from_text("i64")
         let i8_ptr_ty = types.named_type_from_text("*i8")
-        if callee_text == "memcpy" or callee_text == "memmove":
+        if callee_text == "memcpy" or callee_text == "memmove" or callee_text == "with_memcpy" or callee_text == "with_memmove":
             if arg_ids.len() != 3 or (i64_ty as i32) == 0 or (i8_ptr_ty as i32) == 0:
                 return 0 as CiExprId
             let cast_args: Vec[i32] = Vec.new()
             cast_args.push((self.cast(i8_ptr_ty, (arg_ids.get(0)) as CiExprId)) as i32)
             cast_args.push((self.cast(i8_ptr_ty, (arg_ids.get(1)) as CiExprId)) as i32)
             cast_args.push((self.cast(i64_ty, (arg_ids.get(2)) as CiExprId)) as i32)
-            return self.build_named_call_expr(if callee_text == "memcpy": "with_memcpy" else: "with_memmove", &cast_args)
-        if callee_text == "memset":
+            return self.build_named_call_expr(if callee_text == "memcpy" or callee_text == "with_memcpy": "with_memcpy" else: "with_memmove", &cast_args)
+        if callee_text == "memset" or callee_text == "with_memset":
             if arg_ids.len() != 3 or (i64_ty as i32) == 0 or (i8_ptr_ty as i32) == 0:
                 return 0 as CiExprId
             let cast_args: Vec[i32] = Vec.new()
@@ -9252,7 +9317,7 @@ impl CiExprPool:
             cast_args.push(arg_ids.get(1))
             cast_args.push((self.cast(i64_ty, (arg_ids.get(2)) as CiExprId)) as i32)
             return self.build_named_call_expr("with_memset", &cast_args)
-        if callee_text == "memcmp":
+        if callee_text == "memcmp" or callee_text == "with_memcmp":
             if arg_ids.len() != 3 or (i64_ty as i32) == 0 or (i8_ptr_ty as i32) == 0:
                 return 0 as CiExprId
             let cast_args: Vec[i32] = Vec.new()
@@ -9329,9 +9394,10 @@ impl CiExprPool:
             return self.int_lit(zero_idx, 0 as CiTypeId)
         if callee_text == "__builtin_offsetof":
             return self.lower_offsetof_value_expr(session, cursor)
+        if callee_text == "__builtin_add_overflow" or callee_text == "__builtin_sub_overflow" or callee_text == "__builtin_mul_overflow":
+            return self.build_overflow_builtin_call(session, cursor, callee_text, arg_ids, types)
         if ci_starts_with(callee_text, "__builtin"):
-            let zero_idx = self.add_string("0")
-            return self.int_lit(zero_idx, 0 as CiTypeId)
+            return self.reject_builtin_call(session, cursor, callee_text, "no structural lowering")
         0 as CiExprId
 
 impl CiStmtPool:
@@ -9794,18 +9860,18 @@ impl CiStmtPool:
                 let source_callee = ci_call_name_from_source_text(with_ci_cursor_source_text(session, cursor))
                 let cursor_callee = ci_call_callee_name(session, with_ci_child(session, cursor, 0))
                 if source_callee.len() > 0 and source_callee == cursor_callee and not ci_is_c_ident(callee_text):
-                    let callee_idx = exprs.add_string(ci_escape_reserved(source_callee))
+                    let callee_idx = exprs.add_string(ci_migrate_c_function_name(source_callee))
                     callee = ci_value_ir_plain(exprs.ident(callee_idx, 0 as CiTypeId))
-                    callee_text = ci_escape_reserved(source_callee)
+                    callee_text = ci_migrate_c_function_name(source_callee)
                     setup = 0 as CiStmtId
                     first_arg = 0
             else:
                 let callee_name = ci_call_name_from_source_text(with_ci_cursor_source_text(session, cursor))
                 if callee_name.len() == 0:
                     return ci_value_ir_invalid()
-                let callee_idx = exprs.add_string(ci_escape_reserved(callee_name))
+                let callee_idx = exprs.add_string(ci_migrate_c_function_name(callee_name))
                 callee = ci_value_ir_plain(exprs.ident(callee_idx, 0 as CiTypeId))
-                callee_text = ci_escape_reserved(callee_name)
+                callee_text = ci_migrate_c_function_name(callee_name)
                 first_arg = 0
             if callee_text == "cfprintf":
                 return ci_value_ir_invalid()
@@ -12037,6 +12103,30 @@ fn ci_strip_c_comments(s: &str) -> str:
         parts.push(s.slice(segment_start as i64, slen as i64))
     parts.join("")
 
+fn ci_has_c_comment_outside_literal(s: &str) -> bool:
+    var i = 0
+    let slen = s.len() as i32
+    while i < slen:
+        let c = s.byte_at(i as i64)
+        if c == 34 or c == 39:
+            let quote = c
+            i = i + 1
+            while i < slen:
+                let inner = s.byte_at(i as i64)
+                if inner == 92:
+                    i = i + 2
+                    continue
+                i = i + 1
+                if inner == quote:
+                    break
+            continue
+        if c == 47 and i + 1 < slen:
+            let next = s.byte_at((i + 1) as i64)
+            if next == 42 or next == 47:
+                return true
+        i = i + 1
+    false
+
 fn ci_find_string_literal_end(s: &str, start: i32) -> i32:
     let slen = s.len() as i32
     var i = start
@@ -13416,7 +13506,20 @@ fn ci_expr_has_unresolved_string_macro(s: &str) -> bool:
     var i = 0
     let slen = s.len() as i32
     while i < slen:
-        if ci_is_ident_start(s.byte_at(i as i64)):
+        let c = s.byte_at(i as i64)
+        if c == 34 or c == 39:
+            let quote = c
+            i = i + 1
+            while i < slen:
+                let inner = s.byte_at(i as i64)
+                if inner == 92:
+                    i = i + 2
+                    continue
+                i = i + 1
+                if inner == quote:
+                    break
+            continue
+        if ci_is_ident_start(c):
             var end = i + 1
             while end < slen and ci_is_ident_char(s.byte_at(end as i64)):
                 end = end + 1
@@ -13432,7 +13535,7 @@ fn ci_var_init_translation_is_valid(vty_str: &str, init_expr: &str) -> bool:
     let trimmed = ci_trim(init_expr)
     if trimmed.len() == 0:
         return false
-    if ci_str_contains(trimmed, "/*") or ci_str_contains(trimmed, "*/") or ci_str_contains(trimmed, "//"):
+    if ci_has_c_comment_outside_literal(trimmed):
         return false
     if ci_expr_has_unresolved_string_macro(trimmed):
         return false
@@ -14952,6 +15055,11 @@ impl CiStmtPool:
             ids.push(self.block_labeled(start, block_ids.len() as i32, labels.get(block as i64)) as i32)
             block = block + 1
 
+        // Every reachable CFG block above has a terminator. The flat label
+        // syntax cannot prove that a final back-edge is non-fallthrough, so
+        // close the impossible textual end explicitly. Without this sentinel,
+        // non-Unit cyclic functions are diagnosed as needing Default (#740).
+        ids.push(self.native_goto_unreachable_stmt(exprs) as i32)
         self.from_flat_ids(&ids)
 
 impl CiGotoCfgContext:
@@ -15347,6 +15455,7 @@ fn ci_libc_symbol_kind_mask(name: &str) -> i32:
     if name == "tolower" or name == "toupper": return CI_LIBC_KIND_FN
     if ci_is_libm_fn(name): return CI_LIBC_KIND_FN
     if name == "abort" or name == "exit" or name == "clock" or name == "time" or name == "isatty": return CI_LIBC_KIND_FN
+    if name == "mkstemp" or name == "realpath": return CI_LIBC_KIND_FN
     if name == "open" or name == "read" or name == "write" or name == "close": return CI_LIBC_KIND_FN
     if name == "lseek" or name == "unlink": return CI_LIBC_KIND_FN
     if name == "fcntl": return CI_LIBC_KIND_FN
@@ -15409,6 +15518,16 @@ fn ci_note_filtered_system_symbol_ref_at(session: i64, cursor: i32, name: &str, 
 
 // Check if a declaration name is from a system header (not the user's code).
 // This filters out the noise from stdlib.h, string.h, ctype.h, etc.
+fn ci_is_wait_status_macro_name(name: &str) -> bool:
+    let len = name.len() as i32
+    if len < 2 or len > 12 or name.byte_at(0) != 87:
+        return false
+    for i in 1..len:
+        let ch = name.byte_at(i as i64)
+        if not ((ch >= 65 and ch <= 90) or (ch >= 48 and ch <= 57) or ch == 95):
+            return false
+    true
+
 fn ci_is_system_decl(name: &str) -> bool:
     if name.len() == 0: return true
     // Symbols emitted by With's C backend intentionally use reserved C
@@ -15457,7 +15576,7 @@ fn ci_is_system_decl(name: &str) -> bool:
     if ci_starts_with(name, "MINSIGSTKSZ") or ci_starts_with(name, "NSIG"): return true
     if ci_starts_with(name, "P_ALL") or ci_starts_with(name, "P_PID") or ci_starts_with(name, "P_PGID"): return true
     if ci_starts_with(name, "CAST_") or ci_starts_with(name, "MACH_"): return true
-    if ci_starts_with(name, "W") and name.len() <= 12: return true  // WEXITSTATUS, WIFEXITED, etc.
+    if ci_is_wait_status_macro_name(name): return true  // WEXITSTATUS, WIFEXITED, etc.
     // __builtin functions
     if ci_starts_with(name, "__builtin"): return true
     // System types from sys/ headers
@@ -15503,6 +15622,12 @@ fn ci_has_value_libc_call_mapping(callee: &str) -> bool:
     if callee == "malloc" or callee == "free" or callee == "calloc" or callee == "realloc":
         return true
     if callee == "memcpy" or callee == "memmove" or callee == "memset" or callee == "memcmp" or callee == "memchr":
+        return true
+    // emit-C names the runtime memory entry points directly. Migrate skips
+    // their C `void*` prototypes because its fixed preamble is the canonical
+    // flat-namespace declaration, so direct calls need the same structural
+    // `*i8` normalization as their libc spellings (#740).
+    if callee == "with_free" or callee == "with_memcpy" or callee == "with_memmove" or callee == "with_memset" or callee == "with_memcmp":
         return true
     if ci_starts_with(callee, "__builtin"):
         return true

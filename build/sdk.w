@@ -4,6 +4,7 @@ use std.build
 use std.string.StringBuilder
 use std.sysinfo
 use build.compiler
+fn sdk_owned_text(s: &str): s ++ ""
 
 const SDK_NINJA_VERSION: str = "1.13.1"
 const SDK_NINJA_SHA256: str = "f0055ad0369bf2e372955ba55128d000cfcc21777057806015b45e4accbebf23"
@@ -11,20 +12,20 @@ const SDK_CMAKE_VERSION: str = "4.2.3"
 const SDK_CMAKE_SHA256: str = "7efaccde8c5a6b2968bad6ce0fe60e19b6e10701a12fce948c2bf79bac8a11e9"
 const SDK_LLVM_TAG_TAR_GZ_SHA256: str = "ba534c6835a5b9c2162c806e269799fe41fca952a3c25baff1afcff23841ec2b"
 
-fn sdk_fail(ctx: &ActionCtx, message: str) -> i32:
+fn sdk_fail(ctx: &ActionCtx, message: &str) -> i32:
     ctx.diagnostics().error(ctx.target_name() ++ ": " ++ message)
     1
 
-fn sdk_join(left: str, right: str) -> str:
+fn sdk_join(left: &str, right: &str) -> str:
     if left.len() == 0:
-        return right
+        return sdk_owned_text(right)
     if right.len() == 0:
-        return left
+        return sdk_owned_text(left)
     if left.ends_with("/") or left.ends_with("\\"):
         return left ++ right
     left ++ "/" ++ right
 
-fn sdk_dirname(path: str) -> str:
+fn sdk_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         let ch = path.byte_at(i as i64)
@@ -36,7 +37,7 @@ fn sdk_dirname(path: str) -> str:
         return "/"
     path.slice(0, last_slash as i64)
 
-fn sdk_is_abs(path: str) -> bool:
+fn sdk_is_abs(path: &str) -> bool:
     if path.len() == 0:
         return false
     if path.byte_at(0) == 47 or path.byte_at(0) == 92:
@@ -49,12 +50,12 @@ fn sdk_is_abs(path: str) -> bool:
             return (drive >= 65 and drive <= 90) or (drive >= 97 and drive <= 122)
     false
 
-fn sdk_abs(root: str, path: str) -> str:
+fn sdk_abs(root: &str, path: &str) -> str:
     if sdk_is_abs(path):
-        return path
+        return sdk_owned_text(path)
     sdk_join(root, path)
 
-fn sdk_normalize(path: str) -> str:
+fn sdk_normalize(path: &str) -> str:
     var out = StringBuilder.with_capacity(path.len())
     for i in 0..path.len() as i32:
         let ch = path.byte_at(i as i64)
@@ -64,7 +65,7 @@ fn sdk_normalize(path: str) -> str:
             out.push_byte(ch as u8)
     out.to_str()
 
-fn sdk_basename(path: str) -> str:
+fn sdk_basename(path: &str) -> str:
     var last_slash: i64 = -1
     for i in 0..path.len() as i32:
         let ch = path.byte_at(i as i64)
@@ -72,9 +73,9 @@ fn sdk_basename(path: str) -> str:
             last_slash = i as i64
     if last_slash >= 0:
         return path.slice(last_slash + 1, path.len())
-    path
+    sdk_owned_text(path)
 
-fn sdk_rel_path(root: str, path: str) -> str:
+fn sdk_rel_path(root: &str, path: &str) -> str:
     let nr = sdk_normalize(root)
     let np = sdk_normalize(path)
     let prefix = if nr.ends_with("/"): nr else: nr ++ "/"
@@ -82,7 +83,7 @@ fn sdk_rel_path(root: str, path: str) -> str:
         return np.slice(prefix.len(), np.len())
     ""
 
-fn sdk_has_slash(text: str) -> bool:
+fn sdk_has_slash(text: &str) -> bool:
     text.find("/") >= 0 or text.find("\\") >= 0
 
 fn sdk_exe_suffix() -> str:
@@ -90,10 +91,10 @@ fn sdk_exe_suffix() -> str:
         return ".exe"
     ""
 
-fn sdk_exe_name(name: str) -> str:
+fn sdk_exe_name(name: &str) -> str:
     if os() == "Windows" and not name.ends_with(".exe"):
         return name ++ ".exe"
-    name
+    sdk_owned_text(name)
 
 pub fn sdk_current_platform() -> str:
     if os() == "Macos" and (arch() == "armv8" or arch() == "aarch64"):
@@ -104,7 +105,7 @@ pub fn sdk_current_platform() -> str:
         return "windows-x86_64"
     ""
 
-pub fn sdk_host_tag_for_platform(platform: str) -> str:
+pub fn sdk_host_tag_for_platform(platform: &str) -> str:
     if platform == "darwin-aarch64":
         return "darwin-arm64"
     if platform == "linux-x86_64":
@@ -113,22 +114,22 @@ pub fn sdk_host_tag_for_platform(platform: str) -> str:
         return "windows-x86_64-msvc"
     "unsupported"
 
-pub fn sdk_default_prefix_for_platform(platform: str) -> str:
+pub fn sdk_default_prefix_for_platform(platform: &str) -> str:
     ".deps/llvm-" ++ compiler_llvm_version() ++ "-" ++ sdk_host_tag_for_platform(platform)
 
-pub fn sdk_default_build_cache_for_platform(platform: str) -> str:
+pub fn sdk_default_build_cache_for_platform(platform: &str) -> str:
     ".deps/build/llvm-" ++ compiler_llvm_version() ++ "-" ++ sdk_host_tag_for_platform(platform) ++ "/CMakeCache.txt"
 
-pub fn sdk_asset_for_platform(platform: str) -> str:
+pub fn sdk_asset_for_platform(platform: &str) -> str:
     "with-llvm-sdk-" ++ compiler_llvm_version() ++ "-" ++ platform ++ ".tar.gz"
 
-pub fn sdk_output_prefix_for_platform(platform: str) -> str:
+pub fn sdk_output_prefix_for_platform(platform: &str) -> str:
     "out/sdk/" ++ sdk_host_tag_for_platform(platform) ++ "/install/llvm-" ++ compiler_llvm_version() ++ "-" ++ sdk_host_tag_for_platform(platform)
 
-pub fn sdk_output_build_root_for_platform(platform: str) -> str:
+pub fn sdk_output_build_root_for_platform(platform: &str) -> str:
     "out/sdk/" ++ sdk_host_tag_for_platform(platform) ++ "/build"
 
-pub fn sdk_output_llvm_cache_for_platform(platform: str) -> str:
+pub fn sdk_output_llvm_cache_for_platform(platform: &str) -> str:
     sdk_output_build_root_for_platform(platform) ++ "/llvm-" ++ compiler_llvm_version() ++ "-" ++ sdk_host_tag_for_platform(platform) ++ "/CMakeCache.txt"
 
 pub fn sdk_source_root() -> str:
@@ -179,7 +180,7 @@ pub fn sdk_llvm_source_url() -> str:
 pub fn sdk_llvm_source_sha256() -> str:
     SDK_LLVM_TAG_TAR_GZ_SHA256
 
-fn sdk_str_compare(a: str, b: str) -> i32:
+fn sdk_str_compare(a: &str, b: &str) -> i32:
     let n = if a.len() < b.len(): a.len() else: b.len()
     var i = 0
     while i < n as i32:
@@ -203,53 +204,53 @@ fn sdk_sort_strings(items: Vec[str]) -> Vec[str]:
         for j in 0..sorted.len() as i32:
             let existing = sorted.get(j as i64)
             if not inserted and sdk_str_compare(item, existing) < 0:
-                out.push(item)
+                out.push(sdk_owned_text(item))
                 inserted = true
-            out.push(existing)
+            out.push(sdk_owned_text(existing))
         if not inserted:
-            out.push(item)
+            out.push(sdk_owned_text(item))
         sorted = out
     sorted
 
-fn sdk_add_unique(items: Vec[str], item: str) -> Vec[str]:
+fn sdk_add_unique(items: Vec[str], item: &str) -> Vec[str]:
     var out = items
     for i in 0..out.len() as i32:
         if out.get(i as i64) == item:
             return out
-    out.push(item)
+    out.push(sdk_owned_text(item))
     out
 
-fn sdk_add_parent_dirs(dirs: Vec[str], top_dir: str, rel_path: str) -> Vec[str]:
+fn sdk_add_parent_dirs(dirs: Vec[str], top_dir: &str, rel_path: &str) -> Vec[str]:
     var out = sdk_add_unique(move dirs, top_dir)
     for i in 0..rel_path.len() as i32:
         if rel_path.byte_at(i as i64) == 47:
             out = sdk_add_unique(move out, top_dir ++ "/" ++ rel_path.slice(0, i as i64))
     out
 
-fn sdk_file_exists(fs: &ToolFs, path: str) -> bool:
+fn sdk_file_exists(fs: &ToolFs, path: &str) -> bool:
     fs.exists(path)
 
-fn sdk_required_tool(prefix: str, name: str) -> str:
+fn sdk_required_tool(prefix: &str, name: &str) -> str:
     sdk_join(prefix, "bin/" ++ sdk_exe_name(name))
 
-fn sdk_tool(prefix: str, name: str) -> str:
+fn sdk_tool(prefix: &str, name: &str) -> str:
     sdk_join(prefix, "bin/" ++ sdk_exe_name(name))
 
-fn sdk_check_file(ctx: &ActionCtx, path: str, label: str) -> i32:
+fn sdk_check_file(ctx: &ActionCtx, path: &str, label: &str) -> i32:
     let fs = ctx.fs()
     if not sdk_file_exists(fs, path):
         return sdk_fail(ctx, "missing " ++ label ++ ": " ++ path)
     0
 
-fn sdk_cache_line(cache: str, key: str) -> str:
+fn sdk_cache_line(cache: &str, key: &str) -> str:
     let lines = sdk_split_lines(cache)
     for i in 0..lines.len() as i32:
         let line = lines.get(i as i64)
         if line.starts_with(key):
-            return line
+            return sdk_owned_text(line)
     ""
 
-fn sdk_split_lines(text: str) -> Vec[str]:
+fn sdk_split_lines(text: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     var start = 0
     for i in 0..text.len() as i32:
@@ -260,7 +261,7 @@ fn sdk_split_lines(text: str) -> Vec[str]:
         out.push(text.slice(start as i64, text.len()))
     out
 
-fn sdk_validate_cache(ctx: &ActionCtx, platform: str, cache_path: str) -> i32:
+fn sdk_validate_cache(ctx: &ActionCtx, platform: &str, cache_path: &str) -> i32:
     let fs = ctx.fs()
     if not fs.exists(cache_path):
         return sdk_fail(ctx, "missing SDK build cache: " ++ cache_path)
@@ -280,7 +281,7 @@ fn sdk_validate_cache(ctx: &ActionCtx, platform: str, cache_path: str) -> i32:
         return sdk_fail(ctx, "refusing to package SDK not built with clang++; CMAKE_CXX_COMPILER=" ++ cxx)
     0
 
-fn sdk_validate_package_prefix(ctx: &ActionCtx, platform: str, prefix: str, build_cache: str) -> i32:
+fn sdk_validate_package_prefix(ctx: &ActionCtx, platform: &str, prefix: &str, build_cache: &str) -> i32:
     if sdk_is_abs(prefix) or sdk_is_abs(build_cache):
         return sdk_fail(ctx, "SDK package inputs must be project-relative graph paths, got prefix=" ++ prefix ++ " cache=" ++ build_cache)
     let current = sdk_current_platform()
@@ -332,7 +333,7 @@ fn sdk_validate_package_prefix(ctx: &ActionCtx, platform: str, prefix: str, buil
         return sdk_fail(ctx, "clang builtin header tree is missing include/stddef.h")
     0
 
-fn sdk_package_has_builtin_stddef(fs: &ToolFs, prefix: str) -> bool:
+fn sdk_package_has_builtin_stddef(fs: &ToolFs, prefix: &str) -> bool:
     let files = fs.list_files(sdk_join(prefix, "lib/clang"))
     for i in 0..files.len() as i32:
         let path = sdk_normalize(files.get(i as i64))
@@ -340,13 +341,13 @@ fn sdk_package_has_builtin_stddef(fs: &ToolFs, prefix: str) -> bool:
             return true
     false
 
-fn sdk_optional_tool_exists(fs: &ToolFs, prefix: str, name: str) -> bool:
+fn sdk_optional_tool_exists(fs: &ToolFs, prefix: &str, name: &str) -> bool:
     fs.exists(sdk_required_tool(prefix, name))
 
-fn sdk_is_unix_lld_alias(rel: str) -> bool:
+fn sdk_is_unix_lld_alias(rel: &str) -> bool:
     rel == "bin/ld.lld" or rel == "bin/ld64.lld" or rel == "bin/lld-link" or rel == "bin/wasm-ld"
 
-fn sdk_select_package_files(fs: &ToolFs, prefix: str, platform: str) -> Vec[str]:
+fn sdk_select_package_files(fs: &ToolFs, prefix: &str, platform: &str) -> Vec[str]:
     let selected: Vec[str] = Vec.new()
     let all = sdk_sort_strings(fs.list_files(prefix))
     for i in 0..all.len() as i32:
@@ -357,21 +358,21 @@ fn sdk_select_package_files(fs: &ToolFs, prefix: str, platform: str) -> Vec[str]
         if platform != "windows-x86_64" and sdk_is_unix_lld_alias(rel):
             continue
         if rel.starts_with("lib/clang/"):
-            selected.push(path)
+            selected.push(sdk_owned_text(path))
         else if rel.starts_with("lib/"):
             let lib_rel = rel.slice(4, rel.len())
             if not sdk_has_slash(lib_rel):
                 if platform == "windows-x86_64":
                     if rel.ends_with(".lib"):
-                        selected.push(path)
+                        selected.push(sdk_owned_text(path))
                 else if rel.ends_with(".a"):
-                    selected.push(path)
+                    selected.push(sdk_owned_text(path))
         else if rel.starts_with("bin/"):
             if sdk_package_tool_selected(rel, platform):
-                selected.push(path)
+                selected.push(sdk_owned_text(path))
     selected
 
-fn sdk_package_tool_selected(rel: str, platform: str) -> bool:
+fn sdk_package_tool_selected(rel: &str, platform: &str) -> bool:
     let tools: Vec[str] = Vec.new()
     if platform == "windows-x86_64":
         tools.push("bin/clang.exe")
@@ -404,12 +405,12 @@ fn sdk_package_tool_selected(rel: str, platform: str) -> bool:
             return true
     false
 
-fn sdk_file_mode(rel: str) -> i32:
+fn sdk_file_mode(rel: &str) -> i32:
     if rel.starts_with("bin/"):
         return 0o755
     0o644
 
-fn sdk_package_entries(ctx: &ActionCtx, prefix: str, sdk_base: str, platform: str) -> Vec[ArchiveEntry]:
+fn sdk_package_entries(ctx: &ActionCtx, prefix: &str, sdk_base: &str, platform: &str) -> Vec[ArchiveEntry]:
     let fs = ctx.fs()
     let files = sdk_select_package_files(fs, prefix, platform)
     var dirs: Vec[str] = Vec.new()
@@ -429,11 +430,11 @@ fn sdk_package_entries(ctx: &ActionCtx, prefix: str, sdk_base: str, platform: st
     dirs = sdk_sort_strings(dirs)
     let entries: Vec[ArchiveEntry] = Vec.new()
     for i in 0..dirs.len() as i32:
-        entries.push(archive_dir_entry(dirs.get(i as i64), 0o755))
+        entries.push(archive_dir_entry(sdk_owned_text(dirs.get(i as i64)), 0o755))
     for i in 0..files.len() as i32:
         let path = files.get(i as i64)
         let rel = sdk_rel_path(prefix, path)
-        entries.push(archive_file_entry(path, sdk_base ++ "/" ++ rel, sdk_file_mode(rel)))
+        entries.push(archive_file_entry(sdk_owned_text(path), sdk_base ++ "/" ++ rel, sdk_file_mode(rel)))
     if platform != "windows-x86_64":
         let aliases: Vec[str] = Vec.new()
         aliases.push("ld.lld")
@@ -446,7 +447,7 @@ fn sdk_package_entries(ctx: &ActionCtx, prefix: str, sdk_base: str, platform: st
                 entries.push(archive_symlink_entry("lld", sdk_base ++ "/bin/" ++ alias, 0o777))
     entries
 
-fn sdk_write_text(ctx: &ActionCtx, path: str, text: str) -> i32:
+fn sdk_write_text(ctx: &ActionCtx, path: &str, text: &str) -> i32:
     let fs = ctx.fs()
     let dir = sdk_dirname(path)
     if dir != "." and fs.mkdir_all(dir) != 0:
@@ -496,13 +497,13 @@ pub fn run_package_llvm_sdk_action(ctx: ActionCtx) -> i32:
         return sdk_write_text(ctx, stamp, "ok\n")
     0
 
-fn sdk_compile_helper(ctx: &ActionCtx, workspace_name: str, source_path: str, output_path: str) -> i32:
+fn sdk_compile_helper(ctx: &ActionCtx, workspace_name: &str, source_path: &str, output_path: &str) -> i32:
     if ctx.fs().mkdir_all(sdk_dirname(output_path)) != 0:
         return sdk_fail(ctx, "could not create helper directory")
     let workspace = ctx.create_workspace(workspace_name)
     workspace.add_file(source_path)
     var options = workspace.options()
-    options.output_path = output_path
+    options.output_path = sdk_owned_text(output_path)
     workspace.set_options(options)
     let result = workspace.compile()
     if result.rc != 0:
@@ -511,7 +512,7 @@ fn sdk_compile_helper(ctx: &ActionCtx, workspace_name: str, source_path: str, ou
         return sdk_fail(ctx, workspace_name ++ " did not produce " ++ output_path)
     0
 
-fn sdk_fetch(ctx: &ActionCtx, scratch: str, label: str, url: str, output_path: str, timeout_ms: i32) -> i32:
+fn sdk_fetch(ctx: &ActionCtx, scratch: &str, label: &str, url: &str, output_path: &str, timeout_ms: i32) -> i32:
     let root = ctx.project_info().project_root()
     let helper = sdk_join(scratch, "https_fetch" ++ sdk_exe_suffix())
     var rc = sdk_compile_helper(ctx, label ++ "-https-fetch-helper", "build/https_fetch.w", helper)
@@ -519,14 +520,14 @@ fn sdk_fetch(ctx: &ActionCtx, scratch: str, label: str, url: str, output_path: s
         return rc
     let argv: Vec[str] = Vec.new()
     argv.push(sdk_abs(root, helper))
-    argv.push(url)
+    argv.push(sdk_owned_text(url))
     argv.push(sdk_abs(root, output_path))
     let result = ctx.process_runner().run_capture(argv, sdk_abs(root, sdk_join(scratch, label ++ ".fetch.stdout")), sdk_abs(root, sdk_join(scratch, label ++ ".fetch.stderr")), timeout_ms)
     if result.rc != 0:
         return sdk_fail(ctx, f"HTTPS fetch helper failed with exit code {result.rc}: " ++ result.stdout ++ result.stderr)
     0
 
-fn sdk_gunzip(ctx: &ActionCtx, scratch: str, archive_path: str, tar_path: str) -> i32:
+fn sdk_gunzip(ctx: &ActionCtx, scratch: &str, archive_path: &str, tar_path: &str) -> i32:
     let root = ctx.project_info().project_root()
     let helper = sdk_join(scratch, "zlib_gunzip" ++ sdk_exe_suffix())
     var rc = sdk_compile_helper(ctx, "sdk-source-gunzip-helper", "build/zlib_gunzip.w", helper)
@@ -581,20 +582,20 @@ pub fn run_sdk_source_tar_gz_action(ctx: ActionCtx) -> i32:
         return sdk_fail(ctx, "source archive did not contain expected directory: " ++ source_dir)
     sdk_write_text(ctx, marker, "ok\n")
 
-fn sdk_jobs_arg(jobs: str) -> Vec[str]:
+fn sdk_jobs_arg(jobs: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     out.push("--parallel")
     if jobs.len() > 0:
         out.push(jobs)
     out
 
-fn sdk_append_jobs(args: Vec[str], jobs: str) -> Vec[str]:
+fn sdk_append_jobs(args: Vec[str], jobs: &str) -> Vec[str]:
     args.push("--parallel")
     if jobs.len() > 0:
-        args.push(jobs)
+        args.push(sdk_owned_text(jobs))
     args
 
-fn sdk_run_capture(ctx: &ActionCtx, label: str, argv: Vec[str], timeout_ms: i32) -> i32:
+fn sdk_run_capture(ctx: &ActionCtx, label: &str, argv: Vec[str], timeout_ms: i32) -> i32:
     let root = ctx.project_info().project_root()
     let command_dir = sdk_join("out/command", ctx.target_name())
     let _mkdir = ctx.fs().mkdir_all(command_dir)
@@ -603,7 +604,7 @@ fn sdk_run_capture(ctx: &ActionCtx, label: str, argv: Vec[str], timeout_ms: i32)
         return sdk_fail(ctx, label ++ f" failed with exit code {result.rc}: " ++ result.stdout ++ result.stderr)
     0
 
-fn sdk_validate_staged_paths(ctx: &ActionCtx, bootstrap_prefix: str, output_prefix: str) -> i32:
+fn sdk_validate_staged_paths(ctx: &ActionCtx, bootstrap_prefix: &str, output_prefix: &str) -> i32:
     if sdk_is_abs(bootstrap_prefix) or sdk_is_abs(output_prefix):
         return sdk_fail(ctx, "SDK build prefixes must be project-relative graph paths")
     if sdk_normalize(bootstrap_prefix) == sdk_normalize(output_prefix):
@@ -636,7 +637,7 @@ pub fn run_sdk_ninja_action(ctx: ActionCtx) -> i32:
     let root = ctx.project_info().project_root()
     let cmake = sdk_abs(root, sdk_tool(bootstrap_prefix, "cmake"))
     let configure: Vec[str] = Vec.new()
-    configure.push(cmake)
+    configure.push(sdk_owned_text(cmake))
     configure.push("-G")
     configure.push("Ninja")
     configure.push("-S")
@@ -691,7 +692,7 @@ pub fn run_sdk_cmake_action(ctx: ActionCtx) -> i32:
     let root = ctx.project_info().project_root()
     let cmake = sdk_abs(root, sdk_tool(bootstrap_prefix, "cmake"))
     let configure: Vec[str] = Vec.new()
-    configure.push(cmake)
+    configure.push(sdk_owned_text(cmake))
     configure.push("-G")
     configure.push("Ninja")
     configure.push("-S")
@@ -726,9 +727,9 @@ pub fn run_sdk_cmake_action(ctx: ActionCtx) -> i32:
         return sdk_fail(ctx, "CMake did not install to " ++ sdk_tool(output_prefix, "cmake"))
     0
 
-fn sdk_llvm_targets_arg(ctx: &ActionCtx, requested: str) -> str:
+fn sdk_llvm_targets_arg(ctx: &ActionCtx, requested: &str) -> str:
     if requested.len() > 0:
-        return requested
+        return sdk_owned_text(requested)
     "AArch64;X86"
 
 pub fn run_sdk_llvm_action(ctx: ActionCtx) -> i32:
@@ -742,7 +743,7 @@ pub fn run_sdk_llvm_action(ctx: ActionCtx) -> i32:
     let jobs = args.get(4)
     let targets = sdk_llvm_targets_arg(ctx, args.get(5))
     let sdkroot = args.get(6)
-    let deployment_target = if args.get(7).len() > 0: args.get(7) else: "11.0"
+    let deployment_target = if args.get(7).len() > 0: sdk_owned_text(args.get(7)) else: "11.0"
     let windows_mt = args.get(8)
     var rc = sdk_validate_staged_paths(ctx, bootstrap_prefix, output_prefix)
     if rc != 0:
@@ -757,7 +758,7 @@ pub fn run_sdk_llvm_action(ctx: ActionCtx) -> i32:
     let root = ctx.project_info().project_root()
     let cmake = sdk_abs(root, sdk_tool(output_prefix, "cmake"))
     let configure: Vec[str] = Vec.new()
-    configure.push(cmake)
+    configure.push(sdk_owned_text(cmake))
     configure.push("-G")
     configure.push("Ninja")
     configure.push("-S")

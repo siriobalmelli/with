@@ -72,17 +72,17 @@ pub fn posix_fd_is_terminal(fd: i32) -> bool:
     isatty(fd) != 0
 
 /// Return an environment variable, or "" when it is not set.
-pub fn env(name: str) -> str:
+pub fn env(name: &str) -> str:
     with_getenv_str(name)
 
 /// Set an environment variable. Returns 0 on success.
-pub fn set_env(name: str, value: str) -> i32:
+pub fn set_env(name: &str, value: &str) -> i32:
     with_setenv_str(name, value)
 
 /// True if the environment variable is present and non-empty.
-pub fn has_env(name: str) -> bool:
+pub fn has_env(name: &str) -> bool:
     with_str_len(with_getenv_str(name)) > 0
 
 /// True if a filesystem entry exists at the path.
-pub fn path_exists(path: str) -> bool:
+pub fn path_exists(path: &str) -> bool:
     with_fs_file_exists(path) != 0

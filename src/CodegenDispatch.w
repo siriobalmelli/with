@@ -2487,40 +2487,46 @@ impl Codegen:
         let concat_sym = self.intern.intern(concat_name)
         let fv = self.fn_values.get(concat_sym)
         let ft = self.fn_fn_types.get(concat_sym)
+        var result: i64 = 0
         if fv.is_some() and ft.is_some():
             let fn_value: i64 = fv.unwrap()
             let fn_type: i64 = ft.unwrap()
             let args: Vec[i64] = Vec.new()
             args.push(parts_ptr)
             args.push(wl_const_int(wl_i64_type(self.context), arg_count as i64, 0))
-            return self.build_call_fn_value(concat_sym, fn_value, fn_type, -1, 0, args, 2, concat_name, 0)
-
-        let param_types: Vec[i64] = Vec.new()
-        var ret_ty = str_ty
-        var has_sret = 0
-        let byval_types: Vec[i64] = Vec.new()
-        let direct_types: Vec[i64] = Vec.new()
-        if self.internal_abi_needs_sret(str_ty):
-            has_sret = 1
-            ret_ty = wl_void_type(self.context)
+            result = self.build_call_fn_value(concat_sym, fn_value, fn_type, -1, 0, args, 2, concat_name, 0)
+        else:
+            let param_types: Vec[i64] = Vec.new()
+            var ret_ty = str_ty
+            var has_sret = 0
+            let byval_types: Vec[i64] = Vec.new()
+            let direct_types: Vec[i64] = Vec.new()
+            if self.internal_abi_needs_sret(str_ty):
+                has_sret = 1
+                ret_ty = wl_void_type(self.context)
+                param_types.push(wl_ptr_type(self.context))
             param_types.push(wl_ptr_type(self.context))
-        param_types.push(wl_ptr_type(self.context))
-        byval_types.push(0)
-        direct_types.push(0)
-        param_types.push(wl_i64_type(self.context))
-        byval_types.push(0)
-        direct_types.push(0)
-        let fn_type = wl_function_type(ret_ty, vec_data_i64(&param_types), param_types.len() as i32, 0)
-        let func = wl_add_function(self.llmod, concat_name, fn_type)
-        if has_sret != 0:
-            wl_add_sret_attr(self.context, func, 0, str_ty)
-            self.record_c_abi_transform(concat_sym, has_sret, str_ty, 0, move byval_types, 0, move direct_types, 0)
-        self.fn_values.insert(concat_sym, func)
-        self.fn_fn_types.insert(concat_sym, fn_type)
-        let args: Vec[i64] = Vec.new()
-        args.push(parts_ptr)
-        args.push(wl_const_int(wl_i64_type(self.context), arg_count as i64, 0))
-        self.build_call_fn_value(concat_sym, func, fn_type, -1, 0, args, 2, concat_name, 0)
+            byval_types.push(0)
+            direct_types.push(0)
+            param_types.push(wl_i64_type(self.context))
+            byval_types.push(0)
+            direct_types.push(0)
+            let fn_type = wl_function_type(ret_ty, vec_data_i64(&param_types), param_types.len() as i32, 0)
+            let func = wl_add_function(self.llmod, concat_name, fn_type)
+            if has_sret != 0:
+                wl_add_sret_attr(self.context, func, 0, str_ty)
+                self.record_c_abi_transform(concat_sym, has_sret, str_ty, 0, move byval_types, 0, move direct_types, 0)
+            self.fn_values.insert(concat_sym, func)
+            self.fn_fn_types.insert(concat_sym, fn_type)
+            let args: Vec[i64] = Vec.new()
+            args.push(parts_ptr)
+            args.push(wl_const_int(wl_i64_type(self.context), arg_count as i64, 0))
+            result = self.build_call_fn_value(concat_sym, func, fn_type, -1, 0, args, 2, concat_name, 0)
+
+        // The ordinary runtime helper borrows every part. MIR owns and drops
+        // any rvalue temporaries at the statement boundary. The move-first
+        // helper alone consumes part zero as the self-assignment optimization.
+        result
 
     fn mir_display_resolved_type(sema_ty: i32) -> i32:
         if sema_ty <= 0:
@@ -3194,6 +3200,31 @@ impl Codegen:
         args.push(buf)
         args.push(s)
         self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 2, "with_fmt_buf_write_str", 0)
+
+    mut fn gen_fmt_buf_write_str_ref(buf: i64, s: i64):
+        let ptr_ty = wl_ptr_type(self.context)
+        let pts: Vec[i64] = Vec.new()
+        pts.push(ptr_ty)
+        pts.push(ptr_ty)
+        let func = self.ensure_fmt_buf_fn("with_fmt_buf_write_str_ref", pts, 2, wl_void_type(self.context))
+        let ft_sym = self.intern.intern("with_fmt_buf_write_str_ref")
+        let ft = self.fn_fn_types.get(ft_sym).unwrap() as i64
+        let args: Vec[i64] = Vec.new()
+        args.push(buf)
+        args.push(s)
+        self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 2, "with_fmt_buf_write_str_ref", 0)
+
+    mut fn gen_str_clone_ref(s: i64) -> i64:
+        let ptr_ty = wl_ptr_type(self.context)
+        let str_ty = self.resolve_named_type(self.intern.intern("str"))
+        let pts: Vec[i64] = Vec.new()
+        pts.push(ptr_ty)
+        let func = self.ensure_fmt_buf_fn("with_str_clone_ref", pts, 1, str_ty)
+        let ft_sym = self.intern.intern("with_str_clone_ref")
+        let ft = self.fn_fn_types.get(ft_sym).unwrap() as i64
+        let args: Vec[i64] = Vec.new()
+        args.push(s)
+        self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 1, "with_str_clone_ref", 0)
 
     mut fn gen_fmt_buf_write_fmt(buf: i64, val: i64, flags: i32, width: i32, precision: i32, mode: i32):
         // Dispatch by LLVM type: integer → i64_spec, float → f64_spec, string → str_spec
@@ -9224,14 +9255,13 @@ impl Codegen:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
             let index = self.mir_intrinsic_arg(body, args_id, 1)
             let index64 = self.coerce_int(index, i64_ty)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
             param_types.push(i64_ty)
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
+            args.push(self.build_str_ref_from_value(recv))
             args.push(index64)
-            result = self.call_internal_runtime_fn("with_str_byte_at", param_types, args, 2, i32_ty)
+            result = self.call_internal_runtime_fn("with_str_byte_at_ref", param_types, args, 2, i32_ty)
 
         else if intrinsic == MirIntrinsic.STR_SLICE:
             // #747: slice returns an OWNED str, and MIR schedules a drop for
@@ -9248,78 +9278,73 @@ impl Codegen:
             let end64 = self.coerce_int(end, i64_ty)
             let str_ty = self.resolve_named_type(self.intern.intern("str"))
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
             param_types.push(i64_ty)
             param_types.push(i64_ty)
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
+            args.push(self.build_str_ref_from_value(recv))
             args.push(start64)
             args.push(end64)
-            result = self.call_internal_runtime_fn("with_str_slice", param_types, args, 3, str_ty)
+            result = self.call_internal_runtime_fn("with_str_slice_ref", param_types, args, 3, str_ty)
 
         else if intrinsic == MirIntrinsic.STR_CONTAINS:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let needle = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let needle = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
+            param_types.push(wl_ptr_type(self.context))
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
-            args.push(needle)
-            let raw = self.call_internal_runtime_fn("with_str_contains", param_types, args, 2, i32_ty)
+            args.push(self.build_str_ref_from_value(recv))
+            args.push(self.build_str_ref_from_value(needle))
+            let raw = self.call_internal_runtime_fn("with_str_contains_ref", param_types, args, 2, i32_ty)
             result = wl_build_icmp(self.builder, wl_int_ne(), raw, wl_const_int(i32_ty, 0, 0))
 
         else if intrinsic == MirIntrinsic.STR_CONTAINS_CHAR:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
             let ch = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
             param_types.push(i32_ty)
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
+            args.push(self.build_str_ref_from_value(recv))
             args.push(ch)
-            let raw = self.call_internal_runtime_fn("with_str_contains_char", param_types, args, 2, i32_ty)
+            let raw = self.call_internal_runtime_fn("with_str_contains_char_ref", param_types, args, 2, i32_ty)
             result = wl_build_icmp(self.builder, wl_int_ne(), raw, wl_const_int(i32_ty, 0, 0))
 
         else if intrinsic == MirIntrinsic.STR_STARTS_WITH:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let prefix = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let prefix = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
+            param_types.push(wl_ptr_type(self.context))
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
-            args.push(prefix)
-            let raw = self.call_internal_runtime_fn("with_str_starts_with", param_types, args, 2, i32_ty)
+            args.push(self.build_str_ref_from_value(recv))
+            args.push(self.build_str_ref_from_value(prefix))
+            let raw = self.call_internal_runtime_fn("with_str_starts_with_ref", param_types, args, 2, i32_ty)
             result = wl_build_icmp(self.builder, wl_int_ne(), raw, wl_const_int(i32_ty, 0, 0))
 
         else if intrinsic == MirIntrinsic.STR_ENDS_WITH:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let suffix = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let suffix = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
+            param_types.push(wl_ptr_type(self.context))
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
-            args.push(suffix)
-            let raw = self.call_internal_runtime_fn("with_str_ends_with", param_types, args, 2, i32_ty)
+            args.push(self.build_str_ref_from_value(recv))
+            args.push(self.build_str_ref_from_value(suffix))
+            let raw = self.call_internal_runtime_fn("with_str_ends_with_ref", param_types, args, 2, i32_ty)
             result = wl_build_icmp(self.builder, wl_int_ne(), raw, wl_const_int(i32_ty, 0, 0))
 
         else if intrinsic == MirIntrinsic.STR_FIND:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let needle = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let needle = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
+            param_types.push(wl_ptr_type(self.context))
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
-            args.push(needle)
-            result = self.call_internal_runtime_fn("with_str_index_of", param_types, args, 2, i64_ty)
+            args.push(self.build_str_ref_from_value(recv))
+            args.push(self.build_str_ref_from_value(needle))
+            result = self.call_internal_runtime_fn("with_str_index_of_ref", param_types, args, 2, i64_ty)
 
         else if intrinsic == MirIntrinsic.VECITER_NEXT:
             // VecIter[T].next() — advance iterator, return Option[T]
@@ -10395,66 +10420,72 @@ impl Codegen:
         else if intrinsic == MirIntrinsic.STR_TRIM:
             let r1 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t1 = wl_type_of(r1)
-            let f1 = self.ensure_c_fn("with_str_trim", t1, 1)
+            let p1: Vec[i64] = Vec.new()
+            p1.push(wl_ptr_type(self.context))
             let a1: Vec[i64] = Vec.new()
-            a1.push(r1)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_trim", t1, 1), f1, vec_data_i64(&a1), 1)
+            a1.push(self.build_str_ref_from_value(r1))
+            result = self.call_internal_runtime_fn("with_str_trim_ref", p1, a1, 1, t1)
 
         else if intrinsic == MirIntrinsic.STR_TO_UPPER:
             let r2 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t2 = wl_type_of(r2)
-            let f2 = self.ensure_c_fn("with_str_to_upper", t2, 1)
+            let p2: Vec[i64] = Vec.new()
+            p2.push(wl_ptr_type(self.context))
             let a2: Vec[i64] = Vec.new()
-            a2.push(r2)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_to_upper", t2, 1), f2, vec_data_i64(&a2), 1)
+            a2.push(self.build_str_ref_from_value(r2))
+            result = self.call_internal_runtime_fn("with_str_to_upper_ref", p2, a2, 1, t2)
 
         else if intrinsic == MirIntrinsic.STR_TO_LOWER:
             let r3 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t3 = wl_type_of(r3)
-            let f3 = self.ensure_c_fn("with_str_to_lower", t3, 1)
+            let p3: Vec[i64] = Vec.new()
+            p3.push(wl_ptr_type(self.context))
             let a3: Vec[i64] = Vec.new()
-            a3.push(r3)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_to_lower", t3, 1), f3, vec_data_i64(&a3), 1)
+            a3.push(self.build_str_ref_from_value(r3))
+            result = self.call_internal_runtime_fn("with_str_to_lower_ref", p3, a3, 1, t3)
 
         else if intrinsic == MirIntrinsic.STR_REPLACE:
             let r4 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t4 = wl_type_of(r4)
-            let s4a = self.mir_intrinsic_arg(body, args_id, 1)
-            let s4b = self.mir_intrinsic_arg(body, args_id, 2)
-            let f4 = self.ensure_c_fn("with_str_replace", t4, 3)
+            let s4a = self.mir_intrinsic_arg_str_value(body, args_id, 1)
+            let s4b = self.mir_intrinsic_arg_str_value(body, args_id, 2)
+            let p4: Vec[i64] = Vec.new()
+            p4.push(wl_ptr_type(self.context))
+            p4.push(wl_ptr_type(self.context))
+            p4.push(wl_ptr_type(self.context))
             let a4: Vec[i64] = Vec.new()
-            a4.push(r4)
-            a4.push(s4a)
-            a4.push(s4b)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_replace", t4, 3), f4, vec_data_i64(&a4), 3)
+            a4.push(self.build_str_ref_from_value(r4))
+            a4.push(self.build_str_ref_from_value(s4a))
+            a4.push(self.build_str_ref_from_value(s4b))
+            result = self.call_internal_runtime_fn("with_str_replace_ref", p4, a4, 3, t4)
 
         else if intrinsic == MirIntrinsic.STR_SPLIT:
             let r6 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t6 = wl_type_of(r6)
-            let d6 = self.mir_intrinsic_arg(body, args_id, 1)
+            let d6 = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let vt6 = self.get_or_create_vec_type(0, t6)
             let out6 = self.create_entry_alloca(vt6)
-            let f6 = self.ensure_c_fn("with_str_split_vec", wl_void_type(self.context), 3)
             let p6: Vec[i64] = Vec.new()
             p6.push(wl_ptr_type(self.context))
-            p6.push(t6)
-            p6.push(t6)
-            let ft6 = wl_function_type(wl_void_type(self.context), vec_data_i64(&p6), 3, 0)
+            p6.push(wl_ptr_type(self.context))
+            p6.push(wl_ptr_type(self.context))
             let a6: Vec[i64] = Vec.new()
             a6.push(out6)
-            a6.push(r6)
-            a6.push(d6)
-            let _ = wl_build_call(self.builder, ft6, f6, vec_data_i64(&a6), 3)
+            a6.push(self.build_str_ref_from_value(r6))
+            a6.push(self.build_str_ref_from_value(d6))
+            let _ = self.call_internal_runtime_fn("with_str_split_vec_ref", p6, a6, 3, wl_void_type(self.context))
             result = wl_build_load(self.builder, vt6, out6)
 
         else if intrinsic == MirIntrinsic.STR_INDEX_OF:
             let r5 = self.mir_intrinsic_recv_str_value(body, args_id)
-            let n5 = self.mir_intrinsic_arg(body, args_id, 1)
-            let f5 = self.ensure_c_fn("with_str_index_of", i64_ty, 2)
+            let n5 = self.mir_intrinsic_arg_str_value(body, args_id, 1)
+            let p5: Vec[i64] = Vec.new()
+            p5.push(wl_ptr_type(self.context))
+            p5.push(wl_ptr_type(self.context))
             let a5: Vec[i64] = Vec.new()
-            a5.push(r5)
-            a5.push(n5)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_index_of", i64_ty, 2), f5, vec_data_i64(&a5), 2)
+            a5.push(self.build_str_ref_from_value(r5))
+            a5.push(self.build_str_ref_from_value(n5))
+            result = self.call_internal_runtime_fn("with_str_index_of_ref", p5, a5, 2, i64_ty)
 
         else if intrinsic == MirIntrinsic.MAP_INCREMENT or intrinsic == MirIntrinsic.MAP_DECREMENT:
             let r7 = self.mir_intrinsic_arg(body, args_id, 0)
@@ -10558,11 +10589,13 @@ impl Codegen:
             let sr_n = self.mir_intrinsic_arg(body, args_id, 1)
             let sr_n64 = self.coerce_int(sr_n, i64_ty)
             let sr_ty = wl_type_of(sr_recv)
-            let sr_fn = self.ensure_c_fn("with_str_repeat", sr_ty, 2)
+            let sr_params: Vec[i64] = Vec.new()
+            sr_params.push(wl_ptr_type(self.context))
+            sr_params.push(i64_ty)
             let sr_args: Vec[i64] = Vec.new()
-            sr_args.push(sr_recv)
+            sr_args.push(self.build_str_ref_from_value(sr_recv))
             sr_args.push(sr_n64)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_repeat", sr_ty, 2), sr_fn, vec_data_i64(&sr_args), 2)
+            result = self.call_internal_runtime_fn("with_str_repeat_ref", sr_params, sr_args, 2, sr_ty)
 
         else:
             return false
@@ -11046,6 +11079,16 @@ impl Codegen:
             let fb_str = self.mir_intrinsic_arg(body, args_id, 1)
             self.gen_fmt_buf_write_str(fb_buf, fb_str)
             result = wl_const_int(wl_i32_type(self.context), 0, 0)
+
+        else if intrinsic == MirIntrinsic.FMT_BUF_WRITE_STR_REF:
+            let fb_buf = self.mir_intrinsic_arg(body, args_id, 0)
+            let fb_str_ref = self.mir_intrinsic_arg(body, args_id, 1)
+            self.gen_fmt_buf_write_str_ref(fb_buf, fb_str_ref)
+            result = wl_const_int(wl_i32_type(self.context), 0, 0)
+
+        else if intrinsic == MirIntrinsic.STR_CLONE_REF:
+            let clone_str_ref = self.mir_intrinsic_arg(body, args_id, 0)
+            result = self.gen_str_clone_ref(clone_str_ref)
 
         else if intrinsic == MirIntrinsic.FMT_BUF_WRITE_FMT:
             // args: [buf, value, flags, width, precision, sema_type_id]
@@ -17594,7 +17637,11 @@ impl Codegen:
             return
 
     fn decode_string_escapes(text: &str) -> str:
-        var out = ""
+        // Decoding never grows the input: an escape consumes at least as many
+        // bytes as it emits. Repeated `out = out ++ byte` made this quadratic
+        // and exhausted tens of GiB while constant-folding embedded source
+        // literals in a migrated compiler.
+        var out = StringBuilder.with_capacity(text.len())
         let len = text.len() as i32
         var i = 0
         while i < len:
@@ -17606,28 +17653,28 @@ impl Codegen:
                     let hi = self.hex_digit_value(text[i + 1])
                     let lo = self.hex_digit_value(text[i + 2])
                     if hi >= 0 and lo >= 0:
-                        out = out ++ str_from_byte(hi * 16 + lo)
+                        out.push_char(hi * 16 + lo)
                         i = i + 2
                     else:
-                        out = out ++ text.slice(i as i64, i as i64 + 1)
+                        out.push_char(esc)
                 else if esc == 110:
-                    out = out ++ "\n"
+                    out.push_char(10)
                 else if esc == 116:
-                    out = out ++ "\t"
+                    out.push_char(9)
                 else if esc == 114:
-                    out = out ++ "\r"
+                    out.push_char(13)
                 else if esc == 48:
-                    out = out ++ str_from_byte(0)
+                    out.push_char(0)
                 else if esc == 92:
-                    out = out ++ "\\"
+                    out.push_char(92)
                 else if esc == 34:
-                    out = out ++ "\""
+                    out.push_char(34)
                 else:
-                    out = out ++ text.slice(i as i64, i as i64 + 1)
+                    out.push_char(esc)
             else:
-                out = out ++ text.slice(i as i64, i as i64 + 1)
+                out.push_char(ch)
             i = i + 1
-        out
+        out.to_str()
 
     fn hex_digit_value(ch: i32) -> i32:
         if ch >= 48 and ch <= 57:

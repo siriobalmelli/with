@@ -418,6 +418,11 @@ impl Zcu:
         self.pool = sema.pool
         var tracked_paths = self.tracked_input_paths
         self.tracked_input_paths = tracked_input_merge_unique(move tracked_paths, &sema.tracked_input_paths)
+        // Callers move sema.diags into Zcu.diagnostics before syncing. The moved
+        // field is an all-zero reset sentinel, not a reusable Vec: pushing a
+        // later comptime/action diagnostic would allocate zero bytes and leave
+        // stale allocator contents to be dropped as a Diagnostic (#743).
+        sema.diags = DiagnosticList.init()
         self.last_sema = sema
         if zcu_debug_pool_flow_enabled() != 0:
             runtime_eprint(f"[zcu] sync_from_sema:after zcu.pool={self.pool.state.symbol_texts.len() as i32} last_sema.pool={self.last_sema.pool.state.symbol_texts.len() as i32} last_sema.ast.decls={self.last_sema.ast.decl_count()}")

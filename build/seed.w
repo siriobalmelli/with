@@ -2,17 +2,18 @@ module build.seed
 
 use std.build
 use std.process
+fn seed_owned_text(s: &str): s ++ ""
 
-fn seed_join(left: str, right: str) -> str:
+fn seed_join(left: &str, right: &str) -> str:
     if left.len() == 0:
-        return right
+        return seed_owned_text(right)
     if right.len() == 0:
-        return left
+        return seed_owned_text(left)
     if left.ends_with("/"):
         return left ++ right
     left ++ "/" ++ right
 
-fn seed_dirname(path: str) -> str:
+fn seed_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -23,16 +24,16 @@ fn seed_dirname(path: str) -> str:
         return "/"
     path.slice(0, last_slash as i64)
 
-fn seed_abs(root: str, path: str) -> str:
+fn seed_abs(root: &str, path: &str) -> str:
     if path.len() > 0 and path.byte_at(0) == 47:
-        return path
+        return seed_owned_text(path)
     seed_join(root, path)
 
-fn seed_fail(ctx: &ActionCtx, message: str) -> i32:
+fn seed_fail(ctx: &ActionCtx, message: &str) -> i32:
     ctx.diagnostics().error(ctx.target_name() ++ ": " ++ message)
     1
 
-fn seed_split_nonempty_lines(text: str) -> Vec[str]:
+fn seed_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     var start = 0
     for i in 0..text.len() as i32:
@@ -44,7 +45,7 @@ fn seed_split_nonempty_lines(text: str) -> Vec[str]:
         lines.push(text.slice(start as i64, text.len()))
     lines
 
-fn seed_json_line_value(line: str, key: str) -> str:
+fn seed_json_line_value(line: &str, key: &str) -> str:
     let needle = "\"" ++ key ++ "\""
     var pos = -1
     var i = 0
@@ -84,11 +85,11 @@ fn seed_json_line_value(line: str, key: str) -> str:
         end = end + 1
     ""
 
-fn seed_compile_binary(ctx: &ActionCtx, workspace_name: str, source_path: str, output_path: str) -> i32:
+fn seed_compile_binary(ctx: &ActionCtx, workspace_name: &str, source_path: &str, output_path: &str) -> i32:
     let workspace = ctx.create_workspace(workspace_name)
     workspace.add_file(source_path)
     var options = workspace.options()
-    options.output_path = output_path
+    options.output_path = seed_owned_text(output_path)
     workspace.set_options(options)
     let result = workspace.compile()
     if result.rc != 0:
@@ -97,7 +98,7 @@ fn seed_compile_binary(ctx: &ActionCtx, workspace_name: str, source_path: str, o
         return seed_fail(ctx, workspace_name ++ " did not produce " ++ output_path)
     0
 
-fn seed_fetch_to_file(ctx: &ActionCtx, scratch_dir: str, label: str, url: str, output_path: str, timeout_ms: i32) -> i32:
+fn seed_fetch_to_file(ctx: &ActionCtx, scratch_dir: &str, label: &str, url: &str, output_path: &str, timeout_ms: i32) -> i32:
     let fs = ctx.fs()
     let root = ctx.project_info().project_root()
     let fetch_bin = seed_join(scratch_dir, "https_fetch")
@@ -108,14 +109,14 @@ fn seed_fetch_to_file(ctx: &ActionCtx, scratch_dir: str, label: str, url: str, o
         return rc
     var fetch_args: Vec[str] = Vec.new()
     fetch_args.push(seed_abs(root, fetch_bin))
-    fetch_args.push(url)
+    fetch_args.push(seed_owned_text(url))
     fetch_args.push(seed_abs(root, output_path))
     let result = ctx.process_runner().run_capture(fetch_args, seed_abs(root, seed_join(scratch_dir, label ++ ".fetch.stdout")), seed_abs(root, seed_join(scratch_dir, label ++ ".fetch.stderr")), timeout_ms)
     if result.rc != 0:
         return seed_fail(ctx, f"HTTPS fetch helper failed with exit code {result.rc}: " ++ result.stdout ++ result.stderr)
     0
 
-fn seed_gunzip_to_tar(ctx: &ActionCtx, scratch_dir: str, archive_path: str, tar_path: str) -> i32:
+fn seed_gunzip_to_tar(ctx: &ActionCtx, scratch_dir: &str, archive_path: &str, tar_path: &str) -> i32:
     let fs = ctx.fs()
     let root = ctx.project_info().project_root()
     let gunzip_bin = seed_join(scratch_dir, "zlib_gunzip")
@@ -133,7 +134,7 @@ fn seed_gunzip_to_tar(ctx: &ActionCtx, scratch_dir: str, archive_path: str, tar_
         return seed_fail(ctx, f"gunzip helper failed with exit code {result.rc}: " ++ result.stdout ++ result.stderr)
     0
 
-fn seed_release_from_api(ctx: &ActionCtx, repo: str, asset_name: str) -> str:
+fn seed_release_from_api(ctx: &ActionCtx, repo: &str, asset_name: &str) -> str:
     let fs = ctx.fs()
     let tmp_dir = seed_join("out/tmp", "seed-download")
     if fs.mkdir_all(tmp_dir) != 0:
@@ -162,7 +163,7 @@ fn seed_is_space(ch: i32) -> bool:
 fn seed_is_hex(ch: i32) -> bool:
     (ch >= 48 and ch <= 57) or (ch >= 65 and ch <= 70) or (ch >= 97 and ch <= 102)
 
-fn seed_parse_sha256_sidecar(text: str) -> str:
+fn seed_parse_sha256_sidecar(text: &str) -> str:
     var start = 0
     while start < text.len() as i32 and seed_is_space(text.byte_at(start as i64)):
         start = start + 1
@@ -175,7 +176,7 @@ fn seed_parse_sha256_sidecar(text: str) -> str:
         return ""
     text.slice(start as i64, end as i64)
 
-fn seed_fetch_expected_sha256(ctx: &ActionCtx, tmp_dir: str, label: str, asset_url: str) -> str:
+fn seed_fetch_expected_sha256(ctx: &ActionCtx, tmp_dir: &str, label: &str, asset_url: &str) -> str:
     let fs = ctx.fs()
     let sidecar_path = seed_join(tmp_dir, label ++ ".sha256")
     let _remove_sidecar = fs.remove_file(sidecar_path)
@@ -188,7 +189,7 @@ fn seed_fetch_expected_sha256(ctx: &ActionCtx, tmp_dir: str, label: str, asset_u
         ctx.diagnostics().error(ctx.target_name() ++ ": invalid SHA-256 sidecar for " ++ asset_url)
     expected
 
-fn seed_verify_download_sha256(ctx: &ActionCtx, tmp_dir: str, label: str, asset_url: str, path: str) -> i32:
+fn seed_verify_download_sha256(ctx: &ActionCtx, tmp_dir: &str, label: &str, asset_url: &str, path: &str) -> i32:
     let expected = seed_fetch_expected_sha256(ctx, tmp_dir, label, asset_url)
     if expected.len() == 0:
         return seed_fail(ctx, "missing or invalid SHA-256 sidecar: " ++ asset_url ++ ".sha256")

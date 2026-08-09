@@ -1,20 +1,21 @@
 module build.zlib
 
 use std.build
+fn zlib_owned_text(s: &str): s ++ ""
 
 const ZLIB_RELEASE: str = "zlib-1.3.2"
 const ZLIB_SHA256: str = "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
 
-fn zlib_join(left: str, right: str) -> str:
+fn zlib_join(left: &str, right: &str) -> str:
     if left.len() == 0:
-        return right
+        return zlib_owned_text(right)
     if right.len() == 0:
-        return left
+        return zlib_owned_text(left)
     if left.ends_with("/"):
         return left ++ right
     left ++ "/" ++ right
 
-fn zlib_safe_label(text: str) -> str:
+fn zlib_safe_label(text: &str) -> str:
     var out = ""
     for i in 0..text.len() as i32:
         let ch = text.byte_at(i as i64)
@@ -30,7 +31,7 @@ fn zlib_safe_label(text: str) -> str:
 fn zlib_scratch_dir(ctx: &ActionCtx) -> str:
     "out/tmp/action-scratch/" ++ zlib_safe_label(ctx.target_name())
 
-fn zlib_dirname(path: str) -> str:
+fn zlib_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -41,23 +42,23 @@ fn zlib_dirname(path: str) -> str:
         return "/"
     path.slice(0, last_slash as i64)
 
-fn zlib_basename(path: str) -> str:
+fn zlib_basename(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
             last_slash = i
     path.slice((last_slash + 1) as i64, path.len())
 
-fn zlib_abs(root: str, path: str) -> str:
+fn zlib_abs(root: &str, path: &str) -> str:
     if path.len() > 0 and path.byte_at(0) == 47:
-        return path
+        return zlib_owned_text(path)
     zlib_join(root, path)
 
-fn zlib_fail(ctx: &ActionCtx, message: str) -> i32:
+fn zlib_fail(ctx: &ActionCtx, message: &str) -> i32:
     ctx.diagnostics().error(ctx.target_name() ++ ": " ++ message)
     1
 
-fn zlib_remove_tree_if_exists(ctx: &ActionCtx, path: str) -> i32:
+fn zlib_remove_tree_if_exists(ctx: &ActionCtx, path: &str) -> i32:
     let fs = ctx.fs()
     if not fs.exists(path):
         return 0
@@ -65,7 +66,7 @@ fn zlib_remove_tree_if_exists(ctx: &ActionCtx, path: str) -> i32:
         return zlib_fail(ctx, "could not remove directory: " ++ path)
     0
 
-fn zlib_remove_file_if_exists(ctx: &ActionCtx, path: str) -> i32:
+fn zlib_remove_file_if_exists(ctx: &ActionCtx, path: &str) -> i32:
     let fs = ctx.fs()
     if not fs.exists(path):
         return 0
@@ -73,7 +74,7 @@ fn zlib_remove_file_if_exists(ctx: &ActionCtx, path: str) -> i32:
         return zlib_fail(ctx, "could not remove file: " ++ path)
     0
 
-fn zlib_copy_file(ctx: &ActionCtx, src: str, dst: str) -> i32:
+fn zlib_copy_file(ctx: &ActionCtx, src: &str, dst: &str) -> i32:
     let fs = ctx.fs()
     if not fs.exists(src):
         return zlib_fail(ctx, "missing source file: " ++ src)
@@ -83,7 +84,7 @@ fn zlib_copy_file(ctx: &ActionCtx, src: str, dst: str) -> i32:
         return zlib_fail(ctx, "could not copy " ++ src ++ " to " ++ dst)
     0
 
-fn zlib_copy_w_files(ctx: &ActionCtx, source_dir: str, dest_dir: str) -> i32:
+fn zlib_copy_w_files(ctx: &ActionCtx, source_dir: &str, dest_dir: &str) -> i32:
     let fs = ctx.fs()
     let files = fs.list_files(source_dir)
     var copied = 0
@@ -130,7 +131,7 @@ fn zlib_source_files() -> Vec[str]:
     files.push("zutil.h")
     files
 
-fn zlib_prepare_migration_source(ctx: &ActionCtx, ref_dir: str, out_dir: str) -> i32:
+fn zlib_prepare_migration_source(ctx: &ActionCtx, ref_dir: &str, out_dir: &str) -> i32:
     let fs = ctx.fs()
     var rc = zlib_remove_tree_if_exists(ctx, out_dir)
     if rc != 0: return rc
@@ -143,14 +144,14 @@ fn zlib_prepare_migration_source(ctx: &ActionCtx, ref_dir: str, out_dir: str) ->
         if rc != 0: return rc
     0
 
-fn zlib_migrate_options(source_path: str, output_path: str, source_dir: str) -> MigrateOptions:
+fn zlib_migrate_options(source_path: &str, output_path: &str, source_dir: &str) -> MigrateOptions:
     let include_paths: Vec[str] = Vec.new()
-    include_paths.push(source_dir)
+    include_paths.push(zlib_owned_text(source_dir))
     let forced_includes: Vec[str] = Vec.new()
     let defines: Vec[str] = Vec.new()
     MigrateOptions {
-        source_path,
-        output_path,
+        source_path: zlib_owned_text(source_path),
+        output_path: zlib_owned_text(output_path),
         include_paths,
         forced_includes,
         defines,
@@ -169,13 +170,13 @@ fn zlib_migrate_options(source_path: str, output_path: str, source_dir: str) -> 
         ir_roundtrip: false,
     }
 
-fn zlib_migrate_one_options(source_dir: str, output_dir: str, basename: str, shared_fragment: str) -> MigrateOptions:
+fn zlib_migrate_one_options(source_dir: &str, output_dir: &str, basename: &str, shared_fragment: &str) -> MigrateOptions:
     var options = zlib_migrate_options(source_dir, output_dir, source_dir)
-    options.migrate_one = basename
-    options.shared_fragment = shared_fragment
+    options.migrate_one = zlib_owned_text(basename)
+    options.shared_fragment = zlib_owned_text(shared_fragment)
     options
 
-fn zlib_migrate_file(ctx: &ActionCtx, workspace_name: str, source_path: str, output_path: str, source_dir: str) -> i32:
+fn zlib_migrate_file(ctx: &ActionCtx, workspace_name: &str, source_path: &str, output_path: &str, source_dir: &str) -> i32:
     let workspace = ctx.create_workspace(workspace_name)
     workspace.set_migrate_options(zlib_migrate_options(source_path, output_path, source_dir))
     let result = workspace.compile()
@@ -185,7 +186,7 @@ fn zlib_migrate_file(ctx: &ActionCtx, workspace_name: str, source_path: str, out
         return zlib_fail(ctx, workspace_name ++ " did not produce " ++ output_path)
     0
 
-fn zlib_migrate_one_file(ctx: &ActionCtx, workspace_name: str, source_dir: str, output_dir: str, basename: str, output_path: str) -> i32:
+fn zlib_migrate_one_file(ctx: &ActionCtx, workspace_name: &str, source_dir: &str, output_dir: &str, basename: &str, output_path: &str) -> i32:
     let workspace = ctx.create_workspace(workspace_name)
     let fragment_path = zlib_join(zlib_scratch_dir(ctx), workspace_name ++ ".shared-fragment")
     workspace.set_migrate_options(zlib_migrate_one_options(source_dir, output_dir, basename, fragment_path))
@@ -196,7 +197,7 @@ fn zlib_migrate_one_file(ctx: &ActionCtx, workspace_name: str, source_dir: str, 
         return zlib_fail(ctx, workspace_name ++ " did not produce " ++ output_path)
     0
 
-fn zlib_count_w_files(ctx: &ActionCtx, dir: str) -> i32:
+fn zlib_count_w_files(ctx: &ActionCtx, dir: &str) -> i32:
     let files = ctx.fs().list_files(dir)
     var count = 0
     for i in 0..files.len() as i32:
@@ -204,7 +205,7 @@ fn zlib_count_w_files(ctx: &ActionCtx, dir: str) -> i32:
             count = count + 1
     count
 
-fn zlib_reject_c_exports(ctx: &ActionCtx, generated_dir: str) -> i32:
+fn zlib_reject_c_exports(ctx: &ActionCtx, generated_dir: &str) -> i32:
     let fs = ctx.fs()
     let files = fs.list_files(generated_dir)
     var errors = 0
@@ -220,11 +221,11 @@ fn zlib_reject_c_exports(ctx: &ActionCtx, generated_dir: str) -> i32:
                 errors = errors + 1
     errors
 
-fn zlib_compile_binary(ctx: &ActionCtx, workspace_name: str, source_path: str, output_path: str) -> i32:
+fn zlib_compile_binary(ctx: &ActionCtx, workspace_name: &str, source_path: &str, output_path: &str) -> i32:
     let workspace = ctx.create_workspace(workspace_name)
     workspace.add_file(source_path)
     var options = workspace.options()
-    options.output_path = output_path
+    options.output_path = zlib_owned_text(output_path)
     workspace.set_options(options)
     let result = workspace.compile()
     if result.rc != 0:
@@ -254,7 +255,7 @@ pub fn run_zlib_reference_action(ctx: ActionCtx) -> i32:
             return rc
         var fetch_args: Vec[str] = Vec.new()
         fetch_args.push(zlib_abs(root, fetch_bin))
-        fetch_args.push(url)
+        fetch_args.push(zlib_owned_text(url))
         fetch_args.push(zlib_abs(root, archive_path))
         let fetch_result = ctx.process_runner().run_capture(fetch_args, zlib_abs(root, zlib_join(scratch_dir, release ++ ".fetch.stdout")), zlib_abs(root, zlib_join(scratch_dir, release ++ ".fetch.stderr")), 300000)
         if fetch_result.rc != 0:
@@ -294,7 +295,7 @@ pub fn run_zlib_reference_action(ctx: ActionCtx) -> i32:
         let _remove_extract_root = fs.remove_tree(tmp_dir)
     if fs.write_text(zlib_join(ref_dir, ".with-reference-url"), url ++ "\n") != 0:
         return zlib_fail(ctx, "could not write reference URL marker")
-    let ready_stamp = if ctx.outputs().len() > 1: ctx.outputs().get(1) else: zlib_join(ref_dir, ".with-reference-ready")
+    let ready_stamp = if ctx.outputs().len() > 1: zlib_owned_text(ctx.outputs().get(1)) else: zlib_join(ref_dir, ".with-reference-ready")
     if fs.write_text(ready_stamp, "ok\n") != 0:
         return zlib_fail(ctx, "could not write ready stamp: " ++ ready_stamp)
     0

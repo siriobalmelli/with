@@ -45,6 +45,11 @@ fn test_null_escape:
     let s = "null\0here"
     assert(s.len() == 9)
 
+fn test_hex_escape:
+    let s = "\x41\x00\x7a"
+    assert(s.len() == 3)
+    assert(s.byte_at(0) == 65 and s.byte_at(1) == 0 and s.byte_at(2) == 122)
+
 fn test_mixed_escapes:
     let s = "a\nb\tc\\d\"e"
     assert(s.len() == 9)
@@ -60,5 +65,6 @@ fn main:
     test_backslash_before_brace()
     test_carriage_return()
     test_null_escape()
+    test_hex_escape()
     test_mixed_escapes()
     print("ok")

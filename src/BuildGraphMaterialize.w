@@ -142,7 +142,7 @@ impl BuildGraphMaterializer:
             target.timeout_ms = timeout_field.data0 as i32
         let cwd_field = self.field_value(value, "cwd")
         if cwd_field.kind == ComptimeValueKind.CV_STR:
-            target.cwd = cwd_field.text
+            target.cwd = with_str_clone_ref(cwd_field.text)
         target.env = self.string_vec_field(value, "env")
         let network_field = self.field_value(value, "network")
         if network_field.kind == ComptimeValueKind.CV_BOOL:
@@ -243,9 +243,9 @@ impl BuildGraphMaterializer:
         let default_target = self.expect_str_field(value, "default_target")
         if package_name.kind == ComptimeValueKind.CV_INVALID or package_version.kind == ComptimeValueKind.CV_INVALID or default_target.kind == ComptimeValueKind.CV_INVALID:
             return self.error("Build has a field with the wrong comptime value type")
-        graph.package_name = package_name.text
-        graph.package_version = package_version.text
-        graph.default_target = default_target.text
+        graph.package_name = with_str_clone_ref(package_name.text)
+        graph.package_version = with_str_clone_ref(package_version.text)
+        graph.default_target = with_str_clone_ref(default_target.text)
 
         let generated_sources = self.field_value(value, "generated_sources")
         if generated_sources.kind != ComptimeValueKind.CV_VEC and generated_sources.kind != ComptimeValueKind.CV_ARRAY:

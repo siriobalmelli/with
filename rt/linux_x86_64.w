@@ -629,11 +629,10 @@ type LinuxAddrInfo:
     ai_canonname: *mut u8
     ai_next: *mut LinuxAddrInfo
 
-fn rt_str_data(s: str) -> *const u8:
-    let p = &s as *const *const u8
-    unsafe *p
+fn rt_str_data(s: &str) -> *const u8:
+    unsafe **(&s as *const *const *const u8)
 
-fn rt_net_copy_str_to_c_buf(s: str, out: *mut u8, cap: i64) -> i32:
+fn rt_net_copy_str_to_c_buf(s: &str, out: *mut u8, cap: i64) -> i32:
     if s.len() + 1 > cap:
         return -1
     var i: i64 = 0
@@ -873,13 +872,13 @@ fn posix_signal_bit(signo: i32) -> u32:
         return 0 as u32
     (1 as u32) << ((signo - 1) as u32)
 
-fn posix_str_to_c_buf(s: str) -> *mut u8:
+fn posix_str_to_c_buf(s: &str) -> *mut u8:
     let out = with_alloc(s.len() + 1)
     if out as i64 == 0:
         return 0 as *mut u8
     if s.len() > 0:
-        let sp = &s as *const *const u8
-        with_memcpy(out, unsafe *sp, s.len())
+        let sp = unsafe **(&s as *const *const *const u8)
+        with_memcpy(out, sp, s.len())
     unsafe *((out as i64 + s.len()) as *mut u8) = 0
     out
 

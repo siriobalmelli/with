@@ -8,7 +8,7 @@ use std.zlib.inflate
 const ZLIB_MAX_OUTPUT: i64 = 8589934592
 const ZLIB_CHUNK_SIZE: i64 = 4 * 1024 * 1024
 
-fn bytes_from_str(data: str) -> Vec[u8]:
+fn bytes_from_str(data: &str) -> Vec[u8]:
     let out: Vec[u8] = Vec.new()
     var i: i64 = 0
     while i < data.len():
@@ -50,7 +50,7 @@ unsafe fn cleanup_stream(file: *mut c_void, out_ptr: *mut u8, stream: *mut z_str
     if file as i64 != 0:
         let _close = fclose(file)
 
-fn decompress_gzip_to_file(data: &Vec[u8], output_path: str, max_output_len: i64) -> str:
+fn decompress_gzip_to_file(data: &Vec[u8], output_path: &str, max_output_len: i64) -> str:
     if max_output_len < 0:
         return "zlib maximum output length must be non-negative"
     let output_cstr = match output_path.to_cstring():

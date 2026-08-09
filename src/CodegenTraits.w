@@ -282,7 +282,7 @@ impl Codegen:
                 with_eprint("error: cannot resolve return type for dyn trait method '" ++ self.intern.resolve(method_sym) ++ "'")
                 self.had_error = 1
                 return 0
-        if (method_flags / FnFlags.ASYNC) % 2 == 1:
+        if (method_flags / BOOT_FN_ASYNC) % 2 == 1:
             let task_args: Vec[i32] = Vec.new()
             task_args.push(ret_sema_ty)
             ret_sema_ty = self.sema.find_generic_inst_type(self.sema.syms.task, task_args, 1) as i32
@@ -932,7 +932,7 @@ impl Codegen:
                     ft = self.fn_fn_types.get(impl_fn_sym)
             if fv.is_some() and ft.is_some():
                 var dyn_ft = ft.unwrap() as i64
-                if (method_flags / FnFlags.ASYNC) % 2 == 1:
+                if (method_flags / BOOT_FN_ASYNC) % 2 == 1:
                     dyn_ft = self.dyn_trait_method_fn_type(trait_sym, method_sym)
                     if dyn_ft == 0:
                         entries.push(wl_const_null(wl_ptr_type(self.context)))
@@ -1020,7 +1020,7 @@ impl Codegen:
                 self.had_error = 1
                 return
             var dyn_ft = ft.unwrap() as i64
-            if (method_flags / FnFlags.ASYNC) % 2 == 1:
+            if (method_flags / BOOT_FN_ASYNC) % 2 == 1:
                 dyn_ft = self.dyn_trait_method_fn_type(trait_sym, method_sym)
                 if dyn_ft == 0:
                     self.had_error = 1
@@ -1089,7 +1089,7 @@ impl Codegen:
                 self.had_error = 1
                 return
             var dyn_ft = ft
-            if (method_flags / FnFlags.ASYNC) % 2 == 1:
+            if (method_flags / BOOT_FN_ASYNC) % 2 == 1:
                 dyn_ft = self.dyn_trait_method_fn_type(trait_sym, method_sym)
                 if dyn_ft == 0:
                     self.had_error = 1
@@ -1153,8 +1153,8 @@ impl Codegen:
             if path.len() > 0:
                 return with_str_clone_ref(path)
         if self.current_decl_source_file.len() > 0 and self.current_decl_source_file != "<unknown>":
-            return self.current_decl_source_file
-        self.source_file
+            return with_str_clone_ref(self.current_decl_source_file)
+        with_str_clone_ref(self.source_file)
 
     mut fn sync_decl_context(decl_index: i32):
         self.current_decl_source_file = self.decl_source_path(decl_index)
@@ -1189,7 +1189,7 @@ impl Codegen:
             return name
         let fn_node = self.pool.get_decl(decl_index)
         let flags = self.pool.get_data2(fn_node)
-        if (flags / FnFlags.ENTRY) % 2 == 1:
+        if (flags / BOOT_FN_ENTRY) % 2 == 1:
             return "main"
         let meta = self.pool.find_fn_meta(fn_node)
         if meta >= 0:
