@@ -1,6 +1,92 @@
-# Active Handoff — #747 `str` ownership flip bootstrap recovery (2026-08-09)
+# Active Handoff — #747 flip: bootstrap recovered honestly; battery unblocked; 102-failure residue census (2026-08-09, session 2)
 
-## Read this first
+## Read this first (supersedes the bootstrap-recovery section below)
+
+Worktree: `/Users/eric/.local/with-staging/747-flip`, branch `747-flip` @
+`ad053bea`, CLEAN — everything is committed. Never stage work in /tmp.
+Artifacts/logs: `/Users/eric/.local/with-staging/fixpoint-analysis/`
+(seedgate/fixpoint/battery logs, probe binaries, twin/replica/swap
+experiment evidence). A pre-fix baseline worktree exists at
+`~/.local/with-staging/bisect-8f1354b2` (safe to delete).
+
+**The lldb-patched intermediate tower (9→13) is DEAD — do not resume it.**
+The verified release seed (`/Users/eric/with/src/main`) builds the restored
+tree directly: seed gate rc=0, `check src/main.w --validate-all` clean,
+stage1→stage2→stage3 byte-identical FIXPOINT, no live patches, no numeric
+bridge. The recovery-era `std/string.w:109` scratch failure was an artifact
+of the corrupt intermediates, not a real bug (never reproduced on the
+honest chain). Intermediates remain in fixpoint-analysis/ as archaeology.
+
+## What landed this session (all committed on 747-flip)
+
+1. `ae6b7e78` wip snapshot of the recovered tree (bridge included) —
+   loss-proof in git.
+2. `8f1354b2` FnFlags/AnalysisDeclarationFlag bridge removed; restore
+   searches verified empty; bridge-only files byte-match pre-bridge.
+3. `ad05f549` rt exec/setenv family observes `&str`; `str_ref_view` shim
+   retired. Root cause of the `with run` interior-NUL panic: consuming
+   `rt_compat_*` callees freed the caller's live `bin_path` buffer
+   (trap-free hit=74; `remove_file`'s cstr alloc then reused+zeroed the
+   block; `bin_path ++ ".dSYM"` concatenated zeros). Pin:
+   `test/debug_alloc/da_exec_setenv_str_observe.w`.
+4. `631f9532` MirLower: ordinary `++` still observes NAMED operands, but an
+   anonymous owned rvalue part (call/slice result) is taken as a statement
+   temp and dropped at the pending-reset flush (was: silently orphaned —
+   16B leak per slice-temp operand, either side, any chain position). Pin:
+   `test/debug_alloc/da_concat_rvalue_part_drop.w`.
+5. `ad053bea` build.w: **out/lib rt objects are seed-built** (mirror of
+   out/bootstrap-lib) until #761 lands — see next section.
+
+## #761 — the battery's real killer (root-caused, interim landed)
+
+Flip-compiled `rt/rt_core.w` emits callee-epilogue drops for the plain
+consuming-`str` params of the keep-ABI codegen-emitted intrinsics
+(`with_str_eq`/`slice`/`concat`/…, 42 functions verified by
+object-disassembly diff). Codegen emits calls against caller-owns
+(extern bit-copy doctrine, caller side), so any binary linking flip-built
+out/lib rt frees every str operand it compares → heap corruption →
+version-stamp bytes ("WITH" = 0x48544957) as MIR sig indices → `Vec index
+out of bounds` compiling anything. Which rt got linked depended on whether
+out/lib was populated — identical commands produced working or broken
+binaries (the whole "probe lottery" of the recovery era). Never seen
+because every validated binary links seed-built bootstrap rt; only the
+release link consumed the poison, and only :test runs the release binary.
+Pre-existing (bisected at 8f1354b2). Evidence + object-swap protocol in
+#761. REAL FIX (Eric ruling needed): extend the extern bit-copy doctrine
+to the DEFINITION side of the with_* runtime ABI (SemaCheck
+`extern_param_is_bit_copy` is caller-side only). Required before the
+flipped compiler can ever compile its own runtime (post-reseed).
+
+## Battery state @ ad053bea (clean tree, seed orchestrator)
+
+- `with build` rc=0; `:fixpoint` FIXPOINT rc=0.
+- `:test` rc=1 — **102 behavior failures**, down from 191; the survivors
+  are genuine flip residue, census by first error:
+  12 use-of-moved (stale std/test sources under flip rules — de-Copy tail;
+  includes `<embedded-std>/std/compiler.w:89`), 10 invalid MIR "use rvalue
+  type is incompatible" (async blocks among them), 8 invalid MIR "not a
+  concrete MIR type", 4 `BindEntry` + 2 `JsonView` "cannot implement Copy:
+  field not Copy" (JsonView is Eric queue #3), 3 `struct_field_type_frozen`
+  generic-inst aborts (known family), 3 exit-134 aborts, 3 invalid LLVM
+  main, tail of onesies. Per-test stderr:
+  `out/test-graph/behavior-tests/*.stderr`.
+- `:debug-alloc-tests` rc=1 — honest diagnostic now: `tools/debug_drop.w:56`
+  use-of-moved (tool source needs flip migration; previously masked by the
+  broken release binary crashing first).
+
+## Next work, in order
+
+1. Migrate `tools/debug_drop.w` (and any other tool the driver builds) to
+   flip rules; rerun `:debug-alloc-tests` — the two new da_ cells must run
+   under the real driver.
+2. Burn down the 102-failure census by class (de-Copy tail first — it's
+   also Eric queue #2/#3 material; then the invalid-MIR lowering bugs).
+3. #761 brief to Eric (definition-side bit-copy doctrine) — blocks the
+   post-reseed world where the flipped compiler compiles rt.
+4. Then the pre-existing endgame from the Aug-5 section: corpus sweep
+   residue, drop-audit vis family, instance I, audits, merge (Eric queue #1).
+
+
 
 The active work is **not** in `/tmp` and is **not** in the canonical checkout.
 
