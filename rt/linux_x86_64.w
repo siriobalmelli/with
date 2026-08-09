@@ -1026,7 +1026,7 @@ fn posix_interrupt_signal_handler(signo: i32):
 fn posix_interrupted() -> bool:
     posix_interrupt_flag != 0
 
-pub fn rt_compat_setenv_str(name: str, value: str) -> i32:
+pub fn rt_compat_setenv_str(name: &str, value: &str) -> i32:
     let name_buf = posix_str_to_c_buf(name)
     if name_buf as i64 == 0:
         return -1
@@ -1082,19 +1082,18 @@ pub fn rt_set_process_memory_limit_bytes(limit: i64) -> i32:
 pub fn rt_compat_interrupt_requested() -> i32:
     posix_interrupt_flag
 
-pub fn rt_compat_exec_binary(path: str) -> i32:
+pub fn rt_compat_exec_binary(path: &str) -> i32:
     let buf = posix_str_to_c_buf(path)
     if buf as i64 == 0:
         return -1
     if posix_interrupted():
         with_free(buf)
         return -1
-    var argv_blob = path
-    let rc = posix_run_argv(buf as *const u8, argv_blob.len(), 0 as *const u8, 0 as *const u8, 0 as *const u8, 0 as *const u8, 0, true)
+    let rc = posix_run_argv(buf as *const u8, path.len(), 0 as *const u8, 0 as *const u8, 0 as *const u8, 0 as *const u8, 0, true)
     with_free(buf)
     rc
 
-pub fn rt_compat_exec_argv(args: str) -> i32:
+pub fn rt_compat_exec_argv(args: &str) -> i32:
     let buf = posix_str_to_c_buf(args)
     if buf as i64 == 0:
         return -1
@@ -1102,7 +1101,7 @@ pub fn rt_compat_exec_argv(args: str) -> i32:
     with_free(buf)
     rc
 
-pub fn rt_compat_exec_argv_cwd(args: str, cwd: str) -> i32:
+pub fn rt_compat_exec_argv_cwd(args: &str, cwd: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let cwd_buf = posix_str_to_c_buf(cwd)
     if arg_buf as i64 == 0 or cwd_buf as i64 == 0:
@@ -1112,10 +1111,10 @@ pub fn rt_compat_exec_argv_cwd(args: str, cwd: str) -> i32:
     with_free(cwd_buf)
     rc
 
-pub fn rt_compat_exec_argv_capture(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32:
+pub fn rt_compat_exec_argv_capture(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32:
     rt_compat_exec_argv_capture_cwd(args, stdout_path, stderr_path, timeout_ms, "")
 
-pub fn rt_compat_exec_argv_capture_input(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, stdin_path: str) -> i32:
+pub fn rt_compat_exec_argv_capture_input(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, stdin_path: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let out_buf = posix_str_to_c_buf(stdout_path)
     let err_buf = posix_str_to_c_buf(stderr_path)
@@ -1129,7 +1128,7 @@ pub fn rt_compat_exec_argv_capture_input(args: str, stdout_path: str, stderr_pat
     with_free(in_buf)
     rc
 
-pub fn rt_compat_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str) -> i32:
+pub fn rt_compat_exec_argv_capture_cwd(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let out_buf = posix_str_to_c_buf(stdout_path)
     let err_buf = posix_str_to_c_buf(stderr_path)
@@ -1144,7 +1143,7 @@ pub fn rt_compat_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path:
         with_free(cwd_buf)
     rc
 
-pub fn rt_compat_exec_argv_capture_spawn(args: str, stdout_path: str, stderr_path: str) -> i32:
+pub fn rt_compat_exec_argv_capture_spawn(args: &str, stdout_path: &str, stderr_path: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let out_buf = posix_str_to_c_buf(stdout_path)
     let err_buf = posix_str_to_c_buf(stderr_path)
