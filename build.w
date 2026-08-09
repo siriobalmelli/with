@@ -1442,25 +1442,32 @@ pub fn build(ctx: BuildCtx) -> Build:
     verified = verified.dep("fixpoint")
     out = out.add_target(verified)
 
-    out = out.add_target(with_object_target("rt-core-object", stage_compiler_bin("with-stage2"), "rt/rt_core.w", "out/lib/rt_core.o", "-O1", "stage2"))
-    out = out.add_target(with_object_target("rt-platform-object", stage_compiler_bin("with-stage2"), host_runtime.platform_source, host_runtime.platform_object, "-O1", "stage2"))
+    // #747 INTERIM: out/lib rt objects are seed-built (mirroring
+    // out/bootstrap-lib) until the extern bit-copy doctrine covers the
+    // DEFINITION side of the with_* ABI. The flipped compiler emits
+    // callee-side drops for keep-ABI consuming-str intrinsics
+    // (with_str_eq & co.), violating the caller-owns contract codegen
+    // emits against — a flip-built rt_core.o frees every str operand it
+    // is shown (issue: flip-built rt corrupts linked binaries).
+    out = out.add_target(with_object_target("rt-core-object", "seed", "rt/rt_core.w", "out/lib/rt_core.o", "-O1", ""))
+    out = out.add_target(with_object_target("rt-platform-object", "seed", host_runtime.platform_source, host_runtime.platform_object, "-O1", ""))
     out = out.add_target(empty_file_target("empty-opposite-runtime-blob", host_runtime.opposite_platform_blob))
     out = out.add_target(empty_file_target("empty-second-opposite-runtime-blob", host_runtime.second_opposite_platform_blob))
-    out = out.add_target(with_object_target("cimport-stubs-object", stage_compiler_bin("with-stage2"), "rt/cimport_stubs.w", "out/lib/cimport_stubs.o", "-O1", "stage2"))
-    var compat_runtime_obj = with_object_target("compat-runtime-object", stage_compiler_bin("with-stage2"), "out/gen/compat_runtime.w", "out/lib/compat_runtime.o", "-O1", "stage2")
+    out = out.add_target(with_object_target("cimport-stubs-object", "seed", "rt/cimport_stubs.w", "out/lib/cimport_stubs.o", "-O1", ""))
+    var compat_runtime_obj = with_object_target("compat-runtime-object", "seed", "out/gen/compat_runtime.w", "out/lib/compat_runtime.o", "-O1", "")
     compat_runtime_obj = compat_runtime_obj.dep("compat-runtime-source")
     out = out.add_target(compat_runtime_obj)
-    out = out.add_target(with_object_target("panic-runtime-object", stage_compiler_bin("with-stage2"), "rt/panic_runtime.w", "out/lib/panic_runtime.o", "-O1", "stage2"))
-    out = out.add_target(with_ir_target_overflow("regex-runtime-ir", stage_compiler_bin("with-stage2"), "rt/regex_runtime.w", "out/tmp/regex_runtime.ll", "stage2", "wrap"))
+    out = out.add_target(with_object_target("panic-runtime-object", "seed", "rt/panic_runtime.w", "out/lib/panic_runtime.o", "-O1", ""))
+    out = out.add_target(with_ir_target_overflow("regex-runtime-ir", "seed", "rt/regex_runtime.w", "out/tmp/regex_runtime.ll", "", "wrap"))
 
     var regex_runtime = target_new(.CompileLlvmIrObject, "regex-runtime-object", "out/tmp/regex_runtime.ll").output("out/lib/regex_runtime.o")
     regex_runtime = regex_runtime.dep("regex-runtime-ir")
     out = out.add_target(regex_runtime)
 
-    out = out.add_target(with_object_target("fiber-stubs-object", stage_compiler_bin("with-stage2"), "rt/fiber_stubs.w", "out/lib/fiber_stubs.o", "-O1", "stage2"))
-    out = out.add_target(with_object_target("channel-runtime-object", stage_compiler_bin("with-stage2"), "rt/channel_runtime.w", "out/lib/channel_runtime.o", "-O1", "stage2"))
-    out = out.add_target(with_object_target("fiber-runtime-object", stage_compiler_bin("with-stage2"), "rt/fiber_runtime.w", "out/lib/fiber_runtime.o", "-O1", "stage2"))
-    out = out.add_target(with_object_target("fiber-core-object", stage_compiler_bin("with-stage2"), host_runtime.fiber_core_source, "out/lib/fiber.o", "-O1", "stage2"))
+    out = out.add_target(with_object_target("fiber-stubs-object", "seed", "rt/fiber_stubs.w", "out/lib/fiber_stubs.o", "-O1", ""))
+    out = out.add_target(with_object_target("channel-runtime-object", "seed", "rt/channel_runtime.w", "out/lib/channel_runtime.o", "-O1", ""))
+    out = out.add_target(with_object_target("fiber-runtime-object", "seed", "rt/fiber_runtime.w", "out/lib/fiber_runtime.o", "-O1", ""))
+    out = out.add_target(with_object_target("fiber-core-object", "seed", host_runtime.fiber_core_source, "out/lib/fiber.o", "-O1", ""))
 
     var fiber_asm = target_new(.CompileAsmObject, "fiber-asm-object", host_runtime.fiber_asm_source).output("out/lib/fiber_asm.o")
     out = out.add_target(fiber_asm)
