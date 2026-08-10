@@ -8415,7 +8415,12 @@ impl Sema:
             let bit_pointee = self.shared_copy_pointee(operand as i32)
             if bit_pointee != 0:
                 let _ = self.record_contextual_copy_adjustment(operand_node, bit_pointee, operand as i32)
+                self.typed_expr_types.insert(node, bit_pointee)
                 return bit_pointee
+            // #767 re-land under lldb watch: the comptime evaluator's
+            // node_type_or fell back to the operand literal's default and ~0
+            // in a u32 fn evaluated as 64-bit -1 (unsigned_arith).
+            self.typed_expr_types.insert(node, operand as i32)
             return operand as i32
         if op == UnaryOp.UOP_NOT:
             self.warn_negated_membership_lint(node, operand_node)

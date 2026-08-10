@@ -1827,6 +1827,17 @@ impl ComptimeEvaluator:
                     if default_value.kind == ComptimeValueKind.CV_INVALID:
                         return comptime_control_error()
                     return comptime_control_value(default_value)
+        // #767: fold-order evaluation can compute an int body value in the
+        // operand's default representation (~0 -> 64-bit -1) before the tail
+        // expr has its checked type record. The declared return type is the
+        // authoritative demand — adapt the value exactly like runtime return
+        // coercion would (mask to width/signedness).
+        if (signal.kind == ComptimeControlKind.CTL_RETURN or signal.kind == ComptimeControlKind.CTL_VALUE) and ret_type != 0:
+            if signal.value.kind == ComptimeValueKind.CV_INT:
+                let ret_resolved = self.sema.resolve_alias(self.sema.numeric_operand_type(ret_type) as TypeId)
+                if self.sema.get_type_kind(ret_resolved) == TypeKind.TY_INT:
+                    let adapted = comptime_bit_result(signal.value.data0, self.comptime_int_width(ret_type), self.comptime_int_is_unsigned(ret_type))
+                    return comptime_control_value(comptime_value_int(ret_type, adapted))
         if signal.kind == ComptimeControlKind.CTL_RETURN:
             return comptime_control_value(signal.value)
         signal
