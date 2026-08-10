@@ -75,11 +75,11 @@ fn compiler_hook_escape(value: str) -> str:
             out = out ++ value.slice(i as i64, (i + 1) as i64)
     out
 
-fn compiler_capability_valid(token: str) -> bool:
+fn compiler_capability_valid(token: &str) -> bool:
     let expected = with_getenv_str("WITH_TOOL_CAPABILITY_TOKEN")
     expected.len() > 0 and token == expected
 
-fn compiler_capability_require(token: str, name: str):
+fn compiler_capability_require(token: &str, name: &str):
     if not compiler_capability_valid(token):
         with_eprint("error: invalid compiler hook capability: " ++ name)
         exit(1)
