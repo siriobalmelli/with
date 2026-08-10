@@ -181,14 +181,41 @@ undermodeling pattern is likely behind more of the tail — when a
 validator error looks impossible, mirror sema's rule into
 mir_validate_* (three precedents today).
 
+## Census round 5 (2026-08-10): 46 -> 40; verifier-class dead; four issues filed
+
+Landed since round 4 (each seed-gated, committed):
+- `ba6218eb` BindEntry loses Copy (D28); literal-fit diagnostic names the
+  literal/suffix/expected.
+- `0e5c922d` THREE codegen fixes via finally hearing the LLVM verifier
+  (wl_verify_function now PrintMessageAction): str ORDERING compares get
+  #293's sema routing (was raw `icmp slt ptr, %str` in every str-keyed
+  map instantiation); regex literals pass `&str` by constant-header
+  address via gen_string_literal_ref (was %str by value against the
+  flipped Regex.__literal_code — D6 per-path derivation). Healed
+  behav_len_signed + 5 regex/fstring tests.
+
+Filed with repros in fixpoint-analysis/: #762 &str method dispatch
+(.clone/.to_owned), #763 multi-module c_import corruption (3 symptoms,
+one mechanism — census 5's `unknown type 'c_uint'` ×4 = the issue59
+quartet; single-module imports fine), #764 enum-ctor payload move gap
+(+ widening hazard protocol — naive marking builds a compiler whose CLI
+corrupts; needs the :move-audit-bracketed batch), #765 inline unsigned
+shift sext at compares (IR fingerprint; bound temp fine).
+
+Remaining 40: 4 = #763 (blocked), ~2 = #765/#764-shaped exit-134s,
+2 JsonView (ERIC QUEUE #3 — derive-generator design), 1 = #762,
+2 struct-literal mismatch, 3 check-fail-1, 2 comptime-only-call,
+regex /g match-count runtime residue (behav_regex_language_semantics),
+view-outlives pair, tail onesies. ~30 unblocked.
+
 ## Next work, in order
 
-1. D28-migrate the 6 Copy-with-str-field test types; sweep the onesie
-   tail class-by-class (start with the 3 exit-134 aborts — runtime, use
-   the debug allocator).
-2. Battery + audits (:move-audit/:drop-audit — this batch has TWO
-   ownership-class lowerings: concat temps and return auto-ref), then
-   merge gate (Eric queue #1); #761 retirement rides post-reseed.
+1. Keep burning unblocked classes: check-fail-1 trio, struct-literal
+   pair, comptime pair, view-outlives pair, regex /g runtime residue.
+2. #764 fix in its own :move-audit-bracketed batch (protocol in issue).
+3. Battery + audits (batch holds ownership-class lowerings: concat
+   temps, return auto-ref, str-order routing), then merge gate (Eric
+   queue #1); #761 retirement rides post-reseed.
 
 
 
