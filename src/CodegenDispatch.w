@@ -2376,8 +2376,20 @@ impl Codegen:
         if wl_get_type_kind(lty) == wl_integer_type_kind() and wl_get_type_kind(rty) == wl_integer_type_kind():
             if wl_get_int_type_width(rty) > wl_get_int_type_width(lty):
                 wider_ty = rty
-        let lhs_unsigned = is_unsigned or self.mir_sema_type_is_unsigned(lhs_sema)
-        let rhs_unsigned = is_unsigned or self.mir_sema_type_is_unsigned(rhs_sema)
+        // #765: a nested rvalue operand (an inline shift in compare position)
+        // can arrive with NO sema type record — defaulting it to signed
+        // sext'd a u8 shift result while the peer zext'd, one icmp with mixed
+        // extensions ((1u8 << 7) == 128u8 was false). Sema separately rejects
+        // genuinely mixed-signedness compares, so an absent record safely
+        // adopts the peer's signedness.
+        var lhs_unsigned = is_unsigned or self.mir_sema_type_is_unsigned(lhs_sema)
+        var rhs_unsigned = is_unsigned or self.mir_sema_type_is_unsigned(rhs_sema)
+        if lhs_sema == 0 and rhs_sema != 0:
+            lhs_unsigned = rhs_unsigned
+        if rhs_sema == 0 and lhs_sema != 0:
+            rhs_unsigned = lhs_unsigned
+        if (op == BinaryOp.OP_EQ or op == BinaryOp.OP_NEQ) and with_getenv_str("WITH_TRACE_CMP").len() > 0:
+            with_eprint(f"[cmp] op={op} lhs_sema={lhs_sema} rhs_sema={rhs_sema} lu={if lhs_unsigned: 1 else: 0} ru={if rhs_unsigned: 1 else: 0} lw={wl_get_int_type_width(lty)} rw={wl_get_int_type_width(rty)}")
         let l = self.coerce_int_ext(lhs, wider_ty, lhs_unsigned)
         let r = self.coerce_int_ext(rhs, wider_ty, rhs_unsigned)
         let arith_unsigned = lhs_unsigned or rhs_unsigned

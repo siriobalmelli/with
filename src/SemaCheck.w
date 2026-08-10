@@ -8301,6 +8301,13 @@ impl Sema:
             if self.get_type_kind(rhs_resolved) != TypeKind.TY_INT or self.get_type_d1(rhs_resolved) != 0:
                 self.emit_error("shift count must be unsigned integer", node)
                 return 0
+            // #765: record the result type (= lhs type) like the bitwise arm
+            // below. Without it MirLower's expr_type fell back and typed the
+            // shift temp from the COUNT operand (u32): the i8 result was
+            // sext-stored into a 32-bit temp, so an INLINE (1u8 << 7) compared
+            // as -128 while a bound `let r = ...` was re-truncated to u8 by
+            // the copy and accidentally correct.
+            self.typed_expr_types.insert(node, lhs as i32)
             return lhs as i32
 
         // Bitwise
