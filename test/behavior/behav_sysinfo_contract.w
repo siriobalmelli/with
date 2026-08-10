@@ -1,9 +1,9 @@
 use std.sysinfo
 
-fn valid_os(s: str) -> bool:
+fn valid_os(s: &str) -> bool:
     s == "Macos" or s == "Linux" or s == "Windows"
 
-fn valid_arch(s: str) -> bool:
+fn valid_arch(s: &str) -> bool:
     s == "armv8" or s == "x86_64"
 
 fn main:

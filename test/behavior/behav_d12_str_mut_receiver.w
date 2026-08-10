@@ -30,8 +30,9 @@ fn main:
     // Both fields of the fat pointer travel: len changes are visible.
     assert(s.len() == 5)
 
-    // By-value param: callee mutates its copy, the caller is untouched.
-    assert(shout_a_copy(s) == "ello!!")
+    // By-value param: the callee owns an explicit clone (D28: str moves),
+    // the caller is untouched.
+    assert(shout_a_copy(s.clone()) == "ello!!")
     assert(s == "ello!")
 
     // Branch and loop shapes drive the caller's place.

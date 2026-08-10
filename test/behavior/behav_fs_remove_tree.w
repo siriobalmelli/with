@@ -1,6 +1,6 @@
 use std.fs
 
-fn contains_line(text: str, line: str) -> bool:
+fn contains_line(text: &str, line: &str) -> bool:
     if text == line:
         return true
     text.contains(line ++ "\n") or text.contains("\n" ++ line)

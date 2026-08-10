@@ -10,7 +10,7 @@ fn test_self_append_loop:
 
 fn test_alias_falls_back:
     var a = "base"
-    let b = a
+    let b = a.clone()
     a = a ++ "!"
     assert(a == "base!")
     assert(b == "base")

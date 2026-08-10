@@ -2796,7 +2796,7 @@ fn synthesize_test_main_source(text: &str, test_names: &Vec[str]) -> str:
     if text.len() > 0 and text.byte_at(text.len() - 1) != 10:
         out.push_str("\n")
     out.push_str("\nuse std.process\n")
-    out.push_str("\nfn __with_test_eq(a: str, b: str) -> bool:\n")
+    out.push_str("\nfn __with_test_eq(a: &str, b: &str) -> bool:\n")
     out.push_str("    a == b\n")
     out.push_str("\nfn main:\n")
     out.push_str("    let __with_test_filter = env(\"WITH_TEST_FILTER\")\n")
