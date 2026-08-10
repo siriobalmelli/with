@@ -7556,7 +7556,9 @@ impl MirBuilder:
             self.expected_type = ret_ty
         if value_expr != 0:
             self.cancel_scheduled_value_drop_for_receiver_expr(value_expr)
-        let ret_op = if value_expr != 0: self.lower_expr(value_expr) else: self.unit_operand()
+        let ret_op_raw = if value_expr != 0: self.lower_expr(value_expr) else: self.unit_operand()
+        let rr_adj = self.adjust_ret_operand_auto_ref(ret_op_raw, value_expr, ret_ty, self.ast.get_start(node))
+        let ret_op = if rr_adj >= 0: rr_adj else: ret_op_raw
         self.expected_type = saved_expected
         let ret_place = self.place_for_local(0)
         self.assign_operand_to_place(ret_place, ret_op, self.ast.get_start(node))
@@ -8897,6 +8899,36 @@ impl MirBuilder:
         let lowered = if autocopy_ref >= 0: autocopy_ref else: self.lower_expr(arg_node)
         self.expected_type = saved_expected
         lowered
+
+    // Return-boundary auto-ref (D5's call-argument rule at the dual
+    // position): an already-lowered place operand of type T feeding a &T
+    // return borrows the place, exactly like a call argument does. Runs
+    // AFTER lowering so block bodies adjust through their tail operand.
+    // Gated to named-rooted places — a temporary's view must keep failing
+    // loudly instead of borrowing a dying slot.
+    mut fn adjust_ret_operand_auto_ref(op: i32, value_expr: i32, ret_ty: i32, span: i32) -> i32:
+        if op < 0 or value_expr == 0 or ret_ty == 0:
+            return -1
+        let ok = self.body.operand_kinds.get(op as i64)
+        if ok != OperandKind.OK_COPY and ok != OperandKind.OK_MOVE:
+            return -1
+        let actual_ty = self.expr_type(value_expr)
+        if actual_ty == 0 or actual_ty == ret_ty:
+            return -1
+        if self.sema.can_auto_ref_arg_frozen(ret_ty, actual_ty) == 0:
+            return -1
+        let place: i32 = self.body.operand_d0.get(op as i64)
+        if self.place_source_is_named(place) == 0:
+            return -1
+        if self.place_type_is_str(place) != 0:
+            self.mark_string_place_copied(place)
+        else:
+            self.mark_string_base_fields_may_alias(self.place_base_local(place))
+        let rv = self.body.new_rvalue(RvalueKind.RK_REF, BorrowKind.SHARED, place, 0)
+        let temp = self.new_temp(ret_ty)
+        let temp_place = self.place_for_local(temp)
+        self.body.push_stmt(self.cur_bb, StmtKind.Assign, temp_place, rv, span)
+        self.body.new_operand(OperandKind.OK_COPY, temp_place)
 
     mut fn lower_auto_ref_call_arg(arg_node: i32, expected_ty: i32) -> i32:
         if arg_node == 0 or expected_ty == 0:
@@ -13452,7 +13484,9 @@ fn lower_fn_with_sig(builder: MirBuilder, fn_node: i32, sig_idx: i32) -> MirBody
     var result = if ret_is_void:
         builder.lower_expr_discard(body_expr)
     else:
-        let body_result = builder.lower_expr(body_expr)
+        let tail_raw = builder.lower_expr(body_expr)
+        let tail_adj = builder.adjust_ret_operand_auto_ref(tail_raw, body_expr, ret_ty, builder.ast.get_end(fn_node))
+        let body_result = if tail_adj >= 0: tail_adj else: tail_raw
         if body_falls_through != 0 and builder.operand_type(body_result) == builder.sema.ty_void:
             builder.lower_implicit_default_return(ret_ty, builder.ast.get_end(fn_node))
         else:
