@@ -2874,12 +2874,26 @@ impl MirBuilder:
         self.switch_to(next_bb)
         result_place
 
+    // `=~` OBSERVES its subject (captures_match_op takes &str). A named
+    // subject must be read in place: lowering it through lower_expr moved the
+    // local into a temp, so after the first `/g` iteration the subject was
+    // reset-on-move blanked and every later match saw "". One rule for every
+    // =~ lowering site (expr, if-cond, while-cond); rvalue subjects still
+    // materialize into a stmt temp.
+    mut fn lower_regex_subject_place(lhs: i32) -> i32:
+        let lhs_kind = self.ast.kind(lhs)
+        if lhs_kind == NodeKind.NK_IDENT or lhs_kind == NodeKind.NK_FIELD_ACCESS:
+            let p = self.lower_expr_place(lhs)
+            if p >= 0:
+                return p
+        let text_op = self.lower_expr(lhs)
+        let text_ty = self.expr_type(lhs)
+        self.materialize_operand(text_op, text_ty, self.ast.get_start(lhs))
+
     mut fn lower_regex_match_expr(node: i32) -> i32:
         let lhs = self.ast.get_data0(node)
         let rhs = self.ast.get_data1(node)
-        let text_op = self.lower_expr(lhs)
-        let text_ty = self.expr_type(lhs)
-        let text_place = self.materialize_operand(text_op, text_ty, self.ast.get_start(lhs))
+        let text_place = self.lower_regex_subject_place(lhs)
         let regex_op = self.lower_expr(rhs)
         let regex_ty = self.expr_type(rhs)
         let regex_place = self.materialize_operand(regex_op, regex_ty, self.ast.get_start(rhs))
@@ -5923,9 +5937,7 @@ impl MirBuilder:
         if self.ast.kind(cond_expr) == NodeKind.NK_MATCH_OP:
             let lhs = self.ast.get_data0(cond_expr)
             let rhs = self.ast.get_data1(cond_expr)
-            let text_op = self.lower_expr(lhs)
-            let regex_text_ty = self.expr_type(lhs)
-            let regex_text_place = self.materialize_operand(text_op, regex_text_ty, self.ast.get_start(lhs))
+            let regex_text_place = self.lower_regex_subject_place(lhs)
             let regex_op = self.lower_expr(rhs)
             let regex_ty = self.expr_type(rhs)
             let regex_capture_place = self.materialize_operand(regex_op, regex_ty, self.ast.get_start(rhs))
@@ -6145,9 +6157,7 @@ impl MirBuilder:
         if self.ast.kind(cond_expr) == NodeKind.NK_MATCH_OP:
             let lhs = self.ast.get_data0(cond_expr)
             let rhs = self.ast.get_data1(cond_expr)
-            let text_op = self.lower_expr(lhs)
-            let text_ty = self.expr_type(lhs)
-            let text_place = self.materialize_operand(text_op, text_ty, self.ast.get_start(lhs))
+            let text_place = self.lower_regex_subject_place(lhs)
             let regex_op = self.lower_expr(rhs)
             let regex_ty = self.expr_type(rhs)
             let regex_place = self.materialize_operand(regex_op, regex_ty, self.ast.get_start(rhs))
