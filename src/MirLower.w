@@ -7556,7 +7556,15 @@ impl MirBuilder:
             self.expected_type = ret_ty
         if value_expr != 0:
             self.cancel_scheduled_value_drop_for_receiver_expr(value_expr)
-        let ret_op_raw = if value_expr != 0: self.lower_expr(value_expr) else: self.unit_operand()
+        let ret_op_raw = if value_expr != 0:
+            self.lower_expr(value_expr)
+        else if ret_ty > 0 and ret_ty != self.sema.ty_void as i32:
+            // Bare `return` in a value-returning fn yields the implicit
+            // default (spec: implicit default return) — a unit operand
+            // into the typed ret slot fails the typed-MIR validator.
+            self.lower_implicit_default_return(ret_ty, self.ast.get_start(node))
+        else:
+            self.unit_operand()
         let rr_adj = self.adjust_ret_operand_auto_ref(ret_op_raw, value_expr, ret_ty, self.ast.get_start(node))
         let ret_op = if rr_adj >= 0: rr_adj else: ret_op_raw
         self.expected_type = saved_expected
