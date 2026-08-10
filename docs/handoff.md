@@ -74,6 +74,23 @@ flipped compiler can ever compile its own runtime (post-reseed).
   use-of-moved (tool source needs flip migration; previously masked by the
   broken release binary crashing first).
 
+## RULED (Eric, 2026-08-09, this session): #761 reframed — retire the internal runtime ABI
+
+Full ruling recorded on #761. Three locked parts: (A) rt/*.w compiles
+in-unit like the embedded stdlib — codegen lowers to module functions;
+pre-compiled rt objects survive only as a (compiler-version, target)-keyed
+cache, never as a semantic boundary; (B) after A, remaining boundaries
+(extern fn / @[c_export] / c_import decls) admit only C-representable
+signature types — `str`/`&str` are HARD ERRORS there (Zig's stance, not
+Rust's lint), fix-it names the §16.3c path; (C) §16.3c's str→`*const
+c_char` call-site auto-coercion is unchanged and load-bearing — B costs
+nothing at call sites because C carries the ergonomics; `retains:` params
+already refuse str with `to_cstring` named (#602/D4). The earlier
+definition-side-doctrine options are superseded — they regulated a seam
+this ruling deletes. `ad053bea` (seed-built out/lib rt) is the bridge
+until A lands post-merge/reseed. Normative spec wording awaits Eric's
+blessed text (D20); decision entry to be drafted with it.
+
 ## Next work, in order
 
 1. Migrate `tools/debug_drop.w` (and any other tool the driver builds) to
