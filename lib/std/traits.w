@@ -149,7 +149,11 @@ impl Default for str:
         ""
 
 impl Clone for str:
-    fn clone(self: &Self) -> str: self.to_owned()
+    // Self-contained materialization (`++ ""`): .to_owned() lives in
+    // std.string (absent under --no-std) and &str method dispatch to str
+    // impls is #762; concat lowers through the emitted intrinsics in
+    // every mode.
+    fn clone(self: &Self) -> str: self ++ ""
 
 impl Eq for str:
     fn eq(self: &Self, other: &str) -> bool: *self == other
