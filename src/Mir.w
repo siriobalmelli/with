@@ -3387,7 +3387,9 @@ fn validate_typed_mir_body(mir_mod: &MirModule, body: &MirBody) -> MirValidation
                 if src_ty == 0:
                     return mir_validation_fail(body.fn_sym, span, "use rvalue does not resolve to a concrete MIR type")
                 if not mir_validate_use_assign_compatible(mir_mod, dest_ty, src_ty):
-                    return mir_validation_fail(body.fn_sym, span, "use rvalue type is incompatible with assign destination")
+                    let dk = mir_mod.mir_get_type_kind(mir_mod.mir_resolve_alias(dest_ty)) as i32
+                    let sk = mir_mod.mir_get_type_kind(mir_mod.mir_resolve_alias(src_ty)) as i32
+                    return mir_validation_fail(body.fn_sym, span, f"use rvalue type is incompatible with assign destination (dest ty={dest_ty} kind={dk}, src ty={src_ty} kind={sk})")
             else if rk == RvalueKind.RK_REF:
                 if mir_validate_place_type(mir_mod, body, rv_d1) == 0:
                     return mir_validation_fail(body.fn_sym, span, "ref rvalue does not resolve to a concrete place type")
