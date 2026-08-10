@@ -8470,7 +8470,13 @@ impl Sema:
                     let indexed_exact = self.resolve_alias(operand)
                     if self.get_type_kind(indexed_exact) == TypeKind.TY_REF:
                         raw_pointee = self.get_type_d0(indexed_exact)
-                return self.add_type(TypeKind.TY_PTR, raw_pointee, raw_mut, 0) as i32
+                // Record the sidecar (per-arm recording): MirLower's fallback
+                // cannot type `&raw` of a wrapped place (unsafe block) and
+                // the raw temp came out void (d27 borrow-cast test).
+                let raw_ptr_ty = self.add_type(TypeKind.TY_PTR, raw_pointee, raw_mut, 0) as i32
+                if raw_ptr_ty != 0:
+                    self.typed_expr_types.insert(node, raw_ptr_ty)
+                return raw_ptr_ty
             // D27: `&xs[i]` explicitly spells the same element view that the
             // observing subscript read already produces. The index place is
             // borrowed once; do not manufacture &&T.
@@ -8482,7 +8488,10 @@ impl Sema:
                     self.typed_expr_types.insert(node, operand as i32)
                     return operand as i32
             self.check_borrow_create(operand_node, BorrowKind.SHARED, node)
-            return self.add_type(TypeKind.TY_REF, operand as i32, 0, 0) as i32
+            let ref_result_ty = self.add_type(TypeKind.TY_REF, operand as i32, 0, 0) as i32
+            if ref_result_ty != 0:
+                self.typed_expr_types.insert(node, ref_result_ty)
+            return ref_result_ty
         if op == UnaryOp.UOP_DEREF:
             let resolved = self.resolve_alias(operand)
             let tk = self.get_type_kind(resolved)
