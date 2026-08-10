@@ -6497,7 +6497,12 @@ impl ComptimeEvaluator:
         if op == UnaryOp.UOP_BIT_NOT:
             if comptime_value_is_intlike(inner.value) == 0:
                 return self.fail(node, "bitwise not requires integer comptime values")
-            return comptime_control_value(comptime_value_int(result_ty, 0 - comptime_value_intlike(inner.value) - 1))
+            // Mask to the result width/signedness: bare two's-complement
+            // flip left ~0u32 as 64-bit -1 and the const materialization
+            // rejected it against u32.
+            let bn_flipped = 0 - comptime_value_intlike(inner.value) - 1
+            let bn_masked = comptime_bit_result(bn_flipped, self.comptime_int_width(result_ty), self.comptime_int_is_unsigned(result_ty))
+            return comptime_control_value(comptime_value_int(result_ty, bn_masked))
         if op == UnaryOp.UOP_NOT:
             let truthy = comptime_value_truthy(inner.value)
             if truthy < 0:
