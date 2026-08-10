@@ -9,9 +9,11 @@ use std.builtins.print_i32
 type Big { a: Vec[str], b: Vec[str] }
 
 fn cl(v: &Vec[str]) -> Vec[str]:
-    let out: Vec[str] = Vec.new()
+    var out: Vec[str] = Vec.new()
     for i in 0..v.len() as i32:
-        out.push(v.get(i as i64))
+        // D22: get observes; push stores an owned value — materialize
+        // (`++ ""`; .clone() on a &str view is #762).
+        out.push(v.get(i as i64) ++ "")
     out
 
 fn clone_big(r: &Big) -> Big:
