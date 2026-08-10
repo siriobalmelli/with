@@ -3129,7 +3129,7 @@ fn mir_validate_type_compatible_fast(mir_mod: &MirModule, expected: i32, actual:
         return if mir_mod.mir_get_type_d0(exp_r) == mir_mod.mir_get_type_d0(act_r): 1 else: 0
     if exp_k == TypeKind.TY_ENUM and act_k == TypeKind.TY_ENUM:
         return if mir_mod.mir_get_type_d0(exp_r) == mir_mod.mir_get_type_d0(act_r): 1 else: 0
-    if exp_k == TypeKind.TY_FN and act_k == TypeKind.TY_FN:
+    if (exp_k == TypeKind.TY_FN and act_k == TypeKind.TY_FN) or (exp_k == TypeKind.TY_EXTERN_FN and act_k == TypeKind.TY_EXTERN_FN) or (exp_k == TypeKind.TY_FN and act_k == TypeKind.TY_EXTERN_FN) or (exp_k == TypeKind.TY_EXTERN_FN and act_k == TypeKind.TY_FN):
         // Sema does not intern fn types canonically; mirror its structural
         // fn_types_compatible rule (d0=params extra, d1=count, d2=ret).
         if mir_mod.mir_get_type_d1(exp_r) != mir_mod.mir_get_type_d1(act_r):
