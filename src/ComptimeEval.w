@@ -2522,6 +2522,13 @@ impl ComptimeEvaluator:
             return comptime_control_value(self.empty_string_builder_value(result_type))
         self.fail(node, "StringBuilder static method '" ++ method ++ "' is not comptime-evaluable yet")
 
+// The builtin collection method surface the evaluator implements itself
+// (mirrors SemaCheck.fn_symbol_is_builtin_vec_comptime_allowed, plus the
+// map surface eval_map_method_call handles). Unknown methods still fail
+// inside the handlers with a named diagnostic.
+fn comptime_pipeline_builtin_method(name: &str) -> i32:
+    if name == "push" or name == "pop" or name == "get" or name == "set" or name == "clear" or name == "len" or name == "is_empty" or name == "contains" or name == "insert" or name == "remove": 1 else: 0
+
 fn comptime_string_builder_constructor_method(name: &str) -> str:
     if name == "StringBuilder.new" or name.ends_with(".StringBuilder.new"):
         return "new"
@@ -3463,7 +3470,11 @@ impl ComptimeEvaluator:
                 return write_back
 
         let call_ret = self.sema.resolve_alias(self.sema.sig_return_type(concrete_sig) as TypeId)
-        if carry_receiver != 0 and receiver_mode == ReceiverMode.Mut and call_ret == self.sema.ty_void:
+        // A generic method's concrete return (produce[T] -> T with T=Unit)
+        // can remain unresolved here; the evaluated RESULT's unit-ness is
+        // then the decisive D21 carrier signal (#766).
+        let result_is_unit = call_signal.value.kind == ComptimeValueKind.CV_VOID or call_signal.value.kind == ComptimeValueKind.CV_INVALID
+        if carry_receiver != 0 and receiver_mode == ReceiverMode.Mut and (call_ret == self.sema.ty_void or result_is_unit):
             return comptime_control_value(final_receiver)
         call_signal
 
@@ -3572,6 +3583,28 @@ impl ComptimeEvaluator:
             lhs_tid = self.sema.ty_str as i32
         if lhs_tid != 0 and self.sema.pipeline_method_exists(lhs_tid, fn_sym) != 0:
             return self.eval_pipeline_method_value(lhs, lhs_signal.value, fn_sym, args_start, arg_count, node)
+        // #766: a transform-folded initializer (#565) reaches here before
+        // sema recorded pipeline routing, so the method-exists probe can miss
+        // (no lhs type, or an owner lookup that only works post-check). The
+        // evaluated VALUE KIND is still decisive for the builtin collection
+        // surface — dispatch the method sugar by kind (the same surface
+        // sema's comptime allowance admits); the free-fn path would reject
+        // it at the comptime gate.
+        if comptime_pipeline_builtin_method(self.pool.resolve(fn_sym)) != 0:
+            var stage_recv = comptime_value_clone(lhs_signal.value)
+            var stage_vk = stage_recv.kind
+            if stage_vk != ComptimeValueKind.CV_VEC and stage_vk != ComptimeValueKind.CV_BYTES and stage_vk != ComptimeValueKind.CV_MAP:
+                // D21 mutator chain: a Unit-returning inner stage mutates the
+                // chain root in place, so this stage's receiver is the ROOT's
+                // current binding value, not the inner stage's Unit result.
+                let chain_root = self.pipeline_receiver_root_node(lhs)
+                if chain_root != lhs:
+                    let root_signal = self.eval_expr(chain_root)
+                    if root_signal.kind == ComptimeControlKind.CTL_VALUE:
+                        stage_recv = comptime_value_clone(root_signal.value)
+                        stage_vk = stage_recv.kind
+            if stage_vk == ComptimeValueKind.CV_VEC or stage_vk == ComptimeValueKind.CV_BYTES or stage_vk == ComptimeValueKind.CV_MAP:
+                return self.eval_pipeline_method_value(lhs, stage_recv, fn_sym, args_start, arg_count, node)
         let args: Vec[ComptimeValue] = Vec.new()
         args.push(lhs_signal.value)
         for i in 0..arg_count:
@@ -7425,7 +7458,7 @@ impl ComptimeEvaluator:
             if runtime_signal.kind != ComptimeControlKind.CTL_ERROR or self.had_error != 0:
                 return runtime_signal
         if self.allow_runtime_calls == 0 and self.fn_decl_node_is_comptime(fn_node) == 0:
-            return self.fail(node, "comptime can only call comptime functions")
+            return self.fail(node, f"comptime can only call comptime functions ('{fn_name}')")
         if fn_node == 0:
             return self.fail(node, "callee '" ++ self.pool.resolve(fn_sym) ++ "' is not a comptime function body")
         if self.active_fn_syms.len() as i32 >= self.recursion_limit:
