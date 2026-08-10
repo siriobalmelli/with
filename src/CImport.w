@@ -3405,7 +3405,15 @@ fn ci_parse_postfix_expr(s: &str, params: &str, known: &str) -> str:
     // Comma operator in parens: (a, b, c) — handled by strip_parens + recursion
     // Literal values
     if ci_is_int_literal(t):
-        return ci_strip_int_suffix(t)
+        let clean_int = ci_strip_int_suffix(t)
+        // A C literal above i64::MAX is unsigned (long long) by C's own
+        // conversion rules; With's unsuffixed default ladder stops at i64,
+        // so render the suffix C implied. Without it, a call-shaped macro
+        // like UINTMAX_C(18446744073709551615) hands the checker a bare
+        // literal with no context and stdint.h fails to import.
+        if ci_int_literal_exceeds_i64(clean_int):
+            return clean_int ++ "u64"
+        return clean_int
     if ci_is_float_literal(t):
         return ci_strip_float_suffix(t)
     if ci_is_string_literal(t):
@@ -11835,6 +11843,30 @@ fn ci_is_int_literal(s: &str) -> bool:
                 continue
             return false
     true
+
+// True when a suffix-stripped C integer literal exceeds i64::MAX (so C
+// treats it as unsigned long long). 20-digit decimals may exceed u64::MAX
+// too — still suffixed; the checker's fit error then names the real bound.
+fn ci_int_literal_exceeds_i64(digits: &str) -> bool:
+    if digits.len() == 0 or digits.byte_at(0) == 45:
+        return false
+    if digits.len() >= 2 and digits.byte_at(0) == 48 and (digits.byte_at(1) == 120 or digits.byte_at(1) == 88):
+        var i: i64 = 2
+        while i < digits.len() and digits.byte_at(i) == 48:
+            i += 1
+        if digits.len() - i != 16:
+            return false
+        let first = digits.byte_at(i)
+        return first >= 56 or (first >= 97 and first <= 102) or (first >= 65 and first <= 70)
+    var j: i64 = 0
+    while j < digits.len() and digits.byte_at(j) == 48:
+        j += 1
+    let n = digits.len() - j
+    if n < 19:
+        return false
+    if n > 19:
+        return true
+    digits.slice(j, digits.len()) > "9223372036854775807"
 
 fn ci_strip_int_suffix(s: &str) -> str:
     var end = s.len() as i32

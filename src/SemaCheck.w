@@ -5881,7 +5881,10 @@ impl Sema:
                 return expected_ty as TypeId
             let fast = self.ast.int_literal_fast_i64(node as NodeId)
             if fast.ok == 0:
-                let lit_text = self.ast.get_string(node)
+                // int_literal_digits maps node -> digit string index; get_string
+                // takes the INDEX (passing the node id here OOB'd the compact
+                // string table — #660's id-confusion class).
+                let lit_text = self.ast.int_literal_digits(node as NodeId)
                 self.emit_error(f"integer literal does not fit default type ('{lit_text}', suffix_ty={suffix_ty}, expected_ty={expected_ty})", node)
                 self.typed_expr_types.insert(node, self.ty_i64 as i32)
                 return self.ty_i64
