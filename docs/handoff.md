@@ -91,17 +91,55 @@ this ruling deletes. `ad053bea` (seed-built out/lib rt) is the bridge
 until A lands post-merge/reseed. Normative spec wording awaits Eric's
 blessed text (D20); decision entry to be drafted with it.
 
+## Census round 2 (2026-08-09 pm): 102 -> 59; five fixes landed
+
+Landed (each committed separately, seed gate green per round):
+- `43d53db1` SEMA BUG: generic std instantiation stranded Sema in the std
+  module — two `current_module_path` saves captured the field as a VIEW
+  (queue-#4 save/restore idiom); the overwrite dropped the payload and the
+  restore read the dangling view. `move` spelling (site-2005 idiom) applied
+  to both. Killed the whole "symbol not visible" class + the 3 red
+  debug-alloc Box/Rc cells (lane now 125/125 modulo #743's failure-path
+  teardown). Pin: behav_local_visible_after_generic_std_import.w.
+- `4f7bd9d2` std.compiler capability helpers observe &str (5 hook tests).
+- `e4c34d8a` tools/debug_drop.w migrated (driver builds; lane runs).
+- `1e2afcf7` `impl Clone for str` (traits.w) — de-Copy doctrine requires
+  the explicit spelling; unblocks derive(Clone) on str-bearing structs.
+- `16aa9070` test-mode synthesis: `__with_test_eq` observes &str (every
+  multi-test file died at dispatch arm 2); four stale test sources
+  migrated (observer helpers; explicit .clone() where independence is the
+  tested contract).
+
+Remaining 59 by class (out/test-graph/behavior-tests/*.stderr):
+18 invalid MIR (10 "use rvalue type is incompatible with assign
+destination" + 8 "does not resolve to a concrete MIR type") — REPRO IN
+HAND, 7 lines, `async:` block into a let: scratchpad/async_min.w (also in
+this section):
+
+    use std.builtins.print_i32
+    fn main:
+        let task = async:
+            41 + 1
+        let v = task.await
+        print_i32(v)
+
+6 Copy-with-str-field test types (BindEntry ×4 at
+test/behavior/lib/demo/program.w:19, JsonView ×2) — D28 ruling 1
+migrations of TEST sources (mechanical: drop Copy, borrow at boundaries).
+3 exit-134, 3 INVALID LLVM FUNCTION main, 2 struct-literal type mismatch,
+2 comptime-only-call, 1 Vec.push arg type, 1 view-outlives, 1
+`to_owned` missing on &str (auto-deref gap or respell). Suspect the
+async-MIR fix collapses several of the abort/LLVM classes too.
+
 ## Next work, in order
 
-1. Migrate `tools/debug_drop.w` (and any other tool the driver builds) to
-   flip rules; rerun `:debug-alloc-tests` — the two new da_ cells must run
-   under the real driver.
-2. Burn down the 102-failure census by class (de-Copy tail first — it's
-   also Eric queue #2/#3 material; then the invalid-MIR lowering bugs).
-3. #761 brief to Eric (definition-side bit-copy doctrine) — blocks the
-   post-reseed world where the flipped compiler compiles rt.
-4. Then the pre-existing endgame from the Aug-5 section: corpus sweep
-   residue, drop-audit vis family, instance I, audits, merge (Eric queue #1).
+1. Root-cause the async-block invalid MIR (repro above; start
+   `--dump-mir`/`--explain-mir-origin` on the let-bound async temp;
+   AsyncLower + MirLower assign-destination typing).
+2. D28-migrate the 6 Copy-with-str-field test types; sweep the tail
+   onesies.
+3. Battery + audits, then merge gate (Eric queue #1); #761 retirement
+   rides post-reseed.
 
 
 
