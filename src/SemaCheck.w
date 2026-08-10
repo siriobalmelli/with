@@ -3222,7 +3222,7 @@ impl Sema:
         else if self.ast.kind(callee) == NodeKind.NK_IDENT:
             fn_sym = self.ast.get_data0(callee)
         let saved_file_id = self.local_file_id
-        let saved_module_path = self.current_module_path
+        let saved_module_path = move self.current_module_path
         let saved_module_has_ci = self.current_module_has_ci
         self.check_reachable_call_target(fn_sym, node)
         self.local_file_id = saved_file_id
@@ -3508,7 +3508,7 @@ impl Sema:
             return -1
 
         let saved_generic_file_id = self.local_file_id
-        let saved_generic_module_path = self.current_module_path
+        let saved_generic_module_path = move self.current_module_path
         let saved_generic_module_has_ci = self.current_module_has_ci
         self.update_fn_source_context(fn_name, fn_node)
 
