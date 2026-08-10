@@ -6330,11 +6330,16 @@ impl ComptimeEvaluator:
         self.fail(node, "comptime cast is not supported for this value")
 
     mut fn eval_disc_variant_sym(sym: i32, node: i32) -> ComptimeControl:
+        let cv_trace = with_getenv_str("WITH_TRACE_COMPTIME").len() > 0
         if not self.sema.variant_lookup.contains(sym):
+            if cv_trace:
+                with_eprint(f"[comptime] disc_variant miss: sym={sym} '{self.pool.resolve(sym)}' not in variant_lookup")
             return self.unsupported(node)
         let enum_tid: i32 = self.sema.variant_type_ids.get(sym).unwrap()
         let enum_resolved = self.sema.resolve_alias(enum_tid as TypeId)
         if not self.sema.disc_repr_types.contains(enum_resolved as i32) or self.sema.disc_has_payload.contains(enum_resolved as i32):
+            if cv_trace:
+                with_eprint(f"[comptime] disc_variant miss: enum ty={enum_resolved as i32} repr={self.sema.disc_repr_types.contains(enum_resolved as i32)} payload={self.sema.disc_has_payload.contains(enum_resolved as i32)}")
             return self.unsupported(node)
         let disc = if self.sema.disc_values.contains(sym): self.sema.disc_values.get(sym).unwrap() else: self.sema.variant_lookup.get(sym).unwrap()
         let repr_ty = self.sema.disc_repr_types.get(enum_resolved as i32).unwrap()
@@ -6380,15 +6385,20 @@ impl ComptimeEvaluator:
         let field = self.ast.get_data1(node)
         if self.ast.kind(base) == NodeKind.NK_IDENT:
             let base_sym = self.ast.get_data0(base)
-            if self.sema.named_types.contains(base_sym):
-                let base_tid: i32 = self.sema.named_types.get(base_sym).unwrap()
+            // Canonicalize base/field/qualified names into the Sema pool
+            // (recovered-fix rule for qualified enum access; the evaluator
+            // looked tables up with AST-pool syms and silently missed).
+            let base_sema_sym = self.sema.pool_lookup_symbol(self.pool.resolve(base_sym))
+            let field_sema_sym = self.sema.pool_lookup_symbol(self.pool.resolve(field))
+            if base_sema_sym != 0 and self.sema.named_types.contains(base_sema_sym):
+                let base_tid: i32 = self.sema.named_types.get(base_sema_sym).unwrap()
                 let base_resolved = self.sema.resolve_alias(base_tid as TypeId)
-                if self.sema.get_type_kind(base_resolved) == TypeKind.TY_ENUM and self.sema.enum_has_variant(base_resolved as i32, field) != 0:
+                if self.sema.get_type_kind(base_resolved) == TypeKind.TY_ENUM and field_sema_sym != 0 and self.sema.enum_has_variant(base_resolved as i32, field_sema_sym) != 0:
                     let qual_name = self.pool.resolve(base_sym) ++ "." ++ self.pool.resolve(field)
-                    let qual_sym = self.pool.intern(qual_name)
-                    if self.sema.variant_lookup.contains(qual_sym):
+                    let qual_sym = self.sema.pool_lookup_symbol(qual_name)
+                    if qual_sym != 0 and self.sema.variant_lookup.contains(qual_sym):
                         return self.eval_disc_variant_sym(qual_sym, node)
-                    return self.eval_disc_variant_sym(field, node)
+                    return self.eval_disc_variant_sym(field_sema_sym, node)
         let base_signal = self.eval_expr(base)
         if base_signal.kind != ComptimeControlKind.CTL_VALUE:
             return base_signal
@@ -6750,7 +6760,7 @@ impl ComptimeEvaluator:
                 return if v >= start_value and v <= end_value: 1 else: 0
             return if v >= start_value and v < end_value: 1 else: 0
         if kind == NodeKind.NK_PAT_AT_BINDING:
-            self.bind_value(self.ast.get_data0(pat), value, 0)
+            self.bind_value(self.ast.get_data0(pat), comptime_value_share(value), 0)
             return self.match_pattern(self.ast.get_data1(pat), value, node)
         if kind == NodeKind.NK_PAT_OR:
             let start = self.slot_syms.len() as i32
@@ -6761,7 +6771,7 @@ impl ComptimeEvaluator:
                     self.slot_syms.pop()
                     self.slot_values.pop()
                     self.slot_muts.pop()
-                if self.match_pattern(self.ast.get_extra(extra_start + i), value, node) != 0:
+                if self.match_pattern(self.ast.get_extra(extra_start + i), comptime_value_share(value), node) != 0:
                     return 1
             while self.slot_syms.len() as i32 > start:
                 self.slot_syms.pop()
@@ -6803,6 +6813,16 @@ impl ComptimeEvaluator:
                 if variant_value.kind == ComptimeControlKind.CTL_VALUE and comptime_value_is_intlike(variant_value.value) != 0:
                     return if comptime_value_intlike(value) == comptime_value_intlike(variant_value.value): 1 else: 0
             return 0
+        if kind == NodeKind.NK_FIELD_ACCESS:
+            // Qualified enum constant as a pattern (`Direction.North =>`):
+            // evaluate the pattern expression and compare values.
+            let qp = self.eval_expr(pat)
+            if qp.kind == ComptimeControlKind.CTL_VALUE:
+                if comptime_value_is_intlike(value) != 0 and comptime_value_is_intlike(qp.value) != 0:
+                    return if comptime_value_intlike(value) == comptime_value_intlike(qp.value): 1 else: 0
+                if value.kind == ComptimeValueKind.CV_ENUM and qp.value.kind == ComptimeValueKind.CV_ENUM:
+                    return if value.data0 == qp.value.data0 and value.extra_count == 0 and qp.value.extra_count == 0: 1 else: 0
+            return 0
         if self.require_success != 0:
             let _ = self.fail(pat, "pattern is not comptime-evaluable yet")
         0
@@ -6817,7 +6837,10 @@ impl ComptimeEvaluator:
             let arm = self.ast.get_extra(extra_start + i)
             self.push_scope()
             let pat = self.ast.get_data0(arm)
-            if self.match_pattern(pat, subject_signal.value, arm) != 0:
+            // Share per arm: passing the field by value MOVED the subject
+            // into arm 1's match; arms 2+ compared a move-blanked struct
+            // (kind=0) and nothing ever matched past the first arm.
+            if self.match_pattern(pat, comptime_value_share(subject_signal.value), arm) != 0:
                 let guard = self.ast.get_data2(arm)
                 var guard_ok = 1
                 if guard != 0:
@@ -6835,7 +6858,9 @@ impl ComptimeEvaluator:
                     self.pop_scope()
                     return body_signal
             self.pop_scope()
-        self.fail(node, "no comptime match arm matched")
+        let subj_kind = subject_signal.value.kind as i32
+        let subj_d0 = subject_signal.value.data0
+        self.fail(node, f"no comptime match arm matched (subject kind={subj_kind} data0={subj_d0})")
 
     fn signal_matches_loop(signal: &ComptimeControl, loop_label: i32) -> i32:
         if signal.kind != ComptimeControlKind.CTL_BREAK and signal.kind != ComptimeControlKind.CTL_CONTINUE:
