@@ -131,14 +131,39 @@ migrations of TEST sources (mechanical: drop Copy, borrow at boundaries).
 `to_owned` missing on &str (auto-deref gap or respell). Suspect the
 async-MIR fix collapses several of the abort/LLVM classes too.
 
+## Census round 3 (2026-08-09 eve): 59 -> 57; async class killed; harness bug found
+
+- `f0d12dc4` typed-MIR assign validator prints dest/src type ids+kinds —
+  keep this pattern for every validator message.
+- `03db1021` ASYNC FIX: NK_ASYNC_BLOCK's check_expr arm never recorded
+  Task[T] in typed_expr_types (recording is per-arm); MirLower fell back
+  to void and the validator rejected `let task = async:` as Task<-void.
+  Both async census tests pass now; 7 more re-bucketed.
+- `b07a2171` HARNESS BUG (lldb-proven): the frozen seed passes a Vec.get
+  &str view to the contains intrinsic with the HEADER address in the
+  data-pointer slot — every seed-built `with test` run failed
+  run-validation ("stdout mismatch") while flip-built runners passed.
+  BOOTSTRAP INTERIM `++ ""` materialization in test_validate_output;
+  respell post-reseed. NOTE: `.clone()`/`.to_owned()` on a &str receiver
+  cannot dispatch (no auto-deref to str impls) — hit twice now; file it.
+
+Remaining 57 by class: 8 invalid-MIR "not a concrete MIR type";
+3 invalid-MIR "incompatible (dest ty kind=14 TY_REF, src kind=6
+TY_STRUCT)" — a struct value assigned into a ref-typed dest, the D27-E2
+shape; 6 Copy-with-str-field test types (BindEntry
+test/behavior/lib/demo/program.w:19, JsonView) — D28 migrations;
+3 exit-134; 3 check-fail; 3 INVALID LLVM main; 2 struct-literal
+mismatch; 2 comptime-only-call; tail onesies (&str method dispatch,
+view-outlives, Vec.push arg).
+
 ## Next work, in order
 
-1. Root-cause the async-block invalid MIR (repro above; start
-   `--dump-mir`/`--explain-mir-origin` on the let-bound async temp;
-   AsyncLower + MirLower assign-destination typing).
-2. D28-migrate the 6 Copy-with-str-field test types; sweep the tail
-   onesies.
-3. Battery + audits, then merge gate (Eric queue #1); #761 retirement
+1. The 8-strong "not a concrete MIR type" class (pick one, reduce, same
+   sidecar-recording suspicion as the async fix).
+2. The 3-strong ref<-struct assign class (typed diag now names it).
+3. D28-migrate the 6 Copy-with-str-field test types; file the
+   &str-method-dispatch gap; sweep onesies.
+4. Battery + audits, then merge gate (Eric queue #1); #761 retirement
    rides post-reseed.
 
 
