@@ -1256,13 +1256,29 @@ impl Sema:
                 return 1
         0
 
-    mut fn prepare_first_fn_clause(dispatch_sym: i32, node: i32, decl_index: i32):
-        if self.fn_decl_effective_indices.contains(decl_index):
-            self.register_fn_clause_decl(dispatch_sym, node)
-            return
-        let body_sym = self.fn_clause_body_symbol_at(dispatch_sym, decl_index)
+    // Clause body symbols are minted from the clause's ORDINAL within its
+    // group (source order) — stable across collect/check passes. Minting from
+    // decl_index drifted: prelude injection shifts the decl table between
+    // passes, so the same clause minted a fresh symbol per pass and the
+    // index-keyed lookup missed in the shifted space — check_fn then saw the
+    // dispatch symbol and rejected a valid clause group ("refutable parameter
+    // pattern requires another function clause or an else").
+    mut fn fn_clause_body_symbol_for(dispatch_sym: i32, node: i32) -> i32:
+        self.register_fn_clause_decl(dispatch_sym, node)
+        let group = self.fn_clause_group_index(dispatch_sym)
+        var ordinal = 0
+        for i in 0..self.fn_clause_group_clause_count(group):
+            if self.fn_clause_group_clause(group, i) == node:
+                ordinal = i
+                break
+        let base: str = with_str_clone_ref(self.pool_resolve(dispatch_sym))
+        self.pool_intern(base ++ "$clause$" ++ f"{ordinal}")
+
+    mut fn prepare_fn_clause(dispatch_sym: i32, node: i32, decl_index: i32) -> i32:
+        let body_sym = self.fn_clause_body_symbol_for(dispatch_sym, node)
+        if self.fn_clause_body_dispatch.contains(body_sym) and self.fn_decl_semantic_symbol(node, 0) == body_sym:
+            return body_sym
         self.fn_decl_effective_syms.insert(node, body_sym)
-        self.fn_decl_effective_indices.insert(decl_index, body_sym)
         self.fn_decl_nodes.insert(body_sym, node)
         self.fn_decl_source_paths.insert(body_sym, self.decl_source_path_for_index(decl_index))
         self.fn_clause_body_dispatch.insert(body_sym, dispatch_sym)
@@ -1271,16 +1287,6 @@ impl Sema:
             self.copy_sig_alias(body_sym, dispatch_sig)
         if self.no_alloc_fns.contains(dispatch_sym):
             self.no_alloc_fns.insert(body_sym, 1)
-        self.register_fn_clause_decl(dispatch_sym, node)
-
-    mut fn prepare_current_fn_clause(dispatch_sym: i32, node: i32, decl_index: i32) -> i32:
-        let body_sym = self.fn_clause_body_symbol_at(dispatch_sym, decl_index)
-        self.fn_decl_effective_syms.insert(node, body_sym)
-        self.fn_decl_effective_indices.insert(decl_index, body_sym)
-        self.fn_decl_nodes.insert(body_sym, node)
-        self.fn_decl_source_paths.insert(body_sym, self.decl_source_path_for_index(decl_index))
-        self.fn_clause_body_dispatch.insert(body_sym, dispatch_sym)
-        self.register_fn_clause_decl(dispatch_sym, node)
         body_sym
 
     mut fn fn_signature_return_type(flags: i32, declared_ret_type: TypeId) -> TypeId:
@@ -1313,7 +1319,6 @@ impl Sema:
         // integer as a semantic symbol is ambiguous once combined modules use
         // distinct pools and the same slot names unrelated declarations.
         self.fn_decl_effective_syms.insert(node, fn_name)
-        self.fn_decl_effective_indices.insert(decl_index, fn_name)
         if method_owner_sym != 0:
             if method_impl_node != 0:
                 self.method_impl_nodes.insert(fn_name, method_impl_node)
@@ -1333,8 +1338,8 @@ impl Sema:
                         if self.fn_decl_has_refutable_param_pattern(existing_node) != 0 or self.fn_decl_has_refutable_param_pattern(node) != 0: 1 else: 0
                     if is_clause_group != 0:
                         dispatch_fn_name = fn_name
-                        self.prepare_first_fn_clause(dispatch_fn_name, existing_node, existing_di)
-                        fn_name = self.prepare_current_fn_clause(dispatch_fn_name, node, current_di)
+                        self.prepare_fn_clause(dispatch_fn_name, existing_node, existing_di)
+                        fn_name = self.prepare_fn_clause(dispatch_fn_name, node, current_di)
                     else:
                         let fn_name_str = self.pool_resolve(fn_name)
                         self.emit_error(f"function '{fn_name_str}' is already defined", node)
@@ -1763,11 +1768,10 @@ impl Sema:
             return self.fn_decl_effective_syms.get(node).unwrap()
         fallback
 
+    // Node identity is the stable key — the decl table's index space shifts
+    // between passes (prelude injection), so decl_index must never key a
+    // lookup that outlives one pass.
     fn fn_decl_semantic_symbol_at(node: i32, fallback: i32, decl_index: i32) -> i32:
-        if self.fn_decl_effective_indices.contains(decl_index):
-            return self.fn_decl_effective_indices.get(decl_index).unwrap()
-        if decl_index >= 0:
-            return fallback
         self.fn_decl_semantic_symbol(node, fallback)
 
     fn method_decl_is_extension(node: i32) -> i32:

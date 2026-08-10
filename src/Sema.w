@@ -550,7 +550,6 @@ type Sema {
     // their parsed symbol; cross-module extension methods get a unique symbol
     // so packages can define the same Type.method without colliding.
     fn_decl_effective_syms: HashMap[i32, i32],
-    fn_decl_effective_indices: HashMap[i32, i32],
     // Function declaration source path by name
     fn_decl_source_paths: HashMap[i32, str],
     // Multiple function clauses (§9.7): public dispatch symbol -> clause group index.
@@ -1737,7 +1736,6 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
     let retained_extern_params = sema_new_map_i32_i32()
     let fn_decl_nodes = sema_new_map_i32_i32()
     let fn_decl_effective_syms = sema_new_map_i32_i32()
-    let fn_decl_effective_indices = sema_new_map_i32_i32()
     let fn_decl_source_paths = HashMap[i32, str].new()
     let fn_clause_group_lookup = sema_new_map_i32_i32()
     let fn_clause_body_dispatch = sema_new_map_i32_i32()
@@ -1870,7 +1868,6 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         retained_extern_params,
         fn_decl_nodes,
         fn_decl_effective_syms,
-        fn_decl_effective_indices,
         fn_decl_source_paths,
         fn_clause_group_lookup,
         fn_clause_group_names: Vec.new(),
@@ -6240,10 +6237,6 @@ impl Sema:
         if self.sig_is_variadic(a_sig) != self.sig_is_variadic(b_sig):
             return 0
         1
-
-    mut fn fn_clause_body_symbol_at(dispatch_sym: i32, decl_index: i32) -> i32:
-        let base: str = with_str_clone_ref(self.pool_resolve(dispatch_sym))
-        self.pool_intern(base ++ "$clause$" ++ f"{decl_index}")
 
     fn fn_clause_group_index(dispatch_sym: i32) -> i32:
         if self.fn_clause_group_lookup.contains(dispatch_sym):
