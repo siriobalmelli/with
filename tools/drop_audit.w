@@ -26,23 +26,23 @@ extern fn with_fs_read_file(path: &str) -> str
 extern fn with_fs_write_file(path: &str, data: &str) -> i32
 extern fn with_fs_mkdir_p(path: &str) -> i32
 
-fn exec_capture(argv: str, outp: str, errp: str, timeout: i32) -> i32:
+fn exec_capture(argv: &str, outp: &str, errp: &str, timeout: i32) -> i32:
     unsafe:
         with_exec_argv_capture(argv, outp, errp, timeout)
 
-fn read_file(path: str) -> str:
+fn read_file(path: &str) -> str:
     unsafe:
         with_fs_read_file(path)
 
-fn write_file(path: str, data: str) -> i32:
+fn write_file(path: &str, data: &str) -> i32:
     unsafe:
         with_fs_write_file(path, data)
 
-fn mkdirs(path: str) -> i32:
+fn mkdirs(path: &str) -> i32:
     unsafe:
         with_fs_mkdir_p(path)
 
-fn argv4(a: str, b: str, c: str, d: str) -> str:
+fn argv4(a: &str, b: &str, c: &str, d: &str) -> str:
     a ++ "\0" ++ b ++ "\0" ++ c ++ "\0" ++ d ++ "\0"
 
 // ── The counted resource every cell drops ────────────────────────────────
@@ -88,7 +88,7 @@ fn cell(name: str, decls: str, expect_sum: i32) -> Cell:
 // Scenario builders compose these; not every shape × scenario pair is
 // meaningful — the matrix below curates the real cells.
 
-fn shape_decls(shape: str) -> str:
+fn shape_decls(shape: &str) -> str:
     if shape == "field":
         // Non-zero sibling: a blanked `r` must NOT make the whole S the reset
         // sentinel, or the whole-value guard masks a missing member guard (#697).
@@ -99,11 +99,11 @@ fn shape_decls(shape: str) -> str:
         return "enum E:\n    Carry(R)\n    Empty\n"
     ""
 
-fn shape_ann(shape: str) -> str:
+fn shape_ann(shape: &str) -> str:
     if shape == "option": return ": Option[R]"
     ""
 
-fn shape_mk(shape: str, id: str) -> str:
+fn shape_mk(shape: &str, id: &str) -> str:
     if shape == "bare": return "mk(" ++ id ++ ", slot)"
     if shape == "field": return "S { r: mk(" ++ id ++ ", slot), tag: 9 }"
     if shape == "boxfield": return "SB { b: Box.new(mk(" ++ id ++ ", slot)), tag: 9 }"
@@ -115,7 +115,7 @@ fn shape_mk(shape: str, id: str) -> str:
     "mk(" ++ id ++ ", slot)"
 
 // The by-value type a consuming callee takes for each shape.
-fn shape_ty(shape: str) -> str:
+fn shape_ty(shape: &str) -> str:
     if shape == "field": return "S"
     if shape == "boxfield": return "SB"
     if shape == "boxbare": return "Box[R]"
@@ -127,10 +127,10 @@ fn shape_ty(shape: str) -> str:
 
 // ── Scenario builders ────────────────────────────────────────────────────
 
-fn sc_scope_exit(shape: str) -> str:
+fn sc_scope_exit(shape: &str) -> str:
     shape_decls(shape) ++ "fn go(slot: *mut i32):\n    let a" ++ shape_ann(shape) ++ " = " ++ shape_mk(shape, "1") ++ "\n    let _keep = 0\n"
 
-fn sc_branch(shape: str, taken: bool) -> str:
+fn sc_branch(shape: &str, taken: bool) -> str:
     let flag = if taken: "true" else: "false"
     shape_decls(shape) ++
     "fn go(slot: *mut i32):\n" ++
@@ -139,28 +139,28 @@ fn sc_branch(shape: str, taken: bool) -> str:
     "        let a" ++ shape_ann(shape) ++ " = " ++ shape_mk(shape, "1") ++ "\n" ++
     "        let _k = 0\n"
 
-fn sc_loop(shape: str) -> str:
+fn sc_loop(shape: &str) -> str:
     shape_decls(shape) ++
     "fn go(slot: *mut i32):\n" ++
     "    for i in 0..3:\n" ++
     "        let a" ++ shape_ann(shape) ++ " = " ++ shape_mk(shape, "1") ++ "\n" ++
     "        let _k = 0\n"
 
-fn sc_move_out(shape: str) -> str:
+fn sc_move_out(shape: &str) -> str:
     shape_decls(shape) ++
     "fn go(slot: *mut i32):\n" ++
     "    let a" ++ shape_ann(shape) ++ " = " ++ shape_mk(shape, "1") ++ "\n" ++
     "    let b = move a\n" ++
     "    let _k = 0\n"
 
-fn sc_reassign(shape: str) -> str:
+fn sc_reassign(shape: &str) -> str:
     shape_decls(shape) ++
     "fn go(slot: *mut i32):\n" ++
     "    var a" ++ shape_ann(shape) ++ " = " ++ shape_mk(shape, "1") ++ "\n" ++
     "    a = " ++ shape_mk(shape, "2") ++ "\n" ++
     "    let _k = 0\n"
 
-fn sc_move_then_reassign(shape: str) -> str:
+fn sc_move_then_reassign(shape: &str) -> str:
     shape_decls(shape) ++
     "fn go(slot: *mut i32):\n" ++
     "    var a" ++ shape_ann(shape) ++ " = " ++ shape_mk(shape, "1") ++ "\n" ++
@@ -170,7 +170,7 @@ fn sc_move_then_reassign(shape: str) -> str:
 
 // #691: an RHS call may consume and return the assignment target, so its
 // reset must precede drop-before-overwrite. A direct self-move is a no-op.
-fn sc_move_reassign_same_place(shape: str) -> str:
+fn sc_move_reassign_same_place(shape: &str) -> str:
     shape_decls(shape) ++
     "fn normalize(x: " ++ shape_ty(shape) ++ ") -> " ++ shape_ty(shape) ++ ":\n" ++
     "    var out = x\n" ++
@@ -183,7 +183,7 @@ fn sc_move_reassign_same_place(shape: str) -> str:
     "        a = normalize(move a)\n" ++
     "    let _k = 0\n"
 
-fn sc_consume_call(shape: str) -> str:
+fn sc_consume_call(shape: &str) -> str:
     shape_decls(shape) ++
     "fn eat(x: " ++ shape_ty(shape) ++ "):\n" ++
     "    let y = move x\n" ++
@@ -195,7 +195,7 @@ fn sc_consume_call(shape: str) -> str:
 // #697 (t9 class): CONDITIONAL consume with a statement after the branch, so
 // the paths merge and scope exit needs the guarded drop of a maybe-reset value.
 // Without the trailing statement drops resolve per-path and the cell is vacuous.
-fn sc_consume_cond(shape: str, taken: bool) -> str:
+fn sc_consume_cond(shape: &str, taken: bool) -> str:
     let flag = if taken: "true" else: "false"
     shape_decls(shape) ++
     "fn eat(x: " ++ shape_ty(shape) ++ "):\n" ++
@@ -212,7 +212,7 @@ fn sc_consume_cond(shape: str, taken: bool) -> str:
 // (the only spelling today) and does not restore — the caller's scope-exit drop
 // runs where the static moved-field exclusion cannot reach, so the runtime
 // blank plus the member-level guard must make it exactly-once.
-fn sc_field_take(shape: str, restore: bool) -> str:
+fn sc_field_take(shape: &str, restore: bool) -> str:
     let holder = shape_ty(shape)
     let member = if shape == "boxfield": "b" else: "r"
     let refill = if restore:
@@ -244,7 +244,7 @@ fn sc_move_into_borrow() -> str:
     "    peek(move a)\n" ++
     "    let _after = 0\n"
 
-fn sc_early_return(shape: str, early: bool) -> str:
+fn sc_early_return(shape: &str, early: bool) -> str:
     let flag = if early: "true" else: "false"
     shape_decls(shape) ++
     "fn go(slot: *mut i32):\n" ++
@@ -254,7 +254,7 @@ fn sc_early_return(shape: str, early: bool) -> str:
     "        return\n" ++
     "    let _k = 0\n"
 
-fn sc_discard(shape: str) -> str:
+fn sc_discard(shape: &str) -> str:
     shape_decls(shape) ++ "fn go(slot: *mut i32):\n    let _" ++ shape_ann(shape) ++ " = " ++ shape_mk(shape, "1") ++ "\n"
 
 fn sc_match_consume() -> str:
@@ -382,7 +382,7 @@ fn build_cells() -> Vec[Cell]:
 
 // ── Runner ───────────────────────────────────────────────────────────────
 
-fn find_sub(s: str, sub: str) -> i64:
+fn find_sub(s: &str, sub: &str) -> i64:
     let n = s.len()
     let m = sub.len()
     if m == 0:
@@ -401,11 +401,11 @@ fn last_int_line(s: str) -> str:
     while i >= 0:
         let l = lines.get(i as i64)
         if l.len() > 0:
-            return l
+            return l ++ ""
         i = i - 1
     ""
 
-fn run_cell(with_bin: str, dir: str, idx: i32, source: str, expect_sum: i32, expect_clean: bool) -> str:
+fn run_cell(with_bin: &str, dir: &str, idx: i32, source: &str, expect_sum: i32, expect_clean: bool) -> str:
     let path = dir ++ f"/cell_{idx}.w"
     let _ = write_file(path, source)
     let outp = dir ++ f"/cell_{idx}.out"
@@ -436,7 +436,7 @@ fn main:
         eprint("usage: with run tools/drop_audit.w <candidate-with> [baseline-with]")
         exit_code(2)
     let candidate = argv.get(1)
-    let baseline = if argv.len() as i32 >= 3: argv.get(2) else: ""
+    let baseline = if argv.len() as i32 >= 3: argv.get(2) ++ "" else: ""
     let dir = "/tmp/drop-audit-cells"
     let _ = mkdirs(dir)
     let cells = build_cells()
