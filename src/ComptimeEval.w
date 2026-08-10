@@ -3459,7 +3459,18 @@ impl ComptimeEvaluator:
         if call_signal.kind != ComptimeControlKind.CTL_VALUE:
             return call_signal
 
-        let receiver_mode = self.sema.sig_receiver_mode(concrete_sig)
+        var receiver_mode = self.sema.sig_receiver_mode(concrete_sig)
+        // Fold-order evaluation can see a generic method's concrete sig
+        // before its receiver mode is recorded; the DECLARATION is the
+        // authoritative source (D7) — produce[T](mut self, ...) is Mut
+        // whether or not the synthesized sig was annotated yet (#766).
+        if receiver_mode == ReceiverMode.None:
+            let rm_node = self.find_fn_decl_node(fn_sym)
+            if rm_node != 0:
+                let rm_meta = self.ast.find_fn_meta(rm_node)
+                if rm_meta >= 0 and self.ast.fn_meta_param_count(rm_meta) > 0:
+                    if fn_param_is_mut_self(self.ast.fn_param_flags(self.ast.fn_meta_param_start(rm_meta), 0)) != 0:
+                        receiver_mode = ReceiverMode.Mut
         var final_receiver = comptime_value_clone(recv_value)
         if receiver_mode == ReceiverMode.Mut:
             if self.last_call_has_mut_receiver == 0:
@@ -3474,7 +3485,17 @@ impl ComptimeEvaluator:
         // can remain unresolved here; the evaluated RESULT's unit-ness is
         // then the decisive D21 carrier signal (#766).
         let result_is_unit = call_signal.value.kind == ComptimeValueKind.CV_VOID or call_signal.value.kind == ComptimeValueKind.CV_INVALID
+        if with_getenv_str("WITH_TRACE_COMPTIME").len() > 0:
+            with_eprint(f"[ct] umv node={node} method='{self.pool.resolve(method)}' carry={carry_receiver} mode={receiver_mode as i32} ret_vk={call_signal.value.kind as i32} final_vk={final_receiver.kind as i32} call_ret={call_ret as i32}")
         if carry_receiver != 0 and receiver_mode == ReceiverMode.Mut and (call_ret == self.sema.ty_void or result_is_unit):
+            // A mut-self mutation reaches the caller's binding by write-through
+            // during body eval; the captured last_call_mut_receiver can be the
+            // INVALID sentinel (generic methods under fold order). The chain
+            // root's CURRENT binding is the ground truth — re-read it (#766).
+            if final_receiver.kind == ComptimeValueKind.CV_INVALID and recv_node != 0:
+                let refreshed = self.eval_expr(recv_node)
+                if refreshed.kind == ComptimeControlKind.CTL_VALUE and refreshed.value.kind != ComptimeValueKind.CV_INVALID:
+                    return refreshed
             return comptime_control_value(final_receiver)
         call_signal
 
@@ -3566,6 +3587,8 @@ impl ComptimeEvaluator:
             args_start = self.ast.get_data1(rhs)
             arg_count = self.ast.get_data2(rhs)
         if self.sema.pipeline_method_calls.contains(node):
+            if with_getenv_str("WITH_TRACE_COMPTIME").len() > 0:
+                with_eprint(f"[ct] pipeline node={node} route=sema-method")
             return self.eval_pipeline_method_call(lhs, self.sema.pipeline_method_calls.get(node).unwrap(), args_start, arg_count, node)
         if self.ast.kind(callee) != NodeKind.NK_IDENT:
             return self.fail(node, "pipeline rhs is not comptime-evaluable")
@@ -3573,6 +3596,8 @@ impl ComptimeEvaluator:
         if lhs_signal.kind != ComptimeControlKind.CTL_VALUE:
             return lhs_signal
         let fn_sym = self.ast.get_data0(callee)
+        if with_getenv_str("WITH_TRACE_COMPTIME").len() > 0:
+            with_eprint(f"[ct] pipeline node={node} fn='{self.pool.resolve(fn_sym)}' lhs_vk={lhs_signal.value.kind as i32} lhs_tid={self.node_type_or(lhs, lhs_signal.value.type_id)} method_exists={self.sema.pipeline_method_exists(self.node_type_or(lhs, lhs_signal.value.type_id), fn_sym)}")
         // #565: top-level `comptime` initializers are folded by the transform pass
         // BEFORE sema types their expressions, so pipeline_method_calls cannot be
         // populated for them. Resolve the method-call sugar here, the same way
