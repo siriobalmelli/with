@@ -156,15 +156,39 @@ test/behavior/lib/demo/program.w:19, JsonView) — D28 migrations;
 mismatch; 2 comptime-only-call; tail onesies (&str method dispatch,
 view-outlives, Vec.push arg).
 
+## Census round 4 (2026-08-09 night): 57 -> 46; all large compiler-bug classes dead
+
+- `defb891f` typed validator models constant-index array projections
+  (slice-pattern lowering spells elements as field places) — all 8
+  slice_pat tests green; non-concrete diagnostic also prints place facts.
+- `ab8a0b25` RETURN-BOUNDARY AUTO-REF: observer accessors
+  (`-> &T: self.field`, blocks included) lowered the field read as a
+  struct value into the ref-typed return slot. D5's call-arg auto-ref now
+  applies at the dual position, post-lowering on the tail operand, gated
+  on place_source_is_named (temp views still fail loudly). 10-line repro:
+  fixpoint-analysis/refret_min.w.
+- `ad26a3da` validator compares fn types structurally (sema doesn't
+  intern them canonically; std/build.w:1981 action assignment).
+- Ownership gate: full rebuild + debug-alloc lane "ok" (no #743
+  teardown), suite 46 fails.
+
+Remaining 46: 6 D28 Copy-with-str test migrations (BindEntry
+test/behavior/lib/demo/program.w:19, JsonView), 3 exit-134, 3
+check-fail-1, 3 INVALID LLVM main, 2 struct-literal mismatch, 2
+comptime-only-call, ~24-entry onesie tail (per-test stderr under
+out/test-graph/behavior-tests/). The recovery-era typed-validator
+undermodeling pattern is likely behind more of the tail — when a
+validator error looks impossible, mirror sema's rule into
+mir_validate_* (three precedents today).
+
 ## Next work, in order
 
-1. The 8-strong "not a concrete MIR type" class (pick one, reduce, same
-   sidecar-recording suspicion as the async fix).
-2. The 3-strong ref<-struct assign class (typed diag now names it).
-3. D28-migrate the 6 Copy-with-str-field test types; file the
-   &str-method-dispatch gap; sweep onesies.
-4. Battery + audits, then merge gate (Eric queue #1); #761 retirement
-   rides post-reseed.
+1. D28-migrate the 6 Copy-with-str-field test types; sweep the onesie
+   tail class-by-class (start with the 3 exit-134 aborts — runtime, use
+   the debug allocator).
+2. Battery + audits (:move-audit/:drop-audit — this batch has TWO
+   ownership-class lowerings: concat temps and return auto-ref), then
+   merge gate (Eric queue #1); #761 retirement rides post-reseed.
 
 
 
