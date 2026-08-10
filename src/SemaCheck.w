@@ -6410,12 +6410,17 @@ impl Sema:
             self.pop_label_frame()
             self.emit_unused_label_warnings()
             self.restore_label_registry(ab_saved_label_registry)
-            // Wrap in Task[T] — async blocks spawn a fiber and return a Task
+            // Wrap in Task[T] — async blocks spawn a fiber and return a Task.
+            // Record the sidecar entry: MirLower's expr_type reads it, and an
+            // unrecorded async node fell back to void (typed-MIR validator
+            // rejected the let assign as Task[T] <- void).
             let ab_task_args: Vec[i32] = Vec.new()
             ab_task_args.push(ab_body_ty as i32)
             let ab_task_ty = self.ensure_generic_inst_type(self.syms.task, ab_task_args, 1)
             if ab_task_ty != 0:
+                self.typed_expr_types.insert(node, ab_task_ty as i32)
                 return ab_task_ty
+            self.typed_expr_types.insert(node, ab_body_ty as i32)
             return ab_body_ty
 
         if kind == NodeKind.NK_YIELD:
