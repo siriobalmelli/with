@@ -208,14 +208,40 @@ Remaining 40: 4 = #763 (blocked), ~2 = #765/#764-shaped exit-134s,
 regex /g match-count runtime residue (behav_regex_language_semantics),
 view-outlives pair, tail onesies. ~30 unblocked.
 
+## Census round 7 (2026-08-10): 40 -> 35 -> 31, every survivor attributed
+
+Landed since round 5 (all seed-gated, committed singly):
+- Clone-for-str self-contained (`++ ""`; no-std + #762 dodge)
+- view-needle marshalling sweep: shared helper, stdout-not check
+  (was silently PERMISSIVE), and with-reduce's --contains predicate
+- issue61 edge_score observer migration; view-outlives pair (remove(0)
+  transfer; immediate view uses under pre-E3 conservative liveness)
+- extern-fn structural compat in the validator (+fn/extern-fn mixes)
+- bare `return` in value fns lowers the implicit default
+- SIDECAR-GAP CLASS (five instances from one insight — check_expr arms
+  that return a type without typed_expr_types.insert): async block, ??
+  join, &raw of wrapped place, plain & refs. MirLower's fallback typed
+  each void/carrier and the typed validator caught the skew. Worth a
+  completeness audit (see next work).
+
+31 remaining, fully attributed:
+- #763 multi-c_import (~10): issue59×5, behav_c_import×5
+- #766 comptime Vec evaluator routing (3): d21 trio
+- #765 inline-shift sext (1): issue171; #764 ctor-payload move (1): issue65
+- ERIC QUEUE derive design (4): JsonView serialize/deserialize, SoA×2
+- workable (~12): comptime_control_flow/enum_ops/unsigned_arith,
+  branch_temp_drop_not_taken, explicit_drop_consumed_field,
+  imported_alias_struct_field, raw_ptr_arithmetic,
+  refutable_param_clauses, regex /g runtime, std_os,
+  issue114_condition_assign, issue44_opaque_struct_call
+
 ## Next work, in order
 
-1. Keep burning unblocked classes: check-fail-1 trio, struct-literal
-   pair, comptime pair, view-outlives pair, regex /g runtime residue.
-2. #764 fix in its own :move-audit-bracketed batch (protocol in issue).
-3. Battery + audits (batch holds ownership-class lowerings: concat
-   temps, return auto-ref, str-order routing), then merge gate (Eric
-   queue #1); #761 retirement rides post-reseed.
+1. Burn the ~12 workable (comptime trio first — likely shared root).
+2. File + build the check_expr sidecar-recording completeness audit
+   (audit: lane or debug assert — five escapes from one convention).
+3. #763 dig (biggest blocker, 10 tests) and #764's audited batch.
+4. Battery + audits, merge gate (Eric queue #1); #761 post-reseed.
 
 
 
