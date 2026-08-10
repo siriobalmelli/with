@@ -8104,7 +8104,14 @@ impl Sema:
             rhs = if join_expected != 0: self.check_expr_with_expected(rhs_node, join_expected as TypeId) else: self.check_expr_value_context(rhs_node)
             if rhs == 0:
                 return 0
-            return self.resolve_contextual_default_join(join_expected, lhs_node, unwrapped, rhs_node, rhs_node, rhs as i32, D22_JOIN_ROLE_EXPR, node, "`??`")
+            let dj = self.resolve_contextual_default_join(join_expected, lhs_node, unwrapped, rhs_node, rhs_node, rhs as i32, D22_JOIN_ROLE_EXPR, node, "`??`")
+            // Record the sidecar (per-arm recording, same gap as the async
+            // block): without it MirLower's fallback types the ?? node as
+            // the CARRIER (Option), and a Never fallback arm then assigns
+            // payload-int into an Option-typed temp (issue43).
+            if dj != 0:
+                self.typed_expr_types.insert(node, dj as i32)
+            return dj
         // Variant shorthand in comparisons must be typed against the opposite side,
         // not whatever outer expected type is active (for example `bool` from assert()).
         // A payload variant-constructor call (`e == Ok(5)`) needs the same peer
