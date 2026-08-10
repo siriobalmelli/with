@@ -3982,8 +3982,7 @@ impl Sema:
             if not self.int_literal_bit_pattern_fits_type(node, expected):
                 self.emit_error("integer literal bit pattern does not fit expected type", node)
         else if not self.int_literal_fits_type(node, expected):
-            let nfl_text = self.ast.get_string(node)
-            self.emit_error(f"integer literal does not fit expected type ('{nfl_text}', expected ty={expected as i32})", node)
+            self.emit_error("integer literal does not fit expected type", node)
         expected
 
     fn shift_count_literal_type(node: i32) -> i32:
