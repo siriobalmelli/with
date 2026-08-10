@@ -8835,6 +8835,37 @@ impl Sema:
         let fty: i32 = self.view_projection_exprs.get(value_node).unwrap()
         self.emit_error("cannot take ownership of a non-Copy field through a borrow (" ++ self.type_name(fty) ++ " is not Copy); borrow the field, clone it, or restructure so the owner transfers it (D22 §13.6) — " ++ context, value_node)
 
+    // §2.4 × D22/D27 coherence: inside the owner's own drop body, an
+    // unannotated non-mut `let` of a `self` field OBSERVES — MirLower's
+    // lower_binding_alias_place binds the field place as a view (no local, no
+    // move), so recording it as a consumed field would suppress the field glue
+    // while no consuming local ever drops the value: the field leaks and a
+    // Drop field's destructor never runs (behav_explicit_drop_consumed_field).
+    // Consuming USES (call arguments, `var`/typed bindings, record updates)
+    // still mark. Outside drop bodies the marking is unchanged.
+    mut fn drop_body_field_observation(value: i32, is_mut: i32, ann_type: TypeId) -> i32:
+        if is_mut != 0 or ann_type != 0 or self.current_drop_type_sym == 0:
+            return 0
+        var expr = value
+        while expr != 0 and self.ast.kind(expr) == NodeKind.NK_GROUPED:
+            expr = self.ast.get_data0(expr)
+        if expr == 0 or self.ast.kind(expr) != NodeKind.NK_FIELD_ACCESS:
+            return 0
+        if self.drop_owner_for_field_access(expr) != self.current_drop_type_sym:
+            return 0
+        // The base chain must bottom out at a named binding (the receiver);
+        // an rvalue base (call result) is a temporary, not an observed place.
+        var base = self.ast.get_data0(expr)
+        while base != 0:
+            let bk = self.ast.kind(base)
+            if bk == NodeKind.NK_GROUPED or bk == NodeKind.NK_FIELD_ACCESS:
+                base = self.ast.get_data0(base)
+                continue
+            if bk == NodeKind.NK_IDENT:
+                return if self.scope_has(self.ast.get_data0(base)) != 0: 1 else: 0
+            return 0
+        0
+
     mut fn check_let_binding(node: i32) -> i32:
         let name = self.ast.get_data0(node)
         var bind_name = self.extract_decl_name_after(node, "let")
@@ -8905,7 +8936,8 @@ impl Sema:
         // keeps `let _ = param` a non-consuming acknowledgement: the param stays
         // share-place (borrowed) instead of being forced to owned.
         if self.pool_resolve(name) != "_" and not self.view_projection_exprs.contains(value):
-            self.mark_moved_if_consumed(value)
+            if self.drop_body_field_observation(value, is_mut, ann_type) == 0:
+                self.mark_moved_if_consumed(value)
 
         if ann_type_node != 0 and self.type_expr_is_collection_with_ref(ann_type_node) != 0:
             self.emit_error("ephemeral references cannot be stored in generic containers", node)
