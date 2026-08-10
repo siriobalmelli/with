@@ -19,25 +19,20 @@ use std.process
 
 extern fn with_exec_argv_capture(argv: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32
 extern fn with_fs_read_file(path: &str) -> str
-extern fn with_str_contains(s: str, needle: str) -> i32
 
-fn exec_capture(argv: str, outp: str, errp: str, timeout: i32) -> i32:
+fn exec_capture(argv: &str, outp: &str, errp: &str, timeout: i32) -> i32:
     unsafe:
         with_exec_argv_capture(argv, outp, errp, timeout)
 
-fn read_file(path: str) -> str:
+fn read_file(path: &str) -> str:
     unsafe:
         with_fs_read_file(path)
 
-fn contains(s: str, needle: str) -> bool:
-    unsafe:
-        with_str_contains(s, needle) != 0
-
 // NUL-joined argv (the tool_process_argv encoding the exec runtime expects).
-fn argv4(a: str, b: str, c: str, d: str) -> str:
+fn argv4(a: &str, b: &str, c: &str, d: &str) -> str:
     a ++ "\0" ++ b ++ "\0" ++ c ++ "\0" ++ d ++ "\0"
 
-fn argv5(a: str, b: str, c: str, d: str, e: str) -> str:
+fn argv5(a: &str, b: &str, c: &str, d: &str, e: &str) -> str:
     a ++ "\0" ++ b ++ "\0" ++ c ++ "\0" ++ d ++ "\0" ++ e ++ "\0"
 
 // Run `<with-bin> run --debug-alloc <repro>`; return (exit code, captured
@@ -45,7 +40,7 @@ fn argv5(a: str, b: str, c: str, d: str, e: str) -> str:
 // expects a clean report must also exit 0, so an inline `assert(drops == N)`
 // abort or a SIGSEGV fails the lane even when the report line still matches
 // (#697: fixtures crashed AFTER printing the expected line and passed).
-fn run_under_debug_alloc(with_bin: str, repro: str, filter: str) -> (i32, str):
+fn run_under_debug_alloc(with_bin: &str, repro: &str, filter: &str) -> (i32, str):
     let outp = "/tmp/debug_drop_out.txt"
     let errp = "/tmp/debug_drop_err.txt"
     let argv = if filter.len() > 0:
@@ -56,7 +51,7 @@ fn run_under_debug_alloc(with_bin: str, repro: str, filter: str) -> (i32, str):
     (rc, read_file(errp) ++ "\n" ++ read_file(outp))
 
 // Index of `sub` in `s`, or -1.
-fn find_sub(s: str, sub: str) -> i64:
+fn find_sub(s: &str, sub: &str) -> i64:
     let n = s.len()
     let m = sub.len()
     if m == 0:
@@ -76,7 +71,7 @@ fn find_sub(s: str, sub: str) -> i64:
     -1
 
 // Text from just after `prefix` to end of that line, leading spaces trimmed.
-fn line_after_prefix(src: str, prefix: str) -> str:
+fn line_after_prefix(src: &str, prefix: &str) -> str:
     let idx = find_sub(src, prefix)
     if idx < 0:
         return ""
@@ -102,10 +97,10 @@ fn main:
         let filter = line_after_prefix(read_file(repro), "debug-alloc-filter:")
         let (rc, report) = run_under_debug_alloc(with_bin, repro, filter)
         print("=== debug-alloc: " ++ repro ++ " (exit " ++ f"{rc}" ++ ") ===")
-        if contains(report, "DOUBLE FREE"):
+        if report.contains("DOUBLE FREE"):
             print(line_after_prefix(report, "debug-alloc: DOUBLE FREE"))
             print("verdict: DOUBLE FREE (resolve sites with tools/debug_drop_sites.lldb)")
-        else if contains(report, "LEAK addr="):
+        else if report.contains("LEAK addr="):
             print(line_after_prefix(report, "debug-alloc: leak count="))
             print("verdict: LEAK (resolve alloc site with tools/debug_drop_sites.lldb)")
         else:
@@ -129,8 +124,8 @@ fn main:
             let want = line_after_prefix(read_file(fx), "expect-debug-alloc:")
             let filter = line_after_prefix(read_file(fx), "debug-alloc-filter:")
             let (rc, report) = run_under_debug_alloc(with_bin, fx, filter)
-            let expects_abort = contains(want, "DOUBLE FREE") or contains(want, "first_drop=")
-            if want.len() > 0 and contains(report, want) and (expects_abort or rc == 0):
+            let expects_abort = want.contains("DOUBLE FREE") or want.contains("first_drop=")
+            if want.len() > 0 and report.contains(want) and (expects_abort or rc == 0):
                 print("PASS " ++ fx)
             else:
                 print("FAIL " ++ fx ++ "  (want: '" ++ want ++ "', exit " ++ f"{rc}" ++ ")")
