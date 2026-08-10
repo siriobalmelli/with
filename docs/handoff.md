@@ -235,6 +235,30 @@ Landed since round 5 (all seed-gated, committed singly):
   refutable_param_clauses, regex /g runtime, std_os,
   issue114_condition_assign, issue44_opaque_struct_call
 
+## PAUSED 2026-08-10 ~02:40 — background builds externally stopped 3×
+
+Landed since census 7 (committed, seed-gated through the second):
+- `7f9ef7dd` COMPTIME EVALUATOR FIXES: (a) enum-constant lookups used
+  AST-pool syms (canonicalization applied); (b) THE EVALUATOR'S OWN
+  FLIP BUG — match_pattern moved the subject into arm 1, arms 2+
+  compared a blanked struct (comptime enum_ops + control_flow green);
+  (c) qualified constants as patterns; WITH_TRACE_COMPTIME added.
+- `604485b4` comptime ~u32 masks to width (unsigned_arith — check-level
+  verified only; full test pending).
+
+RESUME STATE: tree clean at 604485b4. out/ was rm -rf'd and the clean
+rebuild+census (census8.log) was killed mid-build 3×(externally — 2:39am;
+possibly deliberate). FIRST ACTION ON RESUME:
+  cd ~/.local/with-staging/747-flip && rm -rf out
+  /Users/eric/with/src/main build && ... build :test   (census 8)
+Then verify behav_comptime_unsigned_arith + the d21 'mark' pipeline
+entry, and continue the workable list (std_os, raw_ptr_arithmetic,
+issue114, issue44, refutable_param_clauses, imported_alias_struct_field,
+branch_temp_drop, explicit_drop_consumed_field, regex /g).
+NOTE: an orchestrator corrupt-vec panic appeared once while building
+through the damaged (killed-mid-write) build state — resolved by the
+clean out/; if it recurs on CLEAN state, treat as #743 with new reach.
+
 ## Next work, in order
 
 1. Burn the ~12 workable (comptime trio first — likely shared root).
