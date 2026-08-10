@@ -148,6 +148,9 @@ impl Default for str:
     fn default() -> str:
         ""
 
+impl Clone for str:
+    fn clone(self: &Self) -> str: self.to_owned()
+
 impl Eq for str:
     fn eq(self: &Self, other: &str) -> bool: *self == other
 
