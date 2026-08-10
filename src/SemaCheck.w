@@ -9142,6 +9142,17 @@ impl Sema:
             return 0
         sema_is_string_builder_comptime_method_name(self.pool_resolve(fn_sym))
 
+    // The comptime evaluator implements the Vec core (push/pop/get/set/
+    // clear/len/is_empty) directly; the flip's method registration exposed
+    // these builtin methods to the callability check, breaking D21
+    // comptime pipelines. Allow exactly the evaluator's surface.
+    fn fn_symbol_is_builtin_vec_comptime_allowed(fn_sym: i32) -> i32:
+        let name = self.pool_resolve(fn_sym)
+        if not name.starts_with("Vec."):
+            return 0
+        let m = name.slice(4, name.len())
+        if m.starts_with("push") or m.starts_with("pop") or m.starts_with("get") or m.starts_with("set") or m.starts_with("clear") or m.starts_with("len") or m.starts_with("is_empty"): 1 else: 0
+
     mut fn check_comptime_call_restriction(fn_sym: i32, node: i32) -> i32:
         if self.in_comptime_fn == 0 or fn_sym == 0:
             return 0
@@ -9158,8 +9169,11 @@ impl Sema:
                 return 0
             if self.fn_symbol_is_std_string_builder_comptime_allowed(fn_sym) != 0:
                 return 0
+            if self.fn_symbol_is_builtin_vec_comptime_allowed(fn_sym) != 0:
+                return 0
             if self.fn_symbol_is_comptime(fn_sym) == 0:
-                self.emit_error("comptime can only call comptime functions", node)
+                let cc_name = self.pool_resolve(fn_sym)
+                self.emit_error(f"comptime can only call comptime functions ('{cc_name}')", node)
                 return 1
         0
 
@@ -9170,8 +9184,11 @@ impl Sema:
             return 0
         if self.fn_symbol_is_std_string_builder_comptime_allowed(method_sym) != 0:
             return 0
+        if self.fn_symbol_is_builtin_vec_comptime_allowed(method_sym) != 0:
+            return 0
         if self.fn_symbol_is_comptime(method_sym) == 0:
-            self.emit_error("comptime can only call comptime functions", node)
+            let cm_name = self.pool_resolve(method_sym)
+            self.emit_error(f"comptime can only call comptime functions ('{cm_name}')", node)
             return 1
         0
 
