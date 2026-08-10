@@ -3266,6 +3266,10 @@ pub fn mir_validate_place_type(mir_mod: &MirModule, body: &MirBody, place_id: i3
                 field_ty = mir_validate_enum_payload_type(mir_mod, current_ty, active_variant_idx, proj_d0)
             else if tk == TypeKind.TY_TUPLE:
                 field_ty = mir_validate_tuple_elem_type(mir_mod, current_ty, proj_d0)
+            else if tk == TypeKind.TY_ARRAY or tk == TypeKind.TY_SLICE:
+                // Constant-index element projection: slice-pattern lowering
+                // spells array elements as field places (proj_d0 = index).
+                field_ty = mir_mod.mir_get_type_d0(resolved)
             else:
                 field_ty = mir_validate_struct_field_type(mir_mod, current_ty, proj_d0)
             if field_ty == 0:
@@ -3385,7 +3389,16 @@ fn validate_typed_mir_body(mir_mod: &MirModule, body: &MirBody) -> MirValidation
             if rk == RvalueKind.RK_USE:
                 let src_ty = mir_validate_operand_type(mir_mod, body, rv_d0)
                 if src_ty == 0:
-                    return mir_validation_fail(body.fn_sym, span, "use rvalue does not resolve to a concrete MIR type")
+                    var src_detail = "non-place operand"
+                    let src_op_kind = if rv_d0 >= 0 and rv_d0 < body.operand_kinds.len() as i32: body.operand_kinds.get(rv_d0 as i64) else: -1
+                    if src_op_kind == OperandKind.OK_COPY or src_op_kind == OperandKind.OK_MOVE:
+                        let sp = body.operand_d0.get(rv_d0 as i64)
+                        let sl = body.place_locals.get(sp as i64)
+                        let slt = if sl >= 0 and sl < body.local_type_ids.len() as i32: body.local_type_ids.get(sl as i64) else: -1
+                        let spc = body.place_proj_counts.get(sp as i64)
+                        let pk0 = if spc > 0: body.proj_kinds.get(body.place_proj_starts.get(sp as i64) as i64) else: -1
+                        src_detail = f"place local={sl} local_ty={slt} projs={spc} proj0_kind={pk0}"
+                    return mir_validation_fail(body.fn_sym, span, f"use rvalue does not resolve to a concrete MIR type ({src_detail})")
                 if not mir_validate_use_assign_compatible(mir_mod, dest_ty, src_ty):
                     let dk = mir_mod.mir_get_type_kind(mir_mod.mir_resolve_alias(dest_ty)) as i32
                     let sk = mir_mod.mir_get_type_kind(mir_mod.mir_resolve_alias(src_ty)) as i32
