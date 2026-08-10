@@ -1,4 +1,68 @@
-# Active Handoff — #747 flip: BATTERY BLESSED, census 102 → 7, MERGE BRIEF (2026-08-10, session 3)
+# Active Handoff — #747 flip: gates green ×5, census 102 → 5, merge is the open call (2026-08-10, session 3 final)
+
+## START HERE — exact state (all counts verified on committed tree @ ae91424a)
+
+Worktree: `~/.local/with-staging/747-flip`, branch `747-flip` @ `ae91424a`,
+CLEAN, pushed to origin. Logs: `~/.local/with-staging/fixpoint-analysis/`
+(battery2-0810.log is the blessing record).
+
+**Gate scorecard (battery2, committed tree):**
+- `with build` rc=0
+- `with build :fixpoint` rc=0 (stage2 == stage3)
+- `with build :move-audit` rc=0 (cells agree with ground truth)
+- `with build :drop-audit` rc=0 (no regressions vs seed baseline)
+- `with build :debug-alloc-tests` rc=0 — 64 PASS / 0 FAIL (counted, not rc-only)
+- `with build :test` rc=139 — 18 failing tests, ALL attributed (below)
+
+**Stage1-lane census: 102 → 5.**
+- 4 × derives (behav_derive_serialize/deserialize/soa/soa_generic) —
+  ERIC'S QUEUE #3: JsonView + SoA derive design. Not decidable here.
+- 1 × issue65_fstring_mixed_holes — #764 (enum-ctor payload move gap).
+  Fix protocol documented on the issue; MUST be its own isolated
+  :move-audit-bracketed batch (prior attempt drifted move-resets at
+  runtime while compiling green). This is the designated NEXT batch.
+
+**Release-lane only (green under stage1; SEGV/fail under the battery
+binary): 13 tests** — behav_c_import_* (4), imported_alias, raw_ptr,
+issue44, issue114, issue59_demo_* (5). This is #761/D30 mixed-world rt
+(seed-built out/lib rt vs flip-codegen callers; full matrix on #761).
+Cure = the sequenced D30 retirement (or interim: finish the with_str_*
+_ref emission migration + tier the rt pins per stage).
+
+## Issues closed this session
+#763 (c_import corruption — u64-suffix rendering), #765 (shift sext),
+#766 (comptime Vec pipelines — all three d21 tests).
+Open with tonight's evidence: #761 (D30 motivator), #764 (next batch),
+#767 (re-scoped: recording contract + audit lane; the bitnot instance is
+FIXED — the old 'record breaks builds' verdict was a misattribution),
+#768 (typed drop-body field let), #769 (`with -p` truncation).
+
+## The merge decision (Eric's call — unchanged from the morning brief)
+Merge now → reseed → #764 isolated batch → D30 retirement is the
+recommended sequence (BDFL prediction 85%). Post-reseed also: re-spell
+the BOOTSTRAP INTERIM `++ ""` dodges, and answer #767's contract asks.
+
+## Session-3 commit trail (oldest first)
+84ebff6d drop-body let observes · 6340906e clause node/ordinal keying ·
+b4d4a66a test respell · 200de5eb =~ observes subject · 2a7fb642 cimport
+u64 suffix + diagnostic id fix · 6d8e9be4 comptime pipeline kind dispatch
+· b9c0db1d audit tools migrated · 6786f1c0 morning handoff · c0ad140e
+mut-self carrier root-refresh (#766 closed) · e7e9248f shift record +
+peer signedness (#765 closed) · ae91424a bitnot record + comptime return
+adaptation (#767 instance fixed)
+
+## Traps (verified this session — do not relearn)
+- Laptop sleeps ~10 min after activity: adrafinil keep_awake BEFORE long
+  runs; nohup+disown+ScheduleWakeup for anything long.
+- `with -p` in-place transforms TRUNCATE files (#769) — use Edit/git.
+- Worktree audits need `src/main` copied from ~/with/src/main (#680 edge).
+- Seed + flipped-stdlib mixes are not behavioral evidence; verify with
+  stage1 (disk std) or main+seed.
+- rc-only green is not evidence: count PASS lines (da lane), check
+  `[target] wrote` + per-stage rc.
+
+---
+
 
 ## START HERE — state and the one open decision
 
