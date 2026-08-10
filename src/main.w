@@ -1155,7 +1155,10 @@ fn reduce_candidate_matches(argc: i32, dashdash: i32, candidate_path: &str, cont
         return false
     if contains.len() > 0:
         let combined = with_fs_read_file(out_path) ++ "\n" ++ with_fs_read_file(err_path)
-        if not combined.contains(contains):
+        // BOOTSTRAP INTERIM (#747): materialized needle — seed &str
+        // marshalling, same as test_output_contains_expected.
+        let contains_needle = contains ++ ""
+        if not combined.contains(contains_needle):
             return false
     true
 
@@ -2977,7 +2980,12 @@ fn run_test_compiler_command(target: &str, command_name: &str, directives: &Test
     TestRunResult { rc, stdout, stderr }
 
 fn test_output_contains_expected(actual: &str, expected: &str) -> bool:
-    expected.len() == 0 or actual.contains(expected)
+    // BOOTSTRAP INTERIM (#747): materialize the needle before the contains
+    // intrinsic — the frozen seed marshals a &str view's header address into
+    // the data-pointer slot (same defect as test_validate_output's dodge;
+    // respell to the bare view after the post-merge reseed).
+    let needle = expected ++ ""
+    needle.len() == 0 or actual.contains(needle)
 
 fn run_test_directive_command(target: &str, directives: &TestDirectives, quiet: bool) -> i32:
     if directives.skip:
@@ -3015,7 +3023,7 @@ fn run_test_directive_command(target: &str, directives: &TestDirectives, quiet: 
                 return 1
         for i in 0..directives.expect_check_stdout_not.len() as i32:
             let forbidden = directives.expect_check_stdout_not.get(i as i64)
-            if forbidden.len() > 0 and result.stdout.contains(forbidden):
+            if forbidden.len() > 0 and test_output_contains_expected(result.stdout, forbidden):
                 emit_test_stage_error("unexpected check stdout: " ++ forbidden, target, "check", "")
                 return 1
         return 0
