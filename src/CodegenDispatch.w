@@ -379,7 +379,12 @@ impl Codegen:
         let literal_ft = wl_global_get_value_type(literal_fn)
         let literal_args: Vec[i64] = Vec.new()
         literal_args.push(code_global)
-        literal_args.push(self.gen_string_literal_raw(pattern))
+        // __literal_code takes `pattern: &str` (flipped decl): pass the
+        // ADDRESS of the constant str header (gen_string_literal_ref), not
+        // the %str value — the by-value push was a per-path ABI derivation
+        // (D6) and every regex-literal function failed LLVM verification
+        // against the pointer-ABI signature.
+        literal_args.push(self.gen_string_literal_ref(pattern))
         literal_args.push(wl_const_int(i32_ty, options as i64, 0))
         let code_ptr = wl_build_call(self.builder, literal_ft, literal_fn, vec_data_i64(&literal_args), 3)
         let cap_params: Vec[i64] = Vec.new()
@@ -2036,6 +2041,22 @@ impl Codegen:
             return val
         self.coerce_value_to_type(val, llvm_ty)
 
+    // #293's &str-compares-as-str rule applied to ORDERING ops: the BTree
+    // walk compares a Vec.get &str view against an owned str key; without
+    // this route the mixed operands fell through to a raw `icmp slt ptr,
+    // %str` (invalid IR, surfaced by the post-SROA verifier in every
+    // generic str-keyed map instantiation).
+    mut fn mir_build_str_order_from_sema(op: i32, lhs: i64, rhs: i64, lhs_sema: i32, rhs_sema: i32) -> i64:
+        if self.mir_compare_dispatch_kind(lhs_sema) != 1 or self.mir_compare_dispatch_kind(rhs_sema) != 1:
+            return 0
+        let lhs_cmp = self.mir_coerce_compare_operand(lhs, lhs_sema)
+        let rhs_cmp = self.mir_coerce_compare_operand(rhs, rhs_sema)
+        if wl_type_of(lhs_cmp) != wl_type_of(rhs_cmp):
+            return 0
+        if not self.is_str_type(wl_type_of(lhs_cmp)):
+            return 0
+        self.compare_str_order(lhs_cmp, rhs_cmp, op)
+
     mut fn mir_build_eq_from_sema(op: i32, lhs: i64, rhs: i64, lhs_sema: i32, rhs_sema: i32) -> i64:
         let lhs_kind = self.mir_compare_dispatch_kind(lhs_sema)
         let rhs_kind = self.mir_compare_dispatch_kind(rhs_sema)
@@ -2284,6 +2305,11 @@ impl Codegen:
                 return self.compare_str_eq(lhs, rhs, op)
             if op == BinaryOp.OP_LT or op == BinaryOp.OP_GT or op == BinaryOp.OP_LTE or op == BinaryOp.OP_GTE:
                 return self.compare_str_order(lhs, rhs, op)
+
+        if op == BinaryOp.OP_LT or op == BinaryOp.OP_GT or op == BinaryOp.OP_LTE or op == BinaryOp.OP_GTE:
+            let sema_ord = self.mir_build_str_order_from_sema(op, lhs, rhs, lhs_sema, rhs_sema)
+            if sema_ord != 0:
+                return sema_ord
 
         if op == BinaryOp.OP_EQ or op == BinaryOp.OP_NEQ:
             let sema_cmp = self.mir_build_eq_from_sema(op, lhs, rhs, lhs_sema, rhs_sema)

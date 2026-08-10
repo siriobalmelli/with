@@ -64,6 +64,7 @@ let LLVM_X86FastcallCallConv: i32 = 65
 let LLVM_Win64CallConv: i32 = 79
 let LLVM_ObjectFile: i32 = 1
 let LLVM_ReturnStatusAction: i32 = 2
+let LLVM_PrintMessageAction: i32 = 1
 let LLVM_TailCallKindMustTail: i32 = 2
 let LLVM_DIFlagZero: i32 = 0
 let LLVM_DWARFSourceLanguageC: i32 = 1
@@ -1222,8 +1223,10 @@ pub fn wl_run_function_passes(fn_val: i64, tm: i64, passes: &str) -> i32:
         0
 
 pub fn wl_verify_function(fn_val: i64) -> i32:
+    // PrintMessage: the verifier names its complaint on stderr; silent
+    // ReturnStatus cost a blind IR-archaeology session.
     unsafe:
-        LLVMVerifyFunction(fn_val as *mut u8, LLVM_ReturnStatusAction)
+        LLVMVerifyFunction(fn_val as *mut u8, LLVM_PrintMessageAction)
 
 pub fn wl_dump_value(v: i64) -> Unit: unsafe { LLVMDumpValue(v as *mut u8) }
 
