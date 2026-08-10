@@ -3129,6 +3129,18 @@ fn mir_validate_type_compatible_fast(mir_mod: &MirModule, expected: i32, actual:
         return if mir_mod.mir_get_type_d0(exp_r) == mir_mod.mir_get_type_d0(act_r): 1 else: 0
     if exp_k == TypeKind.TY_ENUM and act_k == TypeKind.TY_ENUM:
         return if mir_mod.mir_get_type_d0(exp_r) == mir_mod.mir_get_type_d0(act_r): 1 else: 0
+    if exp_k == TypeKind.TY_FN and act_k == TypeKind.TY_FN:
+        // Sema does not intern fn types canonically; mirror its structural
+        // fn_types_compatible rule (d0=params extra, d1=count, d2=ret).
+        if mir_mod.mir_get_type_d1(exp_r) != mir_mod.mir_get_type_d1(act_r):
+            return 0
+        let fn_param_count = mir_mod.mir_get_type_d1(exp_r)
+        let exp_ps = mir_mod.mir_get_type_d0(exp_r)
+        let act_ps = mir_mod.mir_get_type_d0(act_r)
+        for fpi in 0..fn_param_count:
+            if mir_validate_type_compatible_fast(mir_mod, mir_mod.mir_get_type_extra(exp_ps + fpi), mir_mod.mir_get_type_extra(act_ps + fpi)) == 0:
+                return 0
+        return mir_validate_type_compatible_fast(mir_mod, mir_mod.mir_get_type_d2(exp_r), mir_mod.mir_get_type_d2(act_r))
     if exp_k == TypeKind.TY_GENERIC_INST and act_k == TypeKind.TY_GENERIC_INST:
         if mir_mod.mir_get_type_d0(exp_r) == mir_mod.mir_get_type_d0(act_r):
             let arg_count = mir_validate_get_generic_inst_arg_count(mir_mod, exp_r)
