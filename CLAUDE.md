@@ -367,6 +367,14 @@ reporting problem. The bar is correctness, not coverage.
 
 ## Runtime Architecture
 
+**TRANSITIONAL — D30 (docs/decisions.md) retires this object-boundary
+design.** Destination: the runtime compiles in-unit like the embedded
+stdlib; rt objects survive only as a (compiler-version, target)-keyed
+cache whose hits are byte-identical to the in-unit result. A runtime
+object built by a different compiler generation must never be linked —
+that mixed-world link is #761's corruption class. The layout below is
+the current tree until the retirement lands.
+
 ```
 rt_core.o    (With)  = core runtime. All runtime functions live here.
 ```
@@ -402,6 +410,17 @@ not precedent. Do not copy or rename them into another internal export
 mechanism.
 
 ### `with_*` is compiler-internal — user programs never call it
+
+**DEPRECATED TIER — D30 (2026-08-09) retires the internal runtime ABI.**
+The `with_*` seam is a C-bootstrap fossil, not a semantic necessity: the
+runtime will compile in-unit like the embedded stdlib, codegen will lower
+to ordinary module functions, and pre-compiled rt objects survive only as
+a (compiler-version, target)-keyed cache — never as a boundary with its
+own contracts (#761 is what such a boundary does). Until the retirement
+lands (sequenced after the 747-flip merge/reseed), the guidance below
+remains operative for the current tree; do not build NEW machinery on
+this seam, and see §16.3e for the boundary-type rule that governs the
+surfaces that remain after it.
 
 Two surfaces. Never conflate them:
 
@@ -468,7 +487,10 @@ With. With IS a scripting language; there is no "just a quick script" exception.
   hacks are not acceptable for self-host-critical rewrites. See
   `tools/migrate_receivers.w`.
 - File I/O via `extern fn with_fs_read_file(path: str) -> str` /
-  `with_fs_write_file(path: str, data: str) -> i32`.
+  `with_fs_write_file(path: str, data: str) -> i32`. (Transitional
+  spelling: these decls are the D30-deprecated internal seam and die with
+  it — post-retirement, tools reach fs through `std.fs`, and `str` in an
+  extern signature is a §16.3e error.)
 
 **After bootstrap the seed depends on nothing external from LLVM.** A
 hard invariant.
