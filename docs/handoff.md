@@ -1,3 +1,98 @@
+# Active Handoff — #747 flip: BATTERY BLESSED, census 102 → 7, MERGE BRIEF (2026-08-10, session 3)
+
+## START HERE — state and the one open decision
+
+Worktree: `~/.local/with-staging/747-flip`, branch `747-flip` @ `b9c0db1d`, CLEAN.
+Logs/artifacts: `~/.local/with-staging/fixpoint-analysis/` (battery-0810.log,
+audits3-0810.log, census9.log, repro-instance-i-mm/, single_stdint.w).
+
+**Gate status (all on the committed tree):**
+- `with build` ✓ (build-rc=0)
+- `with build :fixpoint` ✓ (stage2 == stage3 byte-identical)
+- `with build :move-audit` ✓ (cells agree with ground truth)
+- `with build :drop-audit` ✓ (no regressions vs seed baseline)
+- `with build :test` — green EXCEPT the enumerated classes below.
+
+**Census: 102 → 7 (stage1 lane), every survivor filed:**
+- 1 × #766 behav_d21_comptime_generic_pipeline_return (generic comptime
+  method carrier through fold order; narrowed, next probe in issue)
+- 1 × #767 behav_comptime_unsigned_arith (bitnot sidecar record breaks
+  builds when inserted — consumer must be root-caused first; filed with
+  the 07b65c29/93c45987 evidence)
+- 1 × #765 issue171_shift_defined_counts (inline unsigned shift sext; IR
+  fingerprint filed)
+- 4 × Eric-queue: behav_derive_serialize/deserialize/soa/soa_generic
+  (JsonView + SoA derive design — queue #3, do not decide unilaterally)
+(#764 enum-ctor payload gap additionally owns issue65_fstring_mixed_holes;
+its fix needs an isolated :move-audit-bracketed batch per the issue.)
+
+**Release-lane known red (NOT a stage1-lane defect): the c_import class
+(~5-8 tests, silent SIGSEGV) under the battery-built binary = #761/D30
+mixed-world rt.** Evidence on #761: seed-built out/lib rt (&str ABI ≠ flip
+ABI) crashes flip-codegen callers (str_byte_at_ref reads key text as a
+header); flipping the pin re-opens the 04h owned-str double-free because
+codegen still emits BOTH with_str_* surfaces. Cure = the sequenced D30
+retirement (in-unit rt), or interim: finish the _ref emission migration +
+tier the pins (seed rt for stage1, stage1-built rt for stage2+/embedded).
+
+## The merge decision (Eric's call — brief per protocol)
+
+Merge 747-flip → main now, then reseed, then the D30/#761 retirement?
+
+- **For merging now:** both hard invariants green (fixpoint, audits);
+  the str flip is semantically landed and self-hosting; remaining reds are
+  filed, attributed, and either blocked on design decisions (derives),
+  isolated-batch protocol (#764), or the post-merge D30 campaign (#761
+  release lane). Holding the branch open risks drift against main.
+- **Against merging now:** the release binary's c_import lane is red — a
+  user building with c_import + the RELEASE binary hits SEGV until D30
+  lands; if a release were cut from main post-merge it would ship that.
+  (Mitigation: no release is planned before D30 per the sequencing; the
+  release-bar memory says releases need all issues resolved anyway.)
+- **Mission fit:** the flip IS the ownership doctrine (str owned + Drop,
+  observer signatures); D30 depends on it landing. Most with-y path:
+  merge, reseed, immediately start D30 — the mixed-world class dies with
+  the boundary itself rather than being patched around.
+- **BDFL prediction (85%):** merge now, reseed, D30 next; #764 right
+  after reseed in its own audited batch; derives ruled when the JsonView
+  design brief is presented.
+
+## What landed this session (2026-08-10, chronological)
+- 84ebff6d drop-body `let` of a self field observes (§2.4×D22/D27
+  coherence; field glue drops it; conditional-consume diagnostic kept via
+  respelled err_conditional_drop_field_move)
+- 6340906e clause body symbols keyed by node + group ordinal — decl_index
+  drift (prelude injection shifts the table between passes) no longer
+  breaks multi-clause fns; fn_decl_effective_indices retired
+- 200de5eb `=~` observes its subject at all three lowerings (expr/if/while);
+  /g progression fixed (subject was reset-on-move blanked after iter 1)
+- 2a7fb642 cimport renders >i64::MAX C literals with the u64 suffix C
+  implies (UINTMAX_C class); fit-diagnostic id confusion fixed (#660 class);
+  cache format v15 — healed ALL 11 c_import census panics in the stage1 lane
+- 6d8e9be4 comptime pipeline collection sugar dispatches by value kind;
+  D21 chains thread the chain-root receiver; gate diagnostic names the
+  symbol (2 of 3 d21 tests green)
+- b9c0db1d audit tools flip-migrated (observer &str signatures); both
+  audits green
+- Issues filed this session: #767 (typed_expr_types recording contract),
+  #768 (typed drop-body field let leak — MirLower annotation-blind alias)
+
+## Traps for the next session (all still true)
+- Machine sleeps ~10 min after turn activity stops: take an adrafinil
+  keep_awake hold BEFORE long builds; nohup+disown+ScheduleWakeup for
+  everything long-running (harness background tasks get killed).
+- `with -p` one-liners TRUNCATED tools/*.w in place (restored from git;
+  perl used as emergency fallback — file the -p bug and rewrite the edits
+  as With once fixed).
+- The worktree needs `src/main` copied from ~/with/src/main for the
+  audits' :seed prereq (fetch fails detached; also #680 undeclared edge).
+- Seed+flipped-stdlib mixes are NOT behavioral evidence (print marshalling
+  garbage) — verify with stage1 (disk std) or main+seed only.
+
+---
+
+# Superseded: previous session handoff (2026-08-09)
+
 # Active Handoff — #747 flip: bootstrap recovered honestly; battery unblocked; 102-failure residue census (2026-08-09, session 2)
 
 ## Read this first (supersedes the bootstrap-recovery section below)
