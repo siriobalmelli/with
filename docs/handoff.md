@@ -1,4 +1,4 @@
-# Active Handoff — #747 flip: gates green ×5, census 102 → 5, merge is the open call (2026-08-10, session 3 final)
+# Active Handoff — #747 flip: gates green ×5, census 102 → 4, merge is the open call (2026-08-10, session 3 final)
 
 ## START HERE — exact state (all counts verified on committed tree @ ae91424a)
 
@@ -17,10 +17,10 @@ CLEAN, pushed to origin. Logs: `~/.local/with-staging/fixpoint-analysis/`
 **Stage1-lane census: 102 → 5.**
 - 4 × derives (behav_derive_serialize/deserialize/soa/soa_generic) —
   ERIC'S QUEUE #3: JsonView + SoA derive design. Not decidable here.
-- 1 × issue65_fstring_mixed_holes — #764 (enum-ctor payload move gap).
+
   Fix protocol documented on the issue; MUST be its own isolated
   :move-audit-bracketed batch (prior attempt drifted move-resets at
-  runtime while compiling green). This is the designated NEXT batch.
+  runtime while compiling green). 
 
 **Release-lane only (green under stage1; SEGV/fail under the battery
 binary): 13 tests** — behav_c_import_* (4), imported_alias, raw_ptr,
