@@ -9,7 +9,9 @@ enum Token { Text(str) | End }
 
 fn main:
     let label = "inline"
-    let tok = Token.Text(label)
+    // #764: a constructor owns its payload — the first ctor consumes
+    // `label`, so the second takes an independent copy.
+    let tok = Token.Text(label ++ "")
     let err = LocalErr.Bad(label)
 
     let mixed = f"tok={tok} err={err} num={42}"

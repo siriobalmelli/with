@@ -13214,7 +13214,17 @@ impl Sema:
         let extra_start = self.ast.get_data2(node)
         let arg_count = self.ast.get_extra(extra_start)
         for ai in 0..arg_count:
-            self.check_expr(self.ast.get_extra(extra_start + 1 + ai))
+            let ev_arg_node = self.ast.get_extra(extra_start + 1 + ai)
+            let ev_arg_ty = self.check_expr(ev_arg_node)
+            // #764: the constructed value OWNS its payload (#714 container-
+            // store rule) — mark a plain named non-Copy argument consumed so
+            // a second use is a use-of-moved-value error instead of a silent
+            // read of the move-blanked slot.
+            let ev_arg_kind = self.ast.kind(ev_arg_node)
+            if ev_arg_kind != NodeKind.NK_MOVE_ARG and ev_arg_kind != NodeKind.NK_COPY_ARG and self.is_copy(ev_arg_ty as TypeId) == 0:
+                let ev_root = self.place_root_sym(ev_arg_node)
+                if ev_root != 0 and self.scope_has(ev_root) != 0:
+                    self.mark_moved_if_consumed(ev_arg_node)
         let visible_tid = self.lookup_named_type_visible(type_name)
         if visible_tid != 0:
             return self.resolve_alias(visible_tid as TypeId) as i32
@@ -19451,6 +19461,16 @@ impl Sema:
             // storing a copied pointee stores T, not the argument's &T view.
             if mc_expected != 0:
                 let _ = self.record_contextual_copy_adjustment(mc_arg_node, mc_expected, mc_arg_ty as i32)
+            // #764: an enum constructor OWNS its payload — a plain named
+            // argument is consumed exactly like a container store below
+            // (#714 rule). Without the mark a second use compiled clean and
+            // read the move-blanked slot at runtime (Bad() printed empty).
+            if mc_is_static_enum_variant and ai < mc_static_variant_payload_tys.len() as i32:
+                let ctor_arg_kind = self.ast.kind(mc_arg_node)
+                if ctor_arg_kind != NodeKind.NK_MOVE_ARG and ctor_arg_kind != NodeKind.NK_COPY_ARG and self.is_copy(mc_arg_ty as TypeId) == 0:
+                    let ctor_root = self.place_root_sym(mc_arg_node)
+                    if ctor_root != 0 and self.scope_has(ctor_root) != 0:
+                        self.mark_moved_if_consumed(mc_arg_node)
             // §17.6a: numeric min/max/mul_add require same-typed operands. A literal
             // argument adapts to the receiver type (so mc_arg_ty already matches),
             // but a concrete operand of a different width/signedness must be an
