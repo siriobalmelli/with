@@ -12818,7 +12818,31 @@ impl MirBuilder:
                     f_ty = self.struct_field_type(sl_struct_ty, f_name_sym)
                 if f_ty != 0:
                     self.expected_type = f_ty
-                let f_op = self.lower_expr(f_val_node)
+                var f_op = 0
+                var f_ref_done = 0
+                if f_ty != 0:
+                    let f_ty_res = self.sema.resolve_alias(f_ty as TypeId)
+                    if self.sema.get_type_kind(f_ty_res) == TypeKind.TY_REF:
+                        let init_ty = self.expr_type(f_val_node)
+                        if init_ty != 0 and self.sema.get_type_kind(self.sema.resolve_alias(init_ty as TypeId)) != TypeKind.TY_REF:
+                            let init_kind = self.ast.kind(f_val_node)
+                            if init_kind == NodeKind.NK_IDENT or init_kind == NodeKind.NK_FIELD_ACCESS:
+                                // A &-typed field initialized from a place is an
+                                // implicit borrow: store the place's ADDRESS.
+                                // Lowering the value bit-copied a str header into
+                                // the ref slot — view.source then dereferenced
+                                // text bytes as a header (derive_deserialize SEGV).
+                                let ref_place = self.lower_expr_place(f_val_node)
+                                if self.place_type_is_str(ref_place) != 0:
+                                    self.mark_string_place_copied(ref_place)
+                                let ref_rv = self.body.new_rvalue(RvalueKind.RK_REF, BorrowKind.SHARED, ref_place, 0)
+                                let ref_temp = self.new_temp(f_ty)
+                                let ref_temp_place = self.place_for_local(ref_temp)
+                                self.body.push_stmt(self.cur_bb, StmtKind.Assign, ref_temp_place, ref_rv, self.ast.get_start(f_val_node))
+                                f_op = self.body.new_operand(OperandKind.OK_COPY, ref_temp_place)
+                                f_ref_done = 1
+                if f_ref_done == 0:
+                    f_op = self.lower_expr(f_val_node)
                 sl_fields.push(f_op)
                 sl_names.push(resolved_name)
                 self.expected_type = saved_expected

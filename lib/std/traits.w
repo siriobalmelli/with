@@ -155,6 +155,21 @@ impl Clone for str:
     // every mode.
     fn clone(self: &Self) -> str: self ++ ""
 
+// Primitive clones: generic code (e.g. the SoA derive's row rebuild)
+// spells materialization uniformly as .clone(); for Copy primitives the
+// clone IS the copy.
+impl Clone for i8:   fn clone(self: &Self): *self
+impl Clone for i16:  fn clone(self: &Self): *self
+impl Clone for i32:  fn clone(self: &Self): *self
+impl Clone for i64:  fn clone(self: &Self): *self
+impl Clone for u8:   fn clone(self: &Self): *self
+impl Clone for u16:  fn clone(self: &Self): *self
+impl Clone for u32:  fn clone(self: &Self): *self
+impl Clone for u64:  fn clone(self: &Self): *self
+impl Clone for f32:  fn clone(self: &Self): *self
+impl Clone for f64:  fn clone(self: &Self): *self
+impl Clone for bool: fn clone(self: &Self): *self
+
 impl Eq for str:
     fn eq(self: &Self, other: &str) -> bool: *self == other
 

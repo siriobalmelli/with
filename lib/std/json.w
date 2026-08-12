@@ -21,7 +21,7 @@ pub trait Serialize:    fn serialize(self: &Self, out:
 // ruling 1, the D25 Copy-token pattern). Under owned str (#747/D28) the
 // view token holds a VIEW of the document's source — the token stays Copy,
 // exactly the ruled semantics.
-pub type JsonView: Copy {
+pub type JsonView ephemeral: Copy {
     source: &str,
     tokens: *const JsonToken,
     index: i32,
@@ -40,9 +40,9 @@ pub fn JsonWriter.new() -> JsonWriter:
     JsonWriter { text: "", needs_comma: false, after_key: false }
 
 impl JsonWriter:
-    pub fn finish(): self.text
+    pub move fn finish(): self.text
 
-fn json_escape_string(value: str) -> str:
+fn json_escape_string(value: &str) -> str:
     var out = ""
     var i = 0
     while i < value.len() as i32:
@@ -62,43 +62,43 @@ fn json_escape_string(value: str) -> str:
         i = i + 1
     out
 
-fn json_quote(value: str) -> str:
+fn json_quote(value: &str) -> str:
     "\"" ++ json_escape_string(value) ++ "\""
 
 impl JsonWriter:
     // Explicit return type: unannotated fns with early `return <value>`
     // mis-finalize (#653); the annotation is the documented workaround.
-    fn prefix_value() -> JsonWriter:
+    move fn prefix_value() -> JsonWriter:
         if self.after_key:
             return JsonWriter { text: self.text, needs_comma: self.needs_comma, after_key: false }
         if self.needs_comma:
             return JsonWriter { text: self.text ++ ",", needs_comma: self.needs_comma, after_key: self.after_key }
         JsonWriter { text: self.text, needs_comma: self.needs_comma, after_key: self.after_key }
 
-    pub fn begin_object():
+    pub move fn begin_object():
         let prefixed = self.prefix_value()
         JsonWriter { text: prefixed.text ++ "{", needs_comma: false, after_key: false }
 
-    pub fn end_object(): JsonWriter { text: self.text ++ "}", needs_comma: true, after_key: false }
+    pub move fn end_object(): JsonWriter { text: self.text ++ "}", needs_comma: true, after_key: false }
 
-    pub fn key(key: &str):
+    pub move fn key(key: &str):
         let prefix = if self.needs_comma: "," else: ""
         JsonWriter { text: self.text ++ prefix ++ json_quote(key) ++ ":", needs_comma: false, after_key: true }
 
-    pub fn value_raw(raw: str):
+    pub move fn value_raw(raw: str):
         let prefixed = self.prefix_value()
         JsonWriter { text: prefixed.text ++ raw, needs_comma: true, after_key: false }
 
-    pub fn value_str(value: str) -> JsonWriter:
+    pub move fn value_str(value: str) -> JsonWriter:
         self.value_raw(json_quote(value))
 
-    pub fn value_i32(value: i32) -> JsonWriter:
+    pub move fn value_i32(value: i32) -> JsonWriter:
         self.value_raw(with_i32_to_str(value))
 
-    pub fn value_i64(value: i64) -> JsonWriter:
+    pub move fn value_i64(value: i64) -> JsonWriter:
         self.value_raw(with_i64_to_str(value))
 
-    pub fn value_bool(value: bool) -> JsonWriter:
+    pub move fn value_bool(value: bool) -> JsonWriter:
         self.value_raw(if value: "true" else: "false")
 
 impl Serialize for str:    fn serialize(self: &str, out:

@@ -1670,7 +1670,17 @@ impl Sema:
             let idx_ident = out.ct_build_ident(decl, idx_sym)
             let get_args: Vec[i32] = Vec.new()
             get_args.push(idx_ident)
-            let get_call = out.ct_build_call(decl, get_callee, get_args)
+            var get_call = out.ct_build_call(decl, get_callee, get_args)
+            // #747/D27: column.get(i) returns a VIEW; the rebuilt row's field
+            // demands an owned value. Materialize uniformly with .clone():
+            // str clones, primitives copy (traits.w), and a type-param field
+            // dispatches per instantiation. Copy CONCRETE fields stay bare
+            // (contextual Copy already satisfies the field demand).
+            let elem_tid: i32 = self.type_extra.get((te_start + fi * 3 + 1) as i64)
+            if self.is_copy(elem_tid as TypeId) == 0:
+                let clone_callee = out.ct_build_field_access(decl, get_call, intern.intern("clone"))
+                let clone_args: Vec[i32] = Vec.new()
+                get_call = out.ct_build_call(decl, clone_callee, clone_args)
             get_field_values.push(get_call)
         let get_field_extra = out.extra_len()
         for fi in 0..field_count:
@@ -1707,7 +1717,10 @@ impl Sema:
         out.add_extra(4)
         let impl_node = out.add_node(NodeKind.NK_IMPL_DECL, start, end, soa_sym, impl_extra, 0)
         if tp_count > 0:
-            let impl_tp_start = ct_copy_type_params(out, tp_start, tp_count)
+            // get()'s row rebuild clones type-param fields, so the SoA impl
+            // requires Clone on every element param (primitives satisfy it
+            // via traits.w).
+            let impl_tp_start = ct_copy_type_params_with_bound(out, tp_start, tp_count, intern.intern("Clone"))
             out.add_impl_type_params(impl_node, impl_tp_start, tp_count)
             let target_type = ct_build_generic_self_type(out, decl, soa_sym, impl_tp_start, tp_count)
             out.add_impl_target_type_node(impl_node, target_type as NodeId)
