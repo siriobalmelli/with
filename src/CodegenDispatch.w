@@ -2434,60 +2434,19 @@ impl Codegen:
         self.had_error = 1
         wl_get_undef(wl_i32_type(self.context))
 
+    // #761: ++ lowers through the OBSERVING boundary form — operands are
+    // passed by header address, so a flip-built runtime body owns nothing
+    // and drops nothing.
     mut fn mir_str_concat(lhs: i64, rhs: i64) -> i64:
         let str_ty = self.resolve_named_type(self.intern.intern("str"))
-        let lhs_v = lhs
-        let rhs_v = rhs
-        let concat_sym = self.intern.intern("with_str_concat")
-        let fv = self.fn_values.get(concat_sym)
-        let ft = self.fn_fn_types.get(concat_sym)
-        if fv.is_some() and ft.is_some():
-            let fn_value: i64 = fv.unwrap()
-            let fn_type: i64 = ft.unwrap()
-            let args: Vec[i64] = Vec.new()
-            args.push(lhs_v)
-            args.push(rhs_v)
-            return self.build_call_fn_value(concat_sym, fn_value, fn_type, -1, 0, args, 2, "with_str_concat", 0)
+        let ptr_ty = wl_ptr_type(self.context)
         let param_types: Vec[i64] = Vec.new()
-        var ret_ty = str_ty
-        var has_sret = 0
-        var byval_mask: i64 = 0
-        let byval_types: Vec[i64] = Vec.new()
-        let direct_types: Vec[i64] = Vec.new()
-        if self.internal_abi_needs_sret(str_ty):
-            has_sret = 1
-            ret_ty = wl_void_type(self.context)
-            param_types.push(wl_ptr_type(self.context))
-        if self.internal_abi_needs_indirect_param(str_ty):
-            param_types.push(wl_ptr_type(self.context))
-            byval_mask = byval_mask | 1
-            byval_types.push(str_ty)
-            direct_types.push(0)
-        else:
-            param_types.push(str_ty)
-            byval_types.push(0)
-            direct_types.push(0)
-        if self.internal_abi_needs_indirect_param(str_ty):
-            param_types.push(wl_ptr_type(self.context))
-            byval_mask = byval_mask | 2
-            byval_types.push(str_ty)
-            direct_types.push(0)
-        else:
-            param_types.push(str_ty)
-            byval_types.push(0)
-            direct_types.push(0)
-        let fn_type = wl_function_type(ret_ty, vec_data_i64(&param_types), param_types.len() as i32, 0)
-        let func = wl_add_function(self.llmod, "with_str_concat", fn_type)
-        if has_sret != 0:
-            wl_add_sret_attr(self.context, func, 0, str_ty)
-        if has_sret != 0 or byval_mask != 0:
-            self.record_c_abi_transform(concat_sym, has_sret, str_ty, byval_mask, move byval_types, 0, move direct_types, 0)
-        self.fn_values.insert(concat_sym, func)
-        self.fn_fn_types.insert(concat_sym, fn_type)
+        param_types.push(ptr_ty)
+        param_types.push(ptr_ty)
         let args: Vec[i64] = Vec.new()
-        args.push(lhs_v)
-        args.push(rhs_v)
-        self.build_call_fn_value(concat_sym, func, fn_type, -1, 0, args, 2, "with_str_concat", 0)
+        args.push(self.build_str_ref_from_value(lhs))
+        args.push(self.build_str_ref_from_value(rhs))
+        self.call_internal_runtime_fn("with_str_concat_ref", param_types, args, 2, str_ty)
 
     mut fn mir_str_concat_n(body: &MirBody, args_id: i32, move_first: i32) -> i64:
         let str_ty = self.resolve_named_type(self.intern.intern("str"))
@@ -2789,6 +2748,19 @@ impl Codegen:
         a.push(coerced)
         self.call_internal_runtime_fn(fn_name, pts, a, 1, str_ty)
 
+    // #761: observing call — spill the operand and pass its ADDRESS (the
+    // callee takes &str). Spills unconditionally: the operand may carry a
+    // non-canonical str layout (the old identity-call was a bitcast trick),
+    // and the callee reads it as a header either way.
+    mut fn call_runtime_str_fn_ref(fn_name: &str, arg: i64, str_ty: i64) -> i64:
+        let slot = self.create_entry_alloca(wl_type_of(arg))
+        wl_build_store(self.builder, arg, slot)
+        let pts: Vec[i64] = Vec.new()
+        pts.push(wl_ptr_type(self.context))
+        let a: Vec[i64] = Vec.new()
+        a.push(slot)
+        self.call_internal_runtime_fn(fn_name, pts, a, 1, str_ty)
+
     mut fn call_runtime_str_fn(fn_name: &str, arg: i64, str_ty: i64) -> i64:
         let sym = self.intern.intern(fn_name)
         let fv = self.fn_values.get(sym)
@@ -2867,7 +2839,7 @@ impl Codegen:
         if tk == TypeKind.TY_STR:
             if val_ty == str_ty:
                 return val
-            return self.call_runtime_str_fn("with_fmt_str", val, str_ty)
+            return self.call_runtime_str_fn_ref("with_fmt_str_ref", val, str_ty)
         if tk == TypeKind.TY_STRUCT:
             return self.gen_debug_struct(val, resolved, str_ty)
         if tk == TypeKind.TY_ENUM:
@@ -2883,7 +2855,7 @@ impl Codegen:
 
         // str → quoted
         if resolved == self.sema.ty_str or tk == TypeKind.TY_STR:
-            return self.call_runtime_str_fn("with_fmt_str_debug", val, str_ty)
+            return self.call_runtime_str_fn_ref("with_fmt_str_debug_ref", val, str_ty)
 
         // Struct → "TypeName { field: val, field: val }"
         if tk == TypeKind.TY_STRUCT:
@@ -3066,30 +3038,18 @@ impl Codegen:
 
         // String spec: with_fmt_str_spec(val, flags, width, precision)
         if val_ty == str_ty:
-            let fn_name = "with_fmt_str_spec"
-            let sym = self.intern.intern(fn_name)
-            let fv = self.fn_values.get(sym)
-            let ft = self.fn_fn_types.get(sym)
-            if fv.is_some() and ft.is_some():
-                let fn_value: i64 = fv.unwrap()
-                let fn_type: i64 = ft.unwrap()
-                let a: Vec[i64] = Vec.new()
-                a.push(val)
-                a.push(wl_const_int(i64_ty, flags as i64, 0))
-                a.push(wl_const_int(i32_ty, width as i64, 0))
-                a.push(wl_const_int(i32_ty, precision as i64, 0))
-                return self.build_call_fn_value(sym, fn_value, fn_type, -1, 0, a, 4, fn_name, 0)
+            // #761: observing form — pass the header address.
             let pts: Vec[i64] = Vec.new()
-            pts.push(str_ty)
+            pts.push(wl_ptr_type(self.context))
             pts.push(i64_ty)
             pts.push(i32_ty)
             pts.push(i32_ty)
             let a: Vec[i64] = Vec.new()
-            a.push(val)
+            a.push(self.build_str_ref_from_value(val))
             a.push(wl_const_int(i64_ty, flags as i64, 0))
             a.push(wl_const_int(i32_ty, width as i64, 0))
             a.push(wl_const_int(i32_ty, precision as i64, 0))
-            return self.call_internal_runtime_fn(fn_name, pts, a, 4, str_ty)
+            return self.call_internal_runtime_fn("with_fmt_str_spec_ref", pts, a, 4, str_ty)
 
         // Fallback: default format
         self.coerce_val_to_str(val, str_ty)
@@ -3320,24 +3280,23 @@ impl Codegen:
             self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 6, "with_fmt_buf_write_f64_spec", 0)
 
         else:
-            // String or other: with_fmt_buf_write_str_spec(buf, val, flags, width, precision)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            // #761: observing form — with_fmt_buf_write_str_spec_ref(buf, &val, ...)
             let pts: Vec[i64] = Vec.new()
             pts.push(ptr_ty)
-            pts.push(str_ty)
+            pts.push(ptr_ty)
             pts.push(i64_ty)
             pts.push(i32_ty)
             pts.push(i32_ty)
-            let func = self.ensure_fmt_buf_fn("with_fmt_buf_write_str_spec", pts, 5, wl_void_type(self.context))
-            let ft_sym = self.intern.intern("with_fmt_buf_write_str_spec")
+            let func = self.ensure_fmt_buf_fn("with_fmt_buf_write_str_spec_ref", pts, 5, wl_void_type(self.context))
+            let ft_sym = self.intern.intern("with_fmt_buf_write_str_spec_ref")
             let ft = self.fn_fn_types.get(ft_sym).unwrap() as i64
             let args: Vec[i64] = Vec.new()
             args.push(buf)
-            args.push(val)
+            args.push(self.build_str_ref_from_value(val))
             args.push(wl_const_int(i64_ty, flags as i64, 0))
             args.push(wl_const_int(i32_ty, width as i64, 0))
             args.push(wl_const_int(i32_ty, precision as i64, 0))
-            self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 5, "with_fmt_buf_write_str_spec", 0)
+            self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 5, "with_fmt_buf_write_str_spec_ref", 0)
 
     mut fn gen_fmt_buf_finish(buf: i64) -> i64:
         let ptr_ty = wl_ptr_type(self.context)
@@ -5758,21 +5717,22 @@ impl Codegen:
                 return 1
         0
 
-    fn copy_str_to_cstr_temp(str_val: i64) -> i64:
+    mut fn copy_str_to_cstr_temp(str_val: i64) -> i64:
         let str_ty = wl_type_of(str_val)
         if str_ty == 0:
             return str_val
-        var fn_val = wl_get_named_function(self.llmod, "with_str_to_cstr")
+        // #761: observing form — pass the header address.
+        var fn_val = wl_get_named_function(self.llmod, "with_str_to_cstr_ref")
         if fn_val == 0:
             let params: Vec[i64] = Vec.new()
-            params.push(str_ty)
+            params.push(wl_ptr_type(self.context))
             let fn_ty = wl_function_type(wl_ptr_type(self.context), vec_data_i64(&params), 1, 0)
-            fn_val = wl_add_function(self.llmod, "with_str_to_cstr", fn_ty)
+            fn_val = wl_add_function(self.llmod, "with_str_to_cstr_ref", fn_ty)
         if fn_val == 0:
             return self.extract_str_ptr(str_val)
         let fn_ty = wl_global_get_value_type(fn_val)
         let args: Vec[i64] = Vec.new()
-        args.push(str_val)
+        args.push(self.build_str_ref_from_value(str_val))
         wl_build_call(self.builder, fn_ty, fn_val, vec_data_i64(&args), 1)
 
     fn free_call_temp_ptrs(ptrs: &Vec[i64]):
@@ -11085,7 +11045,7 @@ impl Codegen:
         else if intrinsic == MirIntrinsic.FMT_DEBUG_STR:
             let dbg_val = self.mir_intrinsic_arg(body, args_id, 0)
             let dbg_str_ty = self.resolve_named_type(self.intern.intern("str"))
-            result = self.call_runtime_str_fn("with_fmt_str_debug", dbg_val, dbg_str_ty)
+            result = self.call_runtime_str_fn_ref("with_fmt_str_debug_ref", dbg_val, dbg_str_ty)
 
         else if intrinsic == MirIntrinsic.FMT_DEBUG:
             let dbg_val = self.mir_intrinsic_arg(body, args_id, 0)
@@ -11115,7 +11075,8 @@ impl Codegen:
         else if intrinsic == MirIntrinsic.FMT_BUF_WRITE_STR:
             let fb_buf = self.mir_intrinsic_arg(body, args_id, 0)
             let fb_str = self.mir_intrinsic_arg(body, args_id, 1)
-            self.gen_fmt_buf_write_str(fb_buf, fb_str)
+            // #761: observing form — pass the header address.
+            self.gen_fmt_buf_write_str_ref(fb_buf, self.build_str_ref_from_value(fb_str))
             result = wl_const_int(wl_i32_type(self.context), 0, 0)
 
         else if intrinsic == MirIntrinsic.FMT_BUF_WRITE_STR_REF:

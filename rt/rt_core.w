@@ -1370,6 +1370,9 @@ fn str_to_cstr(s: &str) -> *const u8:
 pub fn with_str_to_cstr(s: str) -> *mut u8:
     str_to_cstr(&s) as *mut u8
 
+pub fn with_str_to_cstr_ref(s: &str) -> *mut u8:
+    str_to_cstr(s) as *mut u8
+
 // ── Exported allocator/memory API for std/mem.w ───────────────────
 
 pub fn with_alloc(size: i64) -> *mut u8:
@@ -1630,7 +1633,13 @@ pub fn with_fmt_bool(b: i32) -> str:
 pub fn with_fmt_str(s: str) -> str:
     s
 
-pub fn with_fmt_str_debug(s: str) -> str:
+// #761 observing form: returns an independent OWNED copy (the consuming
+// form's identity return aliases its operand — a flip caller that drops
+// the result would free the source).
+pub fn with_fmt_str_ref(s: &str) -> str:
+    with_str_clone_ref(s)
+
+pub fn with_fmt_str_debug_ref(s: &str) -> str:
     let slen = str_length(s)
     let out_len = slen + 2
     let out = rt_alloc(out_len + 1)
@@ -1641,6 +1650,9 @@ pub fn with_fmt_str_debug(s: str) -> str:
     unsafe *((out as i64 + slen + 1) as *mut u8) = 34  // '"'
     unsafe *((out as i64 + out_len) as *mut u8) = 0
     make_str(out as *const u8, out_len)
+
+pub fn with_fmt_str_debug(s: str) -> str:
+    with_fmt_str_debug_ref(&s)
 
 // ── Float formatting ───────────────────────────────────────────────
 
@@ -1935,7 +1947,44 @@ pub fn with_fmt_str_spec(val: str, flags: i64, width: i32, precision: i32) -> st
         return alloc_str(sp, slen)
     val
 
+// #761 observing form: every arm returns an independent OWNED str (the
+// consuming form's fall-through aliases its operand).
+pub fn with_fmt_str_spec_ref(val: &str, flags: i64, width: i32, precision: i32) -> str:
+    var sp = str_data(val)
+    var slen = str_length(val)
+    if precision >= 0 and precision as i64 < slen:
+        slen = precision as i64
+    if width > 0 and slen < width as i64:
+        let fill_char = ((flags >> 8) & 255) as i32
+        let align_mode = ((flags >> 16) & 3) as i32
+        return pad_str(sp, slen, width as i64, fill_char, align_mode)
+    alloc_str(sp, slen)
+
+pub fn with_fmt_buf_write_str_spec_ref(b: *mut u8, val: &str, flags: i64, width: i32, precision: i32) -> Unit:
+    var s = with_fmt_str_spec_ref(val, flags, width, precision)
+    with_fmt_buf_write_str_ref(b, &s)
+    with_str_free(&raw mut s as *mut u8)
+
 // ── String operations ──────────────────────────────────────────────
+
+// #761: the observing form — codegen's ++ lowers here so the boundary
+// never transfers ownership (a flip-built body must not drop operands).
+pub fn with_str_concat_ref(a: &str, b: &str) -> str:
+    let al = str_length(a)
+    let bl = str_length(b)
+    let total = al + bl
+    var result = make_str("" as *const u8, 0)
+    if total != 0:
+        let out = rt_alloc(total + 1)
+        let ap = str_data(a)
+        let bp = str_data(b)
+        if ap as i64 != 0 and al > 0:
+            rt_memcpy(out, ap, al)
+        if bp as i64 != 0 and bl > 0:
+            rt_memcpy((out as i64 + al) as *mut u8, bp, bl)
+        unsafe *((out as i64 + total) as *mut u8) = 0
+        result = make_str(out as *const u8, total)
+    result
 
 pub fn with_str_concat(a: str, b: str) -> str:
     let al = str_length(a)
