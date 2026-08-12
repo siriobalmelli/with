@@ -122,7 +122,12 @@ impl Zcu:
             return
         if runtime_read_file(path).len() == 0:
             return
-        var paths = self.tracked_input_paths
+        // #747 instance C: capture by move, not copy — an unspelled field
+        // read left the field's stale Vec header live while insert_unique
+        // consumed (and freed) the buffer; the NEXT call iterated recycled
+        // memory (release-lane c_import SEGV: quoted-path text read as a
+        // str header in tracked_input_str_compare).
+        var paths = move self.tracked_input_paths
         self.tracked_input_paths = tracked_input_insert_unique(move paths, path)
 
 fn count_non_use_decls_frontend(pool: AstPool) -> i32:

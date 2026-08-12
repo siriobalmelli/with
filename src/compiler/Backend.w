@@ -67,7 +67,7 @@ impl Zcu:
         let t_codegen = runtime_clock_nanos()
         var backend_mir = self.last_mir_module
         let result = cg.gen_module_from_mir(&raw const backend_mir as i64, backend_pool)
-        var tracked_paths = self.tracked_input_paths
+        var tracked_paths = move self.tracked_input_paths
         self.tracked_input_paths = tracked_input_merge_unique(move tracked_paths, &cg.tracked_input_paths)
         if result != 0:
             self.last_sema = cg.take_sema()
@@ -144,7 +144,7 @@ impl Zcu:
                 cg.unit_assign_insert(assign.fn_syms.get(ai as i64), assign.units.get(ai as i64), ai)
                 ai = ai + 1
             let rc = cg.gen_module_from_mir(mir_ptr, pool)
-            var tracked = self.tracked_input_paths
+            var tracked = move self.tracked_input_paths
             self.tracked_input_paths = tracked_input_merge_unique(move tracked, &cg.tracked_input_paths)
             if rc != 0:
                 self.last_sema = cg.take_sema()
@@ -203,7 +203,7 @@ impl Zcu:
             runtime_eprint(f"[backend] cg.intern symbols={cg.intern.state.symbol_texts.len() as i32}")
         var backend_mir = self.last_mir_module
         let result = cg.gen_module_from_mir(&raw const backend_mir as i64, backend_pool)
-        var tracked_paths = self.tracked_input_paths
+        var tracked_paths = move self.tracked_input_paths
         self.tracked_input_paths = tracked_input_merge_unique(move tracked_paths, &cg.tracked_input_paths)
         self.last_sema = cg.take_sema()
         if result != 0:
