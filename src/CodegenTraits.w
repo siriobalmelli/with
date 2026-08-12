@@ -1219,7 +1219,7 @@ impl Codegen:
         -1
 
     mut fn record_tracked_input(path: &str):
-        var paths = self.tracked_input_paths
+        var paths = move self.tracked_input_paths
         self.tracked_input_paths = tracked_input_insert_unique(move paths, path)
 
     mut fn read_tracked_embed_file(source_path: &str, raw_path: &str) -> TrackedReadResult:
