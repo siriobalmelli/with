@@ -1,4 +1,55 @@
-# Active Handoff — #747 flip: gates green ×5, census 102 → 4, merge is the open call (2026-08-10, session 3 final)
+# Active Handoff — #747 MERGED TO MAIN; next: str-boundary _ref migration, then reseed, then D30 (2026-08-11)
+
+## START HERE
+
+**The flip is merged and pushed: main @ beb03de9** (merge commit 99995a6e).
+Work happens on main now; the 747-flip branch and its worktree
+(~/.local/with-staging/747-flip) are historical.
+
+**Battery on merged main (battery-main-final.log):** build ✓ fixpoint ✓
+move-audit ✓ drop-audit ✓ debug-alloc 64 PASS / 0 FAIL. `:test` reds = 14,
+all attributed: 13 × #761 release-lane c_import (mixed-world rt), 1 × #770
+(generic SoA derive bound dispatch, filed with hand-written-works contrast).
+
+**Derive class is 3/4 healed** (ed85329a + beb03de9): JsonView is
+`ephemeral: Copy { source: &str }`; JsonWriter chains via move receivers;
+MirLower struct-literal &-fields borrow their place initializer (RK_REF,
+pinned by behav_ref_field_implicit_borrow — the bit-copy was the
+deserialize SEGV); SoA get() clones non-Copy fields; primitive Clone
+impls in traits.w.
+
+## DO NOT RESEED YET — sequencing correction (recorded on #761)
+
+The old plan said merge → reseed → D30. WRONG ORDER: after :update-seed
+the seed is flip-built, so build.w's interim pin (rt objects built by
+"seed") flips out/lib rt to flip-built = the recorded 04h corruption
+(~191 tests; flip rt's with_str_eq frees operands bit-copy callers own).
+Unblock order:
+1. **_ref emission migration** (minimal reseed-unblocker): make codegen
+   emit ONLY observing _ref forms at the with_str_* boundary
+   (with_str_concat ×4 non-ref + trim/upper/lower/starts_with/replace/
+   repeat/index_of/ends_with consuming shapes remain). Heals the 13
+   release-lane tests; makes rt generation ownership-irrelevant.
+2. **Reseed** (per CLAUDE.md protocol: :test-green, :last-green,
+   :update-seed, :install-user), then drop the BOOTSTRAP INTERIM `++ ""`
+   dodges.
+3. **D30 in-unit retirement** (the ruled end state — deletes the
+   boundary; rt objects only as compiler-version-keyed cache).
+
+## Open issues carrying this state
+#761 (matrix + correction), #770 (soa_generic), #767 (recording contract
+asks a+b), #768 (typed drop-body field let), #769 (with -p truncation),
+#762 (&str method dispatch — Clone-for-str workaround in traits.w).
+
+## Traps (still true)
+- Laptop sleeps ~10 min idle: adrafinil keep_awake before long runs;
+  nohup+disown+ScheduleWakeup for anything long.
+- `with -p` in-place edits truncate files (#769) — Edit/perl + git.
+- rc-only green is not evidence: count PASS lines / read the log.
+- Worktree audits need src/main present (#680 undeclared edge).
+
+---
+
 
 ## START HERE — exact state (all counts verified on committed tree @ ae91424a)
 
