@@ -16,11 +16,13 @@ pub type JsonWriter {
 pub trait Serialize:    fn serialize(self: &Self, out:
     JsonWriter) -> JsonWriter
 
-// A JsonView is a view token (str header + token pointer + index): owned
+// A JsonView is a view token (source view + token pointer + index): owned
 // passing is a cheap copy, so Deserialize keeps its by-value input (D27
-// ruling 1, the D25 Copy-token pattern).
+// ruling 1, the D25 Copy-token pattern). Under owned str (#747/D28) the
+// view token holds a VIEW of the document's source — the token stays Copy,
+// exactly the ruled semantics.
 pub type JsonView: Copy {
-    source: str,
+    source: &str,
     tokens: *const JsonToken,
     index: i32,
 }
@@ -79,7 +81,7 @@ impl JsonWriter:
 
     pub fn end_object(): JsonWriter { text: self.text ++ "}", needs_comma: true, after_key: false }
 
-    pub fn key(key: str):
+    pub fn key(key: &str):
         let prefix = if self.needs_comma: "," else: ""
         JsonWriter { text: self.text ++ prefix ++ json_quote(key) ++ ":", needs_comma: false, after_key: true }
 
@@ -179,7 +181,7 @@ unsafe fn fill_token(tokens: *mut JsonToken, idx: i32, tok_type: i32, start: i32
     tok.size = 0
 
 // Parse a primitive (number, boolean, null).
-unsafe fn parse_primitive(parser: *mut JsonParser, js: str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+unsafe fn parse_primitive(parser: *mut JsonParser, js: &str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     let start = parser.pos
     while parser.pos < len:
         let c = js.byte_at(parser.pos as i64) as i32
@@ -203,7 +205,7 @@ unsafe fn parse_primitive(parser: *mut JsonParser, js: str, len: i32, tokens: *m
     0
 
 // Parse a JSON string with escape handling.
-unsafe fn parse_string(parser: *mut JsonParser, js: str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+unsafe fn parse_string(parser: *mut JsonParser, js: &str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     let start = parser.pos
     // Skip opening quote
     parser.pos = parser.pos + 1
@@ -250,7 +252,7 @@ unsafe fn parse_string(parser: *mut JsonParser, js: str, len: i32, tokens: *mut 
 
 // Parse JSON string into tokens.
 // Returns token count on success, negative error code on failure.
-unsafe fn json_parse_impl(parser: *mut JsonParser, js: str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+unsafe fn json_parse_impl(parser: *mut JsonParser, js: &str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     var count = parser.toknext
 
     while parser.pos < len:
@@ -347,7 +349,7 @@ unsafe fn json_parse_impl(parser: *mut JsonParser, js: str, len: i32, tokens: *m
 
 /// Parse a JSON string into tokens. Returns token count on success,
 /// or a negative error code (JSON_ERROR_NOMEM, JSON_ERROR_INVAL, JSON_ERROR_PART).
-pub unsafe fn json_parse(parser: *mut JsonParser, js: str, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+pub unsafe fn json_parse(parser: *mut JsonParser, js: &str, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     let len = js.len() as i32
     json_parse_impl(parser, js, len, tokens, num_tokens)
 
@@ -382,7 +384,7 @@ impl JsonView:
 
     pub fn raw(): json_str(self.source, self.tokens, self.index)
 
-    pub fn field(key: str):
+    pub fn field(key: &str):
         if self.token_type() != JSON_OBJECT:
             json_panic("expected JSON object")
         let value_idx = json_find(self.source, self.tokens, self.index, key)
@@ -393,7 +395,7 @@ impl JsonView:
 // ── Lookup helpers ──────────────────────────────────────────────
 
 /// Extract the text of a token from the source JSON string.
-pub fn json_str(js: str, tokens: *const JsonToken, idx: i32) -> str:
+pub fn json_str(js: &str, tokens: *const JsonToken, idx: i32) -> str:
     var start: i32 = 0
     var end: i32 = 0
     unsafe:
@@ -403,7 +405,7 @@ pub fn json_str(js: str, tokens: *const JsonToken, idx: i32) -> str:
 
 /// Find the value token for a key in a JSON object.
 /// Returns the token index of the value, or -1 if not found.
-pub fn json_find(js: str, tokens: *const JsonToken, parent: i32, key: str) -> i32:
+pub fn json_find(js: &str, tokens: *const JsonToken, parent: i32, key: &str) -> i32:
     var tok_type: i32 = 0
     var size: i32 = 0
     unsafe:
@@ -424,7 +426,7 @@ pub fn json_find(js: str, tokens: *const JsonToken, parent: i32, key: str) -> i3
     -1
 
 /// Parse a primitive token as an integer. Returns 0 for non-numeric tokens.
-pub fn json_int(js: str, tokens: *const JsonToken, idx: i32) -> i32:
+pub fn json_int(js: &str, tokens: *const JsonToken, idx: i32) -> i32:
     var start: i32 = 0
     var end: i32 = 0
     unsafe:
@@ -447,7 +449,7 @@ pub fn json_int(js: str, tokens: *const JsonToken, idx: i32) -> i32:
     if neg: 0 - val else: val
 
 /// Parse a primitive token as an i64. Returns 0 for non-numeric tokens.
-pub fn json_i64(js: str, tokens: *const JsonToken, idx: i32) -> i64:
+pub fn json_i64(js: &str, tokens: *const JsonToken, idx: i32) -> i64:
     var start: i32 = 0
     var end: i32 = 0
     unsafe:
