@@ -2,6 +2,15 @@
 
 ## START HERE
 
+**Latest (2026-08-11 late):** _ref boundary migration LANDED (8163b3fa —
+battery green ×5; ++/fmt/to_cstr now observe; 04h class dead structurally)
+plus tracked-capture moves (ee33341d). Release-lane c_import SEGV
+PERSISTS — root is a UAF into a Vec[str] whose buffer is recycled
+quoted-path text, read in tracked_input_str_compare; the obvious owner is
+fixed and the isolated pattern is clean (uaf_min.w), so the true owner is
+still unfound. Full dig state + next probes on #761 (2026-08-11 comment).
+Reseed stays BLOCKED on healing this class.
+
 **The flip is merged and pushed: main @ beb03de9** (merge commit 99995a6e).
 Work happens on main now; the 747-flip branch and its worktree
 (~/.local/with-staging/747-flip) are historical.
