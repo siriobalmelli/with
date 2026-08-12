@@ -26,6 +26,7 @@ type SuspendBits {
 }
 impl Copy for SuspendBits
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_alloc(size: i64) -> *mut u8
 
 impl SuspendBits:
@@ -734,7 +735,7 @@ fn suspend_emit_guard_error(diags: DiagnosticList, sema: &Sema, body: &MirBody, 
     var out = diags
     let guard_ty = if guard_local >= 0 and guard_local < body.local_type_ids.len() as i32: body.local_type_ids.get(guard_local as i64) else: 0
     let guard_name_sym = if guard_local >= 0 and guard_local < body.local_names.len() as i32: body.local_names.get(guard_local as i64) else: 0
-    let guard_name = if guard_name_sym != 0: sema.pool_resolve(guard_name_sym) else: "guard"
+    let guard_name = if guard_name_sym != 0: with_str_clone_ref(sema.pool_resolve(guard_name_sym)) else: "guard"
     let guard_type_name = sema.type_name(guard_ty)
     var diag = Diagnostic.err("E0701: " ++ guard_type_name ++ " value is live across a suspension point", Span { file: sema.local_file_id, start: site.start, end: site.end })
     if guard_name.len() > 0:
@@ -748,8 +749,8 @@ fn suspend_emit_derived_guard_error(diags: DiagnosticList, sema: &Sema, body: &M
     let guard_ty = if guard_local >= 0 and guard_local < body.local_type_ids.len() as i32: body.local_type_ids.get(guard_local as i64) else: 0
     let guard_name_sym = if guard_local >= 0 and guard_local < body.local_names.len() as i32: body.local_names.get(guard_local as i64) else: 0
     let view_name_sym = if view_local >= 0 and view_local < body.local_names.len() as i32: body.local_names.get(view_local as i64) else: 0
-    let guard_name = if guard_name_sym != 0: sema.pool_resolve(guard_name_sym) else: "guard"
-    let view_name = if view_name_sym != 0: sema.pool_resolve(view_name_sym) else: "derived view"
+    let guard_name = if guard_name_sym != 0: with_str_clone_ref(sema.pool_resolve(guard_name_sym)) else: "guard"
+    let view_name = if view_name_sym != 0: with_str_clone_ref(sema.pool_resolve(view_name_sym)) else: "derived view"
     let guard_type_name = sema.type_name(guard_ty)
     var diag = Diagnostic.err("E0701: view derived from " ++ guard_type_name ++ " value is live across a suspension point", Span { file: sema.local_file_id, start: site.start, end: site.end })
     if view_name.len() > 0:

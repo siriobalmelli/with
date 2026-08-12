@@ -46,7 +46,7 @@ type MirOptFunction {
     moves: Vec[MirMove],
 }
 
-fn MirOptFunction.init(name: str) -> MirOptFunction:
+fn MirOptFunction.init(name: &str) -> MirOptFunction:
     MirOptFunction {
         name,
         calls: Vec.new(),
@@ -59,7 +59,7 @@ type MirOptTypeDecl {
     fields: Vec[MirField],
 }
 
-fn MirOptTypeDecl.init(name: str) -> MirOptTypeDecl:
+fn MirOptTypeDecl.init(name: &str) -> MirOptTypeDecl:
     MirOptTypeDecl {
         name,
         fields: Vec.new(),
@@ -81,12 +81,12 @@ impl MirOptModule:
     fn deinit():
         return
 
-    mut fn add_function(name: str):
+    mut fn add_function(name: &str):
         let idx = self.functions.len() as i32
         self.functions.push(MirOptFunction.init(name))
         idx
 
-    mut fn add_type(name: str):
+    mut fn add_type(name: &str):
         let idx = self.types.len() as i32
         self.types.push(MirOptTypeDecl.init(name))
         idx

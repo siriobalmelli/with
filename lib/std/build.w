@@ -5,28 +5,29 @@
 
 use std.crypto.sha256
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn exit(code: i32) -> Never
-extern fn with_getenv_str(name: str) -> str
-extern fn with_setenv_str(name: str, value: str) -> i32
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_setenv_str(name: &str, value: &str) -> i32
+extern fn with_str_clone_ref(value: &str) -> str
 extern fn with_sysinfo_os() -> str
-extern fn with_fs_file_exists(path: str) -> i32
-extern fn with_fs_is_dir(path: str) -> i32
-extern fn with_fs_mkdir_p(path: str) -> i32
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_chmod(path: str, mode: i32) -> i32
-extern fn with_fs_copy_tree(src: str, dst: str) -> i32
-extern fn with_fs_list_files(path: str) -> str
-extern fn with_fs_remove_file(path: str) -> i32
-extern fn with_fs_remove_tree(path: str) -> i32
-extern fn with_fs_rename_file(old_path: str, new_path: str) -> i32
-extern fn with_fs_symlink(target: str, link_path: str) -> i32
-extern fn with_fs_write_file(path: str, data: str) -> i32
-extern fn with_exec_argv(args: str) -> i32
-extern fn with_exec_argv_capture(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32
-extern fn with_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str) -> i32
-extern fn with_exec_argv_capture_input(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, stdin_path: str) -> i32
-extern fn with_exec_argv_capture_spawn(args: str, stdout_path: str, stderr_path: str) -> i32
+extern fn with_fs_file_exists(path: &str) -> i32
+extern fn with_fs_is_dir(path: &str) -> i32
+extern fn with_fs_mkdir_p(path: &str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_chmod(path: &str, mode: i32) -> i32
+extern fn with_fs_copy_tree(src: &str, dst: &str) -> i32
+extern fn with_fs_list_files(path: &str) -> str
+extern fn with_fs_remove_file(path: &str) -> i32
+extern fn with_fs_remove_tree(path: &str) -> i32
+extern fn with_fs_rename_file(old_path: &str, new_path: &str) -> i32
+extern fn with_fs_symlink(target: &str, link_path: &str) -> i32
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_exec_argv(args: &str) -> i32
+extern fn with_exec_argv_capture(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32
+extern fn with_exec_argv_capture_cwd(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> i32
+extern fn with_exec_argv_capture_input(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, stdin_path: &str) -> i32
+extern fn with_exec_argv_capture_spawn(args: &str, stdout_path: &str, stderr_path: &str) -> i32
 extern fn with_exec_wait(pid: i32, timeout_ms: i32) -> i32
 
 pub enum BuildKind: i32:
@@ -256,18 +257,15 @@ pub type Package {
     name: str,
     version: str,
 }
-impl Copy for Package
 
 pub type ProjectInfo {
     package: Package,
     root: str,
 }
-impl Copy for ProjectInfo
 
 pub type Diagnostics {
     token: str,
 }
-impl Copy for Diagnostics
 
 pub type SourceEmitter {
     token: str,
@@ -291,7 +289,7 @@ pub type ProcessRunner {
 }
 
 pub type Workspace ephemeral {
-    token: str,
+    token: &str,
     id: i32,
 }
 
@@ -459,16 +457,16 @@ pub type Build {
     generated_sources: Vec[GeneratedSource],
 }
 
-fn tool_capability_valid(token: str) -> bool:
+fn tool_capability_valid(token: &str) -> bool:
     let expected = with_getenv_str("WITH_TOOL_CAPABILITY_TOKEN")
     expected.len() > 0 and token == expected
 
-fn tool_capability_require(token: str, name: str):
+fn tool_capability_require(token: &str, name: &str):
     if not tool_capability_valid(token):
         with_eprint("error: invalid tool capability: " ++ name)
         exit(1)
 
-fn tool_safe_label(text: str) -> str:
+fn tool_safe_label(text: &str) -> str:
     var out = StringBuilder.with_capacity(text.len())
     for i in 0..text.len() as i32:
         let ch = text.byte_at(i as i64)
@@ -482,49 +480,49 @@ fn tool_safe_label(text: str) -> str:
         return "unknown"
     result
 
-fn tool_action_scratch_dir(target_name: str) -> str:
+fn tool_action_scratch_dir(target_name: &str) -> str:
     "out/tmp/action-scratch/" ++ tool_safe_label(target_name)
 
 pub fn BuildCtx.__driver_new(package: Package, root: str, token: str) -> BuildCtx:
     tool_capability_require(token, "BuildCtx")
     BuildCtx {
-        token,
-        project: ProjectInfo { package, root },
-        diagnostics: Diagnostics { token },
-        source_emitter: SourceEmitter { token },
-        fs: ToolFs { token, root, write_scope: Vec.new(), write_scoped: false, scratch_path: "" },
+        token: with_str_clone_ref(token),
+        project: ProjectInfo { package, root: with_str_clone_ref(root) },
+        diagnostics: Diagnostics { token: with_str_clone_ref(token) },
+        source_emitter: SourceEmitter { token: with_str_clone_ref(token) },
+        fs: ToolFs { token: with_str_clone_ref(token), root: with_str_clone_ref(root), write_scope: Vec.new(), write_scoped: false, scratch_path: "" },
         process_runner: ProcessRunner { token, root, target_name: "", write_scope: Vec.new(), write_scoped: false, network: false },
     }
 
-pub fn BuildCtx.project_info(self: &Self) -> ProjectInfo:
+pub fn BuildCtx.project_info(self: &Self) -> &ProjectInfo:
     tool_capability_require(self.token, "BuildCtx")
     self.project
 
 pub fn BuildCtx.new_build(self: &Self) -> Build:
     tool_capability_require(self.token, "BuildCtx")
-    new_build(self.project.package)
+    new_build(Package { name: with_str_clone_ref(self.project.package.name), version: with_str_clone_ref(self.project.package.version) })
 
-pub fn BuildCtx.diagnostics(self: &Self) -> Diagnostics:
+pub fn BuildCtx.diagnostics(self: &Self) -> &Diagnostics:
     tool_capability_require(self.token, "Diagnostics")
     self.diagnostics
 
-pub fn BuildCtx.source_emitter(self: &Self) -> SourceEmitter:
+pub fn BuildCtx.source_emitter(self: &Self) -> &SourceEmitter:
     tool_capability_require(self.token, "SourceEmitter")
     self.source_emitter
 
-pub fn BuildCtx.fs(self: &Self) -> ToolFs:
+pub fn BuildCtx.fs(self: &Self) -> &ToolFs:
     tool_capability_require(self.token, "ToolFs")
     self.fs
 
-pub fn BuildCtx.process_runner(self: &Self) -> ProcessRunner:
+pub fn BuildCtx.process_runner(self: &Self) -> &ProcessRunner:
     tool_capability_require(self.token, "ProcessRunner")
     self.process_runner
 
-pub fn BuildCtx.env_input(self: &Self, name: str) -> str:
+pub fn BuildCtx.env_input(self: &Self, name: &str) -> str:
     tool_capability_require(self.token, "BuildCtx")
     with_getenv_str(name)
 
-pub fn BuildCtx.create_workspace(self: &Self, name: str) -> Workspace:
+pub fn BuildCtx.create_workspace(self: &Self, name: &str) -> Workspace:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: BuildCtx.create_workspace requires compiler driver comptime evaluation\n")
     exit(1)
@@ -534,7 +532,7 @@ pub fn BuildCtx.current_workspace(self: &Self) -> Workspace:
     with_eprint("error: BuildCtx.current_workspace requires compiler driver comptime evaluation\n")
     exit(1)
 
-pub fn ActionCtx.create_workspace(self: &Self, name: str) -> Workspace:
+pub fn ActionCtx.create_workspace(self: &Self, name: &str) -> Workspace:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: ActionCtx.create_workspace requires compiler driver comptime evaluation\n")
     exit(1)
@@ -549,12 +547,12 @@ pub fn Workspace.name(self: &Self) -> str:
     with_eprint("error: Workspace.name requires compiler driver comptime evaluation\n")
     exit(1)
 
-pub fn Workspace.add_file(self: &Self, path: str) -> Unit:
+pub fn Workspace.add_file(self: &Self, path: &str) -> Unit:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: Workspace.add_file requires compiler driver comptime evaluation\n")
     exit(1)
 
-pub fn Workspace.add_string(self: &Self, name: str, source: str) -> Unit:
+pub fn Workspace.add_string(self: &Self, name: &str, source: &str) -> Unit:
     tool_capability_require(self.token, "Workspace")
     with_eprint("error: Workspace.add_string requires compiler driver comptime evaluation\n")
     exit(1)
@@ -611,16 +609,16 @@ pub fn ProcessEnv.set(move self: Self, name: str, value: str) -> ProcessEnv:
     vars.push(ProcessEnvVar { name, value })
     ProcessEnv { vars }
 
-pub fn ProjectInfo.package_name(self: &Self) -> str:
+pub fn ProjectInfo.package_name(self: &Self) -> &str:
     self.package.name
 
-pub fn ProjectInfo.package_version(self: &Self) -> str:
+pub fn ProjectInfo.package_version(self: &Self) -> &str:
     self.package.version
 
-pub fn ProjectInfo.project_root(self: &Self) -> str:
+pub fn ProjectInfo.project_root(self: &Self) -> &str:
     self.root
 
-pub fn Diagnostics.warn(self: &Self, message: str) -> Unit:
+pub fn Diagnostics.warn(self: &Self, message: &str) -> Unit:
     tool_capability_require(self.token, "Diagnostics")
     with_eprint("warning: " ++ message ++ "\n")
 
@@ -629,7 +627,7 @@ pub fn Diagnostics.error(self: &Self, message: str) -> Unit:
     with_eprint("error: " ++ message ++ "\n")
     exit(1)
 
-fn tool_path_is_project_relative(path: str) -> bool:
+fn tool_path_is_project_relative(path: &str) -> bool:
     if path.len() == 0:
         return false
     if path.byte_at(0) == 47:
@@ -642,12 +640,12 @@ fn tool_path_is_project_relative(path: str) -> bool:
             return false
     true
 
-fn tool_path_require_project_relative(path: str):
+fn tool_path_require_project_relative(path: &str):
     if not tool_path_is_project_relative(path):
         with_eprint("error: ToolFs path escapes project root: " ++ path ++ "\n")
         exit(1)
 
-fn tool_path_dirname(path: str) -> str:
+fn tool_path_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -658,7 +656,7 @@ fn tool_path_dirname(path: str) -> str:
         return "/"
     path.slice(0, last_slash as i64)
 
-fn tool_path_normalize(path: str) -> str:
+fn tool_path_normalize(path: &str) -> str:
     if path.len() == 0:
         return "."
     let parts: Vec[str] = Vec.new()
@@ -699,7 +697,7 @@ fn tool_path_normalize(path: str) -> str:
         result = result ++ parts.get(i as i64)
     result
 
-fn tool_split_by_slash(path: str) -> Vec[str]:
+fn tool_split_by_slash(path: &str) -> Vec[str]:
     let parts: Vec[str] = Vec.new()
     var start = 0
     for i in 0..path.len() as i32:
@@ -712,7 +710,7 @@ fn tool_split_by_slash(path: str) -> Vec[str]:
         parts.push(path.slice(start as i64, path.len()))
     parts
 
-fn tool_glob_segment_matches(pattern: str, name: str) -> bool:
+fn tool_glob_segment_matches(pattern: &str, name: &str) -> bool:
     var star = -1
     for i in 0..pattern.len() as i32:
         if pattern.byte_at(i as i64) == 42:
@@ -750,7 +748,7 @@ fn tool_glob_segments_match(pat_segs: &Vec[str], pi: i32, file_segs: &Vec[str], 
         return false
     tool_glob_segments_match(pat_segs, pi + 1, file_segs, fi + 1)
 
-fn tool_glob_str_compare(a: str, b: str) -> i32:
+fn tool_glob_str_compare(a: &str, b: &str) -> i32:
     let min_len = if a.len() < b.len(): a.len() else: b.len()
     var i = 0
     while i < min_len as i32:
@@ -774,36 +772,36 @@ fn tool_glob_sort(items: Vec[str]) -> Vec[str]:
         for j in 0..sorted.len() as i32:
             let existing = sorted.get(j as i64)
             if not inserted and tool_glob_str_compare(item, existing) < 0:
-                out.push(item)
+                out.push(with_str_clone_ref(item))
                 inserted = true
-            out.push(existing)
+            out.push(with_str_clone_ref(existing))
         if not inserted:
-            out.push(item)
+            out.push(with_str_clone_ref(item))
         sorted = out
     sorted
 
-fn ToolFs.resolve_path(self: &Self, path: str) -> str:
+fn ToolFs.resolve_path(self: &Self, path: &str) -> str:
     tool_capability_require(self.token, "ToolFs")
     tool_path_require_project_relative(path)
     if self.root.len() == 0 or self.root == ".":
-        return path
+        return with_str_clone_ref(path)
     if self.root.ends_with("/"):
         return self.root ++ path
     self.root ++ "/" ++ path
 
-fn tool_path_is_same_or_child(path: str, root: str) -> bool:
+fn tool_path_is_same_or_child(path: &str, root: &str) -> bool:
     if path == root:
         return true
     if path.len() <= root.len():
         return false
     path.starts_with(root) and path.byte_at(root.len() as i64) == 47
 
-fn tool_path_is_parent_of(parent: str, child: str) -> bool:
+fn tool_path_is_parent_of(parent: &str, child: &str) -> bool:
     if parent.len() >= child.len():
         return false
     child.starts_with(parent) and child.byte_at(parent.len() as i64) == 47
 
-fn ToolFs.write_file_allowed(self: &Self, path: str) -> bool:
+fn ToolFs.write_file_allowed(self: &Self, path: &str) -> bool:
     if not self.write_scoped:
         return true
     for i in 0..self.write_scope.len() as i32:
@@ -811,7 +809,7 @@ fn ToolFs.write_file_allowed(self: &Self, path: str) -> bool:
             return true
     false
 
-fn ToolFs.mkdir_allowed(self: &Self, path: str) -> bool:
+fn ToolFs.mkdir_allowed(self: &Self, path: &str) -> bool:
     if not self.write_scoped:
         return true
     for i in 0..self.write_scope.len() as i32:
@@ -820,19 +818,19 @@ fn ToolFs.mkdir_allowed(self: &Self, path: str) -> bool:
             return true
     false
 
-fn ToolFs.require_write_file_allowed(self: &Self, path: str):
+fn ToolFs.require_write_file_allowed(self: &Self, path: &str):
     tool_path_require_project_relative(path)
     if not self.write_file_allowed(path):
         with_eprint("error: ToolFs write path is not a declared action output: " ++ path ++ "\n")
         exit(1)
 
-fn ToolFs.require_mkdir_allowed(self: &Self, path: str):
+fn ToolFs.require_mkdir_allowed(self: &Self, path: &str):
     tool_path_require_project_relative(path)
     if not self.mkdir_allowed(path):
         with_eprint("error: ToolFs mkdir path is not a declared action output: " ++ path ++ "\n")
         exit(1)
 
-fn tool_split_nonempty_lines(text: str) -> Vec[str]:
+fn tool_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     var start = 0
     for i in 0..text.len() as i32:
@@ -844,7 +842,7 @@ fn tool_split_nonempty_lines(text: str) -> Vec[str]:
         lines.push(text.slice(start as i64, text.len()))
     lines
 
-fn ToolFs.project_relative_path(self: &Self, path: str) -> str:
+fn ToolFs.project_relative_path(self: &Self, path: &str) -> str:
     let normalized = tool_path_normalize(path)
     if self.root.len() == 0 or self.root == ".":
         return normalized
@@ -854,42 +852,42 @@ fn ToolFs.project_relative_path(self: &Self, path: str) -> str:
         return normalized.slice(prefix.len(), normalized.len())
     normalized
 
-pub fn ToolFs.exists(self: &Self, path: str) -> bool:
+pub fn ToolFs.exists(self: &Self, path: &str) -> bool:
     with_fs_file_exists(self.resolve_path(path)) != 0
 
-pub fn ToolFs.host_exists(self: &Self, path: str) -> bool:
+pub fn ToolFs.host_exists(self: &Self, path: &str) -> bool:
     tool_capability_require(self.token, "ToolFs")
     with_fs_file_exists(path) != 0
 
-pub fn ToolFs.host_read_text(self: &Self, path: str) -> str:
+pub fn ToolFs.host_read_text(self: &Self, path: &str) -> str:
     tool_capability_require(self.token, "ToolFs")
     with_fs_read_file(path)
 
-fn tool_sha256_text(data: str) -> str:
+fn tool_sha256_text(data: &str) -> str:
     var digest: [32]u8 = [0 as u8; 32]
     sha256_hash_str(data, &raw mut digest[0] as *mut u8)
     sha256_hex(&digest[0] as *const u8)
 
-pub fn ToolFs.sha256_file(self: &Self, path: str) -> str:
+pub fn ToolFs.sha256_file(self: &Self, path: &str) -> str:
     if not self.exists(path):
         return ""
     tool_sha256_text(self.read_text(path))
 
-pub fn ToolFs.host_list_files(self: &Self, path: str) -> Vec[str]:
+pub fn ToolFs.host_list_files(self: &Self, path: &str) -> Vec[str]:
     tool_capability_require(self.token, "ToolFs")
     tool_split_nonempty_lines(with_fs_list_files(path))
 
-pub fn ToolFs.is_dir(self: &Self, path: str) -> bool:
+pub fn ToolFs.is_dir(self: &Self, path: &str) -> bool:
     with_fs_is_dir(self.resolve_path(path)) != 0
 
-pub fn ToolFs.mkdir_all(self: &Self, path: str) -> i32:
+pub fn ToolFs.mkdir_all(self: &Self, path: &str) -> i32:
     self.require_mkdir_allowed(path)
     with_fs_mkdir_p(self.resolve_path(path))
 
-pub fn ToolFs.read_text(self: &Self, path: str) -> str:
+pub fn ToolFs.read_text(self: &Self, path: &str) -> str:
     with_fs_read_file(self.resolve_path(path))
 
-pub fn ToolFs.read_binary(self: &Self, path: str) -> Vec[u8]:
+pub fn ToolFs.read_binary(self: &Self, path: &str) -> Vec[u8]:
     let resolved = self.resolve_path(path)
     let data = with_fs_read_file(resolved)
     let result: Vec[u8] = Vec.new()
@@ -897,7 +895,7 @@ pub fn ToolFs.read_binary(self: &Self, path: str) -> Vec[u8]:
         result.push(data.byte_at(i as i64) as u8)
     result
 
-pub fn ToolFs.list_files(self: &Self, path: str) -> Vec[str]:
+pub fn ToolFs.list_files(self: &Self, path: &str) -> Vec[str]:
     let resolved = self.resolve_path(path)
     let raw_files = tool_split_nonempty_lines(with_fs_list_files(resolved))
     let files: Vec[str] = Vec.new()
@@ -905,7 +903,7 @@ pub fn ToolFs.list_files(self: &Self, path: str) -> Vec[str]:
         files.push(self.project_relative_path(raw_files.get(i as i64)))
     files
 
-pub fn ToolFs.glob(self: &Self, pattern: str) -> Vec[str]:
+pub fn ToolFs.glob(self: &Self, pattern: &str) -> Vec[str]:
     var last_clean_slash = -1
     var has_glob = false
     for i in 0..pattern.len() as i32:
@@ -919,27 +917,27 @@ pub fn ToolFs.glob(self: &Self, pattern: str) -> Vec[str]:
         with_eprint("error: glob pattern contains no wildcards: " ++ pattern ++ "\n")
         exit(1)
     let base_dir = if last_clean_slash < 0: "." else: pattern.slice(0, last_clean_slash as i64)
-    let glob_suffix = if last_clean_slash < 0: pattern else: pattern.slice((last_clean_slash + 1) as i64, pattern.len())
+    let glob_suffix = if last_clean_slash < 0: with_str_clone_ref(pattern) else: pattern.slice((last_clean_slash + 1) as i64, pattern.len())
     let all_files = self.list_files(base_dir)
     let pat_segs = tool_split_by_slash(glob_suffix)
     let results: Vec[str] = Vec.new()
     let prefix = if base_dir == ".": "" else: base_dir ++ "/"
     for i in 0..all_files.len() as i32:
         let file = all_files.get(i as i64)
-        let rel = if prefix.len() > 0 and file.starts_with(prefix): file.slice(prefix.len(), file.len()) else: file
+        let rel = if prefix.len() > 0 and file.starts_with(prefix): file.slice(prefix.len(), file.len()) else: with_str_clone_ref(file)
         let file_segs = tool_split_by_slash(rel)
         if tool_glob_segments_match(pat_segs, 0, file_segs, 0):
-            results.push(file)
+            results.push(with_str_clone_ref(file))
     if results.len() == 0:
         with_eprint("error: glob pattern matched no files: " ++ pattern ++ "\n")
         exit(1)
     tool_glob_sort(results)
 
-pub fn ToolFs.write_text(self: &Self, path: str, contents: str) -> i32:
+pub fn ToolFs.write_text(self: &Self, path: &str, contents: &str) -> i32:
     self.require_write_file_allowed(path)
     with_fs_write_file(self.resolve_path(path), contents)
 
-pub fn ToolFs.write_binary(self: &Self, path: str, bytes: Vec[u8]) -> i32:
+pub fn ToolFs.write_binary(self: &Self, path: &str, bytes: Vec[u8]) -> i32:
     self.require_write_file_allowed(path)
     var out = StringBuilder.with_capacity(bytes.len())
     for i in 0..bytes.len() as i32:
@@ -958,7 +956,7 @@ fn tool_tar_append_bytes(out: Vec[u8], bytes: &Vec[u8]) -> Vec[u8]:
         out.push(bytes.get(i as i64))
     out
 
-fn tool_tar_append_str_padded(out: Vec[u8], value: str, width: i64) -> Vec[u8]:
+fn tool_tar_append_str_padded(out: Vec[u8], value: &str, width: i64) -> Vec[u8]:
     if value.len() > width:
         return Vec.new()
     for i in 0..value.len() as i32:
@@ -1020,7 +1018,7 @@ fn tool_tar_sum(bytes: &Vec[u8]) -> i64:
         sum = sum + bytes.get(i as i64) as i64
     sum
 
-fn tool_tar_entry_name(path: str, directory: bool) -> str:
+fn tool_tar_entry_name(path: &str, directory: bool) -> str:
     if path.len() == 0 or (not directory and path.ends_with("/")):
         return ""
     let normalized = tool_path_normalize(path)
@@ -1032,14 +1030,14 @@ fn tool_tar_entry_name(path: str, directory: bool) -> str:
         return ""
     result
 
-fn tool_tar_link_name(target: str) -> str:
+fn tool_tar_link_name(target: &str) -> str:
     if target.len() == 0 or target.len() > 100:
         return ""
     if not tool_path_is_project_relative(target):
         return ""
-    target
+    with_str_clone_ref(target)
 
-fn tool_tar_link_target_safe(output_dir: str, output_path: str, target: str) -> bool:
+fn tool_tar_link_target_safe(output_dir: &str, output_path: &str, target: &str) -> bool:
     if target.len() == 0:
         return false
     if target.byte_at(0) == 47 or target.byte_at(0) == 92:
@@ -1059,11 +1057,11 @@ fn tool_tar_link_target_safe(output_dir: str, output_path: str, target: str) -> 
         return true
     tool_path_is_same_or_child(resolved, root)
 
-fn tool_tar_extract_fail(message: str) -> i32:
+fn tool_tar_extract_fail(message: &str) -> i32:
     with_eprint("error: ToolFs.extract_tar: " ++ message ++ "\n")
     1
 
-fn tool_tar_build_header(name: str, mode: i32, size: i64, kind: ArchiveEntryKind, link_name: str) -> Vec[u8]:
+fn tool_tar_build_header(name: &str, mode: i32, size: i64, kind: ArchiveEntryKind, link_name: &str) -> Vec[u8]:
     if name.len() == 0 or name.len() > 100 or mode < 0 or size < 0 or link_name.len() > 100:
         return Vec.new()
     var prefix: Vec[u8] = Vec.new()
@@ -1186,14 +1184,14 @@ fn tool_gzip_stored(bytes: &Vec[u8]) -> Vec[u8]:
     out = tool_gzip_append_u32_le(move out, bytes.len() as u32)
     out
 
-pub fn ToolFs.write_tar(self: &Self, output_path: str, entries: &Vec[ArchiveEntry]) -> i32:
+pub fn ToolFs.write_tar(self: &Self, output_path: &str, entries: &Vec[ArchiveEntry]) -> i32:
     self.require_write_file_allowed(output_path)
     let out = self.tar_bytes(entries)
     if out.len() == 0:
         return 1
     self.write_binary(output_path, out)
 
-pub fn ToolFs.write_tar_gz(self: &Self, output_path: str, entries: &Vec[ArchiveEntry]) -> i32:
+pub fn ToolFs.write_tar_gz(self: &Self, output_path: &str, entries: &Vec[ArchiveEntry]) -> i32:
     self.require_write_file_allowed(output_path)
     let tar = self.tar_bytes(entries)
     if tar.len() == 0:
@@ -1259,7 +1257,7 @@ fn tool_tar_magic_ok(bytes: &Vec[u8], offset: i64) -> bool:
         i = i + 1
     true
 
-fn tool_tar_archive_name_safe(name: str) -> bool:
+fn tool_tar_archive_name_safe(name: &str) -> bool:
     if name.len() == 0:
         return false
     tool_path_is_project_relative(name)
@@ -1279,7 +1277,7 @@ fn tool_tar_payload_text(bytes: &Vec[u8], offset: i64, size: i64) -> str:
         i = i + 1
     out.to_str()
 
-fn tool_tar_trim_payload_name(text: str) -> str:
+fn tool_tar_trim_payload_name(text: &str) -> str:
     var end = text.len() as i32
     while end > 0:
         let ch = text.byte_at((end - 1) as i64)
@@ -1288,7 +1286,7 @@ fn tool_tar_trim_payload_name(text: str) -> str:
         end = end - 1
     text.slice(0, end as i64)
 
-fn tool_pax_parse_decimal(text: str, start: i32, end: i32) -> i32:
+fn tool_pax_parse_decimal(text: &str, start: i32, end: i32) -> i32:
     if start >= end:
         return -1
     var value = 0
@@ -1301,7 +1299,7 @@ fn tool_pax_parse_decimal(text: str, start: i32, end: i32) -> i32:
         i = i + 1
     value
 
-fn tool_pax_value(text: str, key: str) -> str:
+fn tool_pax_value(text: &str, key: &str) -> str:
     var pos = 0
     while pos < text.len() as i32:
         var space = pos
@@ -1330,7 +1328,7 @@ fn tool_pax_value(text: str, key: str) -> str:
         pos = record_end
     ""
 
-pub fn ToolFs.extract_tar(self: &Self, archive_path: str, output_dir: str) -> i32:
+pub fn ToolFs.extract_tar(self: &Self, archive_path: &str, output_dir: &str) -> i32:
     tool_path_require_project_relative(archive_path)
     if self.mkdir_all(output_dir) != 0:
         return tool_tar_extract_fail("could not create output directory: " ++ output_dir)
@@ -1413,7 +1411,7 @@ pub fn ToolFs.extract_tar(self: &Self, archive_path: str, output_dir: str) -> i3
         offset = offset + 512 + padded
     tool_tar_extract_fail("archive ended without two zero blocks")
 
-pub fn ToolFs.copy_file(self: &Self, src: str, dst: str) -> i32:
+pub fn ToolFs.copy_file(self: &Self, src: &str, dst: &str) -> i32:
     tool_path_require_project_relative(src)
     self.require_write_file_allowed(dst)
     let dst_dir = tool_path_dirname(dst)
@@ -1425,47 +1423,47 @@ pub fn ToolFs.copy_file(self: &Self, src: str, dst: str) -> i32:
     let contents = with_fs_read_file(self.resolve_path(src))
     with_fs_write_file(self.resolve_path(dst), contents)
 
-pub fn ToolFs.chmod(self: &Self, path: str, mode: i32) -> i32:
+pub fn ToolFs.chmod(self: &Self, path: &str, mode: i32) -> i32:
     self.require_write_file_allowed(path)
     with_fs_chmod(self.resolve_path(path), mode)
 
-pub fn ToolFs.rename(self: &Self, old_path: str, new_path: str) -> i32:
+pub fn ToolFs.rename(self: &Self, old_path: &str, new_path: &str) -> i32:
     self.require_write_file_allowed(old_path)
     self.require_write_file_allowed(new_path)
     with_fs_rename_file(self.resolve_path(old_path), self.resolve_path(new_path))
 
-pub fn ToolFs.remove_file(self: &Self, path: str) -> i32:
+pub fn ToolFs.remove_file(self: &Self, path: &str) -> i32:
     self.require_write_file_allowed(path)
     with_fs_remove_file(self.resolve_path(path))
 
-pub fn ToolFs.remove_tree(self: &Self, path: str) -> i32:
+pub fn ToolFs.remove_tree(self: &Self, path: &str) -> i32:
     self.require_write_file_allowed(path)
     with_fs_remove_tree(self.resolve_path(path))
 
-pub fn ToolFs.copy_tree(self: &Self, src: str, dst: str) -> i32:
+pub fn ToolFs.copy_tree(self: &Self, src: &str, dst: &str) -> i32:
     tool_path_require_project_relative(src)
     self.require_write_file_allowed(dst)
     with_fs_copy_tree(self.resolve_path(src), self.resolve_path(dst))
 
-pub fn ToolFs.symlink(self: &Self, target: str, link_path: str) -> i32:
+pub fn ToolFs.symlink(self: &Self, target: &str, link_path: &str) -> i32:
     tool_path_require_project_relative(target)
     self.require_write_file_allowed(link_path)
     with_fs_symlink(self.resolve_path(target), self.resolve_path(link_path))
 
-pub fn ToolFs.normalize(self: &Self, path: str) -> str:
+pub fn ToolFs.normalize(self: &Self, path: &str) -> str:
     tool_path_normalize(path)
 
-pub fn ToolFs.join(self: &Self, base: str, child: str) -> str:
+pub fn ToolFs.join(self: &Self, base: &str, child: &str) -> str:
     if base.len() == 0:
-        return child
+        return with_str_clone_ref(child)
     if child.len() == 0:
-        return base
+        return with_str_clone_ref(base)
     if base.ends_with("/"):
         base ++ child
     else:
         base ++ "/" ++ child
 
-pub fn ToolFs.scratch_dir(self: &Self) -> str:
+pub fn ToolFs.scratch_dir(self: &Self) -> &str:
     tool_capability_require(self.token, "ToolFs")
     if self.scratch_path.len() == 0:
         with_eprint("error: ToolFs.scratch_dir is only available inside an action\n")
@@ -1515,7 +1513,7 @@ fn tool_process_apply_env(env: ProcessEnv) -> SavedProcessEnv:
     let values: Vec[str] = Vec.new()
     for i in 0..env.vars.len() as i32:
         let item = env.vars.get(i as i64)
-        names.push(item.name)
+        names.push(with_str_clone_ref(item.name))
         values.push(with_getenv_str(item.name) ++ "")
         let _set = with_setenv_str(item.name, item.value)
     SavedProcessEnv { driver, names, values }
@@ -1525,7 +1523,7 @@ fn tool_process_restore_env(saved: SavedProcessEnv):
         let _restore = with_setenv_str(saved.names.get(i as i64), saved.values.get(i as i64))
     tool_process_restore_driver_env(saved.driver)
 
-pub fn ProcessRunner.run_capture(self: &Self, args: &Vec[str], stdout_path: str, stderr_path: str, timeout_ms: i32) -> ToolProcessResult:
+pub fn ProcessRunner.run_capture(self: &Self, args: &Vec[str], stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> ToolProcessResult:
     tool_capability_require(self.token, "ProcessRunner")
     self.require_network_allowed(args, "run_capture")
     self.require_capture_allowed(stdout_path, stderr_path, "run_capture")
@@ -1547,7 +1545,7 @@ pub fn ProcessRunner.run(self: &Self, args: &Vec[str]) -> i32:
     tool_process_restore_driver_env(env)
     rc
 
-pub fn ProcessRunner.run_capture_with_env(self: &Self, args: &Vec[str], stdout_path: str, stderr_path: str, timeout_ms: i32, process_env: ProcessEnv) -> ToolProcessResult:
+pub fn ProcessRunner.run_capture_with_env(self: &Self, args: &Vec[str], stdout_path: &str, stderr_path: &str, timeout_ms: i32, process_env: ProcessEnv) -> ToolProcessResult:
     tool_capability_require(self.token, "ProcessRunner")
     self.require_network_allowed(args, "run_capture_with_env")
     self.require_capture_allowed(stdout_path, stderr_path, "run_capture_with_env")
@@ -1561,7 +1559,7 @@ pub fn ProcessRunner.run_capture_with_env(self: &Self, args: &Vec[str], stdout_p
         timed_out: rc == 124,
     }
 
-pub fn ProcessRunner.run_capture_cwd(self: &Self, args: &Vec[str], stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str) -> ToolProcessResult:
+pub fn ProcessRunner.run_capture_cwd(self: &Self, args: &Vec[str], stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> ToolProcessResult:
     tool_capability_require(self.token, "ProcessRunner")
     self.require_network_allowed(args, "run_capture_cwd")
     self.require_capture_allowed(stdout_path, stderr_path, "run_capture_cwd")
@@ -1575,7 +1573,7 @@ pub fn ProcessRunner.run_capture_cwd(self: &Self, args: &Vec[str], stdout_path: 
         timed_out: rc == 124,
     }
 
-pub fn ProcessRunner.run_capture_cwd_with_env(self: &Self, args: &Vec[str], stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str, process_env: ProcessEnv) -> ToolProcessResult:
+pub fn ProcessRunner.run_capture_cwd_with_env(self: &Self, args: &Vec[str], stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str, process_env: ProcessEnv) -> ToolProcessResult:
     tool_capability_require(self.token, "ProcessRunner")
     self.require_network_allowed(args, "run_capture_cwd_with_env")
     self.require_capture_allowed(stdout_path, stderr_path, "run_capture_cwd_with_env")
@@ -1589,7 +1587,7 @@ pub fn ProcessRunner.run_capture_cwd_with_env(self: &Self, args: &Vec[str], stdo
         timed_out: rc == 124,
     }
 
-pub fn ProcessRunner.run_capture_input(self: &Self, args: &Vec[str], stdout_path: str, stderr_path: str, timeout_ms: i32, stdin_path: str) -> ToolProcessResult:
+pub fn ProcessRunner.run_capture_input(self: &Self, args: &Vec[str], stdout_path: &str, stderr_path: &str, timeout_ms: i32, stdin_path: &str) -> ToolProcessResult:
     tool_capability_require(self.token, "ProcessRunner")
     self.require_network_allowed(args, "run_capture_input")
     self.require_capture_allowed(stdout_path, stderr_path, "run_capture_input")
@@ -1603,7 +1601,7 @@ pub fn ProcessRunner.run_capture_input(self: &Self, args: &Vec[str], stdout_path
         timed_out: rc == 124,
     }
 
-pub fn ProcessRunner.spawn_capture(self: &Self, args: &Vec[str], stdout_path: str, stderr_path: str) -> i32:
+pub fn ProcessRunner.spawn_capture(self: &Self, args: &Vec[str], stdout_path: &str, stderr_path: &str) -> i32:
     tool_capability_require(self.token, "ProcessRunner")
     self.require_network_allowed(args, "spawn_capture")
     self.require_capture_allowed(stdout_path, stderr_path, "spawn_capture")
@@ -1616,7 +1614,7 @@ pub fn ProcessRunner.wait(self: &Self, pid: i32, timeout_ms: i32) -> i32:
     tool_capability_require(self.token, "ProcessRunner")
     with_exec_wait(pid, timeout_ms)
 
-fn tool_process_basename(path: str) -> str:
+fn tool_process_basename(path: &str) -> str:
     var start = 0
     for i in 0..path.len() as i32:
         let ch = path.byte_at(i as i64)
@@ -1630,7 +1628,7 @@ fn tool_process_requires_network(args: &Vec[str]) -> bool:
     let name = tool_process_basename(args.get(0))
     name == "curl" or name == "curl.exe" or name == "wget" or name == "wget.exe" or name == "https_fetch" or name == "https_fetch.exe"
 
-fn ProcessRunner.project_relative_path(self: &Self, path: str) -> str:
+fn ProcessRunner.project_relative_path(self: &Self, path: &str) -> str:
     let normalized = tool_path_normalize(path)
     if self.root.len() == 0 or self.root == ".":
         return normalized
@@ -1640,7 +1638,7 @@ fn ProcessRunner.project_relative_path(self: &Self, path: str) -> str:
         return normalized.slice(prefix.len(), normalized.len())
     normalized
 
-fn ProcessRunner.write_path_allowed(self: &Self, path: str) -> bool:
+fn ProcessRunner.write_path_allowed(self: &Self, path: &str) -> bool:
     if not self.write_scoped:
         return true
     for i in 0..self.write_scope.len() as i32:
@@ -1648,7 +1646,7 @@ fn ProcessRunner.write_path_allowed(self: &Self, path: str) -> bool:
             return true
     false
 
-fn ProcessRunner.require_network_allowed(self: &Self, args: &Vec[str], method: str):
+fn ProcessRunner.require_network_allowed(self: &Self, args: &Vec[str], method: &str):
     if not tool_process_requires_network(args):
         return
     if self.network:
@@ -1658,7 +1656,7 @@ fn ProcessRunner.require_network_allowed(self: &Self, args: &Vec[str], method: s
     with_eprint("error: ProcessRunner." ++ method ++ " uses network tool '" ++ tool ++ "' for target '" ++ target ++ "' without target.allow_network()\n")
     exit(1)
 
-fn ProcessRunner.require_capture_path_allowed(self: &Self, path: str, method: str):
+fn ProcessRunner.require_capture_path_allowed(self: &Self, path: &str, method: &str):
     if path.len() == 0:
         return
     let rel = self.project_relative_path(path)
@@ -1669,15 +1667,15 @@ fn ProcessRunner.require_capture_path_allowed(self: &Self, path: str, method: st
         with_eprint("error: ProcessRunner." ++ method ++ " capture path is not a declared action output: " ++ rel ++ "\n")
         exit(1)
 
-fn ProcessRunner.require_capture_allowed(self: &Self, stdout_path: str, stderr_path: str, method: str):
+fn ProcessRunner.require_capture_allowed(self: &Self, stdout_path: &str, stderr_path: &str, method: &str):
     self.require_capture_path_allowed(stdout_path, method)
     self.require_capture_path_allowed(stderr_path, method)
 
-fn tool_process_spec_fail(message: str):
+fn tool_process_spec_fail(message: &str):
     with_eprint("error: ProcessRunner.run_spec: " ++ message ++ "\n")
     exit(1)
 
-fn tool_process_spec_validate(spec: &ProcessSpec, stdout_path: str, stderr_path: str):
+fn tool_process_spec_validate(spec: &ProcessSpec, stdout_path: &str, stderr_path: &str):
     if spec.executable.len() == 0:
         tool_process_spec_fail("executable is required")
     if stdout_path.len() == 0 or stderr_path.len() == 0:
@@ -1687,13 +1685,13 @@ fn tool_process_spec_validate(spec: &ProcessSpec, stdout_path: str, stderr_path:
     if spec.stdin_path.len() > 0 and (spec.cwd.len() > 0 or spec.env.vars.len() > 0):
         tool_process_spec_fail("stdin cannot yet be combined with cwd or env")
 
-pub fn ProcessRunner.run_spec(self: &Self, spec: ProcessSpec, stdout_path: str, stderr_path: str) -> ToolProcessResult:
+pub fn ProcessRunner.run_spec(self: &Self, spec: ProcessSpec, stdout_path: &str, stderr_path: &str) -> ToolProcessResult:
     tool_capability_require(self.token, "ProcessRunner")
     tool_process_spec_validate(spec, stdout_path, stderr_path)
     let full_args: Vec[str] = Vec.new()
-    full_args.push(spec.executable)
+    full_args.push(with_str_clone_ref(spec.executable))
     for i in 0..spec.args.len() as i32:
-        full_args.push(spec.args.get(i as i64))
+        full_args.push(with_str_clone_ref(spec.args.get(i as i64)))
     let timeout = if spec.timeout_ms > 0: spec.timeout_ms else: 0
     if spec.env.vars.len() > 0:
         if spec.cwd.len() > 0:
@@ -1705,39 +1703,39 @@ pub fn ProcessRunner.run_spec(self: &Self, spec: ProcessSpec, stdout_path: str, 
         return self.run_capture_input(full_args, stdout_path, stderr_path, timeout, spec.stdin_path)
     self.run_capture(full_args, stdout_path, stderr_path, timeout)
 
-pub fn ActionCtx.target_name(self: &Self) -> str:
+pub fn ActionCtx.target_name(self: &Self) -> &str:
     tool_capability_require(self.token, "ActionCtx")
     self.target_name_value
 
-pub fn ActionCtx.project_info(self: &Self) -> ProjectInfo:
+pub fn ActionCtx.project_info(self: &Self) -> &ProjectInfo:
     tool_capability_require(self.token, "ActionCtx")
     self.project
 
-pub fn ActionCtx.diagnostics(self: &Self) -> Diagnostics:
+pub fn ActionCtx.diagnostics(self: &Self) -> &Diagnostics:
     tool_capability_require(self.token, "ActionCtx")
     self.diagnostics_value
 
-pub fn ActionCtx.fs(self: &Self) -> ToolFs:
+pub fn ActionCtx.fs(self: &Self) -> &ToolFs:
     tool_capability_require(self.token, "ActionCtx")
     self.fs_value
 
-pub fn ActionCtx.process_runner(self: &Self) -> ProcessRunner:
+pub fn ActionCtx.process_runner(self: &Self) -> &ProcessRunner:
     tool_capability_require(self.token, "ActionCtx")
     self.process_runner_value
 
-pub fn ActionCtx.inputs(self: &Self) -> Vec[str]:
+pub fn ActionCtx.inputs(self: &Self) -> &Vec[str]:
     tool_capability_require(self.token, "ActionCtx")
     self.inputs_value
 
-pub fn ActionCtx.outputs(self: &Self) -> Vec[str]:
+pub fn ActionCtx.outputs(self: &Self) -> &Vec[str]:
     tool_capability_require(self.token, "ActionCtx")
     self.outputs_value
 
-pub fn ActionCtx.args(self: &Self) -> Vec[str]:
+pub fn ActionCtx.args(self: &Self) -> &Vec[str]:
     tool_capability_require(self.token, "ActionCtx")
     self.args_value
 
-pub fn ActionCtx.output(self: &Self) -> str:
+pub fn ActionCtx.output(self: &Self) -> &str:
     tool_capability_require(self.token, "ActionCtx")
     if self.outputs_value.len() == 0:
         return ""
@@ -1747,11 +1745,11 @@ pub fn ActionCtx.timeout(self: &Self) -> i32:
     tool_capability_require(self.token, "ActionCtx")
     self.timeout_ms_value
 
-pub fn ActionCtx.working_dir(self: &Self) -> str:
+pub fn ActionCtx.working_dir(self: &Self) -> &str:
     tool_capability_require(self.token, "ActionCtx")
     self.cwd_value
 
-pub fn ActionCtx.env(self: &Self) -> Vec[str]:
+pub fn ActionCtx.env(self: &Self) -> &Vec[str]:
     tool_capability_require(self.token, "ActionCtx")
     self.env_value
 
@@ -1759,11 +1757,11 @@ pub fn ActionCtx.network(self: &Self) -> bool:
     tool_capability_require(self.token, "ActionCtx")
     self.network_value
 
-pub fn ActionCtx.env_input(self: &Self, name: str) -> str:
+pub fn ActionCtx.env_input(self: &Self, name: &str) -> str:
     tool_capability_require(self.token, "ActionCtx")
     with_getenv_str(name)
 
-fn build_graph_escape(value: str) -> str:
+fn build_graph_escape(value: &str) -> str:
     var out = StringBuilder.with_capacity(value.len())
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -1826,7 +1824,7 @@ pub fn Target.working_dir(move self: Target, path: str) -> Target:
     out.cwd = path
     out
 
-pub fn Target.with_env(move self: Target, key: str, value: str) -> Target:
+pub fn Target.with_env(move self: Target, key: &str, value: &str) -> Target:
     var out = self
     out.env.push(key ++ "=" ++ value)
     out
@@ -1979,7 +1977,7 @@ pub type Download {
 }
 
 pub fn Build.download(move self: Self, name: str, spec: Download) -> Build:
-    var target = target_new(.Action, name, "").output(spec.output_path)
+    var target = target_new(.Action, with_str_clone_ref(name), "").output(with_str_clone_ref(spec.output_path))
     target.action = build_download_action
     target = target.allow_network()
     target = target.write_scope(build_path_dirname(spec.output_path))
@@ -1990,7 +1988,7 @@ pub fn Build.download(move self: Self, name: str, spec: Download) -> Build:
     out.add_target(move target)
 
 pub fn Build.extract_tar_gz(move self: Self, name: str, archive: str, output_dir: str) -> Build:
-    var target = target_new(.Action, name, "").output(output_dir)
+    var target = target_new(.Action, with_str_clone_ref(name), "").output(with_str_clone_ref(output_dir))
     target.action = build_extract_tar_gz_action
     target = target.input(archive)
     target = target.write_scope(output_dir)
@@ -1998,7 +1996,7 @@ pub fn Build.extract_tar_gz(move self: Self, name: str, archive: str, output_dir
     var out = self
     out.add_target(move target)
 
-fn build_path_dirname(path: str) -> str:
+fn build_path_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -2100,7 +2098,7 @@ fn build_download_action(ctx: ActionCtx) -> i32:
     let ws = ctx.create_workspace(ctx.target_name() ++ "-https_fetch")
     ws.add_string(cmd_dir ++ "/https_fetch.w", build_https_fetch_source())
     var opts = ws.options()
-    opts.output_path = helper
+    opts.output_path = with_str_clone_ref(helper)
     opts.debug_info = false
     ws.set_options(opts)
     let compile_result = ws.compile()
@@ -2109,8 +2107,8 @@ fn build_download_action(ctx: ActionCtx) -> i32:
         return 1
     let fetch_args: Vec[str] = Vec.new()
     fetch_args.push(helper)
-    fetch_args.push(url)
-    fetch_args.push(tmp_path)
+    fetch_args.push(with_str_clone_ref(url))
+    fetch_args.push(with_str_clone_ref(tmp_path))
     let result = proc.run_capture(fetch_args, cmd_dir ++ "/https_fetch.stdout", cmd_dir ++ "/https_fetch.stderr", build_timeout_or(ctx.timeout(), 300000))
     if result.rc != 0:
         var detail = ""
@@ -2156,7 +2154,7 @@ fn build_extract_tar_gz_action(ctx: ActionCtx) -> i32:
     let ws = ctx.create_workspace(ctx.target_name() ++ "-zlib_gunzip")
     ws.add_string(cmd_dir ++ "/zlib_gunzip.w", build_zlib_gunzip_source())
     var opts = ws.options()
-    opts.output_path = helper
+    opts.output_path = with_str_clone_ref(helper)
     opts.debug_info = false
     ws.set_options(opts)
     let compile_result = ws.compile()
@@ -2166,8 +2164,8 @@ fn build_extract_tar_gz_action(ctx: ActionCtx) -> i32:
     let tar_path = cmd_dir ++ "/archive.tar"
     let gunzip_args: Vec[str] = Vec.new()
     gunzip_args.push(helper)
-    gunzip_args.push(archive)
-    gunzip_args.push(tar_path)
+    gunzip_args.push(with_str_clone_ref(archive))
+    gunzip_args.push(with_str_clone_ref(tar_path))
     let result = proc.run_capture(gunzip_args, cmd_dir ++ "/zlib_gunzip.stdout", cmd_dir ++ "/zlib_gunzip.stderr", build_timeout_or(ctx.timeout(), 300000))
     if result.rc != 0:
         var detail = ""
@@ -2294,7 +2292,7 @@ pub fn Target.arg(move self: Target, arg: str) -> Target:
     out.args.push(arg)
     out
 
-pub fn Target.compiler(move self: Target, compiler: str) -> Target:
+pub fn Target.compiler(move self: Target, compiler: &str) -> Target:
     var out = self
     out.args.push("compiler=" ++ compiler)
     out
@@ -2302,23 +2300,32 @@ pub fn Target.compiler(move self: Target, compiler: str) -> Target:
 fn build_action_outputs(target: &Target) -> Vec[str]:
     let outputs: Vec[str] = Vec.new()
     if target.output.len() > 0:
-        outputs.push(target.output)
+        outputs.push(with_str_clone_ref(target.output))
     for i in 0..target.extra_outputs.len() as i32:
-        outputs.push(target.extra_outputs.get(i as i64))
+        outputs.push(with_str_clone_ref(target.extra_outputs.get(i as i64)))
     outputs
 
 fn build_action_write_scope(target: &Target) -> Vec[str]:
     let scopes = build_action_outputs(target)
     for i in 0..target.write_scopes.len() as i32:
-        scopes.push(target.write_scopes.get(i as i64))
+        scopes.push(with_str_clone_ref(target.write_scopes.get(i as i64)))
     scopes.push(tool_action_scratch_dir(target.name))
     scopes
 
 fn tool_clone_str_vec(values: &Vec[str]) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     for i in 0..values.len() as i32:
-        out.push(values.get(i as i64))
+        out.push(with_str_clone_ref(values.get(i as i64)))
     out
+
+fn tool_clone_package(value: &Package) -> Package:
+    Package { name: with_str_clone_ref(value.name), version: with_str_clone_ref(value.version) }
+
+fn tool_clone_project_info(value: &ProjectInfo) -> ProjectInfo:
+    ProjectInfo { package: tool_clone_package(&value.package), root: with_str_clone_ref(value.root) }
+
+fn tool_clone_diagnostics(value: &Diagnostics) -> Diagnostics:
+    Diagnostics { token: with_str_clone_ref(value.token) }
 
 fn build_action_ctx(ctx: &BuildCtx, target: &Target) -> ActionCtx:
     let fs_outputs = build_action_write_scope(target)
@@ -2326,22 +2333,22 @@ fn build_action_ctx(ctx: &BuildCtx, target: &Target) -> ActionCtx:
     let ctx_outputs = build_action_outputs(target)
     let scratch_path = tool_action_scratch_dir(target.name)
     ActionCtx {
-        token: ctx.token,
-        target_name_value: target.name,
-        project: ctx.project,
-        diagnostics_value: ctx.diagnostics,
-        fs_value: ToolFs { token: ctx.token, root: ctx.fs.root, write_scope: fs_outputs, write_scoped: true, scratch_path },
-        process_runner_value: ProcessRunner { token: ctx.token, root: ctx.fs.root, target_name: target.name, write_scope: process_outputs, write_scoped: true, network: target.network },
+        token: with_str_clone_ref(ctx.token),
+        target_name_value: with_str_clone_ref(target.name),
+        project: tool_clone_project_info(&ctx.project),
+        diagnostics_value: tool_clone_diagnostics(&ctx.diagnostics),
+        fs_value: ToolFs { token: with_str_clone_ref(ctx.token), root: with_str_clone_ref(ctx.fs.root), write_scope: fs_outputs, write_scoped: true, scratch_path },
+        process_runner_value: ProcessRunner { token: with_str_clone_ref(ctx.token), root: with_str_clone_ref(ctx.fs.root), target_name: with_str_clone_ref(target.name), write_scope: process_outputs, write_scoped: true, network: target.network },
         inputs_value: tool_clone_str_vec(&target.inputs),
         outputs_value: ctx_outputs,
         args_value: tool_clone_str_vec(&target.args),
         timeout_ms_value: target.timeout_ms,
-        cwd_value: target.cwd,
+        cwd_value: with_str_clone_ref(target.cwd),
         env_value: tool_clone_str_vec(&target.env),
         network_value: target.network,
     }
 
-pub fn Build.__driver_run_action(self: &Self, ctx: BuildCtx, action_name: str) -> i32:
+pub fn Build.__driver_run_action(self: &Self, ctx: BuildCtx, action_name: &str) -> i32:
     tool_capability_require(ctx.token, "ActionCtx")
     for i in 0..self.targets.len() as i32:
         let target = &self.targets[i as i64]

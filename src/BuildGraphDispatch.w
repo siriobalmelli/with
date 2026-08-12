@@ -6,6 +6,7 @@ use BuildGraphOps
 use BuildGraphRuntime
 use BuildGraphSupport
 use BuildGraphTools
+extern fn with_str_clone_ref(s: &str) -> str
 
 pub type BuildGraphDispatchResult {
     handled: bool,
@@ -15,7 +16,7 @@ pub type BuildGraphDispatchResult {
 fn build_graph_dispatch_result(handled: bool, rc: i32) -> BuildGraphDispatchResult:
     BuildGraphDispatchResult { handled, rc }
 
-fn build_graph_output_seen(outputs: &Vec[str], path: str) -> bool:
+fn build_graph_output_seen(outputs: &Vec[str], path: &str) -> bool:
     for i in 0..outputs.len() as i32:
         if outputs.get(i as i64) == path:
             return true
@@ -23,18 +24,18 @@ fn build_graph_output_seen(outputs: &Vec[str], path: str) -> bool:
 
 // Returns false when the path is a duplicate; the caller records
 // accepted paths itself (a plain Vec param cannot be mutated, §3.8).
-fn build_graph_output_is_new(outputs: &Vec[str], path: str) -> bool:
+fn build_graph_output_is_new(outputs: &Vec[str], path: &str) -> bool:
     if path.len() == 0:
         return true
     not build_graph_output_seen(outputs, path)
 
-fn build_graph_record_output(outputs: Vec[str], path: str) -> Vec[str]:
+fn build_graph_record_output(outputs: Vec[str], path: &str) -> Vec[str]:
     var out = outputs
     if path.len() > 0:
-        out.push(path)
+        out.push(with_str_clone_ref(path))
     out
 
-pub fn build_graph_validate_outputs(root: str, graph: &BuildGraph, output_path: str) -> i32:
+pub fn build_graph_validate_outputs(root: &str, graph: &BuildGraph, output_path: &str) -> i32:
     var outputs: Vec[str] = Vec.new()
     for gi in 0..graph.generated_sources.len() as i32:
         let generated = graph.generated_sources.get(gi as i64)
@@ -70,7 +71,7 @@ pub fn build_graph_validate_outputs(root: str, graph: &BuildGraph, output_path: 
             outputs = build_graph_record_output(move outputs, extra_path)
     0
 
-pub fn build_graph_write_generated_sources(root: str, graph: &BuildGraph) -> i32:
+pub fn build_graph_write_generated_sources(root: &str, graph: &BuildGraph) -> i32:
     for gi in 0..graph.generated_sources.len() as i32:
         let generated = graph.generated_sources.get(gi as i64)
         if not build_graph_generated_path_valid(generated.path):
@@ -86,13 +87,13 @@ pub fn build_graph_write_generated_sources(root: str, graph: &BuildGraph) -> i32
             return 1
     0
 
-fn build_graph_target_completed(completed: &Vec[str], name: str) -> bool:
+fn build_graph_target_completed(completed: &Vec[str], name: &str) -> bool:
     for i in 0..completed.len() as i32:
         if completed.get(i as i64) == name:
             return true
     false
 
-fn build_graph_verify_completed_deps(target: &BuildGraphTarget, completed: &Vec[str], operation_name: str, require_deps: bool) -> i32:
+fn build_graph_verify_completed_deps(target: &BuildGraphTarget, completed: &Vec[str], operation_name: &str, require_deps: bool) -> i32:
     if require_deps and target.deps.len() == 0:
         build_graph_rt_eprint("error: " ++ operation_name ++ " target '" ++ target.name ++ "' requires verification dependencies")
         return 1
@@ -103,7 +104,7 @@ fn build_graph_verify_completed_deps(target: &BuildGraphTarget, completed: &Vec[
             return 1
     0
 
-pub fn build_graph_dispatch_standard_target(root: str, target: &BuildGraphTarget, completed_targets: &Vec[str]) -> BuildGraphDispatchResult:
+pub fn build_graph_dispatch_standard_target(root: &str, target: &BuildGraphTarget, completed_targets: &Vec[str]) -> BuildGraphDispatchResult:
     let containment_rc = build_graph_validate_target_containment(target)
     if containment_rc != 0:
         return build_graph_dispatch_result(true, containment_rc)

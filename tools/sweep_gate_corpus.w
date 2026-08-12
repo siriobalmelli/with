@@ -6,8 +6,8 @@
 //   with run tools/sweep_gate_corpus.w <stage1> <list_file> <diag_tmp> [d_corpus_dir]
 use std.process
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
 
 fn sh(cmd: str) -> i32:
     let argv: Vec[str] = Vec.new()

@@ -22,19 +22,20 @@ use compiler.Compilation
 use Lexer
 use Token
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
 
 // 0-based column of a byte offset (distance from the start of its line, 10 = '\n').
-fn col_of(text: str, offset: i32):
+fn col_of(text: &str, offset: i32):
     var j = offset - 1
     while j >= 0 and (text.byte_at(j as i64) as i32) != 10:
         j = j - 1
     offset - (j + 1)
 
-fn slice(text: str, a: i32, b: i32): text.slice(a as i64, b as i64)
+fn slice(text: &str, a: i32, b: i32): text.slice(a as i64, b as i64)
 
-fn trim(s: str):
+fn trim(s: &str):
     let m = s.len() as i32
     var a = 0
     while a < m and (s.byte_at(a as i64) as i32) == 32:
@@ -46,7 +47,7 @@ fn trim(s: str):
 
 // Names from a type-param inner text ("K: Ord, V" -> "K, V"): each top-level
 // comma segment's identifier, stripped of its optional `: Bound`.
-fn tparam_names(inner: str):
+fn tparam_names(inner: &str):
     var parts: Vec[str] = Vec.new()
     let m = inner.len() as i32
     var seg_start = 0
@@ -73,7 +74,7 @@ fn tparam_names(inner: str):
     parts.join(", ")
 
 // Prefix `pad` to every non-empty line of `text` (blank lines stay blank).
-fn reindent(text: str, pad: str):
+fn reindent(text: &str, pad: &str):
     var parts: Vec[str] = Vec.new()
     let m = text.len() as i32
     var line_start = 0
@@ -81,18 +82,18 @@ fn reindent(text: str, pad: str):
     while i < m:
         if (text.byte_at(i as i64) as i32) == 10:
             if i > line_start:
-                parts.push(pad)
+                parts.push(with_str_clone_ref(pad))
                 parts.push(slice(text, line_start, i))
             parts.push("\n")
             line_start = i + 1
         i = i + 1
     if m > line_start:
-        parts.push(pad)
+        parts.push(with_str_clone_ref(pad))
         parts.push(slice(text, line_start, m))
     parts.join("")
 
 // Count top-level comma-separated segments in the bytes of a `[...]` group text.
-fn count_args(inner: str) -> i32:
+fn count_args(inner: &str) -> i32:
     let m = inner.len() as i32
     if m == 0:
         return 0
@@ -118,11 +119,11 @@ type RelocationFacts {
     matched: Vec[i32],
 }
 
-fn local_source_path(path: str) -> str:
+fn local_source_path(path: &str) -> str:
     let embedded = "<embedded-std>/"
-    if path.starts_with(embedded): "lib/" ++ slice(path, embedded.len() as i32, path.len() as i32) else: path
+    if path.starts_with(embedded): "lib/" ++ slice(path, embedded.len() as i32, path.len() as i32) else: with_str_clone_ref(path)
 
-fn compiler_relocation_facts(entry: str) -> RelocationFacts:
+fn compiler_relocation_facts(entry: &str) -> RelocationFacts:
     let result = compiler_analyze_file(entry, "select:kind=declaration")
     let facts = RelocationFacts { paths: Vec.new(), starts: Vec.new(), ends: Vec.new(), modes: Vec.new(), matched: Vec.new() }
     for i in 0..result.report.facts.len() as i32:
@@ -139,12 +140,12 @@ fn compiler_relocation_facts(entry: str) -> RelocationFacts:
         facts.matched.push(0)
     facts
 
-fn relocation_fact_at(facts: &RelocationFacts, path: str, offset: i32) -> i32:
+fn relocation_fact_at(facts: &RelocationFacts, path: &str, offset: i32) -> i32:
     for i in 0..facts.starts.len() as i32:
         if facts.paths.get(i as i64) == path and offset >= facts.starts.get(i as i64) and offset < facts.ends.get(i as i64): return i
     -1
 
-fn relocate_file(path: str, semantic: &RelocationFacts, apply: bool, list_methods: bool) -> i32:
+fn relocate_file(path: &str, semantic: &RelocationFacts, apply: bool, list_methods: bool) -> i32:
     let text = with_fs_read_file(path)
     let tlen = text.len() as i32
     if tlen == 0:
@@ -293,7 +294,7 @@ fn relocate_file(path: str, semantic: &RelocationFacts, apply: bool, list_method
         // if any. The receiver base is often spelled `Self` (an alias for the
         // dotted type), so the base MUST come from the dotted name, never the
         // receiver spelling — else every `self: &Self` method yields `impl Self:`.
-        var target = type_name
+        var target = with_str_clone_ref(type_name)
         var bpos = rti
         while bpos < rlen and (recv_type.byte_at(bpos as i64) as i32) != 91:   // '['
             bpos = bpos + 1
@@ -375,7 +376,7 @@ fn relocate_file(path: str, semantic: &RelocationFacts, apply: bool, list_method
             chunks.push(reindent(gap, "    "))     // inter-method comments go inside
         else:
             chunks.push(gap)                        // leading comments at column 0
-            chunks.push(header)
+            chunks.push(with_str_clone_ref(header))
             chunks.push("\n")
             open_header = header
 
@@ -416,7 +417,7 @@ fn relocate_file(path: str, semantic: &RelocationFacts, apply: bool, list_method
     print(f"{path}: relocated {count}")
     count
 
-fn path_excluded(path: str, excludes: &Vec[str]) -> bool:
+fn path_excluded(path: &str, excludes: &Vec[str]) -> bool:
     for i in 0..excludes.len() as i32:
         let excluded = excludes.get(i as i64)
         if path == excluded or path.starts_with(excluded ++ "/"): return true
@@ -432,7 +433,7 @@ fn unique_relocation_paths(facts: &RelocationFacts, excludes: &Vec[str]) -> Vec[
             if paths.get(pi as i64) == path:
                 seen = true
                 break
-        if not seen: paths.push(path)
+        if not seen: paths.push(with_str_clone_ref(path))
     paths
 
 fn count_selected(facts: &RelocationFacts, excludes: &Vec[str]) -> i32:
@@ -474,12 +475,12 @@ pub fn run_receiver_migration -> i32:
                 print("error: --exclude requires a file path")
                 exit_code(1)
             arg = arg + 1
-            excludes.push(argv.get(arg as i64))
+            excludes.push(with_str_clone_ref(argv.get(arg as i64)))
         else:
             if entry.len() > 0:
                 print("error: exactly one semantic entry file is required")
                 exit_code(1)
-            entry = argv.get(arg as i64)
+            entry = with_str_clone_ref(argv.get(arg as i64))
         arg = arg + 1
     if entry.len() == 0:
         print("error: no semantic entry file supplied")

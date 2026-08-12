@@ -16,16 +16,17 @@ use compiler.TrackedInputs
 use std.collections.HashMap
 use std.collections.HashSet
 
-extern fn with_write(s: str) -> Unit
-extern fn with_eprint(s: str) -> Unit
+extern fn with_write(s: &str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_eq(a: str, b: str) -> i32
-extern fn with_getenv_str(name: str) -> str
+extern fn with_getenv_str(name: &str) -> str
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_hashmap_new(key_size: i64, val_size: i64) -> *i8
 extern fn i64_to_string(n: i64) -> str
 extern fn abort() -> Unit
 
-fn sema_phase_bug(message: str, origin_file: str = __FILE__, origin_line: u32 = __LINE__, origin_fn: str = __FN__):
+fn sema_phase_bug(message: &str, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):
     with_eprint(f"{message} [{origin_file}:{origin_line} {origin_fn}]")
     abort()
 
@@ -55,6 +56,12 @@ enum TypeKind: i32:
     TY_EXTERN_FN = 20
 
 type TypeId = i32
+
+type SemaSourceLocation {
+    line: i32,
+    col: i32,
+}
+impl Copy for SemaSourceLocation
 
 enum VarState: i32:
     LIVE = 0
@@ -543,7 +550,6 @@ type Sema {
     // their parsed symbol; cross-module extension methods get a unique symbol
     // so packages can define the same Type.method without colliding.
     fn_decl_effective_syms: HashMap[i32, i32],
-    fn_decl_effective_indices: HashMap[i32, i32],
     // Function declaration source path by name
     fn_decl_source_paths: HashMap[i32, str],
     // Multiple function clauses (§9.7): public dispatch symbol -> clause group index.
@@ -1102,6 +1108,7 @@ type Sema {
     source_text_file_ids: Vec[i32],  // imported/extra source text file ids
     source_text_names: Vec[str],     // source display names aligned with source_text_file_ids
     source_texts: Vec[str],          // source buffers aligned with source_text_file_ids
+    source_line_offsets: Vec[Vec[i32]], // root first, then one index per source_texts entry
     current_module_path: str,        // module path being checked right now
     tool_mode_entry_path: str,        // compiler-generated tool runner allowed to mint capabilities
     module_paths: Vec[str],          // resolved module graph paths
@@ -1146,7 +1153,7 @@ fn sema_debug_move_enabled -> i32:
         return 0
     1
 
-fn sema_str_eq(a: str, b: str) -> i32:
+fn sema_str_eq(a: &str, b: &str) -> i32:
     if a.len() != b.len():
         return 0
     var i = 0
@@ -1157,7 +1164,7 @@ fn sema_str_eq(a: str, b: str) -> i32:
     1
 
 impl Sema:
-    fn debug_unknown_type(sym: i32, node: i32, context: str):
+    fn debug_unknown_type(sym: i32, node: i32, context: &str):
         if sema_debug_stage1_enabled() == 0:
             return
         let name = self.pool_resolve_symbol(sym)
@@ -1165,13 +1172,13 @@ impl Sema:
         let named = if self.named_types.contains(sym): 1 else: 0
         with_eprint(f"[unknown-type] {context} sym={sym} name={name} prim={prim} named={named} collecting={self.collecting_types} node_kind={self.ast.kind(node)}")
 
-    fn pool_resolve_symbol(sym: i32) -> str:
+    fn pool_resolve_symbol(sym: i32) -> &str:
         self.pool.resolve_symbol(sym)
 
-    fn pool_resolve(sym: i32) -> str:
+    fn pool_resolve(sym: i32) -> &str:
         self.pool_resolve_symbol(sym)
 
-    fn pool_lookup_symbol(name: str) -> i32:
+    fn pool_lookup_symbol(name: &str) -> i32:
         if name.len() == 0:
             return 0
         let existing = self.pool.state.symbol_map.get(name)
@@ -1186,7 +1193,7 @@ impl Sema:
             i = i + 1
         0
 
-    mut fn pool_intern(name: str) -> i32:
+    mut fn pool_intern(name: &str) -> i32:
         if self.symbols_frozen != 0:
             let existing = self.pool_lookup_symbol(name)
             if existing != 0:
@@ -1197,35 +1204,37 @@ impl Sema:
         if existing.is_some():
             return existing.unwrap()
 
+        // Compare through element views; clone only for the map insert on the
+        // (at most one) match. A clone per scanned element made every miss —
+        // and every NEW symbol misses — allocate the whole symbol table.
         var i = 1
         while i < self.pool.state.symbol_texts.len() as i32:
-            let existing_text: str = self.pool.state.symbol_texts.get(i as i64)
-            if sema_str_eq(existing_text, name) != 0:
-                self.pool.state.symbol_map.insert(existing_text, i)
+            if sema_str_eq(self.pool.state.symbol_texts.get(i as i64), name) != 0:
+                self.pool.state.symbol_map.insert(with_str_clone_ref(self.pool.state.symbol_texts.get(i as i64)), i)
                 return i
             i = i + 1
 
         let id = self.pool.state.symbol_texts.len() as i32
         let owned = sema_owned_text(name)
+        self.pool.state.symbol_map.insert(with_str_clone_ref(owned), id)
         self.pool.state.symbol_texts.push(owned)
-        self.pool.state.symbol_map.insert(owned, id)
         id
 
-fn sema_tier_path_is_std_implementation(path: str) -> i32:
+fn sema_tier_path_is_std_implementation(path: &str) -> i32:
     if path.starts_with("lib/std/") or path.starts_with("<embedded-std>/"):
         return 1
     if path.contains("/lib/std/"):
         return 1
     0
 
-fn sema_vec_str_contains(v: &Vec[str], s: str) -> i32:
+fn sema_vec_str_contains(v: &Vec[str], s: &str) -> i32:
     for i in 0..v.len() as i32:
         if v.get(i as i64) == s:
             return 1
     0
 
 // "<embedded-std>/std/collections.w" or ".../lib/std/collections.w" → "std.collections"
-fn sema_std_module_dotted(path: str) -> str:
+fn sema_std_module_dotted(path: &str) -> str:
     var rel = ""
     if path.starts_with("<embedded-std>/"):
         rel = path.slice("<embedded-std>/".len(), path.len())
@@ -1251,7 +1260,7 @@ fn sema_std_module_dotted(path: str) -> str:
 // gate (they register pathless). c_void and assert_matches_failed are
 // compiler-lowering support: c_import emissions and the assert_matches
 // desugaring reference them in user-tier positions the user never spelled.
-fn sema_prelude_gate_allows_name(name: str) -> i32:
+fn sema_prelude_gate_allows_name(name: &str) -> i32:
     if name == "print" or name == "eprint":
         return 1
     if name == "assert" or name == "assert_eq" or name == "assert_ne":
@@ -1276,14 +1285,14 @@ fn sema_prelude_gate_allows_name(name: str) -> i32:
         return 1
     0
 
-fn sema_path_is_std_box_module(path: str) -> i32:
+fn sema_path_is_std_box_module(path: &str) -> i32:
     if path == "lib/std/box.w" or path == "<embedded-std>/std/box.w":
         return 1
     if path.ends_with("/lib/std/box.w") or path.ends_with("\\lib\\std\\box.w"):
         return 1
     0
 
-fn sema_path_is_std_rc_module(path: str) -> i32:
+fn sema_path_is_std_rc_module(path: &str) -> i32:
     if path == "lib/std/rc.w" or path == "<embedded-std>/std/rc.w":
         return 1
     if path.ends_with("/lib/std/rc.w") or path.ends_with("\\lib\\std\\rc.w"):
@@ -1320,7 +1329,7 @@ impl Sema:
             return 0
         sema_path_is_std_rc_module(self.type_decl_source_path(sym))
 
-fn sema_tier_std_only_module(path: str) -> i32:
+fn sema_tier_std_only_module(path: &str) -> i32:
     if path == "std.io" or path.starts_with("std.io."):
         return 1
     if path == "std.fs" or path.starts_with("std.fs."):
@@ -1347,7 +1356,7 @@ fn sema_tier_std_only_module(path: str) -> i32:
         return 1
     0
 
-fn sema_path_is_compiler_owned_implementation(path: str) -> i32:
+fn sema_path_is_compiler_owned_implementation(path: &str) -> i32:
     if path.starts_with("src/") or path.contains("/src/"):
         return 1
     if path.starts_with("build/") or path.contains("/build/"):
@@ -1360,14 +1369,14 @@ fn sema_path_is_compiler_owned_implementation(path: str) -> i32:
         return 1
     0
 
-fn sema_paths_share_internal_implementation_boundary(a: str, b: str) -> i32:
+fn sema_paths_share_internal_implementation_boundary(a: &str, b: &str) -> i32:
     if sema_path_is_compiler_owned_implementation(a) == 0:
         return 0
     if sema_path_is_compiler_owned_implementation(b) == 0:
         return 0
     1
 
-fn sema_path_is_compiler_hook_runner(path: str) -> i32:
+fn sema_path_is_compiler_hook_runner(path: &str) -> i32:
     if path.contains("__with_compiler_hook_runner."):
         return 1
     0
@@ -1417,7 +1426,7 @@ impl Sema:
             return 1
         if self.symbol_requires_alloc_tier(sym) == 0:
             return 1
-        let name = self.pool_resolve_symbol(sym)
+        let name: str = with_str_clone_ref(self.pool_resolve_symbol(sym))
         self.emit_error(name ++ " requires alloc; use --alloc or set alloc = true with std = false", node)
         0
 
@@ -1428,7 +1437,7 @@ impl Sema:
             return 1
         if self.symbol_requires_std_tier(sym) == 0:
             return 1
-        let name = self.pool_resolve_symbol(sym)
+        let name: str = with_str_clone_ref(self.pool_resolve_symbol(sym))
         self.emit_error(name ++ " requires std", node)
         0
 
@@ -1452,10 +1461,10 @@ fn sema_new_vec_i32 -> Vec[i32]:
     let out: Vec[i32] = Vec.new()
     out
 
-fn sema_owned_text(text: str) -> str:
+fn sema_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
-    with_str_clone(text)
+    with_str_clone_ref(text)
 
 fn sema_clone_str_vec(values: &Vec[str]) -> Vec[str]:
     let out = sema_new_vec_str()
@@ -1713,7 +1722,7 @@ fn sema_method_lookup_new -> SemaMethodLookup:
         fn_lookup: sema_new_map_i64_i32(),
     }
 
-fn sema_visibility_cache_key(from_path: str, to_path: str) -> str:
+fn sema_visibility_cache_key(from_path: &str, to_path: &str) -> str:
     from_path ++ "->" ++ to_path
 
 fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Sema:
@@ -1727,7 +1736,6 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
     let retained_extern_params = sema_new_map_i32_i32()
     let fn_decl_nodes = sema_new_map_i32_i32()
     let fn_decl_effective_syms = sema_new_map_i32_i32()
-    let fn_decl_effective_indices = sema_new_map_i32_i32()
     let fn_decl_source_paths = HashMap[i32, str].new()
     let fn_clause_group_lookup = sema_new_map_i32_i32()
     let fn_clause_body_dispatch = sema_new_map_i32_i32()
@@ -1860,7 +1868,6 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         retained_extern_params,
         fn_decl_nodes,
         fn_decl_effective_syms,
-        fn_decl_effective_indices,
         fn_decl_source_paths,
         fn_clause_group_lookup,
         fn_clause_group_names: Vec.new(),
@@ -2240,6 +2247,7 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         source_text_file_ids: Vec.new(),
         source_text_names: sema_new_vec_str(),
         source_texts: sema_new_vec_str(),
+        source_line_offsets: Vec.new(),
         current_module_path: "",
         tool_mode_entry_path: "",
         module_paths: sema_new_vec_str(),
@@ -2435,11 +2443,11 @@ fn Sema.init(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Sema:
     s
 
 impl Sema:
-    mut fn set_tracked_input_context(root: str, paths: &Vec[str]):
+    mut fn set_tracked_input_context(root: &str, paths: &Vec[str]):
         self.tracked_input_root = sema_owned_text(root)
         self.tracked_input_paths = sema_clone_str_vec(paths)
 
-    mut fn record_tracked_input(path: str):
+    mut fn record_tracked_input(path: &str):
         var paths = self.tracked_input_paths
         self.tracked_input_paths = tracked_input_insert_unique(move paths, path)
 
@@ -2447,13 +2455,13 @@ impl Sema:
         var tracked_paths = self.tracked_input_paths
         self.tracked_input_paths = tracked_input_merge_unique(move tracked_paths, paths)
 
-    mut fn read_tracked_embed_file(source_path: str, raw_path: str) -> TrackedReadResult:
+    mut fn read_tracked_embed_file(source_path: &str, raw_path: &str) -> TrackedReadResult:
         let result = tracked_embed_read(source_path, raw_path, self.tracked_input_root)
         if result.ok:
             self.record_tracked_input(result.resolved_path)
         result
 
-    mut fn register_prim(name: str, tid: i32):
+    mut fn register_prim(name: &str, tid: i32):
         let sym = self.pool_intern(name)
         self.record_named_type(sym, tid)
 
@@ -2477,7 +2485,7 @@ impl Sema:
         self.decl_visibility_pub.push(is_pub)
         self.decl_visibility_nodes.push(node)
 
-    fn decl_visible_from_current(target_path: str, is_pub: i32) -> i32:
+    fn decl_visible_from_current(target_path: &str, is_pub: i32) -> i32:
         if target_path.len() == 0:
             return 1
         if self.current_module_path.len() == 0:
@@ -2502,7 +2510,7 @@ impl Sema:
     //      the §18.2 enumerated names; any other std name resolves from user
     //      code only through an explicit import path (never the synthetic
     //      prelude edge). Replaced by the D fallback tier when #751 lands.
-    fn decl_visible_from_current_gated(target_path: str, is_pub: i32, sym: i32) -> i32:
+    fn decl_visible_from_current_gated(target_path: &str, is_pub: i32, sym: i32) -> i32:
         if target_path.len() == 0:
             return 1
         if self.current_module_path.len() == 0:
@@ -2521,25 +2529,25 @@ impl Sema:
                     return 0
         self.decl_visible_from_current(target_path, is_pub)
 
-    fn module_in_prelude_closure(path: str) -> i32:
+    fn module_in_prelude_closure(path: &str) -> i32:
         if self.global_visible_module_paths.contains(path): 1 else: 0
 
     // Reachability over explicit import edges only: the synthetic prelude
     // edge and the global prelude-closure shortcut are excluded, so this
     // answers "did the user actually import a path to this module?".
-    fn module_visible_no_prelude(target_path: str) -> i32:
+    fn module_visible_no_prelude(target_path: &str) -> i32:
         if self.current_module_path.len() == 0:
             return 1
         if target_path == self.current_module_path:
             return 1
-        if not self.module_index_by_path.contains(self.current_module_path):
+        if not self.module_index_by_path.contains(with_str_clone_ref(self.current_module_path)):
             return 0
         if not self.module_index_by_path.contains(target_path):
             return 0
         let cache_key = "noprelude|" ++ sema_visibility_cache_key(self.current_module_path, target_path)
         if self.module_visibility_cache.contains(cache_key):
             return self.module_visibility_cache.get(cache_key).unwrap()
-        let start_idx: i32 = self.module_index_by_path.get(self.current_module_path).unwrap()
+        let start_idx: i32 = self.module_index_by_path.get(with_str_clone_ref(self.current_module_path)).unwrap()
         let target_idx: i32 = self.module_index_by_path.get(target_path).unwrap()
         let seen: HashMap[i32, i32] = sema_new_map_i32_i32()
         let stack: Vec[i32] = Vec.new()
@@ -2560,7 +2568,7 @@ impl Sema:
                 for ei in 0..edge_count:
                     let idx = edge_start + ei
                     if idx >= 0 and idx < self.module_import_paths.len() as i32:
-                        let ip: str = self.module_import_paths.get(idx as i64)
+                        let ip: str = with_str_clone_ref(self.module_import_paths.get(idx as i64))
                         if ip == "std.prelude" or ip == "std.prelude_core" or ip == "std.prelude_alloc":
                             continue
                         stack.push(self.module_import_targets.get(idx as i64))
@@ -2621,7 +2629,7 @@ impl Sema:
                 let path = self.decl_visibility_paths.get(i as i64)
                 let is_pub = self.decl_visibility_pub.get(i as i64)
                 if path.len() > 0 and path != self.current_module_path and is_pub == 0 and self.module_is_visible_from_current(path) != 0:
-                    return path
+                    return with_str_clone_ref(path)
             i = i - 1
         ""
 
@@ -2666,7 +2674,7 @@ impl Sema:
         "; candidates: " ++ listed
 
     mut fn emit_private_symbol_error(sym: i32, node: i32) -> Unit:
-        let name = self.pool_resolve(sym)
+        let name: str = with_str_clone_ref(self.pool_resolve(sym))
         let gate_note = self.std_gated_import_note(sym)
         if gate_note.len() > 0:
             self.emit_error("'" ++ name ++ "' requires an explicit import (§18.1)" ++ gate_note, node)
@@ -2677,7 +2685,7 @@ impl Sema:
         else:
             self.emit_error("symbol '" ++ name ++ "' is not visible from this module", node)
 
-    fn module_is_visible_from_current(target_path: str) -> i32:
+    fn module_is_visible_from_current(target_path: &str) -> i32:
         if target_path.len() == 0:
             return 1
         if self.global_visible_module_paths.contains(target_path):
@@ -2686,14 +2694,14 @@ impl Sema:
             return 1
         if target_path == self.current_module_path:
             return 1
-        if not self.module_index_by_path.contains(self.current_module_path):
+        if not self.module_index_by_path.contains(with_str_clone_ref(self.current_module_path)):
             return 1
         if not self.module_index_by_path.contains(target_path):
             return 1
         let cache_key = sema_visibility_cache_key(self.current_module_path, target_path)
         if self.module_visibility_cache.contains(cache_key):
             return self.module_visibility_cache.get(cache_key).unwrap()
-        let start_idx: i32 = self.module_index_by_path.get(self.current_module_path).unwrap()
+        let start_idx: i32 = self.module_index_by_path.get(with_str_clone_ref(self.current_module_path)).unwrap()
         let target_idx: i32 = self.module_index_by_path.get(target_path).unwrap()
         if start_idx == target_idx:
             self.module_visibility_cache.insert(sema_owned_text(cache_key), 1)
@@ -2818,7 +2826,7 @@ impl Sema:
             return self.ast.get_data2(callee)
         0
 
-    mut fn register_builtin_struct_type(name: str, field_names: &Vec[str], field_types: &Vec[i32], field_count: i32) -> i32:
+    mut fn register_builtin_struct_type(name: &str, field_names: &Vec[str], field_types: &Vec[i32], field_count: i32) -> i32:
         let name_sym = self.pool_intern(name)
         let te_start = self.type_extra.len() as i32
         for fi in 0..field_count:
@@ -3057,7 +3065,7 @@ fn sema_is_space_char(ch: i32) -> i32:
         return 1
     return 0
 
-fn extract_name_after_keyword_in_text(text: str, keyword: str) -> str:
+fn extract_name_after_keyword_in_text(text: &str, keyword: &str) -> str:
     if text.len() == 0 or keyword.len() == 0:
         return ""
     var i = 0
@@ -3098,7 +3106,7 @@ fn extract_name_after_keyword_in_text(text: str, keyword: str) -> str:
         i = i + 1
     ""
 
-fn extract_param_name_from_segment(segment: str) -> str:
+fn extract_param_name_from_segment(segment: &str) -> str:
     if segment.len() == 0:
         return ""
 
@@ -3160,7 +3168,7 @@ fn extract_param_name_from_segment(segment: str) -> str:
         i = i + 1
     segment.slice(start as i64, name_end as i64)
 
-fn extract_fn_param_name_in_text(text: str, param_index: i32) -> str:
+fn extract_fn_param_name_in_text(text: &str, param_index: i32) -> str:
     if text.len() == 0 or param_index < 0:
         return ""
 
@@ -3201,20 +3209,64 @@ fn extract_fn_param_name_in_text(text: str, param_index: i32) -> str:
         i = i + 1
     ""
 
+fn sema_source_line_offsets(text: &str):
+    let offsets: Vec[i32] = Vec.new()
+    offsets.push(0)
+    for i in 0..text.len():
+        if text.byte_at(i) == 10:
+            offsets.push(i as i32 + 1)
+    offsets
+
 impl Sema:
-    fn source_text_for_file_id(file_id: i32) -> str:
+    mut fn prepare_source_line_offsets():
+        self.source_line_offsets = Vec.new()
+        self.source_line_offsets.push(sema_source_line_offsets(self.source_text))
+        for si in 0..self.source_texts.len() as i32:
+            self.source_line_offsets.push(sema_source_line_offsets(self.source_texts.get(si as i64)))
+
+    fn source_location_for_file_id(file_id: i32, offset: i32) -> SemaSourceLocation:
+        var source_index = 0
+        if file_id != 0:
+            for si in 0..self.source_text_file_ids.len() as i32:
+                if self.source_text_file_ids.get(si as i64) == file_id:
+                    source_index = si + 1
+                    break
+        if source_index >= self.source_line_offsets.len() as i32:
+            sema_phase_bug("source line offsets were not prepared before MIR lowering")
+        let offsets = self.source_line_offsets.get(source_index as i64)
+        var clamped = offset
+        if clamped < 0:
+            clamped = 0
+        let source_len = if source_index == 0: self.source_text.len() as i32 else: self.source_texts.get((source_index - 1) as i64).len() as i32
+        if clamped > source_len:
+            clamped = source_len
+        var lo = 0
+        var hi = offsets.len() as i32
+        while lo < hi:
+            let mid = lo + (hi - lo) / 2
+            if offsets.get(mid as i64) <= clamped:
+                lo = mid + 1
+            else:
+                hi = mid
+        let line = if lo > 0: lo - 1 else: 0
+        SemaSourceLocation { line, col: clamped - offsets.get(line as i64) }
+
+    fn source_text_view_for_file_id(file_id: i32) -> &str:
         if file_id == 0:
-            return self.source_text
+            return &self.source_text
         for si in 0..self.source_text_file_ids.len() as i32:
             if self.source_text_file_ids.get(si as i64) == file_id:
                 return self.source_texts.get(si as i64)
         ""
 
-    fn source_text_for_decl_node(node: i32) -> str:
+    fn source_text_for_file_id(file_id: i32) -> str:
+        with_str_clone_ref(self.source_text_view_for_file_id(file_id))
+
+    fn source_text_for_decl_node(node: i32) -> &str:
         let di = self.find_decl_index(node)
         if di >= 0 and di < self.decl_source_file_ids.len() as i32:
             let file_id = self.decl_source_file_ids.get(di as i64)
-            let text = self.source_text_for_file_id(file_id)
+            let text = self.source_text_view_for_file_id(file_id)
             if text.len() > 0:
                 return text
         // Body nodes never match a top-level decl, so the lookup above fails
@@ -3226,12 +3278,12 @@ impl Sema:
         // checker's per-decl context, which update_decl_source_context /
         // update_fn_source_context keep current for diagnostics.
         if self.local_file_id != 0:
-            let text = self.source_text_for_file_id(self.local_file_id)
+            let text = self.source_text_view_for_file_id(self.local_file_id)
             if text.len() > 0:
                 return text
-        self.source_text
+        &self.source_text
 
-    fn extract_decl_name_after(node: i32, keyword: str) -> str:
+    fn extract_decl_name_after(node: i32, keyword: &str) -> str:
         let source_text = self.source_text_for_decl_node(node)
         if source_text.len() == 0:
             return ""
@@ -3251,7 +3303,7 @@ impl Sema:
         let snippet = source_text.slice(start as i64, end as i64)
         extract_name_after_keyword_in_text(snippet, keyword)
 
-    fn set_pretty_symbol(sym: i32, name: str):
+    fn set_pretty_symbol(sym: i32, name: &str):
         if sym <= 0:
             return
         if name.len() == 0:
@@ -3790,7 +3842,7 @@ impl Sema:
                     return 0
                 if self.require_std_tier_for_symbol(gi_base_sym, node) == 0:
                     return 0
-                let gi_name = self.pool_resolve_symbol(gi_base_sym)
+                let gi_name: str = with_str_clone_ref(self.pool_resolve_symbol(gi_base_sym))
                 self.emit_error("unknown type: " ++ gi_name, node)
                 return 0
         if self.require_alloc_tier_for_symbol(gi_base_sym, node) == 0:
@@ -4117,7 +4169,7 @@ impl Sema:
         if kind == TypeKind.TY_BOOL:
             return "bool"
         if kind == TypeKind.TY_STRUCT or kind == TypeKind.TY_ENUM or kind == TypeKind.TY_ALIAS or kind == TypeKind.TY_GENERIC_INST:
-            return self.pool_resolve(self.type_d0.get(tid as i64))
+            return with_str_clone_ref(self.pool_resolve(self.type_d0.get(tid as i64)))
         ""
 
     fn get_type_d0(tid: TypeId) -> i32:
@@ -4189,7 +4241,7 @@ impl Sema:
         self.scope_starts.push(self.bind_names.len() as i32)
 
     mut fn emit_pending_generic_binding_error(sym: i32):
-        let binding_name = self.pool_resolve(sym)
+        let binding_name: str = with_str_clone_ref(self.pool_resolve(sym))
         var node = 0
         if self.pending_generic_binding_decl.contains(sym):
             node = self.pending_generic_binding_decl.get(sym).unwrap()
@@ -4268,7 +4320,7 @@ impl Sema:
         if self.is_discard_binding_symbol(sym) != 0:
             return
         if self.scope_lookup(sym) >= 0:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("shadowing is not allowed for '" ++ name ++ "'", node)
             return
         self.scope_insert_at(sym, tid, is_mut)
@@ -4283,7 +4335,7 @@ impl Sema:
         let idx: i32 = existing.unwrap()
         let current_start = if self.scope_starts.len() > 0: self.scope_starts.get((self.scope_starts.len() - 1) as i64) else: 0
         if idx < current_start or self.bind_states.get(idx as i64) != VarState.MOVED:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("shadowing is not allowed for '" ++ name ++ "'", node)
             return 0
         self.bind_types.set_i32(idx as i64, tid)
@@ -4327,24 +4379,24 @@ impl Sema:
         let existing_idx: i32 = existing_opt.unwrap()
         let existing_kind = self.global_value_decl_kind(sym)
         if existing_kind == 0:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("shadowing is not allowed for '" ++ name ++ "'", node)
             return
 
         if existing_kind == GLOBAL_VALUE_DECL_DEF and decl_kind == GLOBAL_VALUE_DECL_DEF:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("shadowing is not allowed for '" ++ name ++ "'", node)
             return
 
         let existing_mut = self.bind_muts.get(existing_idx as i64)
         if existing_mut != is_mut:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("conflicting global declaration for '" ++ name ++ "'", node)
             return
 
         let existing_tid = self.bind_types.get(existing_idx as i64)
         if self.global_value_decl_types_compatible(existing_tid, tid) == 0:
-            let name = self.pool_resolve(sym)
+            let name: str = with_str_clone_ref(self.pool_resolve(sym))
             self.emit_error("conflicting global declaration for '" ++ name ++ "'", node)
             return
 
@@ -4765,7 +4817,7 @@ impl Sema:
 
     mut fn emit_loop_carried_move_error(bind_idx: i32, loop_node: i32):
         let sym = self.bind_names.get(bind_idx as i64)
-        let name = self.pool_resolve(sym)
+        let name: str = with_str_clone_ref(self.pool_resolve(sym))
         self.emit_error_with_help("use of moved value: `" ++ name ++ "` is moved inside a loop and not reinitialized before the loop repeats", loop_node, "reinitialize `" ++ name ++ "` on every path before the loop repeats, or move it only on a path that exits the loop")
 
     // Allocate this loop's break-flag region in loop_break_flat (called by each loop
@@ -5156,6 +5208,9 @@ impl Sema:
         if self.type_has_drop_impl(resolved as i32) != 0:
             return 1
         let tk = self.get_type_kind(resolved)
+        // #747 / D28 ruling 1: an owned str frees its buffer at scope end.
+        if tk == TypeKind.TY_STR:
+            return 1
         if tk == TypeKind.TY_GENERIC_INST:
             let base_sym = self.get_generic_inst_base(resolved as i32)
             // #691/D18 and D22 Stage 6: compiler-modeled collection handles own
@@ -5274,8 +5329,8 @@ impl Sema:
                 if view_has_drop != 0:
                     self.emit_implicit_drop_view_use_error(view_sym, origin_sym, err_node)
                     return
-                let view_name = self.pool_resolve(view_sym)
-                let origin_name = self.pool_resolve(origin_sym)
+                let view_name: str = with_str_clone_ref(self.pool_resolve(view_sym))
+                let origin_name: str = with_str_clone_ref(self.pool_resolve(origin_sym))
                 self.emit_error("view '" ++ view_name ++ "' may outlive its origin '" ++ origin_name ++ "'", err_node)
                 return
 
@@ -5991,7 +6046,7 @@ impl Sema:
             i = i - 1
         -1
 
-    fn generic_fn_node_matches_symbol(node: i32, sym: i32, target: str) -> i32:
+    fn generic_fn_node_matches_symbol(node: i32, sym: i32, target: &str) -> i32:
         if node == 0:
             return 0
         if self.ast.kind(node) != NodeKind.NK_FN_DECL:
@@ -6050,7 +6105,7 @@ impl Sema:
 
         var fn_name = self.extract_decl_name_after(node, "fn")
         if fn_name.len() == 0:
-            fn_name = self.pool_resolve_symbol(parsed)
+            fn_name = with_str_clone_ref(self.pool_resolve_symbol(parsed))
         for ci in 0..fn_name.len() as i32:
             if fn_name.byte_at(ci as i64) == 46:
                 let owner_name = fn_name.slice(0, ci as i64)
@@ -6183,10 +6238,6 @@ impl Sema:
             return 0
         1
 
-    mut fn fn_clause_body_symbol_at(dispatch_sym: i32, decl_index: i32) -> i32:
-        let base = self.pool_resolve(dispatch_sym)
-        self.pool_intern(base ++ "$clause$" ++ f"{decl_index}")
-
     fn fn_clause_group_index(dispatch_sym: i32) -> i32:
         if self.fn_clause_group_lookup.contains(dispatch_sym):
             return self.fn_clause_group_lookup.get(dispatch_sym).unwrap()
@@ -6258,10 +6309,10 @@ impl Sema:
 
 // ── Utility functions ────────────────────────────────────────────
 
-fn sema_str_has_data(text: str) -> i32:
+fn sema_str_has_data(text: &str) -> i32:
     if text.len() <= 0:
         return 0
-    let ptr_ptr = &text as *const *const u8
+    let ptr_ptr = unsafe *(&text as *const *const *const u8)
     if ptr_ptr as i64 == 0:
         return 0
     let data_ptr = unsafe *ptr_ptr
@@ -6269,7 +6320,7 @@ fn sema_str_has_data(text: str) -> i32:
         return 0
     1
 
-fn sema_str_contains_char(text: str, needle: i32) -> i32:
+fn sema_str_contains_char(text: &str, needle: i32) -> i32:
     if sema_str_has_data(text) == 0:
         return 0
     var i = 0
@@ -6281,7 +6332,7 @@ fn sema_str_contains_char(text: str, needle: i32) -> i32:
 
 // ── "Did you mean?" suggestions ─────────────────────────────────
 
-fn sema_levenshtein(a: str, b: str, max: i32) -> i32:
+fn sema_levenshtein(a: &str, b: &str, max: i32) -> i32:
     let al = a.len() as i32
     let bl = b.len() as i32
     if al == 0: return bl
@@ -6311,7 +6362,7 @@ fn sema_levenshtein(a: str, b: str, max: i32) -> i32:
     prev.get(bl as i64)
 
 impl Sema:
-    fn suggest_name(target: str, node: i32) -> str:
+    fn suggest_name(target: &str, node: i32) -> str:
         if target.len() == 0: return ""
         let max_dist = if target.len() as i32 <= 3: 1 else: 2
         var best_name = ""
@@ -6324,7 +6375,7 @@ impl Sema:
                 let d = sema_levenshtein(target, name, max_dist)
                 if d < best_dist:
                     best_dist = d
-                    best_name = name
+                    best_name = with_str_clone_ref(name)
         // Search function signatures
         for si in 0..self.sig_names.len():
             let sym = self.sig_names.get(si)
@@ -6334,10 +6385,10 @@ impl Sema:
                     let d = sema_levenshtein(target, name, max_dist)
                     if d < best_dist:
                         best_dist = d
-                        best_name = name
+                        best_name = with_str_clone_ref(name)
         best_name
 
-    fn suggest_type_name(target: str, node: i32) -> str:
+    fn suggest_type_name(target: &str, node: i32) -> str:
         if target.len() == 0 or sema_str_has_data(target) == 0:
             return ""
         let max_dist = if target.len() as i32 <= 3: 1 else: 2
@@ -6354,10 +6405,10 @@ impl Sema:
                         let d = sema_levenshtein(target, name, max_dist)
                         if d < best_dist:
                             best_dist = d
-                            best_name = name
+                            best_name = with_str_clone_ref(name)
         best_name
 
-    mut fn emit_error_with_suggestion(msg: str, node: i32, suggestion: str, origin_file: str = __FILE__, origin_line: u32 = __LINE__, origin_fn: str = __FN__):
+    mut fn emit_error_with_suggestion(msg: &str, node: i32, suggestion: &str, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):
         if self.suppress_errors != 0:
             return
         let start = self.ast.get_start(node)
@@ -6564,7 +6615,7 @@ impl Sema:
 
     // Codegen queries (text-keyed: codegen and sema intern in different
     // pools). Returns the row index into the dyn_impl flat vecs, or -1.
-    fn dyn_impl_method_row(concrete_resolved: i32, trait_text: str, method_text: str) -> i32:
+    fn dyn_impl_method_row(concrete_resolved: i32, trait_text: &str, method_text: &str) -> i32:
         let trait_sym = self.pool_lookup_symbol(trait_text)
         if trait_sym == 0:
             return -1
@@ -6881,8 +6932,12 @@ impl Sema:
             return 1
         let resolved = self.resolve_alias(tid)
         let tk = self.get_type_kind(resolved)
-        if tk == TypeKind.TY_ERR or tk == TypeKind.TY_INT or tk == TypeKind.TY_FLOAT or tk == TypeKind.TY_BOOL or tk == TypeKind.TY_VOID or tk == TypeKind.TY_NEVER or tk == TypeKind.TY_STR:
+        if tk == TypeKind.TY_ERR or tk == TypeKind.TY_INT or tk == TypeKind.TY_FLOAT or tk == TypeKind.TY_BOOL or tk == TypeKind.TY_VOID or tk == TypeKind.TY_NEVER:
             return 1
+        // #747 / D28 ruling 1: str owns its buffer — moves, not copies.
+        // The explicit arm matters: this function's tail DEFAULTS to Copy.
+        if tk == TypeKind.TY_STR:
+            return 0
         if tk == TypeKind.TY_PTR or tk == TypeKind.TY_REF or tk == TypeKind.TY_FN or tk == TypeKind.TY_EXTERN_FN or tk == TypeKind.TY_GENERIC_FN:
             return 1
         if tk == TypeKind.TY_STRUCT:

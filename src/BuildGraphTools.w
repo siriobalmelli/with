@@ -1,6 +1,7 @@
 // BuildGraphTools -- typed host tool resolution for build graph nodes.
 
-extern fn with_getenv_str(name: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_getenv_str(name: &str) -> str
 extern fn with_sysinfo_os() -> str
 extern fn with_sysinfo_arch() -> str
 
@@ -13,17 +14,17 @@ pub type BuildTool {
     env_name: str,
 }
 
-pub fn build_graph_tool_from_env(env_name: str, fallback: str) -> str:
+pub fn build_graph_tool_from_env(env_name: &str, fallback: &str) -> str:
     let value = with_getenv_str(env_name)
     if value.len() > 0:
         return value
-    fallback
+    with_str_clone_ref(fallback)
 
-pub fn build_graph_tool(name: str, env_name: str, fallback: str) -> BuildTool:
+pub fn build_graph_tool(name: &str, env_name: &str, fallback: &str) -> BuildTool:
     BuildTool {
-        name: name,
+        name: with_str_clone_ref(name),
         executable: build_graph_tool_from_env(env_name, fallback),
-        env_name: env_name,
+        env_name: with_str_clone_ref(env_name),
     }
 
 pub fn build_graph_cc_tool() -> BuildTool:

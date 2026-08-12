@@ -2,8 +2,8 @@ use Compilation
 
 extern fn with_arg_count() -> i32
 extern fn with_arg_at(idx: i32) -> str
-extern fn with_eprint(s: str) -> Unit
-extern fn with_write(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
+extern fn with_write(s: &str) -> Unit
 extern fn exit(code: i32) -> Unit
 extern fn with_raise_stack_limit() -> Unit
 extern fn with_install_interrupt_handlers() -> Unit
@@ -39,7 +39,7 @@ fn main -> Unit:
     with_eprint("error: bootstrap recovery entry supports only build/check/version/help")
     exit(1)
 
-fn has_output_prefix(arg: str) -> bool:
+fn has_output_prefix(arg: &str) -> bool:
     if arg.len() < 9:
         return false
     arg.slice(0, 9) == "--output="

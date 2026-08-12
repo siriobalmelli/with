@@ -148,8 +148,15 @@ impl Default for str:
     fn default() -> str:
         ""
 
+impl Clone for str:
+    // Self-contained materialization (`++ ""`): .to_owned() lives in
+    // std.string (absent under --no-std) and &str method dispatch to str
+    // impls is #762; concat lowers through the emitted intrinsics in
+    // every mode.
+    fn clone(self: &Self) -> str: self ++ ""
+
 impl Eq for str:
-    fn eq(self: &Self, other: str) -> bool: *self == other
+    fn eq(self: &Self, other: &str) -> bool: *self == other
 
 impl Eq for i64:
     fn eq(self: &Self, other: i64) -> bool: *self == other
@@ -179,7 +186,7 @@ impl Ord for bool:
         1
 
 impl Ord for str:
-    fn cmp(self: &Self, other: str) -> i32:
+    fn cmp(self: &Self, other: &str) -> i32:
         let value = *self
         var i = 0
         let left_len = value.len()

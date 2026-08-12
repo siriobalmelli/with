@@ -21,14 +21,15 @@ use TargetSpec
 use AnalysisTypes
 
 extern fn exit(code: i32) -> Unit
-extern fn with_fs_read_file(path: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
 extern fn with_vec_free(v: *mut u8) -> Unit
 extern fn with_hashmap_free(map: *mut u8) -> Unit
 extern fn with_parse_float(s: str) -> f64
-extern fn with_eprint(s: str) -> Unit
-extern fn with_getenv_str(name: str) -> str
-extern fn with_str_hash(s: str) -> i64
+extern fn with_eprint(s: &str) -> Unit
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_str_hash(s: &str) -> i64
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn str_from_byte(b: i32) -> str
 extern fn with_codegen_loop_set_break(idx: i32, bb: i64) -> Unit
 extern fn with_codegen_loop_set_continue(idx: i32, bb: i64) -> Unit
@@ -75,7 +76,9 @@ enum AtomicOrdering: i32:
 // Runtime helpers
 extern fn with_str_concat(a: str, b: str) -> str
 extern fn with_str_eq(a: str, b: str) -> i32
-extern fn with_write(s: str) -> Unit
+extern fn with_write(s: &str) -> Unit
+extern fn with_sysinfo_os() -> str
+extern fn with_sysinfo_arch() -> str
 
 // ── Codegen state ─────────────────────────────────────────────────
 
@@ -494,7 +497,7 @@ type LoopState {
 
 // ── Codegen lifecycle ─────────────────────────────────────────────
 
-fn Codegen.init(module_name: str) -> Codegen:
+fn Codegen.init(module_name: &str) -> Codegen:
     Codegen.init_with_opt(module_name, 0)
 
 // D17/#697 phase take-and-return (the lower_module pattern): codegen OWNS the
@@ -520,7 +523,7 @@ extend Codegen:
         self.intern = InternPool.init()
         i
 
-fn Codegen.init_with_opt_and_intern(module_name: str, opt_level: i32, intern: InternPool, sema: Sema) -> Codegen:
+fn Codegen.init_with_opt_and_intern(module_name: &str, opt_level: i32, intern: InternPool, sema: Sema) -> Codegen:
     var cg = Codegen.init_with_opt(module_name, opt_level)
     let overflow_mode = sema.overflow_mode
     cg.intern = intern
@@ -529,7 +532,7 @@ fn Codegen.init_with_opt_and_intern(module_name: str, opt_level: i32, intern: In
     cg.tracked_input_root = with_str_clone(cg.sema.tracked_input_root)
     let tracked_paths: Vec[str] = Vec.new()
     for tpi in 0..cg.sema.tracked_input_paths.len() as i32:
-        tracked_paths.push(cg.sema.tracked_input_paths.get(tpi as i64))
+        tracked_paths.push(with_str_clone_ref(cg.sema.tracked_input_paths.get(tpi as i64)))
     cg.tracked_input_paths = tracked_paths
     cg.capture_sema_symbol_texts()
     // Pre-intern dispatch symbols for O(1) comparisons
@@ -584,15 +587,15 @@ fn Codegen.init_with_opt_and_intern(module_name: str, opt_level: i32, intern: In
     cg
 
 impl Codegen:
-    mut fn enable_analysis(query: str):
+    mut fn enable_analysis(query: &str):
         self.analysis_enabled = 1
-        self.analysis_query = query
+        self.analysis_query = with_str_clone_ref(query)
 
     fn analysis_add(fact: AnalysisFact):
         if self.analysis_enabled != 0:
             self.analysis_report.add(move fact)
 
-    fn analysis_fail(message: str):
+    fn analysis_fail(message: &str):
         if self.analysis_enabled != 0:
             self.analysis_report.fail(message)
 
@@ -660,7 +663,7 @@ impl Codegen:
                 fact.type_id = self.sema.sig_param_type(si, pi)
                 fact.effects = self.sema.sig_param_effect(si, pi)
                 fact.flags = 1 | (if ref_table: 2 else: 0) | (if llvm_pointer: 4 else: 0) | (if function != 0: 8 else: 0)
-                fact.name = self.sema.pool_resolve(sema_sym)
+                fact.name = with_str_clone_ref(self.sema.pool_resolve(sema_sym))
                 fact.detail = f"share-place declaration emitted={function != 0} ref-table={ref_table} llvm-pointer={llvm_pointer}"
                 let selected = self.analysis_fact_selected(&fact)
                 self.analysis_add(move fact)
@@ -701,7 +704,7 @@ impl Codegen:
             fact.symbol = sema_sym
             fact.type_id = sema_ret
             fact.flags = 16 | (if sema_returns_value: 32 else: 0) | (if llvm_is_void: 64 else: 0) | (if has_sret: 128 else: 0)
-            fact.name = self.sema.pool_resolve(sema_sym)
+            fact.name = with_str_clone_ref(self.sema.pool_resolve(sema_sym))
             fact.detail = f"return-shape sema-ret={sema_ret} llvm-void={llvm_is_void} sret={has_sret}"
             let selected = self.analysis_fact_selected(&fact)
             self.analysis_add(move fact)
@@ -731,7 +734,7 @@ impl Codegen:
                 let count = body.call_arg_counts.get(args_id as i64)
                 for ai in 0..count:
                     if not self.analysis_has_call_argument(body.fn_sym, args_id, ai):
-                        let name = if body.call_mono_sym(args_id) != 0: self.sema.pool_resolve(body.call_mono_sym(args_id)) else: "<unresolved>"
+                        let name = if body.call_mono_sym(args_id) != 0: with_str_clone_ref(self.sema.pool_resolve(body.call_mono_sym(args_id))) else: "<unresolved>"
                         self.analysis_fail(f"call {name} body={body.fn_sym} bb={bb} args={args_id} param={ai}: no Codegen marshalling fact")
 
     mut fn record_codegen_call_argument(body: &MirBody, args_id: i32, operand: i32, param_index: i32, strategy: AnalysisMarshalStrategy, raw: i64, marshaled: i64):
@@ -739,7 +742,7 @@ impl Codegen:
             return
         let sig = body.call_sig_index(args_id)
         let mono = body.call_mono_sym(args_id)
-        let name = if mono != 0: self.sema.pool_resolve(mono) else if sig >= 0 and sig < self.sema.sig_names.len() as i32: self.sema.pool_resolve(self.sema.sig_names.get(sig as i64)) else: "<unresolved>"
+        let name = if mono != 0: with_str_clone_ref(self.sema.pool_resolve(mono)) else if sig >= 0 and sig < self.sema.sig_names.len() as i32: with_str_clone_ref(self.sema.pool_resolve(self.sema.sig_names.get(sig as i64))) else: "<unresolved>"
         let op_kind = if operand >= 0 and operand < body.operand_kinds.len() as i32: body.operand_kinds.get(operand as i64) else: -1
         let share = sig >= 0 and param_index >= 0 and param_index < self.sema.sig_get_param_count(sig) and self.sema.sig_param_uses_value_ref_abi(sig, param_index) != 0
         // Extern "C" callees marshal per the C ABI, not the With ref-table
@@ -757,7 +760,7 @@ impl Codegen:
         fact.type_id = self.mir_operand_sema_type(body, operand)
         fact.effects = if sig >= 0 and param_index >= 0 and param_index < self.sema.sig_get_param_count(sig): self.sema.sig_param_effect(sig, param_index) else: 0
         fact.flags = (strategy as i32) | ((op_kind & 255) << 8) | (if share: 65536 else: 0) | (if ref_table: 131072 else: 0)
-        fact.name = name
+        fact.name = with_str_clone_ref(name)
         // Strategy verdicts are derived before the enum's last use below;
         // analysis_marshal_strategy_name consumes it.
         let strategy_unmarshaled = strategy == AnalysisMarshalStrategy.DirectValue or strategy == AnalysisMarshalStrategy.MissingSignature
@@ -789,7 +792,7 @@ impl Codegen:
         fact.type_id = if param_index + 1 < body.local_type_ids.len() as i32: body.local_type_ids.get((param_index + 1) as i64) else: 0
         fact.effects = if sig >= 0 and param_index < self.sema.sig_get_param_count(sig): self.sema.sig_param_effect(sig, param_index) else: 0
         fact.flags = (strategy as i32) | (if share: 65536 else: 0) | (if ref_table: 131072 else: 0) | (if incoming_ptr: 262144 else: 0)
-        fact.name = name
+        fact.name = with_str_clone_ref(name)
         // Derived before analysis_marshal_strategy_name consumes the enum.
         let strategy_not_alias = strategy != AnalysisMarshalStrategy.CalleePlaceAlias
         fact.detail = analysis_marshal_strategy_name(strategy) ++ f" incoming={incoming} storage={storage} sig={sig} sema-share={share} ref-table={ref_table} llvm-pointer={incoming_ptr}"
@@ -800,7 +803,7 @@ impl Codegen:
         if selected and share and strategy_not_alias:
             self.analysis_fail(f"callee {name} sig={sig} param={param_index}: share-place parameter does not alias the incoming caller place")
 
-fn Codegen.init_with_opt(module_name: str, opt_level: i32) -> Codegen:
+fn Codegen.init_with_opt(module_name: &str, opt_level: i32) -> Codegen:
     wl_init_native_target()
     wl_init_native_asm_printer()
     wl_init_native_asm_parser()
@@ -1065,7 +1068,7 @@ impl Codegen:
             wl_print_ir(self.llmod)
             with_eprint("===== END POST-OPTIMIZE LLVM IR =====\n")
 
-    fn emit_object_file(path: str) -> i32:
+    fn emit_object_file(path: &str) -> i32:
         wl_emit_object(self.target_machine, self.llmod, path)
 
     fn print_ir():
@@ -1099,7 +1102,7 @@ impl Codegen:
         var dir = "."
         // #747: an owned copy — plain field assignment would move source_file
         // out of self and poison the slice reads below.
-        var file = with_str_clone(self.source_file)
+        var file = with_str_clone_ref(self.source_file)
         if last_slash >= 0:
             dir = self.source_file.slice(0, last_slash as i64)
             file = self.source_file.slice((last_slash + 1) as i64, self.source_file.len())
@@ -1315,7 +1318,7 @@ impl Codegen:
     // Non-empty when a would-be-internal planned fn is instead promoted
     // external under a collision-proof name; identical in every unit so
     // cross-unit calls resolve at link time (#681, the __wcu$ scheme).
-    fn unit_promoted_name(sym: i32, effective_name: str) -> str:
+    fn unit_promoted_name(sym: i32, effective_name: &str) -> str:
         if self.unit_total <= 1:
             return ""
         let ridx = self.unit_rename_index.get(sym)
@@ -1591,7 +1594,7 @@ impl Codegen:
         let raw = with_getenv_str("WITH_DEBUG_FALLBACK")
         raw.len() > 0 and raw != "0"
 
-    fn debug_type_layout_field(owner_name: str, field_index: i32, field_name: i32, type_node: i32, resolved_ty: i64):
+    fn debug_type_layout_field(owner_name: &str, field_index: i32, field_name: i32, type_node: i32, resolved_ty: i64):
         if not self.debug_type_layout_enabled():
             return
         let node_kind = if type_node != 0: self.pool.kind(type_node) else: -1
@@ -1635,7 +1638,7 @@ impl Codegen:
 
     // Consumes: fields move back into self (see restore_label_registry).
     mut fn restore_loop_state(state: LoopState):
-        self.loop_break_bbs = state.break_bbs
+        self.loop_break_bbs = move state.break_bbs
         self.loop_continue_bbs = state.continue_bbs
         self.loop_result_allocas = state.result_allocas
         self.loop_labels = state.labels
@@ -1666,7 +1669,7 @@ impl Codegen:
     fn loop_result_alloca_at(idx: i32) -> i64:
         with_codegen_loop_get_result(idx)
 
-    fn debug_call_coerce_failure(context: str, call_node: i32, arg_index: i32, arg_node: i32, actual_val: i64, expected_ty: i64) -> Unit:
+    fn debug_call_coerce_failure(context: &str, call_node: i32, arg_index: i32, arg_node: i32, actual_val: i64, expected_ty: i64) -> Unit:
         if not self.debug_call_coerce_enabled():
             return
         var msg = "[call-coerce] " ++ context
@@ -1692,7 +1695,7 @@ impl Codegen:
                 msg = msg ++ f" arg_text={arg_text}"
         with_eprint(msg)
 
-    mut fn enforce_coerced_type(value: i64, expected_ty: i64, context: str) -> i64:
+    mut fn enforce_coerced_type(value: i64, expected_ty: i64, context: &str) -> i64:
         if value == 0 or expected_ty == 0:
             return value
 
@@ -1879,7 +1882,7 @@ impl Codegen:
         wl_build_store(self.builder, arg_val, tmp)
         tmp
 
-    mut fn coerce_call_arg_to_param(arg_node: i32, arg_val: i64, param_ty: i64, call_context: str, call_node: i32, arg_index: i32) -> i64:
+    mut fn coerce_call_arg_to_param(arg_node: i32, arg_val: i64, param_ty: i64, call_context: &str, call_node: i32, arg_index: i32) -> i64:
         if arg_val == 0 or param_ty == 0:
             return arg_val
 
@@ -2083,7 +2086,7 @@ impl Codegen:
                             return alias_known.unwrap()
         0
 
-    mut fn coerce_call_args_for_fn_value(fn_sym: i32, fn_val: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> Vec[i64]:
+    mut fn coerce_call_args_for_fn_value(fn_sym: i32, fn_val: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: &str, call_node: i32) -> Vec[i64]:
         let out: Vec[i64] = Vec.new()
         let param_count = wl_count_params(fn_val)
         let sret_opt = self.extern_fn_has_sret.get(fn_sym)
@@ -2094,6 +2097,8 @@ impl Codegen:
         let byval_types_opt = self.extern_fn_byval_types.get(fn_sym)
         if byval_types_opt.is_some():
             byval_types = vec_copy_i64(byval_types_opt.unwrap())
+        let direct_opt = self.extern_fn_direct_params.get(fn_sym)
+        let direct_mask = if direct_opt.is_some(): direct_opt.unwrap() as i64 else: 0
         let param_offset = if has_sret != 0: 1 else: 0
         for ai in 0..arg_count:
             var arg_val: i64 = args.get(ai as i64)
@@ -2114,6 +2119,15 @@ impl Codegen:
                             arg_val = self.build_dyn_trait_value_from_ptr(arg_val, info.type_sym, trait_sym)
                         else:
                             arg_val = self.build_dyn_trait_value(arg_val, info.type_sym, trait_sym)
+                // Read the ABI transform recorded when the declaration was made.
+                // A @[link_name] extern can occupy the same canonical symbol as
+                // an internal runtime helper. On Darwin arm64 its small aggregate
+                // parameter is physically an LLVM array, so coercing the native
+                // value directly would reject str -> array. Pack through the one
+                // recorded C-ABI descriptor before ordinary type coercion.
+                if (direct_mask & ((1 as i64) << (ai as u32))) != 0:
+                    out.push(self.c_abi_pack_direct_value(arg_val, param_ty))
+                    continue
                 arg_val = self.coerce_call_arg_to_param(arg_node, arg_val, param_ty, call_context, call_node, ai)
                 if (byval_mask & ((1 as i64) << (ai as u32))) != 0:
                     var indirect_ty = param_ty
@@ -2127,7 +2141,7 @@ impl Codegen:
             out.push(arg_val)
         out
 
-    mut fn build_call_fn_value(fn_sym: i32, fn_val: i64, fn_ty: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> i64:
+    mut fn build_call_fn_value(fn_sym: i32, fn_val: i64, fn_ty: i64, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: &str, call_node: i32) -> i64:
         let sret_opt = self.extern_fn_has_sret.get(fn_sym)
         let has_sret = if sret_opt.is_some(): sret_opt.unwrap() else: 0
         var sret_ty: i64 = 0
@@ -2155,6 +2169,12 @@ impl Codegen:
         self.apply_c_abi_call_attrs(call_val, has_sret, sret_ty, byval_mask, byval_types, arg_count, 0)
         if has_sret != 0 and sret_buf != 0 and sret_ty != 0:
             return wl_build_load(self.builder, sret_ty, sret_buf)
+        var direct_ret_ty: i64 = 0
+        let direct_ret_opt = self.extern_fn_direct_ret_type.get(fn_sym)
+        if direct_ret_opt.is_some():
+            direct_ret_ty = direct_ret_opt.unwrap() as i64
+        if direct_ret_ty != 0:
+            return self.c_abi_unpack_direct_value(call_val, direct_ret_ty)
         call_val
 
     fn mir_call_context(body: &MirBody, callee_operand: i32) -> str:
@@ -2330,34 +2350,31 @@ impl Codegen:
         wl_const_int(wl_i32_type(self.context), 0, 0)
 
     fn get_with_str_eq_fn_type() -> i64:
-        let str_ty = self.resolve_named_type(self.intern.intern("str"))
         let param_types: Vec[i64] = Vec.new()
-        param_types.push(str_ty)
-        param_types.push(str_ty)
+        param_types.push(wl_ptr_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
         wl_function_type(wl_i32_type(self.context), vec_data_i64(&param_types), 2, 0)
 
     mut fn ensure_with_str_eq_declared() -> i64:
-        let str_ty = self.resolve_named_type(self.intern.intern("str"))
         let param_types: Vec[i64] = Vec.new()
-        param_types.push(str_ty)
-        param_types.push(str_ty)
-        self.ensure_internal_runtime_fn("with_str_eq", param_types, 2, wl_i32_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
+        self.ensure_internal_runtime_fn("with_str_eq_ref", param_types, 2, wl_i32_type(self.context))
 
     mut fn ensure_with_str_cmp_declared() -> i64:
-        let str_ty = self.resolve_named_type(self.intern.intern("str"))
         let param_types: Vec[i64] = Vec.new()
-        param_types.push(str_ty)
-        param_types.push(str_ty)
-        self.ensure_internal_runtime_fn("with_str_cmp", param_types, 2, wl_i32_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
+        param_types.push(wl_ptr_type(self.context))
+        self.ensure_internal_runtime_fn("with_str_cmp_ref", param_types, 2, wl_i32_type(self.context))
 
     mut fn compare_str_eq(lhs: i64, rhs: i64, op: i32) -> i64:
         let fn_val = self.ensure_with_str_eq_declared()
-        let fn_sym = self.intern.intern("with_str_eq")
+        let fn_sym = self.intern.intern("with_str_eq_ref")
         let fn_ty = self.fn_fn_types.get(fn_sym).unwrap() as i64
         let args: Vec[i64] = Vec.new()
-        args.push(lhs)
-        args.push(rhs)
-        let cmp = self.build_call_fn_value(fn_sym, fn_val, fn_ty, -1, 0, args, 2, "with_str_eq", 0)
+        args.push(self.build_str_ref_from_value(lhs))
+        args.push(self.build_str_ref_from_value(rhs))
+        let cmp = self.build_call_fn_value(fn_sym, fn_val, fn_ty, -1, 0, args, 2, "with_str_eq_ref", 0)
         let zero = wl_const_int(wl_i32_type(self.context), 0, 0)
         if op == BinaryOp.OP_EQ:
             return wl_build_icmp(self.builder, wl_int_ne(), cmp, zero)
@@ -2365,12 +2382,12 @@ impl Codegen:
 
     mut fn compare_str_order(lhs: i64, rhs: i64, op: i32) -> i64:
         let fn_val = self.ensure_with_str_cmp_declared()
-        let fn_sym = self.intern.intern("with_str_cmp")
+        let fn_sym = self.intern.intern("with_str_cmp_ref")
         let fn_ty = self.fn_fn_types.get(fn_sym).unwrap() as i64
         let args: Vec[i64] = Vec.new()
-        args.push(lhs)
-        args.push(rhs)
-        let cmp = self.build_call_fn_value(fn_sym, fn_val, fn_ty, -1, 0, args, 2, "with_str_cmp", 0)
+        args.push(self.build_str_ref_from_value(lhs))
+        args.push(self.build_str_ref_from_value(rhs))
+        let cmp = self.build_call_fn_value(fn_sym, fn_val, fn_ty, -1, 0, args, 2, "with_str_cmp_ref", 0)
         let zero = wl_const_int(wl_i32_type(self.context), 0, 0)
         if op == BinaryOp.OP_LT:
             return wl_build_icmp(self.builder, wl_int_slt(), cmp, zero)
@@ -2506,10 +2523,10 @@ fn vec_copy_i64(src: &Vec[i64]) -> Vec[i64]:
         out.push(src.get(i as i64))
     out
 
-fn codegen_owned_text(text: str) -> str:
+fn codegen_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
-    with_str_clone(text)
+    with_str_clone_ref(text)
 
 impl Codegen:
     mut fn capture_sema_symbol_texts():
@@ -2520,10 +2537,10 @@ impl Codegen:
 
     fn sema_symbol_text(sym: i32) -> str:
         if sym > 0 and sym < self.sema_symbol_texts.len() as i32:
-            return self.sema_symbol_texts.get(sym as i64)
+            return with_str_clone_ref(self.sema_symbol_texts.get(sym as i64))
         if sym > 0 and sym < self.sema.pool.state.symbol_texts.len() as i32:
-            return self.sema.pool.state.symbol_texts.get(sym as i64)
-        self.sema.pool_resolve(sym)
+            return with_str_clone_ref(self.sema.pool.state.symbol_texts.get(sym as i64))
+        with_str_clone_ref(self.sema.pool_resolve(sym))
 
     // ── Resolve type expression → LLVM type ───────────────────────────
 
@@ -2719,8 +2736,8 @@ impl Codegen:
         // enclosing function and method owner: an out-of-context node id is
         // undiagnosable (this fires for cross-pool id leaks, where the kind is
         // whatever happens to live at that id in the backend pool).
-        let ctx_fn = if self.current_function_name_sym != 0: self.intern.resolve(self.current_function_name_sym) else: "<module>"
-        let ctx_owner = if self.current_method_owner_sym != 0: self.intern.resolve(self.current_method_owner_sym) else: ""
+        let ctx_fn = if self.current_function_name_sym != 0: with_str_clone_ref(self.intern.resolve(self.current_function_name_sym)) else: "<module>"
+        let ctx_owner = if self.current_method_owner_sym != 0: with_str_clone_ref(self.intern.resolve(self.current_method_owner_sym)) else: ""
         with_eprint(f"warning: [type-resolve] unhandled type node kind={kind} node={type_node} span={self.pool.get_start(type_node)}..{self.pool.get_end(type_node)} in={ctx_fn} owner={ctx_owner}")
         self.type_fallback()
 
@@ -2776,8 +2793,8 @@ impl Codegen:
             let binding_sym = self.type_binding_syms.get(i as i64)
             let want_text = self.intern.resolve(sym)
             let binding_text = self.intern.resolve(binding_sym)
-            let sema_want_text = if want_text.len() > 0: want_text else: self.sema_symbol_text(sym)
-            let sema_binding_text = if binding_text.len() > 0: binding_text else: self.sema_symbol_text(binding_sym)
+            let sema_want_text = if want_text.len() > 0: with_str_clone_ref(want_text) else: self.sema_symbol_text(sym)
+            let sema_binding_text = if binding_text.len() > 0: with_str_clone_ref(binding_text) else: self.sema_symbol_text(binding_sym)
             if binding_sym == sym or (sema_want_text.len() > 0 and sema_want_text == sema_binding_text):
                 return self.type_binding_types.get(i as i64)
         // Unsupported
@@ -2956,7 +2973,7 @@ impl Codegen:
             return 0
 
         let base_name = self.sema_symbol_text(base_sym)
-        let enum_name = if base_name.len() > 0: base_name else: self.intern.resolve(cg_base_sym)
+        let enum_name = if base_name.len() > 0: base_name else: with_str_clone_ref(self.intern.resolve(cg_base_sym))
         let mono_name = f"{enum_name}__enuminst_{resolved}"
         let mono_sym = self.intern.intern(mono_name)
         let enum_type = wl_struct_create_named(self.context, mono_name)
@@ -3652,9 +3669,9 @@ impl Codegen:
             let decl_sym = self.pool.get_data0(decl)
             if decl_sym != type_sym:
                 let decl_name_raw = self.intern.resolve(decl_sym)
-                let decl_name = if decl_name_raw.len() > 0: decl_name_raw else: self.sema_symbol_text(decl_sym)
+                let decl_name = if decl_name_raw.len() > 0: with_str_clone_ref(decl_name_raw) else: self.sema_symbol_text(decl_sym)
                 let type_name_raw = self.intern.resolve(type_sym)
-                let type_name = if type_name_raw.len() > 0: type_name_raw else: self.sema_symbol_text(type_sym)
+                let type_name = if type_name_raw.len() > 0: with_str_clone_ref(type_name_raw) else: self.sema_symbol_text(type_sym)
                 if decl_name.len() == 0 or type_name.len() == 0 or decl_name != type_name:
                     continue
             let sub_kind = type_decl_sub_kind(self.pool.get_data2(decl))
@@ -3672,7 +3689,7 @@ impl Codegen:
         let extra_start = self.pool.get_data1(type_node)
         let field_count = self.pool.get_extra(extra_start)
 
-        let name_str = self.intern.resolve(name_sym)
+        let name_str: str = with_str_clone_ref(self.intern.resolve(name_sym))
         if not self.struct_type_map.get(name_sym).is_some():
             self.predeclare_struct_type(name_sym)
         let idx: i32 = self.struct_type_map.get(name_sym).unwrap()
@@ -3822,7 +3839,7 @@ impl Codegen:
         // Field access uses bitcast of pointer to field type.
         let extra_start = self.pool.get_data1(type_node)
         let field_count = self.pool.get_extra(extra_start)
-        let name_str = self.intern.resolve(name_sym)
+        let name_str: str = with_str_clone_ref(self.intern.resolve(name_sym))
 
         if not self.struct_type_map.get(name_sym).is_some():
             self.predeclare_struct_type(name_sym)
@@ -3891,7 +3908,7 @@ impl Codegen:
     mut fn declare_enum_type(name_sym: i32, type_node: i32):
         let extra_start = self.pool.get_data1(type_node)
         let variant_count = self.pool.get_extra(extra_start)
-        let enum_name = self.intern.resolve(name_sym)
+        let enum_name: str = with_str_clone_ref(self.intern.resolve(name_sym))
 
         // Find the largest payload to determine enum struct size.
         // Enum is { i32 tag, [N x i8] payload }.
@@ -4053,7 +4070,7 @@ impl Codegen:
     fn function_symbol_name(sym: i32) -> str:
         let name = self.intern.resolve(sym)
         if name.len() > 0:
-            return name
+            return with_str_clone_ref(name)
         f"__fn_{sym}"
 
 fn codegen_hash_name_component(value: i64) -> str:
@@ -4061,11 +4078,11 @@ fn codegen_hash_name_component(value: i64) -> str:
         return "n" ++ f"{0 - value}"
     f"{value}"
 
-fn codegen_canonical_module_path(path: str) -> str:
+fn codegen_canonical_module_path(path: &str) -> str:
     if path.len() == 0 or path == "<unknown>":
-        return path
+        return with_str_clone_ref(path)
     if path.byte_at(0) == 60:
-        return path
+        return with_str_clone_ref(path)
     if path.byte_at(0) == 47:
         return resolve_normalize_path(path)
     let cwd = with_getenv_str("PWD")
@@ -4073,7 +4090,7 @@ fn codegen_canonical_module_path(path: str) -> str:
         return resolve_normalize_path(path)
     resolve_join(cwd, path)
 
-fn codegen_is_runtime_source_file(source_path: str) -> bool:
+fn codegen_is_runtime_source_file(source_path: &str) -> bool:
     source_path.starts_with("rt/") or source_path.contains("/rt/") or
         source_path.starts_with("rt\\") or source_path.contains("\\rt\\") or
         source_path == "out/gen/compat_runtime.w" or
@@ -4081,7 +4098,7 @@ fn codegen_is_runtime_source_file(source_path: str) -> bool:
         source_path.ends_with("/out/gen/compat_runtime.w") or
         source_path.ends_with("\\out\\gen\\compat_runtime.w")
 
-fn codegen_is_runtime_abi_symbol(base_name: str) -> bool:
+fn codegen_is_runtime_abi_symbol(base_name: &str) -> bool:
     if base_name.starts_with("with_") or base_name.starts_with("rt_") or base_name.starts_with("wl_"):
         return true
     base_name == "__error" or base_name == "__open" or
@@ -4090,21 +4107,21 @@ fn codegen_is_runtime_abi_symbol(base_name: str) -> bool:
         base_name == "i32_to_str" or base_name == "i64_to_string" or
         base_name == "str_from_byte"
 
-fn codegen_preserve_runtime_link_name(source_path: str, base_name: str) -> bool:
+fn codegen_preserve_runtime_link_name(source_path: &str, base_name: &str) -> bool:
     codegen_is_runtime_source_file(source_path) and codegen_is_runtime_abi_symbol(base_name)
 
 impl Codegen:
-    fn module_link_name_for_path(source_path: str, base_name: str) -> str:
+    fn module_link_name_for_path(source_path: &str, base_name: &str) -> str:
         if self.module_object_mode == 0:
-            return base_name
+            return with_str_clone_ref(base_name)
         if codegen_preserve_runtime_link_name(source_path, base_name):
-            return base_name
+            return with_str_clone_ref(base_name)
         let canonical_path = codegen_canonical_module_path(source_path)
         if canonical_path.len() == 0 or canonical_path == "<unknown>":
-            return base_name
+            return with_str_clone_ref(base_name)
         "__with_mod_" ++ codegen_hash_name_component(with_str_hash(canonical_path)) ++ "__" ++ base_name
 
-    fn current_decl_module_link_name(base_name: str) -> str:
+    fn current_decl_module_link_name(base_name: &str) -> str:
         self.module_link_name_for_path(self.current_decl_source_file, base_name)
 
     fn ident_text_from_node(node: i32) -> str:
@@ -4223,7 +4240,7 @@ impl Codegen:
         let name_sym = self.sema.fn_decl_semantic_symbol_at(fn_node, self.pool.get_data0(fn_node), decl_index)
         let raw_name_str = self.intern.resolve(name_sym)
         let sema_name_str = self.sema_symbol_text(name_sym)
-        let name_str = if sema_name_str.len() > 0: sema_name_str else: raw_name_str
+        let name_str = if sema_name_str.len() > 0: sema_name_str else: with_str_clone_ref(raw_name_str)
         if name_sym == 0:
             return
         let parsed_name = if sema_name_str.len() == 0 and name_str.len() == 0: self.fn_decl_name_from_node(fn_node) else: ""
@@ -4364,8 +4381,10 @@ impl Codegen:
                 pi = pi + 1
                 continue
 
-            // Reference params
-            if p_kind == NodeKind.NK_TYPE_REF:
+            // Reference params. The finalized Sema signature is canonical; the
+            // AST check is only for declarations that have no signature yet.
+            if (sema_sig_idx >= 0 and self.sig_param_is_explicit_ref(sema_sig_idx, pi)) or
+               (sema_sig_idx < 0 and p_kind == NodeKind.NK_TYPE_REF):
                 var ref_ty = self.resolve_type(p_type_node)
                 if ref_ty == 0:
                     ref_ty = wl_ptr_type(self.context)
@@ -4561,6 +4580,15 @@ impl Codegen:
             p_ty = wl_i32_type(self.context)
         p_ty
 
+    fn sig_param_is_explicit_ref(sig_idx: i32, pi: i32) -> bool:
+        if sig_idx < 0 or pi < 0 or pi >= self.sema.sig_get_param_count(sig_idx):
+            return false
+        let ty = self.sema.sig_param_type(sig_idx, pi)
+        if ty <= 0:
+            return false
+        let resolved = self.sema.resolve_alias(ty as TypeId) as i32
+        self.sema.get_type_kind(resolved) == TypeKind.TY_REF
+
     mut fn arg_pass_mode(sig_idx: i32, pi: i32) -> i32:
         if self.sema.sig_param_uses_value_ref_abi(sig_idx, pi) != 0:
             return PM_INDIRECT_PLACE
@@ -4592,8 +4620,10 @@ impl Codegen:
             var p_ty = self.abi_param_source_type(sig_idx, pi)
             // #D6: the prologue reads the single ABI classifier — an IndirectPlace
             // param is a pointer to the caller's place (value_ref_abi / share-place).
-            if self.arg_pass_mode(sig_idx, pi) == PM_INDIRECT_PLACE:
+            let pass_mode = self.arg_pass_mode(sig_idx, pi)
+            if pass_mode == PM_INDIRECT_PLACE:
                 p_ty = wl_ptr_type(self.context)
+            if pass_mode == PM_INDIRECT_PLACE or self.sig_param_is_explicit_ref(sig_idx, pi):
                 self.record_ref_param(cg_sym, pi, param_count)
                 if cg_sym != fn_sym:
                     self.record_ref_param(fn_sym, pi, param_count)
@@ -4715,7 +4745,7 @@ impl Codegen:
         if name_sym <= 0:
             return false
         let raw_name = self.intern.resolve(name_sym)
-        let name_str = if raw_name.len() > 0: raw_name else: self.sema_symbol_text(name_sym)
+        let name_str = if raw_name.len() > 0: with_str_clone_ref(raw_name) else: self.sema_symbol_text(name_sym)
         if name_str.len() == 0:
             return false
         for di in 0..name_str.len() as i32:
@@ -4806,12 +4836,12 @@ impl Codegen:
         let cc_name = self.intern.resolve(cc_sym)
         if cc_name.len() >= 2 and cc_name.byte_at(0) == 34 and cc_name.byte_at(cc_name.len() - 1) == 34:
             return cc_name.slice(1, cc_name.len() - 1)
-        cc_name
+        with_str_clone_ref(cc_name)
 
-    fn fn_uses_c_abi(cc_name: str) -> bool:
+    fn fn_uses_c_abi(cc_name: &str) -> bool:
         cc_name == "c" or (cc_name.len() > 9 and cc_name.slice(0, 9) == "c_export:")
 
-fn codegen_extern_uses_internal_abi(name: str, cc_name: str) -> bool:
+fn codegen_extern_uses_internal_abi(name: &str, cc_name: &str) -> bool:
     if cc_name.len() > 0:
         return false
     codegen_is_runtime_abi_symbol(name)
@@ -5103,6 +5133,7 @@ impl Codegen:
         let ret_type_node = self.pool.fn_meta_ret(meta)
         let param_start = self.pool.fn_meta_param_start(meta)
         let param_count = self.pool.fn_meta_param_count(meta)
+        let sema_sig_idx = self.sema.get_sig(name_sym)
 
         let ret_ty = self.resolve_type(ret_type_node)
         let name_str = self.intern.resolve(name_sym)
@@ -5114,6 +5145,9 @@ impl Codegen:
         for pi in 0..param_count:
             let p_type_node = self.pool.fn_param_type(param_start, pi)
             orig_param_types.push(self.resolve_type(p_type_node))
+            if (sema_sig_idx >= 0 and self.sig_param_is_explicit_ref(sema_sig_idx, pi)) or
+               (sema_sig_idx < 0 and self.pool.kind(p_type_node) == NodeKind.NK_TYPE_REF):
+                self.record_ref_param(name_sym, pi, param_count)
 
         // ABI transformation for C interop on aarch64:
         // - Struct params > 16 bytes → ptr (caller passes pointer to copy)
@@ -5233,7 +5267,7 @@ impl Codegen:
                 self.fn_fn_types.insert(canonical_sym, actual_fn_type)
                 self.record_c_abi_transform(canonical_sym, has_sret, sret_ty, byval_mask, move byval_types, direct_mask, move direct_types, direct_ret_ty)
 
-    fn resolve_callconv(name: str) -> i32:
+    fn resolve_callconv(name: &str) -> i32:
         if name == "c": return wl_cc_c()
         if name == "stdcall": return wl_cc_x86_stdcall()
         if name == "fastcall": return wl_cc_x86_fastcall()
@@ -5266,7 +5300,7 @@ impl Codegen:
             wl_set_global_constant(gv, 1)
         self.module_constants.insert(name_sym, gv)
 
-    fn canonical_extern_name(name: str) -> str:
+    fn canonical_extern_name(name: &str) -> str:
         // c_import may suffix C symbols as "name.<n>" — strip the suffix for linking.
         var dot_pos = -1
         for i in 0..name.len() as i32:
@@ -5283,7 +5317,7 @@ impl Codegen:
                 j = j + 1
             if all_digits:
                 return name.slice(0, dot_pos as i64)
-        name
+        with_str_clone_ref(name)
 
     // ── Detect drop functions ─────────────────────────────────────────
 
@@ -5410,10 +5444,10 @@ impl Codegen:
             return f"s{wl_count_struct_elem_types(ty)}"
         f"t{ty}"
 
-    fn collection_wrapper_name_1(prefix: str, t0: i64) -> str:
+    fn collection_wrapper_name_1(prefix: &str, t0: i64) -> str:
         prefix ++ "." ++ self.deterministic_type_tag(t0)
 
-    fn collection_wrapper_name_2(prefix: str, t0: i64, t1: i64) -> str:
+    fn collection_wrapper_name_2(prefix: &str, t0: i64, t1: i64) -> str:
         prefix ++ "." ++ self.deterministic_type_tag(t0) ++ "." ++ self.deterministic_type_tag(t1)
 
     // Dual-keyed collection type caches (#731): the sema tid preserves
@@ -5594,8 +5628,8 @@ impl Codegen:
             arg_types.push(fallback_ty)
             arg_sema_types.push(self.llvm_type_to_sema_type(fallback_ty))
 
-        let base_name = self.intern.resolve(name_sym)
-        var mangled = base_name
+        let base_name: str = with_str_clone_ref(self.intern.resolve(name_sym))
+        var mangled = with_str_clone_ref(base_name)
         for ti in 0..tp_count:
             let arg_ty = arg_types.get(ti as i64)
             mangled = mangled ++ "__" ++ self.llvm_type_mangle(arg_ty)
@@ -5683,7 +5717,7 @@ impl Codegen:
     fn invalid_concrete_mir_function() -> ConcreteMirFunction:
         ConcreteMirFunction { sym: 0, value: 0, fn_type: 0, sig: -1 }
 
-    mut fn ensure_concrete_mir_function(call_node: i32, recorded_sig: i32, recorded_mono_sym: i32, fallback_sym: i32, label: str) -> ConcreteMirFunction:
+    mut fn ensure_concrete_mir_function(call_node: i32, recorded_sig: i32, recorded_mono_sym: i32, fallback_sym: i32, label: &str) -> ConcreteMirFunction:
         var sema_sym = fallback_sym
         var sig_idx = if sema_sym != 0: self.sema.get_sig(sema_sym) else: -1
         if recorded_mono_sym != 0:
@@ -5776,7 +5810,7 @@ impl Codegen:
         self.gen_function_mir_mono(mono_sym, 0, body)
         ConcreteMirFunction { sym: mono_sym, value: function, fn_type, sig: sig_idx }
 
-    mut fn call_concrete_mir_function(concrete: &ConcreteMirFunction, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: str, call_node: i32) -> i64:
+    mut fn call_concrete_mir_function(concrete: &ConcreteMirFunction, args_start: i32, arg_node_base_index: i32, args: &Vec[i64], arg_count: i32, call_context: &str, call_node: i32) -> i64:
         if self.sema.task_fns.contains(concrete.sym):
             let task_sema = self.sema.sig_return_type(concrete.sig)
             let task_ty = self.sema_type_to_llvm(task_sema)
@@ -5788,7 +5822,7 @@ impl Codegen:
             return self.emit_async_fn_spawn_task_value(concrete.sym, concrete.value, concrete.fn_type, &coerced, task_ty)
         self.build_call_fn_value(concrete.sym, concrete.value, concrete.fn_type, args_start, arg_node_base_index, args, arg_count, call_context, call_node)
 
-    mut fn monomorphize_struct_method_core(mono_type_sym: i32, method_name: str, _decl: i32, obj: i64, obj_ptr: i64, obj_node: i32, obj_ty: i64, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
+    mut fn monomorphize_struct_method_core(mono_type_sym: i32, method_name: &str, _decl: i32, obj: i64, obj_ptr: i64, obj_node: i32, obj_ty: i64, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
         let fallback = self.intern.intern(self.intern.resolve(mono_type_sym) ++ "." ++ method_name)
         let concrete = self.ensure_concrete_mir_function(call_node, concrete_sig, concrete_sym, fallback, "method " ++ method_name)
         if concrete.sym == 0:
@@ -5802,7 +5836,7 @@ impl Codegen:
             args.push(pre_args.get(ai as i64))
         self.call_concrete_mir_function(concrete, args_start, 1, args, arg_count + 1, "method " ++ method_name, call_node)
 
-    mut fn monomorphize_struct_static_method_core(mono_type_sym: i32, method_name: str, _decl: i32, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
+    mut fn monomorphize_struct_static_method_core(mono_type_sym: i32, method_name: &str, _decl: i32, args_start: i32, arg_count: i32, call_node: i32, concrete_sig: i32, concrete_sym: i32, pre_args: &Vec[i64]) -> i64:
         let fallback = self.intern.intern(self.intern.resolve(mono_type_sym) ++ "." ++ method_name)
         let concrete = self.ensure_concrete_mir_function(call_node, concrete_sig, concrete_sym, fallback, "static method " ++ method_name)
         if concrete.sym == 0:

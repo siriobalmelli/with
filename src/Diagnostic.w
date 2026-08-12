@@ -4,8 +4,9 @@ use Span
 use Source
 use DiagnosticRender
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 enum DiagSeverity: i32:
     Error = 1
@@ -38,10 +39,10 @@ type Diagnostic {
     helps: Vec[str],
 }
 
-fn diagnostic_owned_text(text: str) -> str:
-    with_str_clone(text)
+fn diagnostic_owned_text(text: &str) -> str:
+    with_str_clone_ref(text)
 
-fn diagnostic_error(message: str, primary: Span) -> Diagnostic:
+fn diagnostic_error(message: &str, primary: Span) -> Diagnostic:
     Diagnostic {
         severity: DiagSeverity.Error,
         code: "",
@@ -56,7 +57,7 @@ fn diagnostic_error(message: str, primary: Span) -> Diagnostic:
         helps: Vec.new(),
     }
 
-fn diagnostic_warning(message: str, primary: Span) -> Diagnostic:
+fn diagnostic_warning(message: &str, primary: Span) -> Diagnostic:
     Diagnostic {
         severity: DiagSeverity.Warning,
         code: "",
@@ -71,29 +72,29 @@ fn diagnostic_warning(message: str, primary: Span) -> Diagnostic:
         helps: Vec.new(),
     }
 
-fn Diagnostic.err(message: str, span: Span) -> Diagnostic:
+fn Diagnostic.err(message: &str, span: Span) -> Diagnostic:
     diagnostic_error(message, span)
 
-fn Diagnostic.warn(message: str, span: Span) -> Diagnostic:
+fn Diagnostic.warn(message: &str, span: Span) -> Diagnostic:
     diagnostic_warning(message, span)
 
 impl Diagnostic:
-    mut fn set_code(code: str):
+    mut fn set_code(code: &str):
         self.code = diagnostic_owned_text(code)
 
-    mut fn set_origin(file: str, fn_name: str, line: i32, node: i32):
+    mut fn set_origin(file: &str, fn_name: &str, line: i32, node: i32):
         self.origin_file = diagnostic_owned_text(file)
         self.origin_fn = diagnostic_owned_text(fn_name)
         self.origin_line = line
         self.origin_node = node
 
-    mut fn add_label(span: Span, message: str) -> Unit:
+    mut fn add_label(span: Span, message: &str) -> Unit:
         self.labels.push(DiagnosticLabel { span, message: diagnostic_owned_text(message) })
 
-    mut fn add_note(message: str) -> Unit:
+    mut fn add_note(message: &str) -> Unit:
         self.notes.push(diagnostic_owned_text(message))
 
-    mut fn add_help(message: str) -> Unit:
+    mut fn add_help(message: &str) -> Unit:
         self.helps.push(diagnostic_owned_text(message))
 
     fn render(source: &Source):
@@ -123,12 +124,12 @@ impl Diagnostic:
         var pend = self.primary.end - gen_start
         if pend <= pstart:
             pend = pstart + 1
-        let code: str = self.code
-        let message: str = self.message
+        let code: str = with_str_clone_ref(self.code)
+        let message: str = with_str_clone_ref(self.message)
         with_eprint(render_diag_header(self.severity, code, message))
 
         let loc = source.offset_to_location(pstart)
-        let source_path: str = source.path
+        let source_path: str = with_str_clone_ref(source.path)
         with_eprint(render_diag_location(source_path, loc.line, loc.col))
 
         let line_text: str = source.line_text(loc.line)
@@ -137,10 +138,10 @@ impl Diagnostic:
 
         for i in 0..self.labels.len() as i32:
             let lab = &self.labels[i as i64]
-            let label_message: str = lab.message
+            let label_message: str = with_str_clone_ref(lab.message)
             var label_path = ""
             if i < label_paths.len() as i32:
-                label_path = label_paths.get(i as i64)
+                label_path = with_str_clone_ref(label_paths.get(i as i64))
             if label_path.len() > 0 and label_path != source_path:
                 let label_source = Source.from_string(label_path, label_texts.get(i as i64), lab.span.file)
                 let lloc2 = label_source.offset_to_location(lab.span.start)
@@ -150,10 +151,10 @@ impl Diagnostic:
                 with_eprint(render_diag_label_line(lloc.line, lloc.col, label_message))
 
         for i in 0..self.notes.len() as i32:
-            let note: str = self.notes.get(i as i64)
+            let note: str = with_str_clone_ref(self.notes.get(i as i64))
             with_eprint(render_diag_note_line(note))
         for i in 0..self.helps.len() as i32:
-            let help: str = self.helps.get(i as i64)
+            let help: str = with_str_clone_ref(self.helps.get(i as i64))
             with_eprint(render_diag_help_line(help))
 
 pub type DiagnosticList {

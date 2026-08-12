@@ -22,8 +22,11 @@ use compiler.Compilation
 use Lexer
 use Token
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_str_clone_ref(s: &str) -> str
+
+fn owned_text(s: &str): unsafe { with_str_clone_ref(s) }
 
 // Mirrors of Sema effect bits (private there; layout is spec-stable).
 const MIG_EFF_WRITE: i32 = 2
@@ -49,7 +52,7 @@ type CollectResult {
     decls: Vec[DeclSpan],
 }
 
-fn collect_targets(entry: str) -> CollectResult:
+fn collect_targets(entry: &str) -> CollectResult:
     let result = compiler_analyze_file(entry, "facts")
     var receiver_sigs: Vec[i32] = Vec.new()
     for i in 0..result.report.facts.len() as i32:
@@ -61,11 +64,12 @@ fn collect_targets(entry: str) -> CollectResult:
     for i in 0..result.report.facts.len() as i32:
         let fact = &result.report.facts[i as i64]
         if fact.kind == AnalysisFactKind.Declaration:
-            var decl_path = fact.path
+            var decl_path = owned_text(fact.path)
             if decl_path.starts_with("<embedded-std>/std/"):
                 decl_path = "lib/std/" ++ decl_path.slice(19, decl_path.len() as i64)
-            decls.push(DeclSpan { path: decl_path, name: fact.name, start: fact.start, end: fact.end })
-            continue
+            decls.push(DeclSpan { path: move decl_path, name: owned_text(fact.name), start: fact.start, end: fact.end })
+    for i in 0..result.report.facts.len() as i32:
+        let fact = &result.report.facts[i as i64]
         if fact.kind != AnalysisFactKind.Parameter: continue
         if fact.stage != AnalysisStage.Sema: continue
         // Post-D5 the classifier is gone, so value_ref_abi no longer marks
@@ -83,24 +87,29 @@ fn collect_targets(entry: str) -> CollectResult:
         if is_recv_sig and fact.index == 0: continue
         // Embedded stdlib facts carry their embedded identity; the on-disk
         // source they were embedded from is lib/std/...
-        var src_path = fact.path
+        var src_path = owned_text(fact.path)
         if src_path.starts_with("<embedded-std>/std/"):
             src_path = "lib/std/" ++ src_path.slice(19, src_path.len() as i64)
-        targets.push(ShareTarget { path: src_path, fn_name: fact.name, sig_index: fact.index, has_receiver: is_recv_sig })
+        // Extern signatures have parameter facts but no ordinary declaration
+        // fact. They are ABI contracts, never source-migration candidates.
+        let decl_name = base_name(fact.name)
+        if decl_for(&decls, src_path, decl_name) < 0:
+            continue
+        targets.push(ShareTarget { path: move src_path, fn_name: owned_text(fact.name), sig_index: fact.index, has_receiver: is_recv_sig })
     CollectResult { targets, decls }
 
-fn find_dollar(name: str) -> i32:
+fn find_dollar(name: &str) -> i32:
     for i in 0..name.len() as i32:
         if name.byte_at(i as i64) as i32 == 36: return i
     -1
 
-fn base_name(name: str) -> str:
+fn base_name(name: &str) -> str:
     // Strip any specialization suffix so mono sigs join to their template decl.
     let cut = find_dollar(name)
-    if cut >= 0: return name.slice(0, cut as i64)
-    name
+    if cut >= 0: return owned_text(name.slice(0, cut as i64))
+    owned_text(name)
 
-fn decl_for(decls: &Vec[DeclSpan], path: str, name: str) -> i32:
+fn decl_for(decls: &Vec[DeclSpan], path: &str, name: &str) -> i32:
     for i in 0..decls.len() as i32:
         let d = &decls[i as i64]
         if d.path == path and d.name == name: return i
@@ -134,7 +143,7 @@ fn main:
             continue
         let d = &decls[di as i64]
         let decl_start = d.start
-        let text = with_fs_read_file(t.path)
+        let text = unsafe { with_fs_read_file(t.path) }
         if text.len() == 0:
             print(f"error: cannot read {t.path}")
             failures = failures + 1
@@ -231,7 +240,8 @@ fn main:
         for e in 0..edit_paths.len() as i32:
             if edit_paths.get(e as i64) == t.path and edit_offsets.get(e as i64) == off: dup = true
         if dup: continue
-        edit_paths.push(t.path)
+        print(f"target: {t.path}:{name} parameter {t.sig_index}")
+        edit_paths.push(owned_text(t.path))
         edit_offsets.push(off)
 
     if failures != 0:
@@ -245,7 +255,7 @@ fn main:
         var seen = false
         for f in files:
             if f == p: seen = true
-        if not seen: files.push(p)
+        if not seen: files.push(owned_text(p))
     var total = 0
     for f in files:
         var offs: Vec[i32] = Vec.new()
@@ -262,14 +272,14 @@ fn main:
             sorted.push(best)
         offs = sorted
         if apply:
-            let text = with_fs_read_file(f)
+            let text = unsafe { with_fs_read_file(f) }
             var out = ""
             var prev = 0
             for o in offs:
                 out = out ++ text.slice(prev as i64, o as i64) ++ "&"
                 prev = o
             out = out ++ text.slice(prev as i64, text.len() as i64)
-            let rc = with_fs_write_file(f, out)
+            let rc = unsafe { with_fs_write_file(f, out) }
             if rc != 0:
                 print(f"error: write failed for {f}")
                 exit_code(1)

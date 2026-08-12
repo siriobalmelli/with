@@ -84,7 +84,7 @@ impl[K: Ord, V] BTreeMap[K, V]:
             i = i + 1
         found
 
-    pub fn contains(key: K) -> bool:
+    pub fn contains(key: &K) -> bool:
         var i = 0
         while i < self.entries.len():
             let existing = self.key_at(i)
@@ -93,7 +93,7 @@ impl[K: Ord, V] BTreeMap[K, V]:
             i = i + 1
         false
 
-    pub fn get(key: K) -> Option[&V]:
+    pub fn get(key: &K) -> Option[&V]:
         let idx = self.last_index_of(key)
         if idx < 0:
             return None
@@ -183,7 +183,7 @@ impl[T: Ord] BTreeSet[T]:
             i = i + 1
         -1
 
-    pub fn contains(value: T) -> bool:
+    pub fn contains(value: &T) -> bool:
         var i = 0
         while i < self.values.len():
             let existing = self.values.get(i)

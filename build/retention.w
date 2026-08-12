@@ -2,11 +2,12 @@ module build.retention
 
 use std.build
 use std.sysinfo
+fn retention_owned_text(s: &str): s ++ ""
 
 const RET_SEED_KEEP: i32 = 5
 const RET_RELEASE_VERSION_KEEP: i32 = 5
 
-fn ret_fail(ctx: &ActionCtx, message: str) -> i32:
+fn ret_fail(ctx: &ActionCtx, message: &str) -> i32:
     ctx.diagnostics().error(ctx.target_name() ++ ": " ++ message)
     1
 
@@ -22,21 +23,21 @@ fn ret_write_output_stamp(ctx: &ActionCtx) -> i32:
         return ret_fail(ctx, "could not write output stamp: " ++ output)
     0
 
-fn ret_join(left: str, right: str) -> str:
+fn ret_join(left: &str, right: &str) -> str:
     if left.len() == 0:
-        return right
+        return retention_owned_text(right)
     if right.len() == 0:
-        return left
+        return retention_owned_text(left)
     if left.ends_with("/"):
         return left ++ right
     left ++ "/" ++ right
 
-fn ret_abs(root: str, path: str) -> str:
+fn ret_abs(root: &str, path: &str) -> str:
     if path.len() > 0 and path.byte_at(0) == 47:
-        return path
+        return retention_owned_text(path)
     ret_join(root, path)
 
-fn ret_dirname(path: str) -> str:
+fn ret_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -47,16 +48,16 @@ fn ret_dirname(path: str) -> str:
         return "/"
     path.slice(0, last_slash as i64)
 
-fn ret_basename(path: str) -> str:
+fn ret_basename(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
             last_slash = i
     if last_slash < 0:
-        return path
+        return retention_owned_text(path)
     path.slice((last_slash + 1) as i64, path.len())
 
-fn ret_trim(text: str) -> str:
+fn ret_trim(text: &str) -> str:
     var start = 0
     var end = text.len() as i32
     while start < end:
@@ -71,7 +72,7 @@ fn ret_trim(text: str) -> str:
         end = end - 1
     text.slice(start as i64, end as i64)
 
-fn ret_first_line(text: str) -> str:
+fn ret_first_line(text: &str) -> str:
     var end = text.len() as i32
     for i in 0..text.len() as i32:
         let ch = text.byte_at(i as i64)
@@ -80,7 +81,7 @@ fn ret_first_line(text: str) -> str:
             break
     ret_trim(text.slice(0, end as i64))
 
-fn ret_split_lines(text: str) -> Vec[str]:
+fn ret_split_lines(text: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     var start = 0
     for i in 0..text.len() as i32:
@@ -96,7 +97,7 @@ fn ret_split_lines(text: str) -> Vec[str]:
             out.push(line)
     out
 
-fn ret_json_escape(text: str) -> str:
+fn ret_json_escape(text: &str) -> str:
     var out = ""
     for i in 0..text.len() as i32:
         let ch = text.byte_at(i as i64)
@@ -114,7 +115,7 @@ fn ret_json_escape(text: str) -> str:
             out = out ++ text.slice(i as i64, (i + 1) as i64)
     out
 
-fn ret_safe_label(text: str) -> str:
+fn ret_safe_label(text: &str) -> str:
     var out = ""
     for i in 0..text.len() as i32:
         let ch = text.byte_at(i as i64)
@@ -127,12 +128,12 @@ fn ret_safe_label(text: str) -> str:
         return "unknown"
     out
 
-fn ret_short(text: str, n: i32) -> str:
+fn ret_short(text: &str, n: i32) -> str:
     if text.len() <= n:
-        return text
+        return retention_owned_text(text)
     text.slice(0, n as i64)
 
-fn ret_run_first_line(ctx: &ActionCtx, label: str, args: &Vec[str], timeout_ms: i32) -> str:
+fn ret_run_first_line(ctx: &ActionCtx, label: &str, args: &Vec[str], timeout_ms: i32) -> str:
     let fs = ctx.fs()
     let root = ctx.project_info().project_root()
     let dir = ret_join("out/command", ctx.target_name())
@@ -145,7 +146,7 @@ fn ret_run_first_line(ctx: &ActionCtx, label: str, args: &Vec[str], timeout_ms: 
         return ""
     ret_first_line(result.stdout)
 
-fn ret_run_lines(ctx: &ActionCtx, label: str, args: &Vec[str], timeout_ms: i32) -> Vec[str]:
+fn ret_run_lines(ctx: &ActionCtx, label: &str, args: &Vec[str], timeout_ms: i32) -> Vec[str]:
     let fs = ctx.fs()
     let root = ctx.project_info().project_root()
     let dir = ret_join("out/command", ctx.target_name())
@@ -158,7 +159,7 @@ fn ret_run_lines(ctx: &ActionCtx, label: str, args: &Vec[str], timeout_ms: i32) 
         return Vec.new()
     ret_split_lines(result.stdout)
 
-fn ret_run_status(ctx: &ActionCtx, label: str, args: &Vec[str], timeout_ms: i32) -> i32:
+fn ret_run_status(ctx: &ActionCtx, label: &str, args: &Vec[str], timeout_ms: i32) -> i32:
     let fs = ctx.fs()
     let root = ctx.project_info().project_root()
     let dir = ret_join("out/command", ctx.target_name())
@@ -171,11 +172,11 @@ fn ret_run_status(ctx: &ActionCtx, label: str, args: &Vec[str], timeout_ms: i32)
         ctx.diagnostics().error(ctx.target_name() ++ ": command '" ++ label ++ f"' failed with exit code {result.rc}; stdout=" ++ stdout_path ++ " stderr=" ++ stderr_path)
     result.rc
 
-fn ret_sha256_tool(root: str) -> str:
+fn ret_sha256_tool(root: &str) -> str:
     let suffix = if os() == "Windows": ".exe" else: ""
     ret_abs(root, "out/bin/with-sha256" ++ suffix)
 
-fn ret_sha256_file(ctx: &ActionCtx, label: str, path: str) -> str:
+fn ret_sha256_file(ctx: &ActionCtx, label: &str, path: &str) -> str:
     let root = ctx.project_info().project_root()
     let target_path = ret_abs(root, path)
     let args: Vec[str] = Vec.new()
@@ -186,7 +187,7 @@ fn ret_sha256_file(ctx: &ActionCtx, label: str, path: str) -> str:
         return line.slice(0, 64)
     ""
 
-fn ret_sha256_text(ctx: &ActionCtx, label: str, text: str) -> str:
+fn ret_sha256_text(ctx: &ActionCtx, label: &str, text: &str) -> str:
     let fs = ctx.fs()
     let dir = ret_join("out/command", ctx.target_name())
     if fs.mkdir_all(dir) != 0:
@@ -199,7 +200,7 @@ fn ret_sha256_text(ctx: &ActionCtx, label: str, text: str) -> str:
     let _remove = fs.remove_file(path)
     result
 
-fn ret_str_compare(a: str, b: str) -> i32:
+fn ret_str_compare(a: &str, b: &str) -> i32:
     let min_len = if a.len() < b.len(): a.len() else: b.len()
     for i in 0..min_len as i32:
         let ac = a.byte_at(i as i64)
@@ -221,15 +222,15 @@ fn ret_sorted_strings(items: Vec[str]) -> Vec[str]:
         for j in 0..sorted.len() as i32:
             let existing = sorted.get(j as i64)
             if not inserted and ret_str_compare(item, existing) < 0:
-                next.push(item)
+                next.push(retention_owned_text(item))
                 inserted = true
-            next.push(existing)
+            next.push(retention_owned_text(existing))
         if not inserted:
-            next.push(item)
+            next.push(retention_owned_text(item))
         sorted = next
     sorted
 
-fn ret_release_version_component(version: str, part: i32) -> i32:
+fn ret_release_version_component(version: &str, part: i32) -> i32:
     var start = 0
     if version.starts_with("v"):
         start = 1
@@ -259,7 +260,7 @@ fn ret_release_version_component(version: str, part: i32) -> i32:
         value = value * 10 + (ch - 48)
     value
 
-fn ret_release_version_compare(a: str, b: str) -> i32:
+fn ret_release_version_compare(a: &str, b: &str) -> i32:
     let a_major = ret_release_version_component(a, 0)
     let a_minor = ret_release_version_component(a, 1)
     let a_patch = ret_release_version_component(a, 2)
@@ -285,24 +286,24 @@ fn ret_sorted_release_versions(items: Vec[str]) -> Vec[str]:
         for j in 0..sorted.len() as i32:
             let existing = sorted.get(j as i64)
             if not inserted and ret_release_version_compare(item, existing) < 0:
-                next.push(item)
+                next.push(retention_owned_text(item))
                 inserted = true
-            next.push(existing)
+            next.push(retention_owned_text(existing))
         if not inserted:
-            next.push(item)
+            next.push(retention_owned_text(item))
         sorted = next
     sorted
 
-fn ret_direct_w_files(fs: &ToolFs, dir: str) -> Vec[str]:
+fn ret_direct_w_files(fs: &ToolFs, dir: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     let files = fs.list_files(dir)
     for i in 0..files.len() as i32:
         let path = files.get(i as i64)
         if path.ends_with(".w") and ret_dirname(path) == dir:
-            out.push(path)
+            out.push(retention_owned_text(path))
     ret_sorted_strings(out)
 
-fn ret_sha256_hex_list(ctx: &ActionCtx, label: str, files: &Vec[str]) -> Vec[str]:
+fn ret_sha256_hex_list(ctx: &ActionCtx, label: &str, files: &Vec[str]) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     let manifest = ret_sha256_files_manifest(ctx, label, files)
     if manifest.len() == 0:
@@ -314,7 +315,7 @@ fn ret_sha256_hex_list(ctx: &ActionCtx, label: str, files: &Vec[str]) -> Vec[str
             out.push(line.slice(0, 64))
     out
 
-fn ret_expected_test_marker(ctx: &ActionCtx, target_name: str, entry: str) -> str:
+fn ret_expected_test_marker(ctx: &ActionCtx, target_name: &str, entry: &str) -> str:
     let fs = ctx.fs()
     let compiler_path = ret_release_compiler_path()
     // Mirrors BuildGraphCache.build_cache_test_success_manifest v2: the
@@ -346,18 +347,18 @@ fn ret_expected_test_marker(ctx: &ActionCtx, target_name: str, entry: str) -> st
         text = text ++ "file:" ++ files.get(i as i64) ++ ":" ++ file_hexes.get(i as i64) ++ "\n"
     text
 
-fn ret_host_bin(path: str) -> str:
+fn ret_host_bin(path: &str) -> str:
     if os() == "Windows":
         return path ++ ".exe"
-    path
+    retention_owned_text(path)
 
 fn ret_release_compiler_path() -> str:
     ret_host_bin("out/release/bin/with")
 
-fn ret_stage_fixpoint_path(name: str) -> str:
+fn ret_stage_fixpoint_path(name: &str) -> str:
     "out/stage/bin/" ++ name
 
-fn ret_append_test_marker(ctx: &ActionCtx, combined: str, target_name: str, entry: str) -> str:
+fn ret_append_test_marker(ctx: &ActionCtx, combined: &str, target_name: &str, entry: &str) -> str:
     let marker_path = "out/.build-state/" ++ target_name ++ ".test-pass"
     let fs = ctx.fs()
     let actual = fs.read_text(marker_path)
@@ -370,7 +371,7 @@ fn ret_append_test_marker(ctx: &ActionCtx, combined: str, target_name: str, entr
         return ""
     combined ++ "marker:" ++ target_name ++ "\n" ++ actual
 
-fn ret_append_state_file(ctx: &ActionCtx, combined: str, target_name: str) -> str:
+fn ret_append_state_file(ctx: &ActionCtx, combined: &str, target_name: &str) -> str:
     let state_path = "out/.build-state/" ++ target_name ++ ".state"
     let state = ctx.fs().read_text(state_path)
     if state.len() == 0:
@@ -378,7 +379,7 @@ fn ret_append_state_file(ctx: &ActionCtx, combined: str, target_name: str) -> st
         return ""
     combined ++ "state:" ++ target_name ++ "\n" ++ state ++ "\n"
 
-fn ret_sha256_files_manifest(ctx: &ActionCtx, label: str, files: &Vec[str]) -> str:
+fn ret_sha256_files_manifest(ctx: &ActionCtx, label: &str, files: &Vec[str]) -> str:
     if files.len() == 0:
         return ""
     var out = ""
@@ -389,13 +390,13 @@ fn ret_sha256_files_manifest(ctx: &ActionCtx, label: str, files: &Vec[str]) -> s
     for i in 0..files.len() as i32:
         let file = files.get(i as i64)
         batch.push(ret_abs(root, file))
-        batch_names.push(file)
+        batch_names.push(retention_owned_text(file))
         let last = i + 1 == files.len() as i32
         if batch.len() as i32 >= 100 or last:
             let args: Vec[str] = Vec.new()
             args.push(ret_sha256_tool(root))
             for bi in 0..batch.len() as i32:
-                args.push(batch.get(bi as i64))
+                args.push(retention_owned_text(batch.get(bi as i64)))
             let lines = ret_run_lines(ctx, label ++ "-" ++ f"{batch_index}" ++ "-sha256", args, 120000)
             if lines.len() != batch.len():
                 return ""
@@ -409,7 +410,7 @@ fn ret_sha256_files_manifest(ctx: &ActionCtx, label: str, files: &Vec[str]) -> s
             batch_index = batch_index + 1
     out
 
-fn ret_append_file_hashes(combined: str, ctx: &ActionCtx, label: str, files: &Vec[str]) -> str:
+fn ret_append_file_hashes(combined: &str, ctx: &ActionCtx, label: &str, files: &Vec[str]) -> str:
     let manifest = ret_sha256_files_manifest(ctx, label, files)
     if files.len() > 0 and manifest.len() == 0:
         ctx.diagnostics().error(ctx.target_name() ++ ": could not hash " ++ label ++ " files")
@@ -424,13 +425,13 @@ fn ret_build_driver_sources_manifest(ctx: &ActionCtx) -> str:
     for i in 0..build_files.len() as i32:
         let path = build_files.get(i as i64)
         if path.ends_with(".w"):
-            files.push(path)
+            files.push(retention_owned_text(path))
     files.push("src/main.w")
     files.push("src/BuildGraphTests.w")
     files.push("src/BuildGraphCache.w")
     ret_append_file_hashes("", ctx, "build-driver", files)
 
-fn ret_append_test_file_hashes(combined: str, ctx: &ActionCtx, entry: str) -> str:
+fn ret_append_test_file_hashes(combined: &str, ctx: &ActionCtx, entry: &str) -> str:
     let dir = ret_dirname(entry)
     let files = ret_direct_w_files(ctx.fs(), dir)
     if files.len() == 0:
@@ -500,37 +501,37 @@ fn ret_git_commit(ctx: &ActionCtx) -> str:
     args.push("HEAD")
     ret_run_first_line(ctx, "git-head", args, 30000)
 
-fn ret_compiler_version(ctx: &ActionCtx, compiler_path: str) -> str:
+fn ret_compiler_version(ctx: &ActionCtx, compiler_path: &str) -> str:
     let root = ctx.project_info().project_root()
     let args: Vec[str] = Vec.new()
     args.push(ret_abs(root, compiler_path))
     args.push("version")
     ret_run_first_line(ctx, "compiler-version", args, 60000)
 
-fn ret_vec_contains(items: &Vec[str], item: str) -> bool:
+fn ret_vec_contains(items: &Vec[str], item: &str) -> bool:
     for i in 0..items.len() as i32:
         if items.get(i as i64) == item:
             return true
     false
 
-fn ret_add_unique(items: Vec[str], item: str) -> Vec[str]:
+fn ret_add_unique(items: Vec[str], item: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     var found = item.len() == 0
     for i in 0..items.len() as i32:
         let existing = items.get(i as i64)
         if existing == item:
             found = true
-        out.push(existing)
+        out.push(retention_owned_text(existing))
     if not found:
-        out.push(item)
+        out.push(retention_owned_text(item))
     out
 
-fn ret_manifest_lines_without(manifest: Vec[str], skip: str) -> Vec[str]:
+fn ret_manifest_lines_without(manifest: Vec[str], skip: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     for i in 0..manifest.len() as i32:
         let item = manifest.get(i as i64)
         if item != skip:
-            out.push(item)
+            out.push(retention_owned_text(item))
     out
 
 fn ret_join_lines(items: Vec[str]) -> str:
@@ -544,7 +545,7 @@ fn ret_seed_manifest_entries(fs: &ToolFs) -> Vec[str]:
         return Vec.new()
     ret_split_lines(fs.read_text("out/seed-archive/manifest.tsv"))
 
-fn ret_archive_verified_seed(ctx: &ActionCtx, version: str, commit: str, sha256: str) -> i32:
+fn ret_archive_verified_seed(ctx: &ActionCtx, version: &str, commit: &str, sha256: &str) -> i32:
     let fs = ctx.fs()
     if fs.mkdir_all("out/seed-archive") != 0:
         return ret_fail(ctx, "could not create out/seed-archive")
@@ -562,7 +563,7 @@ fn ret_archive_verified_seed(ctx: &ActionCtx, version: str, commit: str, sha256:
             let _remove_old_seed = fs.remove_file(remove_path)
         let trimmed: Vec[str] = Vec.new()
         for i in 1..entries.len() as i32:
-            trimmed.push(entries.get(i as i64))
+            trimmed.push(retention_owned_text(entries.get(i as i64)))
         entries = trimmed
     if fs.write_text("out/seed-archive/manifest.tsv", ret_join_lines(entries)) != 0:
         return ret_fail(ctx, "could not write out/seed-archive/manifest.tsv")
@@ -595,7 +596,7 @@ pub fn run_test_green_action(ctx: ActionCtx) -> i32:
     print("[test-green] recorded current test evidence in out/.build-state/test-green.json")
     0
 
-fn ret_require_test_green(ctx: &ActionCtx, compiler_sha: str) -> i32:
+fn ret_require_test_green(ctx: &ActionCtx, compiler_sha: &str) -> i32:
     let manifest = ctx.fs().read_text("out/.build-state/test-green.json")
     if manifest.len() == 0:
         return ret_fail(ctx, "missing test-green manifest; run `with build :test`")
@@ -641,7 +642,7 @@ pub fn run_fixpoint_evidence_action(ctx: ActionCtx) -> i32:
 
 // Extract a "key": "value" string field from a manifest written by our own
 // evidence writers (flat, escaped values never contain a quote).
-fn ret_json_field(manifest: str, key: str) -> str:
+fn ret_json_field(manifest: &str, key: &str) -> str:
     let marker = "\"" ++ key ++ "\": \""
     let at = manifest.find(marker)
     if at < 0:
@@ -736,7 +737,7 @@ fn ret_live_targets(args: &Vec[str]) -> Vec[str]:
             live.push(arg.slice(prefix.len(), arg.len()))
     live
 
-fn ret_state_target_name(path: str) -> str:
+fn ret_state_target_name(path: &str) -> str:
     if not path.starts_with("out/.build-state/") or not path.ends_with(".state"):
         return ""
     let base = ret_basename(path)
@@ -766,7 +767,7 @@ fn ret_add_old_seed_archives(fs: &ToolFs, candidates: Vec[str]) -> Vec[str]:
             out = ret_add_unique(out, path)
     out
 
-fn ret_release_artifact_version(path: str) -> str:
+fn ret_release_artifact_version(path: &str) -> str:
     if ret_dirname(path) != "out/release":
         return ""
     let base = ret_basename(path)
@@ -801,7 +802,7 @@ fn ret_stale_release_artifact_versions(fs: &ToolFs) -> Vec[str]:
     if stale_count <= 0:
         return stale
     for i in 0..stale_count:
-        stale.push(versions.get(i as i64))
+        stale.push(retention_owned_text(versions.get(i as i64)))
     stale
 
 fn ret_add_old_release_artifacts(fs: &ToolFs, candidates: Vec[str]) -> Vec[str]:
@@ -840,7 +841,7 @@ fn ret_apply_small_prune(ctx: &ActionCtx, candidates: Vec[str]) -> i32:
     print(f"[prune] removed {removed} stale retained artifact(s)")
     0
 
-fn ret_immediate_children(fs: &ToolFs, dir: str) -> Vec[str]:
+fn ret_immediate_children(fs: &ToolFs, dir: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     if not fs.exists(dir):
         return out
@@ -848,7 +849,7 @@ fn ret_immediate_children(fs: &ToolFs, dir: str) -> Vec[str]:
     for i in 0..files.len() as i32:
         let path = files.get(i as i64)
         if ret_dirname(path) == dir:
-            out.push(path)
+            out.push(retention_owned_text(path))
     ret_sorted_strings(out)
 
 fn ret_temp_bin_candidates(fs: &ToolFs) -> Vec[str]:
@@ -859,19 +860,19 @@ fn ret_temp_bin_candidates(fs: &ToolFs) -> Vec[str]:
         let base = ret_basename(path)
         if fs.is_dir(path):
             if base.contains(".tmp.") and base.ends_with(".dSYM"):
-                out.push(path)
+                out.push(retention_owned_text(path))
         else if base.contains(".tmp."):
-            out.push(path)
+            out.push(retention_owned_text(path))
     ret_sorted_strings(out)
 
-fn ret_temp_archive_candidates(fs: &ToolFs, dir: str) -> Vec[str]:
+fn ret_temp_archive_candidates(fs: &ToolFs, dir: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     let files = ret_immediate_children(fs, dir)
     for i in 0..files.len() as i32:
         let path = files.get(i as i64)
         let base = ret_basename(path)
         if not fs.is_dir(path) and base.contains(".o.") and base.ends_with(".a"):
-            out.push(path)
+            out.push(retention_owned_text(path))
     ret_sorted_strings(out)
 
 fn ret_issue61_stale_candidates(fs: &ToolFs) -> Vec[str]:
@@ -880,7 +881,7 @@ fn ret_issue61_stale_candidates(fs: &ToolFs) -> Vec[str]:
     for i in 0..files.len() as i32:
         let path = files.get(i as i64)
         if fs.is_dir(path) and ret_basename(path) != "repo":
-            out.push(path)
+            out.push(retention_owned_text(path))
     ret_sorted_strings(out)
 
 fn ret_embedded_compiler_candidates(fs: &ToolFs) -> Vec[str]:
@@ -965,7 +966,7 @@ fn ret_report_large_prune(ctx: &ActionCtx):
         shown = shown + 1
 
 pub fn run_prune_action(ctx: ActionCtx) -> i32:
-    let mode = if ctx.args().len() > 0: ctx.args().get(0) else: "dry-run"
+    let mode = if ctx.args().len() > 0: retention_owned_text(ctx.args().get(0)) else: "dry-run"
     if mode == "apply":
         if ret_apply_large_prune(ctx) != 0:
             return 1

@@ -19,10 +19,10 @@
 // No c_import — uses with_* runtime functions.
 
 use std.collections
-extern fn with_lines_out(out: *mut c_void, s: str) -> Unit
-extern fn with_parse_i64(s: str) -> i64
-extern fn with_str_len(s: str) -> i64
-extern fn with_str_eq(a: str, b: str) -> i32
+extern fn with_lines_out_ref(out: *mut c_void, s: &str) -> Unit
+extern fn with_parse_i64_ref(s: &str) -> i64
+extern fn with_str_len(s: &str) -> i64
+extern fn with_str_eq_ref(a: &str, b: &str) -> i32
 extern fn with_str_from_vec_u8(bytes: *const Vec[u8]) -> str
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
@@ -48,7 +48,7 @@ pub fn StringBuilder.with_capacity(capacity: i64) -> Self:
 
 /// Append raw UTF-8 bytes from a string.
 impl StringBuilder:
-    pub mut fn push_str(s: str) -> Unit:
+    pub mut fn push_str(s: &str) -> Unit:
         for i in 0..s.len():
             self.bytes.push(s.byte_at(i) as u8)
         return
@@ -76,7 +76,7 @@ impl StringBuilder:
         with_str_from_vec_u8(&self.bytes)
 
 /// String length (same as `s.len()`).
-pub fn string_len(s: str) -> i64:
+pub fn string_len(s: &str) -> i64:
     with_str_len(s)
 
 /// StrView length helper.
@@ -158,11 +158,11 @@ impl CString:
         self.len
 
 /// Compare two strings for equality. Returns true if equal.
-pub fn string_eq(a: str, b: str) -> bool:
-    with_str_eq(a, b) != 0
+pub fn string_eq(a: &str, b: &str) -> bool:
+    with_str_eq_ref(a, b) != 0
 
 /// Compare two strings lexicographically. Returns negative, 0, or positive.
-pub fn string_cmp(a: str, b: str) -> i32:
+pub fn string_cmp(a: &str, b: &str) -> i32:
     // Byte-by-byte comparison
     let al = a.len()
     let bl = b.len()
@@ -219,16 +219,16 @@ pub fn to_upper(c: i32) -> i32:
     if c >= 97 and c <= 122: c - 32 else: c
 
 /// Convert a string to an i64 integer. Returns 0 on invalid input.
-pub fn string_to_int(s: str) -> i64:
-    with_parse_i64(s)
+pub fn string_to_int(s: &str) -> i64:
+    with_parse_i64_ref(s)
 
 /// Split text into lines. Returns a Vec of strings, one per line.
-pub fn lines(s: str) -> Vec[str]:
+pub fn lines(s: &str) -> Vec[str]:
     var out: Vec[str] = Vec{ ptr: 0, len: 0, cap: 0, elem_size: 0 }
-    with_lines_out((&raw mut out) as *mut c_void, s)
+    with_lines_out_ref((&raw mut out) as *mut c_void, s)
     out
 
 /// Parse a string as an i32 integer.
-pub fn parse(s: str) -> i32:
+pub fn parse(s: &str) -> i32:
     let n = string_to_int(s)
     n as i32

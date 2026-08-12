@@ -5,16 +5,21 @@
 
 use std.collections
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn rt_exit(code: i32) -> Never
 extern fn with_getpid() -> i32
-extern fn with_exec_argv(args: str) -> i32
+extern fn with_exec_argv(args: &str) -> i32
 extern fn with_arg_count() -> i32
 extern fn with_arg_at(idx: i32) -> str
-extern fn with_getenv_str(name: str) -> str
-extern fn with_setenv_str(name: str, value: str) -> i32
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_setenv_str(name: &str, value: &str) -> i32
 extern fn with_vec_new_out(v: *mut c_void, elem_size: i64) -> Unit
+// The vec RETAINS the pushed header — ownership transfers, unlike every
+// read-only str extern (§16.3d declared effect; the bit-copy default would
+// leave two owners).
+@[effect(val: escape_value)]
 extern fn with_vec_push_str(v: *mut c_void, val: str) -> Unit
-extern fn with_str_len(s: str) -> i64
+extern fn with_str_len(s: &str) -> i64
 
 /// Exit the process with the given status code.
 pub fn exit_code(code: i32) -> Never:
@@ -36,12 +41,12 @@ pub fn args -> Vec[str]:
     out
 
 /// Get an environment variable. Returns "" if not set.
-pub fn env(name: str) -> str:
+pub fn env(name: &str) -> str:
     let v = with_getenv_str(name)
     if with_str_len(v) == 0: "" else: v
 
 /// Set an environment variable. Returns 0 on success.
-pub fn set_env(name: str, value: str) -> i32:
+pub fn set_env(name: &str, value: &str) -> i32:
     with_setenv_str(name, value)
 
 fn argv_blob(items: &Vec[str]) -> str:
@@ -70,7 +75,7 @@ impl Command:
     pub fn arg(arg: str) -> Command:
         var argv: Vec[str] = Vec.new()
         for i in 0..self.args.len() as i32:
-            argv.push(self.args.get(i as i64))
+            argv.push(with_str_clone_ref(self.args.get(i as i64)))
         argv.push(arg)
         Command { args: argv }
 

@@ -1,12 +1,13 @@
 // Structured CLI option values for compiler-driver commands.
 
 extern fn with_arg_at(idx: i32) -> str
-extern fn with_getenv_str(name: str) -> str
+extern fn with_getenv_str(name: &str) -> str
 extern fn with_str_starts_with(s: str, prefix: str) -> i32
-extern fn with_str_len(s: str) -> i64
+extern fn with_str_len(s: &str) -> i64
 extern fn with_str_byte_at(s: str, index: i64) -> i32
 extern fn with_str_slice(s: str, start: i64, end: i64) -> str
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 use Overflow
 
@@ -120,10 +121,10 @@ pub fn build_command_options_default -> BuildCommandOptions:
         compiler_hooks_enabled: true,
     }
 
-pub fn driver_clone_str(s: str) -> str:
+pub fn driver_clone_str(s: &str) -> str:
     if s.len() == 0:
         return ""
-    with_str_clone(s)
+    with_str_clone_ref(s)
 
 pub fn driver_clone_str_vec(values: &Vec[str]) -> Vec[str]:
     let out: Vec[str] = Vec.new()
@@ -185,15 +186,15 @@ pub fn migrate_command_options_default -> MigrateCommandOptions:
         ir_roundtrip: false,
     }
 
-fn driver_has_output_prefix(arg: str) -> bool:
+fn driver_has_output_prefix(arg: &str) -> bool:
     if with_str_len(arg) < 9:
         return false
-    with_str_starts_with(arg, "--output=") != 0
+    arg.starts_with("--output=")
 
-fn driver_is_build_target_selector(arg: str) -> bool:
-    with_str_len(arg) > 1 and with_str_byte_at(arg, 0) == 58
+fn driver_is_build_target_selector(arg: &str) -> bool:
+    arg.len() > 1 and arg.byte_at(0) == 58
 
-fn driver_has_flag(argc: i32, flag: str) -> bool:
+fn driver_has_flag(argc: i32, flag: &str) -> bool:
     var i = 2
     while i < argc:
         if with_arg_at(i) == flag:
@@ -249,7 +250,7 @@ fn driver_explain_arg(argc: i32) -> str:
 // Target triples accepted by --target (§18.5). Returns the
 // std.build.BuildTarget kind, or -1 for a triple this compiler
 // cannot represent.
-pub fn driver_target_triple_kind(triple: str) -> i32:
+pub fn driver_target_triple_kind(triple: &str) -> i32:
     if triple == "native":
         return 0
     if triple == "x86_64-unknown-linux-gnu" or triple == "x86_64-linux-gnu" or triple == "linux_x86_64":

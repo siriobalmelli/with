@@ -1,19 +1,20 @@
 module build.pcre2
 
 use std.build
+fn pcre2_owned_text(s: &str): s ++ ""
 
 const PCRE2_SHA256: str = "c08ae2388ef333e8403e670ad70c0a11f1eed021fd88308d7e02f596fcd9dc16"
 
-fn pcre2_join(left: str, right: str) -> str:
+fn pcre2_join(left: &str, right: &str) -> str:
     if left.len() == 0:
-        return right
+        return pcre2_owned_text(right)
     if right.len() == 0:
-        return left
+        return pcre2_owned_text(left)
     if left.ends_with("/"):
         return left ++ right
     left ++ "/" ++ right
 
-fn pcre2_safe_label(text: str) -> str:
+fn pcre2_safe_label(text: &str) -> str:
     var out = ""
     for i in 0..text.len() as i32:
         let ch = text.byte_at(i as i64)
@@ -29,7 +30,7 @@ fn pcre2_safe_label(text: str) -> str:
 fn pcre2_scratch_dir(ctx: &ActionCtx) -> str:
     "out/tmp/action-scratch/" ++ pcre2_safe_label(ctx.target_name())
 
-fn pcre2_dirname(path: str) -> str:
+fn pcre2_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -40,19 +41,19 @@ fn pcre2_dirname(path: str) -> str:
         return "/"
     path.slice(0, last_slash as i64)
 
-fn pcre2_basename(path: str) -> str:
+fn pcre2_basename(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
             last_slash = i
     path.slice((last_slash + 1) as i64, path.len())
 
-fn pcre2_abs(root: str, path: str) -> str:
+fn pcre2_abs(root: &str, path: &str) -> str:
     if path.len() > 0 and path.byte_at(0) == 47:
-        return path
+        return pcre2_owned_text(path)
     pcre2_join(root, path)
 
-fn pcre2_split_lines(text: str) -> Vec[str]:
+fn pcre2_split_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     var start = 0
     var i = 0
@@ -67,7 +68,7 @@ fn pcre2_split_lines(text: str) -> Vec[str]:
         i = i + 1
     lines
 
-fn pcre2_emit_normalized_heap_line(line: str, frame_count: i32) -> str:
+fn pcre2_emit_normalized_heap_line(line: &str, frame_count: i32) -> str:
     var out = line.replace("Memory allocation (code space):", "Memory allocation - code size :")
     if out.starts_with("Frame size for pcre2_match(): "):
         if frame_count == 1:
@@ -89,10 +90,10 @@ fn pcre2_emit_normalized_heap_line(line: str, frame_count: i32) -> str:
     out = out.replace("Heapframes size in match_data: 20643840", "Heapframes size in match_data: 20654080")
     out.replace("Heapframes size in match_data: 20633600", "Heapframes size in match_data: 20654080")
 
-fn pcre2_append_normalized_heap_line(out: str, line: str, frame_count: i32) -> str:
+fn pcre2_append_normalized_heap_line(out: &str, line: &str, frame_count: i32) -> str:
     out ++ pcre2_emit_normalized_heap_line(line, frame_count) ++ "\n"
 
-fn pcre2_normalize_heap_output(text: str) -> str:
+fn pcre2_normalize_heap_output(text: &str) -> str:
     let lines = pcre2_split_lines(text)
     var line_count = lines.len() as i32
     while line_count > 0 and lines.get((line_count - 1) as i64).len() == 0:
@@ -136,7 +137,7 @@ fn pcre2_normalize_heap_output(text: str) -> str:
         i = i + 1
     out
 
-fn pcre2_copy_if_missing(ctx: &ActionCtx, src: str, dst: str) -> i32:
+fn pcre2_copy_if_missing(ctx: &ActionCtx, src: &str, dst: &str) -> i32:
     let fs = ctx.fs()
     if fs.exists(dst):
         return 0
@@ -147,11 +148,11 @@ fn pcre2_copy_if_missing(ctx: &ActionCtx, src: str, dst: str) -> i32:
     print("generated " ++ pcre2_abs(ctx.project_info().project_root(), dst))
     0
 
-fn pcre2_fail(ctx: &ActionCtx, message: str) -> i32:
+fn pcre2_fail(ctx: &ActionCtx, message: &str) -> i32:
     ctx.diagnostics().error(ctx.target_name() ++ ": " ++ message)
     1
 
-fn pcre2_remove_tree_if_exists(ctx: &ActionCtx, path: str) -> i32:
+fn pcre2_remove_tree_if_exists(ctx: &ActionCtx, path: &str) -> i32:
     let fs = ctx.fs()
     if not fs.exists(path):
         return 0
@@ -159,7 +160,7 @@ fn pcre2_remove_tree_if_exists(ctx: &ActionCtx, path: str) -> i32:
         return pcre2_fail(ctx, "could not remove directory: " ++ path)
     0
 
-fn pcre2_remove_file_if_exists(ctx: &ActionCtx, path: str) -> i32:
+fn pcre2_remove_file_if_exists(ctx: &ActionCtx, path: &str) -> i32:
     let fs = ctx.fs()
     if not fs.exists(path):
         return 0
@@ -167,16 +168,16 @@ fn pcre2_remove_file_if_exists(ctx: &ActionCtx, path: str) -> i32:
         return pcre2_fail(ctx, "could not remove file: " ++ path)
     0
 
-fn pcre2_migrate_options(source_path: str, output_path: str, source_dir: str, excludes: Vec[str]) -> MigrateOptions:
+fn pcre2_migrate_options(source_path: &str, output_path: &str, source_dir: &str, excludes: Vec[str]) -> MigrateOptions:
     let include_paths: Vec[str] = Vec.new()
-    include_paths.push(source_dir)
+    include_paths.push(pcre2_owned_text(source_dir))
     let forced_includes: Vec[str] = Vec.new()
     let defines: Vec[str] = Vec.new()
     defines.push("PCRE2_CODE_UNIT_WIDTH=8")
     defines.push("HAVE_CONFIG_H=1")
     MigrateOptions {
-        source_path,
-        output_path,
+        source_path: pcre2_owned_text(source_path),
+        output_path: pcre2_owned_text(output_path),
         include_paths,
         forced_includes,
         defines,
@@ -195,7 +196,7 @@ fn pcre2_migrate_options(source_path: str, output_path: str, source_dir: str, ex
         ir_roundtrip: false,
     }
 
-fn pcre2_count_w_files(ctx: &ActionCtx, dir: str) -> i32:
+fn pcre2_count_w_files(ctx: &ActionCtx, dir: &str) -> i32:
     let files = ctx.fs().list_files(dir)
     var count = 0
     for i in 0..files.len() as i32:
@@ -203,7 +204,7 @@ fn pcre2_count_w_files(ctx: &ActionCtx, dir: str) -> i32:
             count = count + 1
     count
 
-fn pcre2_reject_c_exports(ctx: &ActionCtx, generated_dir: str) -> i32:
+fn pcre2_reject_c_exports(ctx: &ActionCtx, generated_dir: &str) -> i32:
     let fs = ctx.fs()
     let files = fs.list_files(generated_dir)
     var errors = 0
@@ -214,13 +215,13 @@ fn pcre2_reject_c_exports(ctx: &ActionCtx, generated_dir: str) -> i32:
             errors = errors + 1
     errors
 
-fn pcre2_module_name(path: str) -> str:
+fn pcre2_module_name(path: &str) -> str:
     let base = pcre2_basename(path)
     if base.ends_with(".w"):
         return base.slice(0, base.len() - 2)
     base
 
-fn pcre2_insert_after_defs_import(text: str, insertion: str) -> str:
+fn pcre2_insert_after_defs_import(text: &str, insertion: &str) -> str:
     let marker = "use std.re.defs\n"
     var out = ""
     var inserted = false
@@ -241,9 +242,9 @@ fn pcre2_insert_after_defs_import(text: str, insertion: str) -> str:
             inserted = true
     if inserted:
         return out
-    text
+    pcre2_owned_text(text)
 
-fn pcre2_add_imports(ctx: &ActionCtx, path: str, sentinel: str, insertion: str) -> i32:
+fn pcre2_add_imports(ctx: &ActionCtx, path: &str, sentinel: &str, insertion: &str) -> i32:
     let fs = ctx.fs()
     if not fs.exists(path):
         return 0
@@ -255,7 +256,7 @@ fn pcre2_add_imports(ctx: &ActionCtx, path: str, sentinel: str, insertion: str) 
         return 0
     fs.write_text(path, updated)
 
-fn pcre2_line_starts_with_fn_main(line: str) -> bool:
+fn pcre2_line_starts_with_fn_main(line: &str) -> bool:
     var j = 0
     while j < line.len() as i32:
         let ch = line.byte_at(j as i64)
@@ -264,7 +265,7 @@ fn pcre2_line_starts_with_fn_main(line: str) -> bool:
         j = j + 1
     line.slice(j as i64, line.len()).starts_with("fn main")
 
-fn pcre2_module_defines_main(text: str) -> bool:
+fn pcre2_module_defines_main(text: &str) -> bool:
     var line_start = 0
     for i in 0..text.len() as i32:
         if text.byte_at(i as i64) == 10:
@@ -276,7 +277,7 @@ fn pcre2_module_defines_main(text: str) -> bool:
             return true
     false
 
-fn pcre2_module_body_for_synthetic_check(text: str) -> str:
+fn pcre2_module_body_for_synthetic_check(text: &str) -> str:
     var out = ""
     var line_start = 0
     var line_no = 1
@@ -293,7 +294,7 @@ fn pcre2_module_body_for_synthetic_check(text: str) -> str:
             out = out ++ line
     out
 
-fn pcre2_first_function_name(text: str) -> str:
+fn pcre2_first_function_name(text: &str) -> str:
     var line_start = 0
     for i in 0..text.len() as i32:
         if text.byte_at(i as i64) == 10:
@@ -319,14 +320,14 @@ fn pcre2_first_function_name(text: str) -> str:
             return line.slice(3, end as i64)
     ""
 
-fn pcre2_decls_contain_function(decls: Vec[DeclSummary], name: str, source_suffix: str) -> bool:
+fn pcre2_decls_contain_function(decls: Vec[DeclSummary], name: &str, source_suffix: &str) -> bool:
     for di in 0..decls.len() as i32:
         let decl = decls.get(di as i64)
         if decl.kind == DeclKind.function and decl.name == name and decl.source.file.ends_with(source_suffix):
             return true
     false
 
-fn pcre2_check_synthetic_module(ctx: &ActionCtx, mod_name: str, source_name: str, source_text: str, expected_decl: str) -> i32:
+fn pcre2_check_synthetic_module(ctx: &ActionCtx, mod_name: &str, source_name: &str, source_text: &str, expected_decl: &str) -> i32:
     let ws = ctx.create_workspace("pcre2-check-" ++ mod_name)
     ws.add_string(source_name, source_text)
     var options = ws.options()
@@ -358,7 +359,7 @@ fn pcre2_check_synthetic_module(ctx: &ActionCtx, mod_name: str, source_name: str
         return 1
     0
 
-fn pcre2_ensure_generated_dependencies(ctx: &ActionCtx, generated_dir: str) -> i32:
+fn pcre2_ensure_generated_dependencies(ctx: &ActionCtx, generated_dir: &str) -> i32:
     let compile_path = pcre2_join(generated_dir, "pcre2_compile.w")
     let compile_imports =
         "use std.re.pcre2_auto_possess\n" ++
@@ -397,7 +398,7 @@ fn pcre2_ensure_generated_dependencies(ctx: &ActionCtx, generated_dir: str) -> i
             return pcre2_fail(ctx, "could not update imports in " ++ pcre2test_path)
     0
 
-pub fn pcre2_count_generated_errors(ctx: &ActionCtx, generated_dir: str, print_summary: bool) -> i32:
+pub fn pcre2_count_generated_errors(ctx: &ActionCtx, generated_dir: &str, print_summary: bool) -> i32:
     let fs = ctx.fs()
     if not fs.is_dir(generated_dir):
         let _ = pcre2_fail(ctx, "missing generated directory: " ++ generated_dir)
@@ -435,7 +436,7 @@ pub fn pcre2_count_generated_errors(ctx: &ActionCtx, generated_dir: str, print_s
         print(f"OK={ok} TOTAL_ERRORS={total_errors}")
     total_errors
 
-fn pcre2_copy_w_files(ctx: &ActionCtx, source_dir: str, dest_dir: str) -> i32:
+fn pcre2_copy_w_files(ctx: &ActionCtx, source_dir: &str, dest_dir: &str) -> i32:
     let fs = ctx.fs()
     let files = fs.list_files(source_dir)
     var copied = 0
@@ -455,11 +456,11 @@ fn pcre2_copy_w_files(ctx: &ActionCtx, source_dir: str, dest_dir: str) -> i32:
 fn pcre2_migrate_tmp_dir(ctx: &ActionCtx) -> str:
     pcre2_join(pcre2_scratch_dir(ctx), "migrate-" ++ f"{ctx.target_name()}")
 
-fn pcre2_compile_binary(ctx: &ActionCtx, workspace_name: str, source_path: str, output_path: str) -> i32:
+fn pcre2_compile_binary(ctx: &ActionCtx, workspace_name: &str, source_path: &str, output_path: &str) -> i32:
     let workspace = ctx.create_workspace(workspace_name)
     workspace.add_file(source_path)
     var options = workspace.options()
-    options.output_path = output_path
+    options.output_path = pcre2_owned_text(output_path)
     workspace.set_options(options)
     let result = workspace.compile()
     if result.rc != 0:
@@ -468,7 +469,7 @@ fn pcre2_compile_binary(ctx: &ActionCtx, workspace_name: str, source_path: str, 
         return pcre2_fail(ctx, workspace_name ++ " did not produce " ++ output_path)
     0
 
-fn pcre2_prepare_reference_tree(ctx: &ActionCtx, ref_dir: str) -> i32:
+fn pcre2_prepare_reference_tree(ctx: &ActionCtx, ref_dir: &str) -> i32:
     let fs = ctx.fs()
     let src_dir = pcre2_join(ref_dir, "src")
     if not fs.is_dir(src_dir):
@@ -535,7 +536,7 @@ pub fn run_pcre2_reference_action(ctx: ActionCtx) -> i32:
             return rc
         var fetch_args: Vec[str] = Vec.new()
         fetch_args.push(pcre2_abs(root, fetch_bin))
-        fetch_args.push(url)
+        fetch_args.push(pcre2_owned_text(url))
         fetch_args.push(pcre2_abs(root, archive_path))
         let fetch_result = ctx.process_runner().run_capture(fetch_args, pcre2_abs(root, pcre2_join(scratch_dir, release ++ ".fetch.stdout")), pcre2_abs(root, pcre2_join(scratch_dir, release ++ ".fetch.stderr")), 300000)
         if fetch_result.rc != 0:
@@ -576,7 +577,7 @@ pub fn run_pcre2_reference_action(ctx: ActionCtx) -> i32:
     let prep_rc = pcre2_prepare_reference_tree(ctx, ref_dir)
     if prep_rc != 0:
         return prep_rc
-    let ready_stamp = if ctx.outputs().len() > 1: ctx.outputs().get(1) else: pcre2_join(ref_dir, ".with-reference-ready")
+    let ready_stamp = if ctx.outputs().len() > 1: pcre2_owned_text(ctx.outputs().get(1)) else: pcre2_join(ref_dir, ".with-reference-ready")
     if fs.write_text(ready_stamp, "ok\n") != 0:
         return pcre2_fail(ctx, "could not write ready stamp: " ++ ready_stamp)
     0
@@ -611,7 +612,7 @@ pub fn run_pcre2_migrate_action(ctx: ActionCtx) -> i32:
     let excludes: Vec[str] = Vec.new()
     var exclude_i = 1
     while exclude_i < args.len() as i32:
-        excludes.push(args.get(exclude_i as i64))
+        excludes.push(pcre2_owned_text(args.get(exclude_i as i64)))
         exclude_i = exclude_i + 1
     let workspace = ctx.create_workspace("pcre2-migrate")
     workspace.set_migrate_options(pcre2_migrate_options(source_dir, tmp_dir, source_dir, move excludes))
@@ -701,7 +702,7 @@ pub fn run_pcre2_test_smoke_action(ctx: ActionCtx) -> i32:
     let workspace = ctx.create_workspace("pcre2-test-smoke-build")
     workspace.add_file(pcre2test_src)
     var options = workspace.options()
-    options.output_path = pcre2test_bin
+    options.output_path = pcre2_owned_text(pcre2test_bin)
     workspace.set_options(options)
     let build_result = workspace.compile()
     if build_result.rc != 0:
@@ -764,7 +765,7 @@ pub fn run_pcre2_build_action(ctx: ActionCtx) -> i32:
     let workspace = ctx.create_workspace("pcre2-build")
     workspace.add_file(pcre2test_src)
     var options = workspace.options()
-    options.output_path = pcre2test_bin
+    options.output_path = pcre2_owned_text(pcre2test_bin)
     workspace.set_options(options)
     let result = workspace.compile()
     if result.rc != 0:

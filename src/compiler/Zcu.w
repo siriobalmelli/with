@@ -11,8 +11,9 @@ use compiler.ProjectConfig
 use compiler.Runtime
 use compiler.TrackedInputs
 use std.collections.HashMap
+extern fn with_str_clone_ref(s: &str) -> str
 
-fn zcu_owned_text(text: str) -> str:
+fn zcu_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
     runtime_str_clone(text)
@@ -27,7 +28,7 @@ fn zcu_debug_init_enabled() -> i32:
         return 0
     1
 
-fn zcu_debug_init(msg: str):
+fn zcu_debug_init(msg: &str):
     if zcu_debug_init_enabled() == 0:
         return
     runtime_eprint("[zcu-init] " ++ msg)
@@ -91,6 +92,11 @@ type Zcu {
     // Analysis commands preserve diagnostics but may continue past preliminary
     // semantic errors to produce a partial final-Sema fact snapshot.
     analysis_partial_semantics: i32,
+    // No-silent-fallbacks guard: set only when compile_source_frontend_mode
+    // ran sema to completion. Success verdicts (check_pool) require this
+    // POSITIVE evidence — a pipeline that stops before sema must never map
+    // to exit 0, whatever state produced the stop.
+    frontend_sema_completed: i32,
     prelude_mode: i32,
     cli_diag_gen_starts: Vec[i32],
     cli_diag_gen_ends: Vec[i32],
@@ -147,6 +153,7 @@ fn Zcu.init -> Zcu:
         project_config: project_config_default(),
         trace_c_import_cache: 0,
         analysis_partial_semantics: 0,
+        frontend_sema_completed: 0,
         prelude_mode: PRELUDE_FULL(),
         cli_diag_gen_starts: Vec.new(),
         cli_diag_gen_ends: Vec.new(),
@@ -167,17 +174,17 @@ impl Zcu:
     // #592: import dedup compares CANONICAL keys, so different spellings of the
     // same file (root vs import-resolved, ./-prefixed, absolute, via ..) collapse
     // to one import and the loader never parses a file twice.
-    fn has_imported_path(path: str) -> i32:
+    fn has_imported_path(path: &str) -> i32:
         let key = resolve_canonical_module_key(path)
         for i in 0..self.imported_paths.len() as i32:
             if self.imported_paths.get(i as i64) == key:
                 return 1
         0
 
-    fn add_imported_path(path: str) -> Unit:
+    fn add_imported_path(path: &str) -> Unit:
         self.imported_paths.push(zcu_owned_text(resolve_canonical_module_key(path)))
 
-    mut fn seed_decl_source_paths(pool: AstPool, path: str, file_id: i32) -> Unit:
+    mut fn seed_decl_source_paths(pool: AstPool, path: &str, file_id: i32) -> Unit:
         self.decl_source_paths = Vec.new()
         self.decl_source_file_ids = Vec.new()
         self.decl_is_c_import = Vec.new()
@@ -186,13 +193,13 @@ impl Zcu:
             self.decl_source_file_ids.push(file_id)
             self.decl_is_c_import.push(0)
 
-    fn append_decl_source_paths(count: i32, path: str, file_id: i32) -> Unit:
+    fn append_decl_source_paths(count: i32, path: &str, file_id: i32) -> Unit:
         for _ in 0..count:
             self.decl_source_paths.push(zcu_owned_text(path))
             self.decl_source_file_ids.push(file_id)
             self.decl_is_c_import.push(0)
 
-    fn append_c_import_decl_paths(count: i32, path: str, file_id: i32) -> Unit:
+    fn append_c_import_decl_paths(count: i32, path: &str, file_id: i32) -> Unit:
         for _ in 0..count:
             self.decl_source_paths.push(zcu_owned_text(path))
             self.decl_source_file_ids.push(file_id)
@@ -200,7 +207,7 @@ impl Zcu:
 
     fn decl_source_path_frontend(decl_index: i32) -> str:
         if decl_index >= 0 and decl_index < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(decl_index as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(decl_index as i64))
         self.current_source_path
 
     fn decl_source_file_id_frontend(decl_index: i32) -> i32:
@@ -214,15 +221,15 @@ impl Zcu:
             return self.source_dir
         resolve_dirname(path)
 
-    fn c_import_cache_lookup(key: str) -> str:
+    fn c_import_cache_lookup(key: &str) -> str:
         for i in 0..self.c_import_cache_keys.len() as i32:
             if self.c_import_cache_keys.get(i as i64) == key:
-                return self.c_import_cache_values.get(i as i64)
+                return with_str_clone_ref(self.c_import_cache_values.get(i as i64))
         ""
 
-    fn c_import_cache_store(key: str, value: str) -> Unit:
-        self.c_import_cache_keys.push(key)
-        self.c_import_cache_values.push(value)
+    fn c_import_cache_store(key: &str, value: &str) -> Unit:
+        self.c_import_cache_keys.push(with_str_clone_ref(key))
+        self.c_import_cache_values.push(with_str_clone_ref(value))
 
     mut fn set_prelude_mode(mode: i32):
         self.prelude_mode = compilation_normalize_prelude_mode(mode)
@@ -233,11 +240,11 @@ impl Zcu:
         self.cli_diag_source_names = Vec.new()
         self.cli_diag_source_texts = Vec.new()
 
-    fn add_cli_diag_mapping(gen_start: i32, gen_end: i32, source_name: str, source_text: str) -> Unit:
+    fn add_cli_diag_mapping(gen_start: i32, gen_end: i32, source_name: &str, source_text: &str) -> Unit:
         self.cli_diag_gen_starts.push(gen_start)
         self.cli_diag_gen_ends.push(gen_end)
-        self.cli_diag_source_names.push(source_name)
-        self.cli_diag_source_texts.push(source_text)
+        self.cli_diag_source_names.push(with_str_clone_ref(source_name))
+        self.cli_diag_source_texts.push(with_str_clone_ref(source_text))
 
     fn cli_diag_mapping_index(offset: i32) -> i32:
         for i in 0..self.cli_diag_gen_starts.len() as i32:
@@ -252,13 +259,22 @@ impl Zcu:
     // drop freed the stored diagnostic's label/note buffers (#715 class,
     // reproduced as a DOUBLE FREE under --debug-alloc).
     fn render_diag_frontend(diag: &Diagnostic):
+        let source = self.source_for_file_id_frontend(diag.primary.file)
+        self.render_diag_frontend_with(diag, &source)
+
+    // Renders against a caller-supplied primary Source so diagnostic loops
+    // can reuse one Source per file. Building a fresh Source per diagnostic
+    // clones the whole file text and recomputes its line-offset table —
+    // quadratic on a warning/error flood over a large file (#747: the
+    // migrate fix-it pass spent minutes here on the emitted compiler C).
+    // CLI-mapped diagnostics resolve their own source and ignore `source`.
+    fn render_diag_frontend_with(diag: &Diagnostic, source: &Source):
         let map_idx = self.cli_diag_mapping_index(diag.primary.start)
         if map_idx >= 0:
             let gen_start = self.cli_diag_gen_starts.get(map_idx as i64)
-            let source = Source.from_string(self.cli_diag_source_names.get(map_idx as i64), self.cli_diag_source_texts.get(map_idx as i64), 0)
-            diag.render_at_offset(source, gen_start)
+            let mapped = Source.from_string(self.cli_diag_source_names.get(map_idx as i64), self.cli_diag_source_texts.get(map_idx as i64), 0)
+            diag.render_at_offset(mapped, gen_start)
             return
-        let source = self.source_for_file_id_frontend(diag.primary.file)
         // #670: labels can point into other files (e.g. E0921's concurrency
         // evidence in the std prelude); resolve each one against its own file.
         let label_paths: Vec[str] = Vec.new()
@@ -294,21 +310,33 @@ impl Zcu:
         Source.from_string(self.current_source_path, self.current_source_text, 0)
 
     fn render_all_diagnostics_frontend():
+        // One Source per file, not per diagnostic (#747; see
+        // render_diag_frontend_with).
+        var cached_file = -2147483648
+        var cached_source = Source.from_string("", "", 0)
         for i in 0..self.diagnostics.items.len() as i32:
-            self.render_diag_frontend(&self.diagnostics.items[i as i64])
+            let diag = &self.diagnostics.items[i as i64]
+            if self.cli_diag_mapping_index(diag.primary.start) < 0 and diag.primary.file != cached_file:
+                cached_source = self.source_for_file_id_frontend(diag.primary.file)
+                cached_file = diag.primary.file
+            self.render_diag_frontend_with(diag, &cached_source)
             if i + 1 < self.diagnostics.items.len() as i32:
                 runtime_eprint("")
 
     fn render_warnings_frontend():
         var printed = 0
+        var cached_file = -2147483648
+        var cached_source = Source.from_string("", "", 0)
         for i in 0..self.diagnostics.items.len() as i32:
             let diag = &self.diagnostics.items[i as i64]
             if diag.severity != DiagSeverity.Warning:
                 continue
             if printed != 0:
                 runtime_eprint("")
-            let source = self.source_for_file_id_frontend(diag.primary.file)
-            diag.render(source)
+            if diag.primary.file != cached_file:
+                cached_source = self.source_for_file_id_frontend(diag.primary.file)
+                cached_file = diag.primary.file
+            diag.render(cached_source)
             printed = printed + 1
 
     fn print_warnings():
@@ -321,10 +349,10 @@ impl Zcu:
     mut fn capture_pending_warnings():
         self.reset_pending_warnings()
 
-    mut fn set_current_source(source_dir: str, path: str, text: str):
-        self.source_dir = source_dir
-        self.current_source_path = path
-        self.current_source_text = text
+    mut fn set_current_source(source_dir: &str, path: &str, text: &str):
+        self.source_dir = with_str_clone_ref(source_dir)
+        self.current_source_path = with_str_clone_ref(path)
+        self.current_source_text = with_str_clone_ref(text)
 
     fn tracked_input_root() -> str:
         if self.project_config.root_dir.len() > 0:
@@ -339,7 +367,7 @@ impl Zcu:
         self.extra_source_names = names
         self.extra_source_texts = texts
 
-    fn add_source_text_mapping(file_id: i32, name: str, text: str) -> Unit:
+    fn add_source_text_mapping(file_id: i32, name: &str, text: &str) -> Unit:
         self.source_text_file_ids.push(file_id)
         self.source_text_names.push(zcu_owned_text(name))
         self.source_texts.push(zcu_owned_text(text))
@@ -365,8 +393,9 @@ impl Zcu:
         self.source_text_names = Vec.new()
         self.source_texts = Vec.new()
 
-    mut fn reset_for_new_invocation(source_dir: str, path: str, text: str):
+    mut fn reset_for_new_invocation(source_dir: &str, path: &str, text: &str):
         self.set_current_source(source_dir, path, text)
+        self.frontend_sema_completed = 0
         self.extra_source_names = Vec.new()
         self.extra_source_texts = Vec.new()
         self.reset_import_state()
@@ -389,11 +418,16 @@ impl Zcu:
         self.pool = sema.pool
         var tracked_paths = self.tracked_input_paths
         self.tracked_input_paths = tracked_input_merge_unique(move tracked_paths, &sema.tracked_input_paths)
+        // Callers move sema.diags into Zcu.diagnostics before syncing. The moved
+        // field is an all-zero reset sentinel, not a reusable Vec: pushing a
+        // later comptime/action diagnostic would allocate zero bytes and leave
+        // stale allocator contents to be dropped as a Diagnostic (#743).
+        sema.diags = DiagnosticList.init()
         self.last_sema = sema
         if zcu_debug_pool_flow_enabled() != 0:
             runtime_eprint(f"[zcu] sync_from_sema:after zcu.pool={self.pool.state.symbol_texts.len() as i32} last_sema.pool={self.last_sema.pool.state.symbol_texts.len() as i32} last_sema.ast.decls={self.last_sema.ast.decl_count()}")
 
-    mut fn set_resolve_snapshot(result: &ResolveResult, root_path: str):
+    mut fn set_resolve_snapshot(result: &ResolveResult, root_path: &str):
         let modules: Vec[ResolvedModule] = Vec.new()
         for i in 0..result.modules.len() as i32:
             let m = result.modules.get(i as i64)
@@ -450,15 +484,15 @@ impl Zcu:
         }
         self.resolved_root_path = zcu_owned_text(root_path)
 
-    mut fn set_typed_snapshot(typed_dump: str, typed_pool: AstPool):
-        self.last_typed_dump = typed_dump
+    mut fn set_typed_snapshot(typed_dump: &str, typed_pool: AstPool):
+        self.last_typed_dump = with_str_clone_ref(typed_dump)
         self.typed_pool_cache = typed_pool
 
-    mut fn set_codegen_snapshot(mir_mod: MirModule, mir_dump: str, async_mod: AsyncMirModule, async_dump: str):
+    mut fn set_codegen_snapshot(mir_mod: MirModule, mir_dump: &str, async_mod: AsyncMirModule, async_dump: &str):
         self.last_mir_module = mir_mod
-        self.last_mir_dump = mir_dump
+        self.last_mir_dump = with_str_clone_ref(mir_dump)
         self.last_async_mir_module = async_mod
-        self.last_async_mir_dump = async_dump
+        self.last_async_mir_dump = with_str_clone_ref(async_dump)
 
     mut fn set_link_lib_names(names: Vec[str]):
         self.last_link_lib_names = names
@@ -473,7 +507,7 @@ impl Zcu:
             let lib_sym = result.link_libs.get(li as i64)
             if lib_sym <= 0:
                 continue
-            let lib_name: str = pool.resolve(lib_sym)
+            let lib_name: str = with_str_clone_ref(pool.resolve(lib_sym))
             if lib_name.len() > 0:
                 self.last_link_lib_names.push(lib_name)
 

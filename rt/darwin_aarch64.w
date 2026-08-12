@@ -644,11 +644,10 @@ type DarwinAddrInfo:
     ai_addr: *mut u8
     ai_next: *mut DarwinAddrInfo
 
-fn rt_str_data(s: str) -> *const u8:
-    let p = &s as *const *const u8
-    unsafe *p
+fn rt_str_data(s: &str) -> *const u8:
+    unsafe **(&s as *const *const *const u8)
 
-fn rt_net_copy_str_to_c_buf(s: str, out: *mut u8, cap: i64) -> i32:
+fn rt_net_copy_str_to_c_buf(s: &str, out: *mut u8, cap: i64) -> i32:
     if s.len() + 1 > cap:
         return -1
     var i: i64 = 0
@@ -903,13 +902,13 @@ fn posix_signal_bit(signo: i32) -> u32:
         return 0 as u32
     (1 as u32) << ((signo - 1) as u32)
 
-fn posix_str_to_c_buf(s: str) -> *mut u8:
+fn posix_str_to_c_buf(s: &str) -> *mut u8:
     let out = with_alloc(s.len() + 1)
     if out as i64 == 0:
         return 0 as *mut u8
     if s.len() > 0:
-        let sp = &s as *const *const u8
-        with_memcpy(out, unsafe *sp, s.len())
+        let sp = unsafe **(&s as *const *const *const u8)
+        with_memcpy(out, sp, s.len())
     unsafe *((out as i64 + s.len()) as *mut u8) = 0
     out
 
@@ -1057,7 +1056,7 @@ fn posix_interrupt_signal_handler(signo: i32):
 fn posix_interrupted() -> bool:
     posix_interrupt_flag != 0
 
-pub fn rt_compat_setenv_str(name: str, value: str) -> i32:
+pub fn rt_compat_setenv_str(name: &str, value: &str) -> i32:
     let name_buf = posix_str_to_c_buf(name)
     if name_buf as i64 == 0:
         return -1
@@ -1113,7 +1112,7 @@ pub fn rt_set_process_memory_limit_bytes(limit: i64) -> i32:
 pub fn rt_compat_interrupt_requested() -> i32:
     posix_interrupt_flag
 
-pub fn rt_compat_exec_binary(path: str) -> i32:
+pub fn rt_compat_exec_binary(path: &str) -> i32:
     let buf = posix_str_to_c_buf(path)
     if buf as i64 == 0:
         return -1
@@ -1121,7 +1120,7 @@ pub fn rt_compat_exec_binary(path: str) -> i32:
     with_free(buf)
     rc
 
-pub fn rt_compat_exec_argv(args: str) -> i32:
+pub fn rt_compat_exec_argv(args: &str) -> i32:
     let buf = posix_str_to_c_buf(args)
     if buf as i64 == 0:
         return -1
@@ -1129,7 +1128,7 @@ pub fn rt_compat_exec_argv(args: str) -> i32:
     with_free(buf)
     rc
 
-pub fn rt_compat_exec_argv_cwd(args: str, cwd: str) -> i32:
+pub fn rt_compat_exec_argv_cwd(args: &str, cwd: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let cwd_buf = posix_str_to_c_buf(cwd)
     if arg_buf as i64 == 0 or cwd_buf as i64 == 0:
@@ -1139,10 +1138,10 @@ pub fn rt_compat_exec_argv_cwd(args: str, cwd: str) -> i32:
     with_free(cwd_buf)
     rc
 
-pub fn rt_compat_exec_argv_capture(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32:
+pub fn rt_compat_exec_argv_capture(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32:
     rt_compat_exec_argv_capture_cwd(args, stdout_path, stderr_path, timeout_ms, "")
 
-pub fn rt_compat_exec_argv_capture_input(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, stdin_path: str) -> i32:
+pub fn rt_compat_exec_argv_capture_input(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, stdin_path: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let out_buf = posix_str_to_c_buf(stdout_path)
     let err_buf = posix_str_to_c_buf(stderr_path)
@@ -1156,7 +1155,7 @@ pub fn rt_compat_exec_argv_capture_input(args: str, stdout_path: str, stderr_pat
     with_free(in_buf)
     rc
 
-pub fn rt_compat_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str) -> i32:
+pub fn rt_compat_exec_argv_capture_cwd(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let out_buf = posix_str_to_c_buf(stdout_path)
     let err_buf = posix_str_to_c_buf(stderr_path)
@@ -1171,7 +1170,7 @@ pub fn rt_compat_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path:
         with_free(cwd_buf)
     rc
 
-pub fn rt_compat_exec_argv_capture_spawn(args: str, stdout_path: str, stderr_path: str) -> i32:
+pub fn rt_compat_exec_argv_capture_spawn(args: &str, stdout_path: &str, stderr_path: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let out_buf = posix_str_to_c_buf(stdout_path)
     let err_buf = posix_str_to_c_buf(stderr_path)

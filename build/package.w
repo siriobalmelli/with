@@ -3,21 +3,22 @@ module build.package
 use std.build
 use std.string.StringBuilder
 use std.sysinfo
+fn package_owned_text(s: &str): s ++ ""
 
-fn pkg_fail(ctx: &ActionCtx, message: str) -> i32:
+fn pkg_fail(ctx: &ActionCtx, message: &str) -> i32:
     ctx.diagnostics().error(ctx.target_name() ++ ": " ++ message)
     1
 
-fn pkg_join(left: str, right: str) -> str:
+fn pkg_join(left: &str, right: &str) -> str:
     if left.len() == 0:
-        return right
+        return package_owned_text(right)
     if right.len() == 0:
-        return left
+        return package_owned_text(left)
     if left.ends_with("/"):
         return left ++ right
     left ++ "/" ++ right
 
-fn pkg_dirname(path: str) -> str:
+fn pkg_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         let ch = path.byte_at(i as i64)
@@ -29,12 +30,12 @@ fn pkg_dirname(path: str) -> str:
         return "/"
     path.slice(0, last_slash as i64)
 
-fn pkg_abs(root: str, path: str) -> str:
+fn pkg_abs(root: &str, path: &str) -> str:
     if pkg_is_abs(path):
-        return path
+        return package_owned_text(path)
     pkg_join(root, path)
 
-fn pkg_is_abs(path: str) -> bool:
+fn pkg_is_abs(path: &str) -> bool:
     if path.len() == 0:
         return false
     if path.byte_at(0) == 47 or path.byte_at(0) == 92:
@@ -47,7 +48,7 @@ fn pkg_is_abs(path: str) -> bool:
             return (drive >= 65 and drive <= 90) or (drive >= 97 and drive <= 122)
     false
 
-fn pkg_trim_line(text: str) -> str:
+fn pkg_trim_line(text: &str) -> str:
     var end = 0
     while end < text.len() as i32:
         let ch = text.byte_at(end as i64)
@@ -67,7 +68,7 @@ fn pkg_trim_line(text: str) -> str:
         end = end - 1
     text.slice(start as i64, end as i64)
 
-fn pkg_normalize_path(path: str) -> str:
+fn pkg_normalize_path(path: &str) -> str:
     var out = ""
     for i in 0..path.len() as i32:
         let ch = path.byte_at(i as i64)
@@ -77,7 +78,7 @@ fn pkg_normalize_path(path: str) -> str:
             out = out ++ path.slice(i as i64, (i + 1) as i64)
     out
 
-fn pkg_str_compare(a: str, b: str) -> i32:
+fn pkg_str_compare(a: &str, b: &str) -> i32:
     let n = if a.len() < b.len(): a.len() else: b.len()
     var i = 0
     while i < n as i32:
@@ -101,23 +102,23 @@ fn pkg_sort_strings(items: Vec[str]) -> Vec[str]:
         for j in 0..sorted.len() as i32:
             let existing = sorted.get(j as i64)
             if not inserted and pkg_str_compare(item, existing) < 0:
-                out.push(item)
+                out.push(package_owned_text(item))
                 inserted = true
-            out.push(existing)
+            out.push(package_owned_text(existing))
         if not inserted:
-            out.push(item)
+            out.push(package_owned_text(item))
         sorted = out
     sorted
 
-fn pkg_add_unique(items: Vec[str], item: str) -> Vec[str]:
+fn pkg_add_unique(items: Vec[str], item: &str) -> Vec[str]:
     var out = items
     for i in 0..out.len() as i32:
         if out.get(i as i64) == item:
             return out
-    out.push(item)
+    out.push(package_owned_text(item))
     out
 
-fn pkg_rel_path(root: str, path: str) -> str:
+fn pkg_rel_path(root: &str, path: &str) -> str:
     let normalized_root = pkg_normalize_path(root)
     let normalized_path = pkg_normalize_path(path)
     let prefix = if normalized_root.ends_with("/"): normalized_root else: normalized_root ++ "/"
@@ -125,7 +126,7 @@ fn pkg_rel_path(root: str, path: str) -> str:
         return normalized_path.slice(prefix.len(), normalized_path.len())
     ""
 
-fn pkg_add_parent_dirs(dirs: Vec[str], top_dir: str, rel_path: str) -> Vec[str]:
+fn pkg_add_parent_dirs(dirs: Vec[str], top_dir: &str, rel_path: &str) -> Vec[str]:
     var out = pkg_add_unique(move dirs, top_dir)
     for i in 0..rel_path.len() as i32:
         if rel_path.byte_at(i as i64) == 47:
@@ -146,41 +147,41 @@ fn pkg_current_platform() -> str:
         return "windows-x86_64"
     ""
 
-fn pkg_env_or(ctx: &ActionCtx, name: str, fallback: str) -> str:
+fn pkg_env_or(ctx: &ActionCtx, name: &str, fallback: &str) -> str:
     let value = ctx.env_input(name)
     if value.len() > 0:
         return value
-    fallback
+    package_owned_text(fallback)
 
-fn pkg_tool_from_env(ctx: &ActionCtx, primary: str, legacy: str, fallback: str) -> str:
+fn pkg_tool_from_env(ctx: &ActionCtx, primary: &str, legacy: &str, fallback: &str) -> str:
     let explicit = ctx.env_input(primary)
     if explicit.len() > 0:
         return explicit
     let old = ctx.env_input(legacy)
     if old.len() > 0:
         return old
-    fallback
+    package_owned_text(fallback)
 
 fn pkg_llvm_prefix(ctx: &ActionCtx) -> str:
     let args = ctx.args()
-    let fallback = if args.len() > 3: args.get(3) else: ""
+    let fallback = if args.len() > 3: package_owned_text(args.get(3)) else: ""
     pkg_env_or(ctx, "LLVM_PREFIX", fallback)
 
-fn pkg_llvm_tool(ctx: &ActionCtx, primary: str, legacy: str, name: str) -> str:
+fn pkg_llvm_tool(ctx: &ActionCtx, primary: &str, legacy: &str, name: &str) -> str:
     let fallback = pkg_join(pkg_llvm_prefix(ctx), "bin/" ++ name ++ pkg_host_exe_suffix())
     pkg_tool_from_env(ctx, primary, legacy, fallback)
 
-fn pkg_path_exists(ctx: &ActionCtx, path: str) -> bool:
+fn pkg_path_exists(ctx: &ActionCtx, path: &str) -> bool:
     if pkg_is_abs(path):
         return ctx.fs().host_exists(path)
     ctx.fs().exists(path)
 
-fn pkg_process_path(root: str, path: str) -> str:
+fn pkg_process_path(root: &str, path: &str) -> str:
     if pkg_is_abs(path):
-        return path
+        return package_owned_text(path)
     pkg_abs(root, path)
 
-fn pkg_ascii_lower(text: str) -> str:
+fn pkg_ascii_lower(text: &str) -> str:
     var out = StringBuilder.with_capacity(text.len())
     for i in 0..text.len() as i32:
         let ch = text.byte_at(i as i64)
@@ -190,7 +191,7 @@ fn pkg_ascii_lower(text: str) -> str:
             out.push_byte(ch as u8)
     out.to_str()
 
-fn pkg_forbidden_dependency(text: str, platform: str) -> str:
+fn pkg_forbidden_dependency(text: &str, platform: &str) -> str:
     let lower = pkg_ascii_lower(text)
     let needles: Vec[str] = Vec.new()
     needles.push("clang")
@@ -210,10 +211,10 @@ fn pkg_forbidden_dependency(text: str, platform: str) -> str:
     for i in 0..needles.len() as i32:
         let needle = needles.get(i as i64)
         if lower.contains(needle):
-            return needle
+            return package_owned_text(needle)
     ""
 
-fn pkg_run_capture(ctx: &ActionCtx, label: str, argv: Vec[str], timeout_ms: i32) -> ToolProcessResult:
+fn pkg_run_capture(ctx: &ActionCtx, label: &str, argv: Vec[str], timeout_ms: i32) -> ToolProcessResult:
     let root = ctx.project_info().project_root()
     let command_dir = "out/command/" ++ ctx.target_name()
     let _mkdir = ctx.fs().mkdir_all(command_dir)
@@ -221,7 +222,7 @@ fn pkg_run_capture(ctx: &ActionCtx, label: str, argv: Vec[str], timeout_ms: i32)
     let stderr_path = pkg_abs(root, pkg_join(command_dir, label ++ ".stderr"))
     ctx.process_runner().run_capture(argv, stdout_path, stderr_path, timeout_ms)
 
-fn pkg_run_asset_version(ctx: &ActionCtx, asset_path: str, version: str) -> i32:
+fn pkg_run_asset_version(ctx: &ActionCtx, asset_path: &str, version: &str) -> i32:
     let root = ctx.project_info().project_root()
     let args: Vec[str] = Vec.new()
     args.push(pkg_abs(root, asset_path))
@@ -234,7 +235,7 @@ fn pkg_run_asset_version(ctx: &ActionCtx, asset_path: str, version: str) -> i32:
         return pkg_fail(ctx, "release binary reported '" ++ actual ++ "', expected 'with " ++ version ++ "'")
     0
 
-fn pkg_check_dynamic_dependencies(ctx: &ActionCtx, asset_path: str, platform: str, label: str) -> i32:
+fn pkg_check_dynamic_dependencies(ctx: &ActionCtx, asset_path: &str, platform: &str, label: &str) -> i32:
     let root = ctx.project_info().project_root()
     let readobj = pkg_llvm_tool(ctx, "WITH_LLVM_READOBJ", "LLVM_READOBJ", "llvm-readobj")
     if not pkg_path_exists(ctx, readobj):
@@ -254,7 +255,7 @@ fn pkg_check_dynamic_dependencies(ctx: &ActionCtx, asset_path: str, platform: st
         return pkg_fail(ctx, "release binary has forbidden dynamic compiler/support dependency matching '" ++ forbidden ++ "'\n" ++ result.stdout)
     0
 
-fn pkg_check_static_libclang_symbol(ctx: &ActionCtx, asset_path: str, platform: str) -> i32:
+fn pkg_check_static_libclang_symbol(ctx: &ActionCtx, asset_path: &str, platform: &str) -> i32:
     if platform == "windows-x86_64":
         return 0
     let root = ctx.project_info().project_root()
@@ -272,7 +273,7 @@ fn pkg_check_static_libclang_symbol(ctx: &ActionCtx, asset_path: str, platform: 
         return pkg_fail(ctx, "release binary does not contain static libclang symbols")
     0
 
-fn pkg_strip_release_binary(ctx: &ActionCtx, asset_path: str) -> i32:
+fn pkg_strip_release_binary(ctx: &ActionCtx, asset_path: &str) -> i32:
     let root = ctx.project_info().project_root()
     let strip = pkg_llvm_tool(ctx, "WITH_LLVM_STRIP", "LLVM_STRIP", "llvm-strip")
     if not pkg_path_exists(ctx, strip):
@@ -285,13 +286,13 @@ fn pkg_strip_release_binary(ctx: &ActionCtx, asset_path: str) -> i32:
         return pkg_fail(ctx, "llvm-strip failed" ++ f" (exit code {result.rc}): " ++ result.stdout ++ result.stderr)
     0
 
-fn pkg_write_release_checksum(ctx: &ActionCtx, asset_path: str) -> i32:
+fn pkg_write_release_checksum(ctx: &ActionCtx, asset_path: &str) -> i32:
     let sha = ctx.fs().sha256_file(asset_path)
     if sha.len() == 0:
         return pkg_fail(ctx, "could not hash release asset: " ++ asset_path)
     pkg_write_text(ctx, asset_path ++ ".sha256", sha ++ "  " ++ asset_path ++ "\n")
 
-fn pkg_write_text(ctx: &ActionCtx, path: str, text: str) -> i32:
+fn pkg_write_text(ctx: &ActionCtx, path: &str, text: &str) -> i32:
     let fs = ctx.fs()
     let dir = pkg_dirname(path)
     if dir != "." and fs.mkdir_all(dir) != 0:
@@ -300,7 +301,7 @@ fn pkg_write_text(ctx: &ActionCtx, path: str, text: str) -> i32:
         return pkg_fail(ctx, "could not write: " ++ path)
     0
 
-fn pkg_copy_file(ctx: &ActionCtx, source: str, dest: str) -> i32:
+fn pkg_copy_file(ctx: &ActionCtx, source: &str, dest: &str) -> i32:
     let fs = ctx.fs()
     let dir = pkg_dirname(dest)
     if dir != "." and fs.mkdir_all(dir) != 0:
@@ -309,7 +310,7 @@ fn pkg_copy_file(ctx: &ActionCtx, source: str, dest: str) -> i32:
         return pkg_fail(ctx, "could not copy " ++ source ++ " to " ++ dest)
     0
 
-fn pkg_emit_c(ctx: &ActionCtx, compiler_path: str, source: str, output: str, label: str) -> i32:
+fn pkg_emit_c(ctx: &ActionCtx, compiler_path: &str, source: &str, output: &str, label: &str) -> i32:
     let fs = ctx.fs()
     let root = ctx.project_info().project_root()
     let dir = pkg_dirname(output)
@@ -318,11 +319,11 @@ fn pkg_emit_c(ctx: &ActionCtx, compiler_path: str, source: str, output: str, lab
     let args: Vec[str] = Vec.new()
     args.push(pkg_abs(root, compiler_path))
     args.push("build")
-    args.push(source)
+    args.push(package_owned_text(source))
     args.push("--emit-c")
     args.push("--no-prelude")
     args.push("-o")
-    args.push(output)
+    args.push(package_owned_text(output))
     let command_dir = "out/command/" ++ ctx.target_name()
     if fs.mkdir_all(command_dir) != 0:
         return pkg_fail(ctx, "could not create command capture directory: " ++ command_dir)
@@ -356,7 +357,7 @@ fn pkg_bootstrap_types_header() -> str:
     "} with_vec;\n\n" ++
     "#endif\n"
 
-fn pkg_readme(version: str) -> str:
+fn pkg_readme(version: &str) -> str:
     "# With " ++ version ++ " Bootstrap C Bundle\n\n" ++
     "This bundle is for bootstrapping With on a host that does not already have a native With compiler.\n\n" ++
     "It contains emitted C for the compiler, LLVM/libclang bridges, runtime core, panic and regex runtime, fiber stubs, compatibility runtime, and temporary Linux and Windows bootstrap platform shims.\n\n" ++
@@ -374,12 +375,12 @@ fn pkg_readme(version: str) -> str:
     "    test -x \"$CLANG\"\n" ++
     "    test -x \"$CLANGXX\"\n" ++
     "    mkdir -p obj\n\n" ++
-    "    \"$CLANG\" -std=gnu11 -O2 -D_GNU_SOURCE -Iruntime -I\"$LLVM_PREFIX/include\" \\\n" ++
+    "    \"$CLANG\" -std=gnu11 -O1 -D_GNU_SOURCE -Iruntime -I\"$LLVM_PREFIX/include\" \\\n" ++
     "      -include runtime/wl_decls.h -c src/with_compiler.c -o obj/with_compiler.o\n\n" ++
     "    \"$CLANG\" -std=gnu11 -O2 -D_GNU_SOURCE -Iruntime -I\"$LLVM_PREFIX/include\" \\\n" ++
     "      -c src/linux_platform.c -o obj/linux_platform.o\n\n" ++
     "    for file in src/rt_core.c src/panic_runtime.c src/regex_runtime.c src/fiber_stubs.c src/compat_runtime.c; do\n" ++
-    "      \"$CLANG\" -std=gnu11 -O2 -D_GNU_SOURCE -DWITH_RUNTIME_H -Iruntime -I\"$LLVM_PREFIX/include\" \\\n" ++
+    "      \"$CLANG\" -std=gnu11 -O1 -D_GNU_SOURCE -DWITH_RUNTIME_H -Iruntime -I\"$LLVM_PREFIX/include\" \\\n" ++
     "        -include runtime/bootstrap_types.h -c \"$file\" -o \"obj/$(basename \"$file\" .c).o\"\n" ++
     "    done\n" ++
     "    \"$CLANGXX\" obj/*.o \\\n" ++
@@ -388,7 +389,7 @@ fn pkg_readme(version: str) -> str:
     "      -o with-bootstrap\n\n" ++
     "Exact LLVM archive ordering may need adjustment by platform/linker. The release compiler is not this bootstrap binary; the release compiler is the byte-checked output of the With stage chain.\n"
 
-fn pkg_write_sha256sums(ctx: &ActionCtx, stage_root: str) -> i32:
+fn pkg_write_sha256sums(ctx: &ActionCtx, stage_root: &str) -> i32:
     let fs = ctx.fs()
     let files = pkg_sort_strings(fs.list_files(stage_root))
     var manifest = ""
@@ -403,7 +404,7 @@ fn pkg_write_sha256sums(ctx: &ActionCtx, stage_root: str) -> i32:
         manifest = manifest ++ sha ++ "  ./" ++ rel ++ "\n"
     pkg_write_text(ctx, pkg_join(stage_root, "SHA256SUMS"), manifest)
 
-fn pkg_compile_gzip_helper(ctx: &ActionCtx, compiler_path: str, helper_bin: str) -> i32:
+fn pkg_compile_gzip_helper(ctx: &ActionCtx, compiler_path: &str, helper_bin: &str) -> i32:
     let fs = ctx.fs()
     let root = ctx.project_info().project_root()
     let helper_dir = pkg_dirname(helper_bin)
@@ -417,7 +418,7 @@ fn pkg_compile_gzip_helper(ctx: &ActionCtx, compiler_path: str, helper_bin: str)
     args.push("build")
     args.push("build/zlib_gzip.w")
     args.push("-o")
-    args.push(helper_bin)
+    args.push(package_owned_text(helper_bin))
     let result = ctx.process_runner().run_capture_cwd(args, pkg_abs(root, pkg_join(command_dir, "gzip-helper-build.stdout")), pkg_abs(root, pkg_join(command_dir, "gzip-helper-build.stderr")), 300000, root)
     if result.rc != 0:
         return pkg_fail(ctx, "could not build gzip helper" ++ f" (exit code {result.rc}): " ++ result.stdout ++ result.stderr)
@@ -425,7 +426,7 @@ fn pkg_compile_gzip_helper(ctx: &ActionCtx, compiler_path: str, helper_bin: str)
         return pkg_fail(ctx, "gzip helper build did not produce " ++ helper_bin)
     0
 
-fn pkg_run_gzip_helper(ctx: &ActionCtx, helper_bin: str, input_tar: str, output_path: str) -> i32:
+fn pkg_run_gzip_helper(ctx: &ActionCtx, helper_bin: &str, input_tar: &str, output_path: &str) -> i32:
     let fs = ctx.fs()
     let root = ctx.project_info().project_root()
     if fs.mkdir_all(pkg_dirname(output_path)) != 0:
@@ -444,7 +445,7 @@ fn pkg_run_gzip_helper(ctx: &ActionCtx, helper_bin: str, input_tar: str, output_
         return pkg_fail(ctx, "gzip helper did not produce " ++ output_path)
     0
 
-fn pkg_write_archive(ctx: &ActionCtx, compiler_path: str, stage_root: str, top_dir: str, output_path: str) -> i32:
+fn pkg_write_archive(ctx: &ActionCtx, compiler_path: &str, stage_root: &str, top_dir: &str, output_path: &str) -> i32:
     let fs = ctx.fs()
     let files = pkg_sort_strings(fs.list_files(stage_root))
     var dirs: Vec[str] = Vec.new()
@@ -456,11 +457,11 @@ fn pkg_write_archive(ctx: &ActionCtx, compiler_path: str, stage_root: str, top_d
     dirs = pkg_sort_strings(dirs)
     let entries: Vec[ArchiveEntry] = Vec.new()
     for i in 0..dirs.len() as i32:
-        entries.push(archive_dir_entry(dirs.get(i as i64), 0o755))
+        entries.push(archive_dir_entry(package_owned_text(dirs.get(i as i64)), 0o755))
     for i in 0..files.len() as i32:
         let source = files.get(i as i64)
         let rel = pkg_rel_path(stage_root, source)
-        entries.push(archive_file_entry(source, top_dir ++ "/" ++ rel, 0o644))
+        entries.push(archive_file_entry(package_owned_text(source), top_dir ++ "/" ++ rel, 0o644))
     let tmp_tar = pkg_join("out/bootstrap-c-package", top_dir ++ ".tar")
     if fs.write_tar(tmp_tar, entries) != 0:
         return pkg_fail(ctx, "could not write intermediate tar archive")

@@ -6,6 +6,7 @@
 use compiler.Runtime
 use compiler.ConanClient
 use std.crypto.sha256
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_str_clone(s: str) -> str
 
 type LockEntry {
@@ -23,13 +24,13 @@ type LockFile {
     entries: Vec[LockEntry],
 }
 
-pub fn lock_file_path(project_root: str) -> str:
+pub fn lock_file_path(project_root: &str) -> str:
     project_root ++ "/.with/lock.json"
 
 fn lock_empty -> LockFile:
     LockFile { entries: Vec.new() }
 
-fn lock_str_compare(a: str, b: str) -> i32:
+fn lock_str_compare(a: &str, b: &str) -> i32:
     let min_len = if a.len() < b.len(): a.len() else: b.len()
     for i in 0..min_len as i32:
         let ca = a.byte_at(i as i64) as i32
@@ -44,7 +45,7 @@ fn lock_str_compare(a: str, b: str) -> i32:
         return 1
     0
 
-fn lock_json_escape(value: str) -> str:
+fn lock_json_escape(value: &str) -> str:
     var out = ""
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -53,12 +54,12 @@ fn lock_json_escape(value: str) -> str:
         out = out ++ value.slice(i as i64, (i + 1) as i64)
     out
 
-fn lock_json_string(key: str, value: str, comma: bool) -> str:
+fn lock_json_string(key: &str, value: &str, comma: bool) -> str:
     let q = "\x22"
     let suffix = if comma: "," else: ""
     "      " ++ q ++ key ++ q ++ ": " ++ q ++ lock_json_escape(value) ++ q ++ suffix ++ "\n"
 
-fn lock_find_text(text: str, needle: str) -> i32:
+fn lock_find_text(text: &str, needle: &str) -> i32:
     if needle.len() == 0:
         return 0
     let n = text.len() as i32
@@ -75,7 +76,7 @@ fn lock_find_text(text: str, needle: str) -> i32:
         i = i + 1
     -1
 
-fn lock_json_extract_string(json: str, key: str) -> str:
+fn lock_json_extract_string(json: &str, key: &str) -> str:
     let needle = "\"" ++ key ++ "\""
     let json_len = json.len() as i32
     var pos = 0
@@ -109,7 +110,7 @@ fn lock_json_extract_string(json: str, key: str) -> str:
         pos = pos + 1
     ""
 
-fn lock_json_extract_string_array(json: str, key: str) -> Vec[str]:
+fn lock_json_extract_string_array(json: &str, key: &str) -> Vec[str]:
     let result: Vec[str] = Vec.new()
     let needle = "\"" ++ key ++ "\""
     let json_len = json.len() as i32
@@ -150,7 +151,7 @@ fn lock_json_extract_string_array(json: str, key: str) -> Vec[str]:
         pos = pos + 1
     result
 
-fn lock_split_nonempty_lines(text: str) -> Vec[str]:
+fn lock_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     let n = text.len() as i32
     var start = 0
@@ -168,7 +169,7 @@ fn lock_split_nonempty_lines(text: str) -> Vec[str]:
         i = i + 1
     lines
 
-fn lock_line_string_value(line: str, key: str) -> str:
+fn lock_line_string_value(line: &str, key: &str) -> str:
     let needle = "\"" ++ key ++ "\""
     let key_pos = lock_find_text(line, needle)
     if key_pos < 0:
@@ -187,7 +188,7 @@ fn lock_line_string_value(line: str, key: str) -> str:
         end = end + 1
     line.slice(start as i64, end as i64)
 
-fn lock_line_entry_name(line: str) -> str:
+fn lock_line_entry_name(line: &str) -> str:
     if lock_find_text(line, "\": {") < 0:
         return ""
     var start = 0
@@ -205,7 +206,7 @@ fn lock_line_entry_name(line: str) -> str:
         return ""
     name
 
-pub fn lock_load(project_root: str) -> LockFile:
+pub fn lock_load(project_root: &str) -> LockFile:
     let path = lock_file_path(project_root)
     if runtime_file_exists(path) == 0:
         return lock_empty()
@@ -269,7 +270,7 @@ pub fn lock_upsert(lock: &LockFile, entry: LockEntry) -> LockFile:
         out_entries.push(entry)
     LockFile { entries: out_entries }
 
-pub fn lock_remove(lock: &LockFile, name: str) -> LockFile:
+pub fn lock_remove(lock: &LockFile, name: &str) -> LockFile:
     let out_entries: Vec[LockEntry] = Vec.new()
     for i in 0..lock.entries.len() as i32:
         let entry = lock.entries.get(i as i64)
@@ -277,7 +278,7 @@ pub fn lock_remove(lock: &LockFile, name: str) -> LockFile:
             out_entries.push(lock_entry_clone(entry))
     LockFile { entries: out_entries }
 
-pub fn lock_write(project_root: str, lock: &LockFile) -> i32:
+pub fn lock_write(project_root: &str, lock: &LockFile) -> i32:
     let dir = project_root ++ "/.with"
     if runtime_mkdir_p(dir) != 0:
         runtime_eprint("error: failed to create .with directory")
@@ -302,26 +303,26 @@ pub fn lock_write(project_root: str, lock: &LockFile) -> i32:
     text = text ++ "}\n"
     runtime_write_file(lock_file_path(project_root), text)
 
-pub fn lock_sha256_text(data: str) -> str:
+pub fn lock_sha256_text(data: &str) -> str:
     var digest: [32]u8 = [0 as u8; 32]
     sha256_hash_str(data, &raw mut digest[0] as *mut u8)
     sha256_hex(&digest[0] as *const u8)
 
-pub fn lock_sha256_file(path: str) -> str:
+pub fn lock_sha256_file(path: &str) -> str:
     if runtime_file_exists(path) == 0:
         return ""
     lock_sha256_text(runtime_read_file(path))
 
-fn lock_c_dep_dir(project_root: str, name: str, version: str) -> str:
+fn lock_c_dep_dir(project_root: &str, name: &str, version: &str) -> str:
     project_root ++ "/.with/deps/c/" ++ name ++ "/" ++ version
 
-fn lock_ref_name(req: str) -> str:
+fn lock_ref_name(req: &str) -> str:
     let slash = lock_find_text(req, "/")
     if slash <= 0:
         return ""
     req.slice(0, slash as i64)
 
-fn lock_ref_version(req: str) -> str:
+fn lock_ref_version(req: &str) -> str:
     let slash = lock_find_text(req, "/")
     if slash <= 0:
         return ""
@@ -331,7 +332,7 @@ fn lock_ref_version(req: str) -> str:
         end = at
     req.slice((slash + 1) as i64, end as i64)
 
-fn lock_entry_from_installed_c_dep(project_root: str, name: str, version: str) -> LockEntry:
+fn lock_entry_from_installed_c_dep(project_root: &str, name: &str, version: &str) -> LockEntry:
     let dep_dir = lock_c_dep_dir(project_root, name, version)
     let meta = runtime_read_file(dep_dir ++ "/metadata.json")
     if meta.len() == 0:
@@ -341,13 +342,13 @@ fn lock_entry_from_installed_c_dep(project_root: str, name: str, version: str) -
     let package_rev = lock_json_extract_string(meta, "package_revision")
     let dep_name = "c." ++ name
     if recipe_rev == "system" and package_id == "system" and package_rev == "system":
-        return LockEntry { name: dep_name, source: "system", version, recipe_rev: "", package_id: "", package_rev: "", sha256: "" }
+        return LockEntry { name: dep_name, source: "system", version: with_str_clone_ref(version), recipe_rev: "", package_id: "", package_rev: "", sha256: "" }
     let tgz_path = dep_dir ++ "/conan_package.tgz"
     let digest = lock_sha256_file(tgz_path)
     if digest.len() == 0:
         runtime_eprint("error: cannot lock c." ++ name ++ "@" ++ version ++ ": missing fetched archive " ++ tgz_path)
         return LockEntry { name: "", source: "", version: "", recipe_rev: "", package_id: "", package_rev: "", sha256: "" }
-    LockEntry { name: dep_name, source: "conan", version, recipe_rev, package_id, package_rev, sha256: digest }
+    LockEntry { name: dep_name, source: "conan", version: with_str_clone_ref(version), recipe_rev, package_id, package_rev, sha256: digest }
 
 // The dedup memo travels WITH the lock through the recursion: sibling
 // subtrees must see each other's visits, and an owned Vec parameter is
@@ -355,7 +356,7 @@ fn lock_entry_from_installed_c_dep(project_root: str, name: str, version: str) -
 // gone), so both are threaded as one walk value.
 type LockDepWalk { lock: LockFile, seen: Vec[str] }
 
-fn lock_upsert_installed_c_dep_tree_seen(walk: LockDepWalk, project_root: str, name: str, version: str) -> LockDepWalk:
+fn lock_upsert_installed_c_dep_tree_seen(walk: LockDepWalk, project_root: &str, name: &str, version: &str) -> LockDepWalk:
     let key = name ++ "/" ++ version
     var out = walk
     for i in 0..out.seen.len() as i32:
@@ -382,17 +383,17 @@ fn lock_upsert_installed_c_dep_tree_seen(walk: LockDepWalk, project_root: str, n
             return out
     out
 
-pub fn lock_upsert_installed_c_dep_tree(lock: LockFile, project_root: str, name: str, version: str) -> LockFile:
+pub fn lock_upsert_installed_c_dep_tree(lock: LockFile, project_root: &str, name: &str, version: &str) -> LockFile:
     let walk = LockDepWalk { lock, seen: Vec.new() }
     let done = lock_upsert_installed_c_dep_tree_seen(move walk, project_root, name, version)
     done.lock
 
-fn lock_c_name(entry_name: str) -> str:
+fn lock_c_name(entry_name: &str) -> str:
     if entry_name.starts_with("c."):
         return entry_name.slice(2, entry_name.len())
     ""
 
-fn lock_cached_archive_matches(entry: &LockEntry, project_root: str, dep_dir: str) -> bool:
+fn lock_cached_archive_matches(entry: &LockEntry, project_root: &str, dep_dir: &str) -> bool:
     let meta_path = dep_dir ++ "/metadata.json"
     let tgz_path = dep_dir ++ "/conan_package.tgz"
     if runtime_file_exists(meta_path) == 0 or runtime_file_exists(tgz_path) == 0:
@@ -400,7 +401,7 @@ fn lock_cached_archive_matches(entry: &LockEntry, project_root: str, dep_dir: st
     let actual = lock_sha256_file(tgz_path)
     actual.len() > 0 and actual == entry.sha256
 
-fn lock_restore_entry(project_root: str, entry: &LockEntry) -> i32:
+fn lock_restore_entry(project_root: &str, entry: &LockEntry) -> i32:
     if entry.source == "registry":
         runtime_eprint("error: the With package registry is not available yet; cannot restore With package '" ++ entry.name ++ "'")
         runtime_eprint("  With packages (spec §18.8) will come from the With package registry, which is not live yet.")
@@ -437,7 +438,7 @@ fn lock_restore_entry(project_root: str, entry: &LockEntry) -> i32:
         return 0
     1
 
-pub fn lock_restore(project_root: str) -> i32:
+pub fn lock_restore(project_root: &str) -> i32:
     let path = lock_file_path(project_root)
     if runtime_file_exists(path) == 0:
         runtime_eprint("error: no lock file at .with/lock.json; run 'with get c.<name>' to add dependencies first")
@@ -455,4 +456,4 @@ pub fn lock_restore(project_root: str) -> i32:
 
 // #747: explicit owned copy — LockEntry's fields are owned strs now.
 fn lock_entry_clone(e: &LockEntry) -> LockEntry:
-    LockEntry { name: with_str_clone(e.name), source: with_str_clone(e.source), version: with_str_clone(e.version), recipe_rev: with_str_clone(e.recipe_rev), package_id: with_str_clone(e.package_id), package_rev: with_str_clone(e.package_rev), sha256: with_str_clone(e.sha256) }
+    LockEntry { name: with_str_clone_ref(e.name), source: with_str_clone_ref(e.source), version: with_str_clone_ref(e.version), recipe_rev: with_str_clone_ref(e.recipe_rev), package_id: with_str_clone_ref(e.package_id), package_rev: with_str_clone_ref(e.package_rev), sha256: with_str_clone_ref(e.sha256) }

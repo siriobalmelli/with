@@ -8,8 +8,9 @@ use InternPool
 use render
 use std.string.StringBuilder
 
-extern fn with_eprint(s: str) -> Unit
-extern fn with_getenv_str(name: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_eprint(s: &str) -> Unit
+extern fn with_getenv_str(name: &str) -> str
 
 fn d22_join_arm_kind_name(kind: i32) -> str:
     if kind == 1: return "owned-anchor"
@@ -60,7 +61,7 @@ impl Sema:
         let param_sym = self.ast.fn_param_name(param_start, param_i)
         self.safe_symbol_text(param_sym)
 
-    fn argument_literal_default_help(arg_node: i32, expr_text: str, expected_ty: i32, actual_ty: i32) -> str:
+    fn argument_literal_default_help(arg_node: i32, expr_text: &str, expected_ty: i32, actual_ty: i32) -> str:
         if arg_node == 0 or expr_text.len() == 0:
             return ""
         let kind = self.ast.kind(arg_node)
@@ -91,7 +92,7 @@ impl Sema:
                     return 1
         0
 
-    mut fn emit_argument_type_mismatch(call_name: str, fn_sym: i32, arg_index: i32, param_i: i32, expected_ty: i32, actual_ty: i32, arg_node: i32):
+    mut fn emit_argument_type_mismatch(call_name: &str, fn_sym: i32, arg_index: i32, param_i: i32, expected_ty: i32, actual_ty: i32, arg_node: i32):
         if self.suppress_errors != 0:
             return
         let start = self.ast.get_start(arg_node)
@@ -150,7 +151,7 @@ impl Sema:
         let suggestion = self.suggest_type_name(target_name, node)
         self.emit_error_with_suggestion(self.unknown_type_message(sym), node, suggestion)
 
-    mut fn emit_error(msg: str, node: i32, origin_file: str = __FILE__, origin_line: u32 = __LINE__, origin_fn: str = __FN__):
+    mut fn emit_error(msg: &str, node: i32, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):
         if self.suppress_errors != 0:
             return
         let start = self.ast.get_start(node)
@@ -159,7 +160,7 @@ impl Sema:
         diag.set_origin(origin_file, origin_fn, origin_line as i32, node)
         self.diags.emit(move diag)
 
-    mut fn emit_error_code(msg: str, node: i32, code: str, origin_file: str = __FILE__, origin_line: u32 = __LINE__, origin_fn: str = __FN__):
+    mut fn emit_error_code(msg: &str, node: i32, code: &str, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):
         if self.suppress_errors != 0:
             return
         let start = self.ast.get_start(node)
@@ -169,7 +170,7 @@ impl Sema:
         diag.set_origin(origin_file, origin_fn, origin_line as i32, node)
         self.diags.emit(move diag)
 
-    mut fn emit_error_with_help(msg: str, node: i32, help: str, origin_file: str = __FILE__, origin_line: u32 = __LINE__, origin_fn: str = __FN__):
+    mut fn emit_error_with_help(msg: &str, node: i32, help: &str, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):
         if self.suppress_errors != 0:
             return
         let start = self.ast.get_start(node)
@@ -180,14 +181,14 @@ impl Sema:
             diag.add_help(help)
         self.diags.emit(move diag)
 
-    mut fn emit_warning(msg: str, node: i32, origin_file: str = __FILE__, origin_line: u32 = __LINE__, origin_fn: str = __FN__):
+    mut fn emit_warning(msg: &str, node: i32, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):
         let start = self.ast.get_start(node)
         let end = self.ast.get_end(node)
         var diag = Diagnostic.warn(msg, Span { file: self.local_file_id, start: start, end: end })
         diag.set_origin(origin_file, origin_fn, origin_line as i32, node)
         self.diags.emit(move diag)
 
-    mut fn emit_warning_code(msg: str, node: i32, code: str, origin_file: str = __FILE__, origin_line: u32 = __LINE__, origin_fn: str = __FN__):
+    mut fn emit_warning_code(msg: &str, node: i32, code: &str, origin_file: &str = __FILE__, origin_line: u32 = __LINE__, origin_fn: &str = __FN__):
         let start = self.ast.get_start(node)
         let end = self.ast.get_end(node)
         var diag = Diagnostic.warn(msg, Span { file: self.local_file_id, start: start, end: end })
@@ -290,10 +291,10 @@ impl Sema:
         if self.pretty_symbol_names.contains(sym):
             let pretty = self.pretty_symbol_names.get(sym).unwrap()
             if pretty.len() > 0:
-                return pretty
+                return with_str_clone_ref(pretty)
         let pooled = self.pool_resolve(sym)
         if pooled.len() > 0:
-            return pooled
+            return with_str_clone_ref(pooled)
         f"sym{sym}"
 
     fn impl_owner_type_name_for_decl(decl: i32) -> str:
@@ -597,7 +598,8 @@ impl Sema:
                     with_write(self.type_name(self.sig_return_type(sig_idx)))
                     with_write("\n")
                     let inferred_ret = if meta >= 0 and self.ast.fn_meta_ret(meta) == 0: self.sig_return_type(sig_idx) else: 0
-                    with_write(if inferred_ret != 0 and inferred_ret != self.ty_void: "  inferred_return: " ++ self.type_name(inferred_ret) ++ "\n" else: "")
+                    let inferred_ret_line = if inferred_ret != 0 and inferred_ret != self.ty_void: "  inferred_return: " ++ self.type_name(inferred_ret) ++ "\n" else: ""
+                    with_write(inferred_ret_line)
                 else:
                     with_write("  fn ")
                     with_write(fn_name)

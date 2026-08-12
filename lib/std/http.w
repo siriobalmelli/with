@@ -6,7 +6,7 @@ use std.tls
 use std.net
 use std.internal.str_abi
 
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
 
 pub type HttpUrl { host: str, path: str, port: i32 }
 

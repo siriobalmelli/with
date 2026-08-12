@@ -10,9 +10,9 @@ use std.process
 use Lexer
 use Token
 
-extern fn with_exec_argv_capture(argv: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_exec_argv_capture(argv: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
 
 fn find_from(text: str, needle: str, start: i64) -> i64:
     if needle.len() == 0: return start

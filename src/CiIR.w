@@ -24,20 +24,21 @@
 // Unsupported constructs fail by returning the null sentinel from
 // lowering, rather than escaping through verbatim raw-string nodes.
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 extern fn abort() -> Unit
 
-fn ci_ir_phase_bug(message: str):
+fn ci_ir_phase_bug(message: &str):
     with_eprint(message)
     abort()
 
-fn ci_ir_owned_text(text: str) -> str:
+fn ci_ir_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
-    with_str_clone(text)
+    with_str_clone_ref(text)
 
 fn ci_ir_free_vec_i32(v: &Vec[i32]):
     if v.cap > 0 and v.ptr as i64 != 0:
@@ -130,7 +131,7 @@ impl CiTypePool:
         st.extra.push(value)
         idx
 
-    fn add_string(s: str) -> i32:
+    fn add_string(s: &str) -> i32:
         let st = self.state
         if st.frozen != 0:
             ci_ir_phase_bug("BUG: CiTypePool.add_string called after freeze")
@@ -156,7 +157,7 @@ impl CiTypePool:
     fn get_extra(idx: i32) -> i32:
         self.state.extra.get(idx as i64)
 
-    fn get_string(idx: i32) -> str:
+    fn get_string(idx: i32) -> &str:
         self.state.strings.get(idx as i64)
 
     // Type constructor helpers.
@@ -355,7 +356,7 @@ impl CiExprPool:
         st.extra.push(value)
         idx
 
-    fn add_string(s: str) -> i32:
+    fn add_string(s: &str) -> i32:
         let st = self.state
         if st.frozen != 0:
             ci_ir_phase_bug("BUG: CiExprPool.add_string called after freeze")
@@ -400,7 +401,7 @@ impl CiExprPool:
     fn get_extra(idx: i32) -> i32:
         self.state.extra.get(idx as i64)
 
-    fn get_string(idx: i32) -> str:
+    fn get_string(idx: i32) -> &str:
         self.state.strings.get(idx as i64)
 
     fn extra_len() -> i32:
@@ -534,7 +535,7 @@ impl CiStmtPool:
         st.extra.push(value)
         idx
 
-    fn add_string(s: str) -> i32:
+    fn add_string(s: &str) -> i32:
         let st = self.state
         if st.frozen != 0:
             ci_ir_phase_bug("BUG: CiStmtPool.add_string called after freeze")
@@ -569,7 +570,7 @@ impl CiStmtPool:
     fn get_extra(idx: i32) -> i32:
         self.state.extra.get(idx as i64)
 
-    fn get_string(idx: i32) -> str:
+    fn get_string(idx: i32) -> &str:
         self.state.strings.get(idx as i64)
 
     // Statement constructor helpers.
@@ -731,7 +732,7 @@ impl CiDeclPool:
         st.extra.push(value)
         idx
 
-    fn add_string(s: str) -> i32:
+    fn add_string(s: &str) -> i32:
         let st = self.state
         if st.frozen != 0:
             ci_ir_phase_bug("BUG: CiDeclPool.add_string called after freeze")
@@ -760,7 +761,7 @@ impl CiDeclPool:
     fn get_extra(idx: i32) -> i32:
         self.state.extra.get(idx as i64)
 
-    fn get_string(idx: i32) -> str:
+    fn get_string(idx: i32) -> &str:
         self.state.strings.get(idx as i64)
 
     // Decl constructor helpers.
@@ -801,10 +802,10 @@ type CiModule {
     imports: Vec[str],
 }
 
-fn CiModule.new(name: str, source_path: str) -> CiModule:
+fn CiModule.new(name: &str, source_path: &str) -> CiModule:
     CiModule {
-        name: name,
-        source_path: source_path,
+        name: with_str_clone_ref(name),
+        source_path: with_str_clone_ref(source_path),
         types: CiTypePool.new(),
         exprs: CiExprPool.new(),
         stmts: CiStmtPool.new(),
@@ -817,8 +818,8 @@ impl CiModule:
     mut fn add_decl(decl: CiDeclId) -> Unit:
         self.top_level_decls.push(decl as i32)
 
-    mut fn add_import(path: str):
-        self.imports.push(path)
+    mut fn add_import(path: &str):
+        self.imports.push(with_str_clone_ref(path))
 
 
 // ── CiProject ────────────────────────────────────────────────
@@ -845,7 +846,7 @@ type CiProjectSymbol {
 }
 // #747: str field — owned, non-Copy now; moves/clones spell intent.
 
-fn CiProjectSymbol.new(name: str, kind: i32) -> CiProjectSymbol:
+fn CiProjectSymbol.new(name: &str, kind: i32) -> CiProjectSymbol:
     CiProjectSymbol {
         name: ci_ir_owned_text(name),
         kind: kind,
@@ -857,7 +858,7 @@ fn CiProjectSymbol.new(name: str, kind: i32) -> CiProjectSymbol:
         owner_definition_kind: 0,
     }
 
-fn ci_pipe_i32_contains(items: str, want: i32) -> bool:
+fn ci_pipe_i32_contains(items: &str, want: i32) -> bool:
     let needle = "|" ++ i64_to_string(want as i64) ++ "|"
     var i = 0
     let ilen = items.len() as i32
@@ -888,7 +889,7 @@ impl CiProjectSymbol:
             owner_definition_kind: self.owner_definition_kind,
         }
 
-fn ci_project_symbol_key(kind: i32, name: str) -> str:
+fn ci_project_symbol_key(kind: i32, name: &str) -> str:
     if kind == CiProjectSymbolKind.CIPS_VAR:
         return "v:" ++ name
     if kind == CiProjectSymbolKind.CIPS_FN:
@@ -911,7 +912,7 @@ fn CiProject.new -> CiProject:
     }
 
 impl CiProject:
-    fn ensure_module(path: str) -> i32:
+    fn ensure_module(path: &str) -> i32:
         var i = 0
         while i < self.module_paths.len() as i32:
             if self.module_paths.get(i as i64) == path:
@@ -921,7 +922,7 @@ impl CiProject:
         self.module_paths.push(ci_ir_owned_text(path))
         id
 
-    fn find_symbol(kind: i32, name: str) -> i32:
+    fn find_symbol(kind: i32, name: &str) -> i32:
         let key = ci_project_symbol_key(kind, name)
         var i = self.symbols.len() as i32 - 1
         while i >= 0:
@@ -931,7 +932,7 @@ impl CiProject:
             i = i - 1
         -1
 
-    mut fn ensure_symbol(kind: i32, name: str) -> i32:
+    mut fn ensure_symbol(kind: i32, name: &str) -> i32:
         let existing = self.find_symbol(kind, name)
         if existing >= 0:
             return existing
@@ -945,6 +946,6 @@ impl CiProject:
         let owner_module = self.symbols.get(symbol_id as i64).owner_module
         if owner_module < 0 or owner_module >= self.module_paths.len() as i32:
             return ""
-        self.module_paths.get(owner_module as i64)
+        with_str_clone_ref(self.module_paths.get(owner_module as i64))
 
 let _ci_ir_eof_guard = 0

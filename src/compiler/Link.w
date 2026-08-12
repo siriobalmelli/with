@@ -3,6 +3,8 @@ use compiler.Runtime
 use std.collections.Atomic
 use TargetSpec
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 extern let with_embedded_cimport_stubs_o_start: u8
 extern let with_embedded_cimport_stubs_o_end: u8
 extern let with_embedded_compat_runtime_o_start: u8
@@ -96,13 +98,13 @@ fn link_stage_result_for_plan(plan: LinkStagePlan) -> LinkStageResult:
         return link_stage_result_fail()
     link_stage_result_for_command(move plan.command)
 
-fn link_stage_argv_append(argv: str, arg: str) -> str:
+fn link_stage_argv_append(argv: &str, arg: &str) -> str:
     argv ++ arg ++ "\0"
 
 fn link_stage_is_digit(ch: i32) -> bool:
     ch >= 48 and ch <= 57
 
-fn link_stage_read_u32_le(data: str, offset: i32) -> i64:
+fn link_stage_read_u32_le(data: &str, offset: i32) -> i64:
     if offset < 0 or offset + 3 >= data.len() as i32:
         return -1
     (data.byte_at(offset as i64) as i64) |
@@ -110,7 +112,7 @@ fn link_stage_read_u32_le(data: str, offset: i32) -> i64:
         ((data.byte_at((offset + 2) as i64) as i64) << 16) |
         ((data.byte_at((offset + 3) as i64) as i64) << 24)
 
-fn link_stage_macho_macos_minos(path: str) -> i64:
+fn link_stage_macho_macos_minos(path: &str) -> i64:
     let data = runtime_read_file(path)
     if data.len() < 32:
         return 0
@@ -147,7 +149,7 @@ fn link_stage_darwin_version_string(encoded: i64) -> str:
         return f"{major}.{minor}.{patch}"
     f"{major}.{minor}"
 
-fn link_stage_darwin_platform_version(obj_path: str, extras: &Vec[str]) -> str:
+fn link_stage_darwin_platform_version(obj_path: &str, extras: &Vec[str]) -> str:
     var best: i64 = 11 * 65536
     let obj_minos = link_stage_macho_macos_minos(obj_path)
     if obj_minos > best:
@@ -158,7 +160,7 @@ fn link_stage_darwin_platform_version(obj_path: str, extras: &Vec[str]) -> str:
             best = extra_minos
     link_stage_darwin_version_string(best)
 
-fn link_stage_is_temp_archive_path(path: str) -> bool:
+fn link_stage_is_temp_archive_path(path: &str) -> bool:
     if not path.ends_with(".a"):
         return false
     var i = 0
@@ -171,7 +173,7 @@ fn link_stage_is_temp_archive_path(path: str) -> bool:
 // #357: a `link:` entry of the form "framework:Name" links an Apple framework
 // (`-framework Name`) instead of a plain library (`-l<name>`). Darwin-only —
 // the caller guards other platforms. Returns "" for a non-framework entry.
-pub fn link_stage_framework_name(lib: str) -> str:
+pub fn link_stage_framework_name(lib: &str) -> str:
     let prefix = "framework:"
     if lib.len() as i32 > prefix.len() as i32 and lib.slice(0, prefix.len()) == prefix:
         return lib.slice(prefix.len(), lib.len())
@@ -182,7 +184,7 @@ pub fn link_stage_framework_name(lib: str) -> str:
 // non-Darwin target a framework entry is a loud error (frameworks are macOS)
 // and yields no args. (Returns a Vec because With has no safe mutable-ref
 // param to push through.)
-pub fn link_stage_lib_args(lib: str, is_darwin: i32) -> Vec[str]:
+pub fn link_stage_lib_args(lib: &str, is_darwin: i32) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     let fw = link_stage_framework_name(lib)
     if fw.len() > 0:
@@ -200,36 +202,36 @@ fn link_stage_collect_cleanup_files(extras: &Vec[str]) -> Vec[str]:
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
         if link_stage_is_temp_archive_path(extra):
-            cleanup.push(extra)
+            cleanup.push(with_str_clone_ref(extra))
     cleanup
 
 fn link_stage_cleanup_files(files: &Vec[str]):
     for i in 0..files.len() as i32:
         let _remove = runtime_remove_file(files.get(i as i64))
 
-fn link_stage_register_temp_archive(path: str):
+fn link_stage_register_temp_archive(path: &str):
     // Comptime parallel() links on concurrent threads; an unguarded push to this
     // shared registry races vec_grow (double free of the old buffer, #617).
     link_stage_temp_archives_lock_acquire()
-    link_stage_temp_archives.push(path)
+    link_stage_temp_archives.push(with_str_clone_ref(path))
     link_stage_temp_archives_lock_release()
 
-fn link_stage_basename(path: str) -> str:
+fn link_stage_basename(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
             last_slash = i
     if last_slash < 0:
-        return path
+        return with_str_clone_ref(path)
     path.slice((last_slash + 1) as i64, path.len())
 
-fn link_stage_owned_temp_archive(path: str, pid_text: str) -> bool:
+fn link_stage_owned_temp_archive(path: &str, pid_text: &str) -> bool:
     let name = link_stage_basename(path)
     if not name.ends_with(".a"):
         return false
     link_stage_str_contains(name, ".o." ++ pid_text ++ ".")
 
-fn link_stage_cleanup_owned_temp_archives_in(dir: str, pid_text: str):
+fn link_stage_cleanup_owned_temp_archives_in(dir: &str, pid_text: &str):
     let listing = runtime_list_files(dir)
     var start = 0
     for i in 0..listing.len() as i32:
@@ -267,7 +269,7 @@ fn link_stage_apply_env(env: &Vec[LinkStageEnvVar]) -> LinkStageSavedEnv:
     let values: Vec[str] = Vec.new()
     for i in 0..env.len() as i32:
         let item = env.get(i as i64)
-        names.push(item.name)
+        names.push(with_str_clone_ref(item.name))
         values.push(runtime_getenv(item.name) ++ "")
         let _ = runtime_setenv(item.name, item.value)
     LinkStageSavedEnv { names, values }
@@ -290,17 +292,17 @@ impl LinkStageCommand:
         link_stage_restore_env(saved)
         rc
 
-fn link_stage_make_link_command(linker: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
+fn link_stage_make_link_command(linker: &str, obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
     let env: Vec[LinkStageEnvVar] = Vec.new()
     let inputs: Vec[str] = Vec.new()
     let outputs: Vec[str] = Vec.new()
-    args.push(obj_path)
-    inputs.push(obj_path)
+    args.push(with_str_clone_ref(obj_path))
+    inputs.push(with_str_clone_ref(obj_path))
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
-        args.push(extra)
-        inputs.push(extra)
+        args.push(with_str_clone_ref(extra))
+        inputs.push(with_str_clone_ref(extra))
     if runtime_sysinfo_os() == "Macos":
         args.push("-Wl,-dead_strip")
     else if runtime_sysinfo_os() == "Linux":
@@ -309,21 +311,21 @@ fn link_stage_make_link_command(linker: str, obj_path: str, bin_path: str, extra
         args.push("-Wl,--gc-sections")
         args.push("-Wl,--icf=all")
     args.push("-o")
-    args.push(bin_path)
-    outputs.push(bin_path)
+    args.push(with_str_clone_ref(bin_path))
+    outputs.push(with_str_clone_ref(bin_path))
     let cc_is_darwin = if runtime_sysinfo_os() == "Macos": 1 else: 0
     for i in 0..link_libs.len() as i32:
         let cc_la = link_stage_lib_args(link_libs.get(i as i64), cc_is_darwin)
         for j in 0..cc_la.len() as i32:
-            args.push(cc_la.get(j as i64))
+            args.push(with_str_clone_ref(cc_la.get(j as i64)))
     for i in 0..link_args.len() as i32:
-        args.push(link_args.get(i as i64))
+        args.push(with_str_clone_ref(link_args.get(i as i64)))
     if runtime_sysinfo_os() == "Linux":
         args.push("-lm")
     let cleanup_files = link_stage_collect_cleanup_files(extras)
-    LinkStageCommand { linker, args, cwd: "", env, inputs, outputs, cleanup_files }
+    LinkStageCommand { linker: with_str_clone_ref(linker), args, cwd: "", env, inputs, outputs, cleanup_files }
 
-fn link_stage_file_exists(path: str) -> bool:
+fn link_stage_file_exists(path: &str) -> bool:
     runtime_file_exists(path) != 0
 
 // Sysroot prefix for Linux link inputs. Native Linux hosts link
@@ -353,7 +355,7 @@ fn link_stage_linux_emulation() -> str:
         return "aarch64linux"
     "elf_x86_64"
 
-fn link_stage_linux_dynamic_linker(sysroot: str) -> str:
+fn link_stage_linux_dynamic_linker(sysroot: &str) -> str:
     if link_stage_linux_arch() == "aarch64":
         if link_stage_file_exists(sysroot ++ "/lib/ld-linux-aarch64.so.1"):
             return "/lib/ld-linux-aarch64.so.1"
@@ -366,7 +368,7 @@ fn link_stage_linux_dynamic_linker(sysroot: str) -> str:
         return "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
     ""
 
-fn link_stage_linux_crt_object(sysroot: str, name: str) -> str:
+fn link_stage_linux_crt_object(sysroot: &str, name: &str) -> str:
     let multiarch = link_stage_linux_multiarch()
     let usr = sysroot ++ "/usr/lib/" ++ multiarch ++ "/" ++ name
     if link_stage_file_exists(usr):
@@ -376,7 +378,7 @@ fn link_stage_linux_crt_object(sysroot: str, name: str) -> str:
         return lib
     ""
 
-fn link_stage_linux_gcc_dir(sysroot: str) -> str:
+fn link_stage_linux_gcc_dir(sysroot: &str) -> str:
     let base = sysroot ++ "/usr/lib/gcc/" ++ link_stage_linux_multiarch() ++ "/"
     let candidates: Vec[str] = Vec.new()
     candidates.push(base ++ "15")
@@ -389,10 +391,10 @@ fn link_stage_linux_gcc_dir(sysroot: str) -> str:
     for i in 0..candidates.len() as i32:
         let dir = candidates.get(i as i64)
         if link_stage_file_exists(dir ++ "/crtbegin.o"):
-            return dir
+            return with_str_clone_ref(dir)
     ""
 
-fn link_stage_linux_system_lib_path(sysroot: str, name: str) -> str:
+fn link_stage_linux_system_lib_path(sysroot: &str, name: &str) -> str:
     let libdir = sysroot ++ "/usr/lib/" ++ link_stage_linux_multiarch()
     if name == "z":
         if link_stage_file_exists(libdir ++ "/libz.so"):
@@ -411,7 +413,7 @@ fn link_stage_linux_system_lib_path(sysroot: str, name: str) -> str:
             return libdir ++ "/libxml2.so.16"
     ""
 
-fn link_stage_make_darwin_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
+fn link_stage_make_darwin_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
     let env: Vec[LinkStageEnvVar] = Vec.new()
     let inputs: Vec[str] = Vec.new()
@@ -421,29 +423,29 @@ fn link_stage_make_darwin_llvm_link_command(llvm_ld: str, obj_path: str, bin_pat
     args.push("arm64")
     args.push("-platform_version")
     args.push("macos")
-    args.push(platform_version)
+    args.push(with_str_clone_ref(platform_version))
     args.push(platform_version)
     args.push("-dead_strip")
     args.push("-o")
-    args.push(bin_path)
-    outputs.push(bin_path)
-    args.push(obj_path)
-    inputs.push(obj_path)
+    args.push(with_str_clone_ref(bin_path))
+    outputs.push(with_str_clone_ref(bin_path))
+    args.push(with_str_clone_ref(obj_path))
+    inputs.push(with_str_clone_ref(obj_path))
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
-        args.push(extra)
-        inputs.push(extra)
+        args.push(with_str_clone_ref(extra))
+        inputs.push(with_str_clone_ref(extra))
     for i in 0..link_libs.len() as i32:
         let dw_la = link_stage_lib_args(link_libs.get(i as i64), 1)
         for j in 0..dw_la.len() as i32:
-            args.push(dw_la.get(j as i64))
+            args.push(with_str_clone_ref(dw_la.get(j as i64)))
     for i in 0..link_args.len() as i32:
-        args.push(link_args.get(i as i64))
+        args.push(with_str_clone_ref(link_args.get(i as i64)))
     args.push("-lSystem")
     let cleanup_files = link_stage_collect_cleanup_files(extras)
-    LinkStageCommand { linker: llvm_ld, args, cwd: "", env, inputs, outputs, cleanup_files }
+    LinkStageCommand { linker: with_str_clone_ref(llvm_ld), args, cwd: "", env, inputs, outputs, cleanup_files }
 
-fn link_stage_make_linux_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
+fn link_stage_make_linux_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
     let env: Vec[LinkStageEnvVar] = Vec.new()
     let inputs: Vec[str] = Vec.new()
@@ -478,23 +480,23 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: str, obj_path: str, bin_path
     args.push("-dynamic-linker")
     args.push(dynamic_linker)
     args.push("-o")
-    args.push(bin_path)
-    outputs.push(bin_path)
+    args.push(with_str_clone_ref(bin_path))
+    outputs.push(with_str_clone_ref(bin_path))
 
-    args.push(crt1)
+    args.push(with_str_clone_ref(crt1))
     inputs.push(crt1)
-    args.push(crti)
+    args.push(with_str_clone_ref(crti))
     inputs.push(crti)
     let crtbegin = gcc_dir ++ "/crtbegin.o"
-    args.push(crtbegin)
+    args.push(with_str_clone_ref(crtbegin))
     inputs.push(crtbegin)
 
-    args.push(obj_path)
-    inputs.push(obj_path)
+    args.push(with_str_clone_ref(obj_path))
+    inputs.push(with_str_clone_ref(obj_path))
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
-        args.push(extra)
-        inputs.push(extra)
+        args.push(with_str_clone_ref(extra))
+        inputs.push(with_str_clone_ref(extra))
 
     args.push("-L" ++ gcc_dir)
     args.push("-L" ++ sysroot ++ "/usr/lib/" ++ link_stage_linux_multiarch())
@@ -508,30 +510,30 @@ fn link_stage_make_linux_llvm_link_command(llvm_ld: str, obj_path: str, bin_path
         else:
             let fallback_lib = link_stage_linux_system_lib_path(sysroot, lib)
             if fallback_lib.len() > 0:
-                args.push(fallback_lib)
+                args.push(with_str_clone_ref(fallback_lib))
                 inputs.push(fallback_lib)
             else:
                 args.push("-l" ++ lib)
     for i in 0..link_args.len() as i32:
-        args.push(link_args.get(i as i64))
+        args.push(with_str_clone_ref(link_args.get(i as i64)))
     args.push("-lc")
     args.push("-lgcc")
 
     let crtend = gcc_dir ++ "/crtend.o"
-    args.push(crtend)
+    args.push(with_str_clone_ref(crtend))
     inputs.push(crtend)
-    args.push(crtn)
+    args.push(with_str_clone_ref(crtn))
     inputs.push(crtn)
     let cleanup_files = link_stage_collect_cleanup_files(extras)
-    LinkStageCommand { linker: llvm_ld, args, cwd: "", env, inputs, outputs, cleanup_files }
+    LinkStageCommand { linker: with_str_clone_ref(llvm_ld), args, cwd: "", env, inputs, outputs, cleanup_files }
 
-fn link_stage_windows_libpath(var_name: str, fallback: str) -> str:
+fn link_stage_windows_libpath(var_name: &str, fallback: &str) -> str:
     let v = runtime_getenv(var_name)
     if v.len() > 0:
         return v
-    fallback
+    fallback ++ ""
 
-fn link_stage_make_windows_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
+fn link_stage_make_windows_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     let args: Vec[str] = Vec.new()
     let env: Vec[LinkStageEnvVar] = Vec.new()
     let inputs: Vec[str] = Vec.new()
@@ -551,26 +553,26 @@ fn link_stage_make_windows_llvm_link_command(llvm_ld: str, obj_path: str, bin_pa
     args.push("/libpath:" ++ link_stage_windows_libpath("WITH_WINDOWS_UCRT_LIBDIR", "C:/Program Files (x86)/Windows Kits/10/Lib/10.0.19041.0/ucrt/x64"))
     args.push("/libpath:" ++ link_stage_windows_libpath("WITH_WINDOWS_MSVC_LIBDIR", "C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.29.30133/lib/x64"))
     args.push("/out:" ++ bin_path)
-    outputs.push(bin_path)
-    args.push(obj_path)
-    inputs.push(obj_path)
+    outputs.push(with_str_clone_ref(bin_path))
+    args.push(with_str_clone_ref(obj_path))
+    inputs.push(with_str_clone_ref(obj_path))
     for i in 0..extras.len() as i32:
         let extra = extras.get(i as i64)
         if extra.starts_with("-L"):
             args.push("/libpath:" ++ extra.slice(2, extra.len()))
         else if extra.starts_with("@"):
-            args.push(extra)
+            args.push(with_str_clone_ref(extra))
         else:
-            args.push(extra)
-            inputs.push(extra)
+            args.push(with_str_clone_ref(extra))
+            inputs.push(with_str_clone_ref(extra))
     for i in 0..link_libs.len() as i32:
         let lib = link_libs.get(i as i64)
         if lib.ends_with(".lib"):
-            args.push(lib)
+            args.push(with_str_clone_ref(lib))
         else:
             args.push(lib ++ ".lib")
     for i in 0..link_args.len() as i32:
-        args.push(link_args.get(i as i64))
+        args.push(with_str_clone_ref(link_args.get(i as i64)))
     args.push("libcpmt.lib")
     args.push("libcmt.lib")
     args.push("oldnames.lib")
@@ -588,14 +590,14 @@ fn link_stage_make_windows_llvm_link_command(llvm_ld: str, obj_path: str, bin_pa
     args.push("dbghelp.lib")
     args.push("ntdll.lib")
     let cleanup_files = link_stage_collect_cleanup_files(extras)
-    LinkStageCommand { linker: llvm_ld, args, cwd: "", env, inputs, outputs, cleanup_files }
+    LinkStageCommand { linker: with_str_clone_ref(llvm_ld), args, cwd: "", env, inputs, outputs, cleanup_files }
 
 // The lld flavor for a Linux ELF link. The build's llvm_ld metadata
 // records the host flavor (ld64.lld on macOS); the ELF driver ships
 // beside it in the same SDK bin directory.
-fn link_stage_elf_lld_for(llvm_ld: str) -> str:
+fn link_stage_elf_lld_for(llvm_ld: &str) -> str:
     if link_stage_basename(llvm_ld) == "ld.lld":
-        return llvm_ld
+        return llvm_ld ++ ""
     let sibling = link_stage_dirname(llvm_ld) ++ "/ld.lld"
     if link_stage_file_exists(sibling):
         return sibling
@@ -605,15 +607,15 @@ fn link_stage_elf_lld_for(llvm_ld: str) -> str:
 // the host llvm_ld in the same SDK bin directory (a symlink to `lld`
 // in the published SDKs); invoking lld as lld-link performs a native
 // COFF link from any host, so no wine is needed for the link itself.
-fn link_stage_coff_lld_for(llvm_ld: str) -> str:
+fn link_stage_coff_lld_for(llvm_ld: &str) -> str:
     if link_stage_basename(llvm_ld) == "lld-link" or link_stage_basename(llvm_ld) == "lld-link.exe":
-        return llvm_ld
+        return llvm_ld ++ ""
     let sibling = link_stage_dirname(llvm_ld) ++ "/lld-link"
     if link_stage_file_exists(sibling):
         return sibling
     ""
 
-fn link_stage_make_llvm_link_command(llvm_ld: str, obj_path: str, bin_path: str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
+fn link_stage_make_llvm_link_command(llvm_ld: &str, obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStageCommand:
     // A --target selection overrides the host: pick the target's link
     // recipe and lld flavor (§18.5 — cross-compilation is a normal mode).
     if not target_spec_is_native():
@@ -661,7 +663,7 @@ fn link_stage_embedded_obj_slice(start: *const u8, end: *const u8) -> str:
         return ""
     link_stage_str_from_raw_parts(start, len)
 
-fn link_stage_embedded_runtime_object(name: str) -> str:
+fn link_stage_embedded_runtime_object(name: &str) -> str:
     if name == "cimport_stubs.o":
         return link_stage_embedded_obj_slice(&with_embedded_cimport_stubs_o_start as *const u8, &with_embedded_cimport_stubs_o_end as *const u8)
     if name == "compat_runtime.o":
@@ -690,7 +692,7 @@ fn link_stage_embedded_runtime_object(name: str) -> str:
         return link_stage_embedded_obj_slice(&with_embedded_rt_windows_x86_64_o_start as *const u8, &with_embedded_rt_windows_x86_64_o_end as *const u8)
     ""
 
-fn link_stage_extract_runtime_obj(name: str, path: str) -> i32:
+fn link_stage_extract_runtime_obj(name: &str, path: &str) -> i32:
     let data = link_stage_embedded_runtime_object(name)
     if data.len() == 0:
         return 1
@@ -715,26 +717,26 @@ fn link_stage_extract_runtime_obj(name: str, path: str) -> i32:
         return 1
     0
 
-fn link_stage_link(obj_path: str, bin_path: str) -> bool:
+fn link_stage_link(obj_path: &str, bin_path: &str) -> bool:
     let extras: Vec[str] = Vec.new()
     let link_libs: Vec[str] = Vec.new()
     link_stage_link_with_extras_and_libs(obj_path, bin_path, extras, link_libs)
 
-fn link_stage_link_with_extras(obj_path: str, bin_path: str, extras: Vec[str]) -> bool:
+fn link_stage_link_with_extras(obj_path: &str, bin_path: &str, extras: Vec[str]) -> bool:
     let link_libs: Vec[str] = Vec.new()
     link_stage_link_with_extras_and_libs(obj_path, bin_path, extras, link_libs)
 
-fn link_stage_link_with_extras_and_libs(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str]) -> bool:
+fn link_stage_link_with_extras_and_libs(obj_path: &str, bin_path: &str, extras: Vec[str], link_libs: Vec[str]) -> bool:
     link_stage_link_with_extras_and_libs_result(obj_path, bin_path, extras, link_libs).ok
 
-fn link_stage_link_with_extras_and_libs_result(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str]) -> LinkStageResult:
+fn link_stage_link_with_extras_and_libs_result(obj_path: &str, bin_path: &str, extras: Vec[str], link_libs: Vec[str]) -> LinkStageResult:
     link_stage_result_for_plan(link_stage_link_with_extras_and_libs_plan(obj_path, bin_path, extras, link_libs))
 
-fn link_stage_link_with_extras_and_libs_plan(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str]) -> LinkStagePlan:
+fn link_stage_link_with_extras_and_libs_plan(obj_path: &str, bin_path: &str, extras: Vec[str], link_libs: Vec[str]) -> LinkStagePlan:
     let link_args: Vec[str] = Vec.new()
     link_stage_link_with_extras_libs_args_plan(obj_path, bin_path, extras, link_libs, link_args)
 
-fn link_stage_link_with_extras_libs_args_plan(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str]) -> LinkStagePlan:
+fn link_stage_link_with_extras_libs_args_plan(obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str]) -> LinkStagePlan:
     // Cross links never go through the host cc driver: route to the
     // LLVM linker plan, which dispatches on the active target.
     if runtime_sysinfo_os() == "Windows" or not target_spec_is_native():
@@ -750,23 +752,23 @@ fn link_stage_link_with_extras_libs_args_plan(obj_path: str, bin_path: str, extr
     let command = link_stage_make_link_command("cc", obj_path, bin_path, extras, link_libs, link_args)
     link_stage_plan_for_command(move command)
 
-fn link_stage_link_with_llvm(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], llvm_ld: str) -> bool:
+fn link_stage_link_with_llvm(obj_path: &str, bin_path: &str, extras: Vec[str], link_libs: Vec[str], llvm_ld: &str) -> bool:
     link_stage_link_with_llvm_result(obj_path, bin_path, extras, link_libs, llvm_ld).ok
 
-fn link_stage_link_with_llvm_result(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], llvm_ld: str) -> LinkStageResult:
+fn link_stage_link_with_llvm_result(obj_path: &str, bin_path: &str, extras: Vec[str], link_libs: Vec[str], llvm_ld: &str) -> LinkStageResult:
     link_stage_result_for_plan(link_stage_link_with_llvm_plan(obj_path, bin_path, extras, link_libs, llvm_ld))
 
-fn link_stage_link_with_llvm_plan(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], llvm_ld: str) -> LinkStagePlan:
+fn link_stage_link_with_llvm_plan(obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], llvm_ld: &str) -> LinkStagePlan:
     let link_args: Vec[str] = Vec.new()
     link_stage_link_with_llvm_args_plan(obj_path, bin_path, extras, link_libs, link_args, llvm_ld)
 
-fn link_stage_link_with_llvm_args_plan(obj_path: str, bin_path: str, extras: Vec[str], link_libs: Vec[str], link_args: Vec[str], llvm_ld: str) -> LinkStagePlan:
+fn link_stage_link_with_llvm_args_plan(obj_path: &str, bin_path: &str, extras: &Vec[str], link_libs: &Vec[str], link_args: &Vec[str], llvm_ld: &str) -> LinkStagePlan:
     let command = link_stage_make_llvm_link_command(llvm_ld, obj_path, bin_path, extras, link_libs, link_args)
     if command.linker.len() == 0:
         return link_stage_plan_fail()
     link_stage_plan_for_command(move command)
 
-fn link_stage_str_contains(hay: str, needle: str) -> bool:
+fn link_stage_str_contains(hay: &str, needle: &str) -> bool:
     let hay_len = hay.len() as i32
     let needle_len = needle.len() as i32
     if needle_len <= 0:
@@ -788,12 +790,12 @@ fn link_stage_str_contains(hay: str, needle: str) -> bool:
         i = i + 1
     false
 
-fn link_stage_undef_contains_symbol(undef: str, name: str) -> bool:
+fn link_stage_undef_contains_symbol(undef: &str, name: &str) -> bool:
     if link_stage_str_contains(undef, "_" ++ name):
         return true
     link_stage_str_contains(undef, name)
 
-fn link_stage_undefined_symbols_for_object(obj_path: str) -> str:
+fn link_stage_undefined_symbols_for_object(obj_path: &str) -> str:
     let report_path = obj_path ++ ".undef"
     let null_path = if runtime_sysinfo_os() == "Windows": "NUL" else: "/dev/null"
     var argv = ""
@@ -825,7 +827,7 @@ fn link_stage_undefined_symbols_for_object(obj_path: str) -> str:
     let _ = runtime_remove_file(report_path)
     symbols
 
-fn link_stage_undefined_symbols_need_helpers_runtime(undef: str) -> i32:
+fn link_stage_undefined_symbols_need_helpers_runtime(undef: &str) -> i32:
     if undef == "<probe-failed>":
         return 1
     if undef.len() == 0:
@@ -840,7 +842,7 @@ fn link_stage_undefined_symbols_need_helpers_runtime(undef: str) -> i32:
         return 1
     0
 
-fn link_stage_undefined_symbols_need_fiber_runtime(undef: str) -> i32:
+fn link_stage_undefined_symbols_need_fiber_runtime(undef: &str) -> i32:
     if undef == "<probe-failed>":
         return 0
     if undef.len() == 0:
@@ -851,7 +853,7 @@ fn link_stage_undefined_symbols_need_fiber_runtime(undef: str) -> i32:
         return 1
     0
 
-fn link_stage_undefined_symbols_need_regex_runtime(undef: str) -> i32:
+fn link_stage_undefined_symbols_need_regex_runtime(undef: &str) -> i32:
     if undef == "<probe-failed>":
         return 1
     if undef.len() == 0:
@@ -860,7 +862,7 @@ fn link_stage_undefined_symbols_need_regex_runtime(undef: str) -> i32:
         return 1
     0
 
-fn link_stage_undefined_symbols_need_compat_runtime(undef: str) -> i32:
+fn link_stage_undefined_symbols_need_compat_runtime(undef: &str) -> i32:
     if undef == "<probe-failed>":
         return 1
     if undef.len() == 0:
@@ -899,7 +901,7 @@ fn link_stage_resolve_runtime_root() -> str:
         let probe = dir ++ "/cimport_stubs.o"
         let platform_probe = if platform_object.len() > 0: dir ++ "/" ++ platform_object else: ""
         if runtime_read_file(probe).len() > 0 and (platform_probe.len() == 0 or runtime_read_file(platform_probe).len() > 0):
-            return dir
+            return with_str_clone_ref(dir)
     // Fall back to compiler-relative runtime dir.
     compiler_dir ++ "/runtime"
 
@@ -922,7 +924,7 @@ fn link_stage_find_llvm_static_bridge() -> str:
         return bridge_o
     ""
 
-fn link_stage_read_file_trimmed(path: str) -> str:
+fn link_stage_read_file_trimmed(path: &str) -> str:
     let content = runtime_read_file(path)
     if content.len() == 0:
         return ""
@@ -938,7 +940,7 @@ fn link_stage_artifact_root() -> str:
         return env_root
     "out"
 
-fn link_stage_find_runtime_object_path(name: str) -> str:
+fn link_stage_find_runtime_object_path(name: &str) -> str:
     let root = link_stage_resolve_runtime_root()
     // Cross targets only ever link runtime objects built for the
     // target; the embedded objects are host-built and never a valid
@@ -991,9 +993,9 @@ fn link_stage_host_platform_runtime_object() -> str:
     with_eprint("error: unsupported host runtime platform: " ++ os ++ "/" ++ arch)
     ""
 
-fn link_stage_make_archive(obj_path: str) -> str:
+fn link_stage_make_archive(obj_path: &str) -> str:
     if runtime_sysinfo_os() == "Windows" or target_spec_active_kind() == 5:
-        return obj_path
+        return with_str_clone_ref(obj_path)
     // Wrap a .o file in a .a archive so the linker treats it as a library
     // (only pulling in symbols that aren't already defined).
     let ar_path = obj_path ++ f".{runtime_getpid()}.{runtime_clock_nanos()}.a"
@@ -1002,15 +1004,15 @@ fn link_stage_make_archive(obj_path: str) -> str:
         link_stage_register_temp_archive(out)
     out
 
-fn link_stage_make_archive_to_path(obj_path: str, ar_path: str) -> str:
+fn link_stage_make_archive_to_path(obj_path: &str, ar_path: &str) -> str:
     let members: Vec[str] = Vec.new()
-    members.push(obj_path)
+    members.push(with_str_clone_ref(obj_path))
     let rc = create_static_archive(ar_path, members)
     if rc == 0:
-        return ar_path
+        return with_str_clone_ref(ar_path)
     ""
 
-fn link_stage_should_use_rt_core_from_undef(undef: str) -> bool:
+fn link_stage_should_use_rt_core_from_undef(undef: &str) -> bool:
     // Use the libc-free runtime for user programs that don't need LLVM bridge
     // or c_import. The compiler itself needs LLVM/libclang symbols and always
     // uses the libc-backed cimport_stubs.o runtime.
@@ -1035,12 +1037,12 @@ fn link_stage_should_use_rt_core_from_undef(undef: str) -> bool:
         return true
     false
 
-fn link_stage_undefined_symbols_need_llvm_bridge(undef: str) -> bool:
+fn link_stage_undefined_symbols_need_llvm_bridge(undef: &str) -> bool:
     link_stage_undef_contains_symbol(undef, "wl_") or
         link_stage_undef_contains_symbol(undef, "LLVM") or
         link_stage_undef_contains_symbol(undef, "clang_")
 
-fn link_stage_dirname(path: str) -> str:
+fn link_stage_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len():
         if path[i] == 47 or path[i] == 92: // '/' or '\'
@@ -1049,7 +1051,7 @@ fn link_stage_dirname(path: str) -> str:
         return "."
     path.slice(0, last_slash as i64)
 
-fn link_stage_source_stem(source_path: str) -> str:
+fn link_stage_source_stem(source_path: &str) -> str:
     var last_slash = -1
     for i in 0..source_path.len():
         if source_path[i] == 47 or source_path[i] == 92: // '/' or '\'
@@ -1057,12 +1059,12 @@ fn link_stage_source_stem(source_path: str) -> str:
     let base = if last_slash >= 0:
         source_path.slice((last_slash + 1) as i64, source_path.len() as i64)
     else:
-        source_path
+        with_str_clone_ref(source_path)
     if base.len() > 2 and base.ends_with(".w"):
         return base.slice(0, (base.len() - 2) as i64)
     base
 
-fn link_stage_sanitize_relative_dir(path: str) -> str:
+fn link_stage_sanitize_relative_dir(path: &str) -> str:
     var out = ""
     var segment_start = 0
     var i = 0
@@ -1083,37 +1085,37 @@ fn link_stage_sanitize_relative_dir(path: str) -> str:
         i = i + 1
     out
 
-fn link_stage_output_dir_for_source(source_path: str) -> str:
+fn link_stage_output_dir_for_source(source_path: &str) -> str:
     let artifact_root = link_stage_artifact_root()
     let dir = link_stage_sanitize_relative_dir(link_stage_dirname(source_path))
     if dir.len() == 0:
         return artifact_root
     artifact_root ++ "/" ++ dir
 
-fn link_stage_output_path_for_source(source_path: str) -> str:
+fn link_stage_output_path_for_source(source_path: &str) -> str:
     let base = link_stage_output_dir_for_source(source_path) ++ "/" ++ link_stage_source_stem(source_path)
     if runtime_sysinfo_os() == "Windows":
         return base ++ ".exe"
     base
 
-fn link_stage_link_object_to_binary(obj_path: str, bin_path: str, link_libs: Vec[str], link_search_paths: Vec[str], needs_async_runtime: bool) -> bool:
+fn link_stage_link_object_to_binary(obj_path: &str, bin_path: &str, link_libs: Vec[str], link_search_paths: &Vec[str], needs_async_runtime: bool) -> bool:
     let link_args: Vec[str] = Vec.new()
     link_stage_link_object_to_binary_result(obj_path, bin_path, link_libs, link_search_paths, move link_args, needs_async_runtime).ok
 
-fn link_stage_link_object_to_binary_result(obj_path: str, bin_path: str, link_libs: Vec[str], link_search_paths: &Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStageResult:
+fn link_stage_link_object_to_binary_result(obj_path: &str, bin_path: &str, link_libs: Vec[str], link_search_paths: &Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStageResult:
     let no_extra_objects: Vec[str] = Vec.new()
     link_stage_result_for_plan(link_stage_link_object_to_binary_plan_with_units(obj_path, no_extra_objects, bin_path, link_libs, link_search_paths, move link_args, needs_async_runtime))
 
-fn link_stage_link_object_to_binary_plan(obj_path: str, bin_path: str, link_libs: Vec[str], link_search_paths: &Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStagePlan:
+fn link_stage_link_object_to_binary_plan(obj_path: &str, bin_path: &str, link_libs: Vec[str], link_search_paths: &Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStagePlan:
     let no_extra_objects: Vec[str] = Vec.new()
     link_stage_link_object_to_binary_plan_with_units(obj_path, no_extra_objects, bin_path, link_libs, link_search_paths, move link_args, needs_async_runtime)
 
-fn link_stage_link_object_to_binary_plan_with_units(obj_path: str, extra_objects: &Vec[str], bin_path: str, link_libs: Vec[str], link_search_paths: &Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStagePlan:
+fn link_stage_link_object_to_binary_plan_with_units(obj_path: &str, extra_objects: &Vec[str], bin_path: &str, link_libs: Vec[str], link_search_paths: &Vec[str], link_args: Vec[str], needs_async_runtime: bool) -> LinkStagePlan:
     let extras: Vec[str] = Vec.new()
     // #650 codegen units: sibling .o files are full linker inputs like the
     // primary object (objects always load wholly, so position is irrelevant).
     for ui in 0..extra_objects.len() as i32:
-        extras.push(extra_objects.get(ui as i64))
+        extras.push(with_str_clone_ref(extra_objects.get(ui as i64)))
     for i in 0..link_search_paths.len() as i32:
         extras.push("-L" ++ link_search_paths.get(i as i64))
     var undef = link_stage_undefined_symbols_for_object(obj_path)

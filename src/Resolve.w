@@ -14,11 +14,12 @@ use compiler.Runtime
 use std.collections.HashMap
 use std.string.StringBuilder
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_write(s: str) -> Unit
-extern fn with_getenv_str(name: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_write(s: &str) -> Unit
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
-fn resolve_owned_text(text: str) -> str:
+fn resolve_owned_text(text: &str) -> str:
     if text.len() == 0:
         return ""
     runtime_str_clone(text)
@@ -168,7 +169,7 @@ type ResolveState {
     root_prefix_skip: i32,
 }
 
-fn resolve_normalize_source_text(text: str) -> str:
+fn resolve_normalize_source_text(text: &str) -> str:
     var out = StringBuilder.with_capacity(text.len())
     var i = 0
     while i < text.len() as i32:
@@ -182,15 +183,15 @@ fn resolve_normalize_source_text(text: str) -> str:
         i = i + 1
     out.to_str()
 
-fn resolve_from_root_pool(root_path: str, root_text: str, root_file_id: i32, root_pool: AstPool, pool: InternPool, diags: DiagnosticList, emit_resolve_diags: bool) -> ResolveArtifacts:
+fn resolve_from_root_pool(root_path: &str, root_text: &str, root_file_id: i32, root_pool: AstPool, pool: InternPool, diags: DiagnosticList, emit_resolve_diags: bool) -> ResolveArtifacts:
     resolve_from_root_pool_with_prefix(root_path, root_text, root_file_id, root_pool, pool, move diags, emit_resolve_diags, 0)
 
-fn resolve_from_root_pool_with_prefix(root_path: str, root_text: str, root_file_id: i32, root_pool: AstPool, pool: InternPool, diags: DiagnosticList, emit_resolve_diags: bool, root_prefix_skip: i32) -> ResolveArtifacts:
+fn resolve_from_root_pool_with_prefix(root_path: &str, root_text: &str, root_file_id: i32, root_pool: AstPool, pool: InternPool, diags: DiagnosticList, emit_resolve_diags: bool, root_prefix_skip: i32) -> ResolveArtifacts:
     var state = ResolveState.init(pool, move diags, emit_resolve_diags)
     state.root_prefix_skip = root_prefix_skip
     let normalized_root_text = resolve_normalize_source_text(root_text)
     let root_dir = resolve_dirname(root_path)
-    state.root_source_dir = root_dir
+    state.root_source_dir = with_str_clone_ref(root_dir)
     let root_module = state.reserve_module(root_path, root_dir, root_file_id)
 
     var work = 0
@@ -204,7 +205,8 @@ fn resolve_from_root_pool_with_prefix(root_path: str, root_text: str, root_file_
         else:
             let path = state.module_paths.get(work as i64)
             let embedded_rel = embedded_std_rel_path(path)
-            let text = resolve_normalize_source_text(if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: with_fs_read_file(path))
+            let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: with_fs_read_file(path)
+            let text = resolve_normalize_source_text(raw_text)
             if text.len() == 0:
                 state.emit_import_error(work, "failed to read imported module")
                 state.module_processed.set_i32(work as i64, 1)
@@ -274,7 +276,7 @@ fn resolve_binding_key(scope_id: i32, symbol: i32) -> i64:
     (scope_id as i64) * 4294967296 + (symbol as i64)
 
 impl ResolveState:
-    mut fn reserve_module(path: str, source_dir: str, file_id_hint: i32) -> i32:
+    mut fn reserve_module(path: &str, source_dir: &str, file_id_hint: i32) -> i32:
         let canon = resolve_normalize_path(path)
         // Identity is keyed on the fully-canonical form so different spellings of
         // the same file (root vs import-resolved, ./-prefixed, absolute) collapse
@@ -314,7 +316,7 @@ impl ResolveState:
             })
         out
 
-    mut fn process_module_with_pool(module_id: i32, source_text: str, pool: AstPool):
+    mut fn process_module_with_pool(module_id: i32, source_text: &str, pool: AstPool):
         self.module_processed.set_i32(module_id as i64, 1)
         // #682-inc1: root's own decl count excludes the prelude prefix
         // (decl 0's use plus everything from the skip boundary on).
@@ -365,7 +367,7 @@ impl ResolveState:
 
             if kind == NodeKind.NK_C_IMPORT:
                 let header_sym = pool.get_data0(decl)
-                let header = self.pool.resolve(header_sym)
+                let header: str = with_str_clone_ref(self.pool.resolve(header_sym))
                 self.result.imports.push(ResolvedImport {
                     module_id,
                     index_in_module: import_index,
@@ -1082,7 +1084,7 @@ impl ResolveState:
 
         ""
 
-    fn resolve_module_rel(module_dir: str, rel_path: str) -> str:
+    fn resolve_module_rel(module_dir: &str, rel_path: &str) -> str:
         // Strategy 1: relative to current module's directory.
         let cand1 = resolve_join(module_dir, rel_path)
         if resolve_file_exists(cand1):
@@ -1116,11 +1118,11 @@ impl ResolveState:
 
         ""
 
-fn resolve_file_exists(path: str) -> bool:
+fn resolve_file_exists(path: &str) -> bool:
     with_fs_read_file(path).len() > 0
 
-fn resolve_parent_lib_candidate(module_dir: str, rel_path: str) -> str:
-    var cur = module_dir
+fn resolve_parent_lib_candidate(module_dir: &str, rel_path: &str) -> str:
+    var cur = with_str_clone_ref(module_dir)
     while true:
         let lib_dir = resolve_join(cur, "lib")
         let cand = resolve_join(lib_dir, rel_path)
@@ -1132,7 +1134,7 @@ fn resolve_parent_lib_candidate(module_dir: str, rel_path: str) -> str:
         cur = parent
     ""
 
-fn resolve_project_root_candidate(module_dir: str, rel_path: str) -> str:
+fn resolve_project_root_candidate(module_dir: &str, rel_path: &str) -> str:
     let root = resolve_find_project_root(module_dir)
     if root.len() == 0:
         return ""
@@ -1147,18 +1149,18 @@ fn resolve_project_root_candidate(module_dir: str, rel_path: str) -> str:
 
     ""
 
-fn resolve_join(a: str, b: str) -> str:
+fn resolve_join(a: &str, b: &str) -> str:
     if a.len() == 0:
-        return b
+        return with_str_clone_ref(b)
     if b.len() == 0:
-        return a
+        return with_str_clone_ref(a)
     if a == ".":
-        return b
+        return with_str_clone_ref(b)
     if a.ends_with("/"):
         return resolve_normalize_path(a ++ b)
     resolve_normalize_path(a ++ "/" ++ b)
 
-fn resolve_dirname(path: str) -> str:
+fn resolve_dirname(path: &str) -> str:
     var last = -1
     for i in 0..path.len():
         if path[i] == 47:
@@ -1169,9 +1171,9 @@ fn resolve_dirname(path: str) -> str:
         return "/"
     path.slice(0, last as i64)
 
-fn resolve_normalize_path(path: str) -> str:
+fn resolve_normalize_path(path: &str) -> str:
     if path.len() == 0:
-        return path
+        return with_str_clone_ref(path)
 
     var out = ""
     var i = 0
@@ -1204,10 +1206,10 @@ fn resolve_normalize_path(path: str) -> str:
 // collapse lexically. Embedded pseudo-paths (`<embedded-std>/...`) are already
 // canonical. Used only as the module_map key; stored module paths keep their
 // original spelling (downstream tier checks match on relative prefixes).
-pub fn resolve_canonical_module_key(path: str) -> str:
+pub fn resolve_canonical_module_key(path: &str) -> str:
     if path.len() == 0 or path.starts_with("<"):
-        return path
-    var p = path
+        return with_str_clone_ref(path)
+    var p = with_str_clone_ref(path)
     if p[0] != 47:
         let cwd = with_getenv_str("PWD")
         if cwd.len() > 0:
@@ -1231,7 +1233,7 @@ pub fn resolve_canonical_module_key(path: str) -> str:
                     if parts.len() > 0 and parts.get(parts.len() - 1) != "..":
                         parts.pop()
                     else if not is_abs:
-                        parts.push(part)
+                        parts.push(with_str_clone_ref(part))
                 if keep:
                     parts.push(part)
             start = i + 1
@@ -1244,8 +1246,8 @@ pub fn resolve_canonical_module_key(path: str) -> str:
         return "."
     out
 
-fn resolve_find_project_root(start_dir: str) -> str:
-    var cur = start_dir
+fn resolve_find_project_root(start_dir: &str) -> str:
+    var cur = with_str_clone_ref(start_dir)
     while true:
         let build_file = resolve_join(cur, "build.zig")
         if resolve_file_exists(build_file):
@@ -1260,7 +1262,7 @@ fn resolve_find_project_root(start_dir: str) -> str:
     ""
 
 impl ResolveState:
-    mut fn emit_import_error(module_id: i32, message: str):
+    mut fn emit_import_error(module_id: i32, message: &str):
         if not self.emit_resolve_diags:
             return
         let span = Span {
@@ -1270,7 +1272,7 @@ impl ResolveState:
         }
         self.diags.emit(Diagnostic.err(message, span))
 
-    mut fn emit_import_decl_error(module_id: i32, start: i32, end: i32, message: str):
+    mut fn emit_import_decl_error(module_id: i32, start: i32, end: i32, message: &str):
         if not self.emit_resolve_diags:
             return
         let span = Span {
@@ -1309,7 +1311,7 @@ fn resolved_scope_kind_name(kind: i32) -> str:
     if kind == ScopeKind.SK_COMPREHENSION: return "comprehension"
     "unknown"
 
-fn print_resolved(result: &ResolveResult, pool: InternPool, root_path: str):
+fn print_resolved(result: &ResolveResult, pool: InternPool, root_path: &str):
     with_write(f"resolved root={root_path} modules={result.modules.len() as i32} defs={result.defs.len() as i32}\n")
 
     for mi in 0..result.modules.len() as i32:
@@ -1325,7 +1327,7 @@ fn print_resolved(result: &ResolveResult, pool: InternPool, root_path: str):
 
     for di in 0..result.defs.len() as i32:
         let d = result.defs.get(di as i64)
-        let name = if d.name_sym > 0: pool.resolve(d.name_sym) else: ""
+        let name = if d.name_sym > 0: with_str_clone_ref(pool.resolve(d.name_sym)) else: ""
         with_write(f"def[{d.def_id}] module={d.module_id} parent={d.parent_def} kind={resolved_def_kind_name(d.kind)} name={name} span={d.span_start}..{d.span_end}\n")
 
     for bi in 0..result.bindings.len() as i32:
@@ -1346,7 +1348,7 @@ fn print_resolved(result: &ResolveResult, pool: InternPool, root_path: str):
             line = line ++ pool.resolve(result.link_libs.get(li as i64))
         with_write(line ++ "\n")
 
-fn dump_resolved(result: &ResolveResult, pool: InternPool, root_path: str) -> str:
+fn dump_resolved(result: &ResolveResult, pool: InternPool, root_path: &str) -> str:
     var out = ""
     out = out ++ f"resolved root={root_path} modules={result.modules.len() as i32} defs={result.defs.len() as i32}\n"
 
@@ -1363,7 +1365,7 @@ fn dump_resolved(result: &ResolveResult, pool: InternPool, root_path: str) -> st
 
     for di in 0..result.defs.len() as i32:
         let d = result.defs.get(di as i64)
-        let name = if d.name_sym > 0: pool.resolve(d.name_sym) else: ""
+        let name = if d.name_sym > 0: with_str_clone_ref(pool.resolve(d.name_sym)) else: ""
         out = out ++ f"def[{d.def_id}] module={d.module_id} parent={d.parent_def} kind={resolved_def_kind_name(d.kind)} name={name} span={d.span_start}..{d.span_end}\n"
 
     for bi in 0..result.bindings.len() as i32:

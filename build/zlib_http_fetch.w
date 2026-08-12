@@ -4,7 +4,7 @@ use std.process
 
 const ZLIB_MAX_DOWNLOAD_BYTES: i64 = 16 * 1024 * 1024
 
-fn zlib_index_of(text: str, needle: str) -> i32:
+fn zlib_index_of(text: &str, needle: &str) -> i32:
     if needle.len() == 0:
         return 0
     if needle.len() > text.len():
@@ -23,7 +23,7 @@ fn zlib_index_of(text: str, needle: str) -> i32:
         i = i + 1
     -1
 
-fn http_host(url: str) -> str:
+fn http_host(url: &str) -> str:
     if not url.starts_with("http://"):
         return ""
     let rest = url.slice(7, url.len())
@@ -32,7 +32,7 @@ fn http_host(url: str) -> str:
         return rest
     rest.slice(0, slash as i64)
 
-fn http_path(url: str) -> str:
+fn http_path(url: &str) -> str:
     if not url.starts_with("http://"):
         return ""
     let rest = url.slice(7, url.len())
@@ -41,7 +41,7 @@ fn http_path(url: str) -> str:
         return "/"
     rest.slice(slash as i64, rest.len())
 
-fn http_get_body(url: str) -> Result[str, str]:
+fn http_get_body(url: &str) -> Result[str, str]:
     let host = http_host(url)
     let path = http_path(url)
     if host.len() == 0 or path.len() == 0:

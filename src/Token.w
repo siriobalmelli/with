@@ -164,7 +164,7 @@ pub enum TokenKind: i32:
     TK_KW_NO_SUSPEND = 140
 
 // Lookup table: keyword string -> tag. Returns -1 if not a keyword.
-fn tag_from_keyword(s: str) -> i32:
+fn tag_from_keyword(s: &str) -> i32:
     if s == "fn": return TokenKind.TK_KW_FN
     if s == "let": return TokenKind.TK_KW_LET
     if s == "var": return TokenKind.TK_KW_VAR
@@ -404,5 +404,5 @@ impl TokenList:
         }
 
 // Also expose a keyword_lookup alias for the lexer.
-fn keyword_lookup(text: str) -> i32:
+fn keyword_lookup(text: &str) -> i32:
     tag_from_keyword(text)

@@ -2,7 +2,8 @@
 //
 // Root `Source` now follows the foundation implementation shape.
 
-extern fn with_fs_read_file(path: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_vec_push_i32(v: &Vec[i32], val: i32) -> Unit
 
 type Source {
@@ -20,15 +21,15 @@ type SourceLocation {
 // Keep historical alias name for callers/tests.
 type Location = SourceLocation
 
-fn Source.from_string(path: str, text: str, file_id: i32) -> Source:
+fn Source.from_string(path: &str, text: &str, file_id: i32) -> Source:
     Source {
-        path,
-        text,
+        path: with_str_clone_ref(path),
+        text: with_str_clone_ref(text),
         line_offsets: source_compute_line_offsets(text),
         file_id,
     }
 
-fn Source.from_file(path: str, file_id: i32) -> Source:
+fn Source.from_file(path: &str, file_id: i32) -> Source:
     let text = with_fs_read_file(path)
     Source.from_string(path, text, file_id)
 
@@ -74,7 +75,7 @@ impl Source:
             return slice.slice(0, (slice.len() - 1) as i64)
         slice
 
-fn source_compute_line_offsets(text: str) -> Vec[i32]:
+fn source_compute_line_offsets(text: &str) -> Vec[i32]:
     let offsets: Vec[i32] = Vec.new()
     with_vec_push_i32(&offsets, 0)
     for i in 0..text.len():

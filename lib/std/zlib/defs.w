@@ -100,11 +100,11 @@ pub extern fn with_va_start(ap: *mut i8) -> Unit
 pub extern fn with_va_end(ap: *mut i8) -> Unit
 
 // PCRE2 string constants (from pcre2_internal.h macros)
-pub let STRING_MARK: *const u8 = "MARK"
-pub let STRING_DEFINE: *const u8 = "DEFINE"
-pub let STRING_VERSION: *const u8 = "VERSION"
-pub let STRING_WEIRD_STARTWORD: *const u8 = "[:<:]]"
-pub let STRING_WEIRD_ENDWORD: *const u8 = "[:>:]]"
+pub let STRING_MARK: *const u8 = c"MARK".ptr
+pub let STRING_DEFINE: *const u8 = c"DEFINE".ptr
+pub let STRING_VERSION: *const u8 = c"VERSION".ptr
+pub let STRING_WEIRD_STARTWORD: *const u8 = c"[:<:]]".ptr
+pub let STRING_WEIRD_ENDWORD: *const u8 = c"[:>:]]".ptr
 
 pub type max_align_t = c_longdouble
 
@@ -212,7 +212,7 @@ pub let CHAR_MIN: c_int = -128
 pub let USHRT_MAX: c_int = 65535
 pub let SHRT_MAX: c_int = 32767
 pub let SHRT_MIN: c_int = -32768
-pub let UINT_MAX: c_int = 0xffffffff
+pub let UINT_MAX: c_uint = 0xffffffff
 pub let INT_MAX: c_int = 2147483647
 pub let INT_MIN: c_int = (-2147483647 - 1)
 pub let ULONG_MAX: c_ulong = 0xffffffffffffffff
@@ -264,7 +264,7 @@ pub let NL_SETMAX: c_int = 255
 pub let NL_TEXTMAX: c_int = 2048
 pub let IOV_MAX: c_int = 1024
 pub let LONG_LONG_MAX: c_longlong = 9223372036854775807
-pub let LONG_LONG_MIN: c_longlong = -9223372036854775808
+pub let LONG_LONG_MIN: c_longlong = ((0 - 9223372036854775807) - 1)
 pub let ULONG_LONG_MAX: c_ulonglong = ((0 as c_ulonglong) -% 1)
 pub let F_OK: c_int = 0
 pub let X_OK: c_int = (1 << 0)
@@ -321,7 +321,6 @@ pub let Z_ASCII: c_int = 1
 pub let Z_UNKNOWN: c_int = 2
 pub let Z_DEFLATED: c_int = 8
 pub let Z_NULL: c_int = 0
-pub let zlib_version: *const i8 = zlibVersion()
 pub let SIGHUP: c_int = 1
 pub let SIGINT: c_int = 2
 pub let SIGQUIT: c_int = 3
@@ -496,7 +495,7 @@ pub let INTPTR_MAX: c_long = 9223372036854775807
 pub let INTPTR_MIN: c_long = ((0 - 9223372036854775807) - 1)
 pub let UINTPTR_MAX: c_ulong = 18446744073709551615
 pub let INTMAX_MAX: c_long = INTMAX_C(9223372036854775807)
-pub let UINTMAX_MAX: c_ulong = UINTMAX_C(18446744073709551615)
+pub let UINTMAX_MAX: c_ulong = 18446744073709551615
 pub let INTMAX_MIN: c_long = ((0 - INTMAX_MAX) - 1)
 pub let PTRDIFF_MIN: c_long = INTMAX_MIN
 pub let PTRDIFF_MAX: c_long = INTMAX_MAX
@@ -626,7 +625,7 @@ pub type z_word_t = c_ulong
 
 pub let N: c_int = 5
 pub let W: c_int = 8
-pub let POLY: c_int = 0xedb88320
+pub let POLY: c_uint = 0xedb88320
 pub type ct_data_s_fc = union { freq: c_ushort = 0, code: c_ushort = 0 }
 impl Copy for ct_data_s_fc
 pub type ct_data_s_dl = union { dad: c_ushort = 0, len: c_ushort = 0 }
@@ -862,7 +861,7 @@ pub let ATTRIBUTION_NAME_MAX: c_int = 255
 pub let F_CREATE_TAG: c_int = 0x00000001
 pub let F_DELETE_TAG: c_int = 0x00000002
 pub let F_QUERY_TAG: c_int = 0x00000004
-pub let O_POPUP: c_int = 0x80000000
+pub let O_POPUP: c_uint = 0x80000000
 pub let O_ALERT: c_int = 0x20000000
 pub let EPERM: c_int = 1
 pub let ENOENT: c_int = 2

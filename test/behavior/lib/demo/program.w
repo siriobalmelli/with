@@ -16,7 +16,7 @@ pub type ProgramSource {
     ir_text: str,
 }
 
-pub type BindEntry: Copy {
+pub type BindEntry {
     name: str,
     view: View,
 }

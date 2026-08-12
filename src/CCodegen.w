@@ -14,14 +14,16 @@ use Overflow
 use std.collections.HashMap
 use std.string.StringBuilder
 
-extern fn with_fs_read_file(path: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_fs_read_file(path: &str) -> str
 extern fn with_i64_to_str(n: i64) -> str
 extern fn str_from_byte(b: i32) -> str
 extern fn with_interrupt_requested() -> i32
 extern fn with_fmt_buf_new() -> *mut u8
 extern fn with_fmt_buf_write_str(buf: *mut u8, s: str)
+extern fn with_fmt_buf_write_str_ref(buf: *mut u8, s: &str)
 extern fn with_fmt_buf_finish(buf: *mut u8) -> str
-extern fn with_str_hash(s: str) -> i64
+extern fn with_str_hash(s: &str) -> i64
 
 type COut {
     buf: *mut u8,
@@ -32,14 +34,14 @@ fn COut.new -> COut:
     COut { buf: with_fmt_buf_new() }
 
 impl COut:
-    fn write(text: str):
-        with_fmt_buf_write_str(self.buf, text)
+    fn write(text: &str):
+        with_fmt_buf_write_str_ref(self.buf, text)
 
     fn finish() -> str:
         with_fmt_buf_finish(self.buf)
 
 fn cc_intern_resolve(intern: InternPool, sym: i32) -> str:
-    intern.resolve_symbol(sym)
+    with_str_clone_ref(intern.resolve_symbol(sym))
 
 
 fn cc_lbrace -> str:
@@ -169,6 +171,8 @@ enum CcBuiltin: i32:
     ARR_LEN64
     ARR_ULEN32
     VECRANGE
+    FMT_BUF_WRITE_STR_REF
+    STR_CLONE_REF
 
 impl Copy for CcBuiltin
 
@@ -221,10 +225,10 @@ enum CcLenMode: i32:
 
 impl Copy for CcLenMode
 
-fn cc_is_len_method(method: str) -> bool:
+fn cc_is_len_method(method: &str) -> bool:
     method == "len" or method == "len32" or method == "len64" or method == "ulen32"
 
-fn cc_len_method_builtin(base: CcBuiltin, method: str) -> CcBuiltin:
+fn cc_len_method_builtin(base: CcBuiltin, method: &str) -> CcBuiltin:
     if method == "len":
         return base
     if method == "len32":
@@ -335,10 +339,10 @@ type CCodegen {
 }
 
 impl CCodegen:
-    fn intern_intern(s: str) -> i32:
+    fn intern_intern(s: &str) -> i32:
         self.intern.intern(s)
 
-fn c_emit_module(mir_mod: MirModule, ast: AstPool, intern: InternPool, sema: Sema, source_path: str, source_text: str, overflow_mode: i32) -> CEmitResult:
+fn c_emit_module(mir_mod: MirModule, ast: AstPool, intern: InternPool, sema: Sema, source_path: &str, source_text: &str, overflow_mode: i32) -> CEmitResult:
     var cg = CCodegen {
         mir_mod,
         ast,
@@ -347,8 +351,8 @@ fn c_emit_module(mir_mod: MirModule, ast: AstPool, intern: InternPool, sema: Sem
         overflow_mode,
         had_error: 0,
         err_msg: "",
-        source_path,
-        source_text,
+        source_path: with_str_clone_ref(source_path),
+        source_text: with_str_clone_ref(source_text),
         di_source: Source.from_string(source_path, source_text, 0),
         last_line_directive: 0,
         body_fn_map: HashMap.new(),
@@ -393,11 +397,11 @@ fn c_emit_module(mir_mod: MirModule, ast: AstPool, intern: InternPool, sema: Sem
     CEmitResult { ok: 1, source: src, err_msg: "" }
 
 impl CCodegen:
-    mut fn fail(msg: str):
+    mut fn fail(msg: &str):
         if self.had_error != 0:
             return
         self.had_error = 1
-        self.err_msg = msg
+        self.err_msg = with_str_clone_ref(msg)
 
     mut fn check_interrupted() -> i32:
         if with_interrupt_requested() == 0:
@@ -442,7 +446,7 @@ fn cc_hex_digit(v: i32) -> str:
     if v == 14: return "E"
     "F"
 
-fn cc_escape_c_string(text: str) -> str:
+fn cc_escape_c_string(text: &str) -> str:
     var out = StringBuilder.with_capacity(text.len())
     for i in 0..text.len():
         let b = text.byte_at(i as i64)
@@ -485,7 +489,7 @@ fn cc_hex_digit_value(ch: i32) -> i32:
         return ch - 55
     -1
 
-fn cc_decode_with_string_escapes(text: str) -> str:
+fn cc_decode_with_string_escapes(text: &str) -> str:
     var out = StringBuilder.with_capacity(text.len())
     var i = 0
     while i < text.len() as i32:
@@ -520,7 +524,7 @@ fn cc_decode_with_string_escapes(text: str) -> str:
         i = i + 1
     out.to_str()
 
-fn cc_string_literal_payload(raw: str) -> str:
+fn cc_string_literal_payload(raw: &str) -> str:
     if raw.len() >= 5 and raw.byte_at(0) == 1 and raw.byte_at(1) == 114 and raw.byte_at(2) == 97 and raw.byte_at(3) == 119 and raw.byte_at(4) == 1:
         return raw.slice(5, raw.len())
     cc_decode_with_string_escapes(raw)
@@ -530,7 +534,7 @@ fn cc_hash_name_component(value: i64) -> str:
         return "n" ++ f"{0 - value}"
     f"{value}"
 
-fn cc_is_raw_string_token_text(text: str) -> i32:
+fn cc_is_raw_string_token_text(text: &str) -> i32:
     if text.len() < 3:
         return 0
     if text.byte_at(0) != 114:  // r
@@ -554,7 +558,7 @@ fn cc_is_raw_string_token_text(text: str) -> i32:
         hi = hi + 1
     1
 
-fn cc_is_quoted_string_token_text(text: str, prefix_len: i32) -> i32:
+fn cc_is_quoted_string_token_text(text: &str, prefix_len: i32) -> i32:
     let len = text.len() as i32
     if len < prefix_len + 2:
         return 0
@@ -578,7 +582,7 @@ fn cc_is_quoted_string_token_text(text: str, prefix_len: i32) -> i32:
         i = i + 1
     1
 
-fn cc_string_token_payload(text: str) -> str:
+fn cc_string_token_payload(text: &str) -> str:
     if cc_is_raw_string_token_text(text) != 0:
         var i = 1
         while i < text.len() as i32 and text.byte_at(i as i64) == 35:
@@ -596,7 +600,7 @@ fn cc_string_token_payload(text: str) -> str:
         return cc_decode_with_string_escapes(text.slice(2, text.len() as i64 - 1))
     ""
 
-fn cc_is_string_token_text(text: str) -> i32:
+fn cc_is_string_token_text(text: &str) -> i32:
     if cc_is_raw_string_token_text(text) != 0:
         return 1
     if cc_is_quoted_string_token_text(text, 0) != 0:
@@ -605,12 +609,12 @@ fn cc_is_string_token_text(text: str) -> i32:
         return 1
     0
 
-fn cc_is_c_string_token_text(text: str) -> i32:
+fn cc_is_c_string_token_text(text: &str) -> i32:
     if text.len() >= 3 and text.byte_at(0) == 99 and cc_is_quoted_string_token_text(text, 1) != 0:
         return 1
     0
 
-fn cc_c_string_token_payload(text: str) -> str:
+fn cc_c_string_token_payload(text: &str) -> str:
     if cc_is_c_string_token_text(text) != 0:
         return cc_decode_with_string_escapes(text.slice(2, text.len() as i64 - 1))
     ""
@@ -619,7 +623,7 @@ impl CCodegen:
     fn string_literal_node_payload(node: i32) -> str:
         self.string_literal_node_payload_from_source(node, self.source_text)
 
-    fn string_literal_node_payload_from_source(node: i32, source_text: str) -> str:
+    fn string_literal_node_payload_from_source(node: i32, source_text: &str) -> str:
         let start = self.ast.get_start(node)
         let end = self.ast.get_end(node)
         if start >= 0 and end > start and end <= source_text.len() as i32:
@@ -628,7 +632,7 @@ impl CCodegen:
                 return cc_string_token_payload(text)
         cc_string_literal_payload(cc_intern_resolve(self.intern, self.ast.get_data0(node)))
 
-    fn c_string_literal_node_payload_from_source(node: i32, source_text: str) -> str:
+    fn c_string_literal_node_payload_from_source(node: i32, source_text: &str) -> str:
         var expr = node
         while expr != 0:
             let k = self.ast.kind(expr)
@@ -645,13 +649,13 @@ impl CCodegen:
                 return cc_c_string_token_payload(text)
         cc_string_literal_payload(cc_intern_resolve(self.intern, self.ast.get_data0(expr)))
 
-fn cc_cstr_literal_data_name(text: str) -> str:
+fn cc_cstr_literal_data_name(text: &str) -> str:
     f"__with_cstr_{cc_hash_name_component(with_str_hash(text))}_{text.len()}"
 
-fn cc_cstr_literal_view_name(text: str) -> str:
+fn cc_cstr_literal_view_name(text: &str) -> str:
     f"__with_cstr_view_{cc_hash_name_component(with_str_hash(text))}_{text.len()}"
 
-fn cc_cstr_literal_bytes_initializer(text: str) -> str:
+fn cc_cstr_literal_bytes_initializer(text: &str) -> str:
     var out = cc_lbrace()
     for i in 0..text.len():
         if i > 0:
@@ -663,19 +667,19 @@ fn cc_cstr_literal_bytes_initializer(text: str) -> str:
         out = out ++ ", "
     out ++ "0" ++ cc_rbrace()
 
-fn cc_str_vec_contains(values: &Vec[str], needle: str) -> bool:
+fn cc_str_vec_contains(values: &Vec[str], needle: &str) -> bool:
     for i in 0..values.len() as i32:
         if values.get(i as i64) == needle:
             return true
     false
 
-fn cc_push_unique_str(values: Vec[str], value: str) -> Vec[str]:
+fn cc_push_unique_str(values: Vec[str], value: &str) -> Vec[str]:
     if cc_str_vec_contains(&values, value):
         return values
-    values.push(value)
+    values.push(with_str_clone_ref(value))
     values
 
-fn cc_sanitize_ident(raw: str) -> str:
+fn cc_sanitize_ident(raw: &str) -> str:
     if raw.len() == 0:
         return "sym"
     var out = ""
@@ -694,7 +698,7 @@ fn cc_sanitize_ident(raw: str) -> str:
         return "_" ++ out
     out
 
-fn cc_str_ends_with(text: str, suffix: str) -> i32:
+fn cc_str_ends_with(text: &str, suffix: &str) -> i32:
     if suffix.len() == 0:
         return 1
     if text.len() < suffix.len():
@@ -704,7 +708,7 @@ fn cc_str_ends_with(text: str, suffix: str) -> i32:
         return 1
     0
 
-fn cc_str_starts_with(text: str, prefix: str) -> i32:
+fn cc_str_starts_with(text: &str, prefix: &str) -> i32:
     if prefix.len() == 0:
         return 1
     if text.len() < prefix.len():
@@ -713,7 +717,7 @@ fn cc_str_starts_with(text: str, prefix: str) -> i32:
         return 1
     0
 
-fn cc_str_find_last_char(text: str, ch: i32) -> i32:
+fn cc_str_find_last_char(text: &str, ch: i32) -> i32:
     var i = text.len() as i32 - 1
     while i >= 0:
         if text.byte_at(i as i64) == ch:
@@ -721,19 +725,19 @@ fn cc_str_find_last_char(text: str, ch: i32) -> i32:
         i = i - 1
     -1
 
-fn cc_owner_prefix(sym_text: str) -> str:
+fn cc_owner_prefix(sym_text: &str) -> str:
     let dot = cc_str_find_last_char(sym_text, 46)
     if dot <= 0:
         return ""
     sym_text.slice(0, dot as i64)
 
-fn cc_str_contains_dot(text: str) -> i32:
+fn cc_str_contains_dot(text: &str) -> i32:
     for i in 0..text.len() as i32:
         if text.byte_at(i as i64) == 46:
             return 1
     0
 
-fn cc_str_contains(text: str, needle: str) -> i32:
+fn cc_str_contains(text: &str, needle: &str) -> i32:
     if needle.len() == 0:
         return 1
     if text.len() < needle.len():
@@ -744,19 +748,19 @@ fn cc_str_contains(text: str, needle: str) -> i32:
             return 1
     0
 
-fn cc_rval_looks_address(text: str) -> i32:
+fn cc_rval_looks_address(text: &str) -> i32:
     if text.len() >= 2 and text.byte_at(0) == 40 and text.byte_at(1) == 38:
         return 1
     if cc_str_contains(text, "*)") != 0 or cc_str_contains(text, "* const") != 0:
         return 1
     0
 
-fn cc_name_matches(raw: str, wanted: str) -> i32:
+fn cc_name_matches(raw: &str, wanted: &str) -> i32:
     if raw == wanted:
         return 1
     cc_str_ends_with(raw, "." ++ wanted)
 
-fn cc_emit_checked_signed_helpers(c_type: str, suffix: str, min_expr: str) -> str:
+fn cc_emit_checked_signed_helpers(c_type: &str, suffix: &str, min_expr: &str) -> str:
     var out = ""
     out = out ++ "static inline " ++ c_type ++ " __with_checked_add_" ++ suffix ++ "(" ++ c_type ++ " a, " ++ c_type ++ " b) {\n"
     out = out ++ "    " ++ c_type ++ " r;\n"
@@ -790,7 +794,7 @@ fn cc_emit_checked_signed_helpers(c_type: str, suffix: str, min_expr: str) -> st
     out = out ++ "}\n"
     out
 
-fn cc_emit_checked_unsigned_helpers(c_type: str, suffix: str) -> str:
+fn cc_emit_checked_unsigned_helpers(c_type: &str, suffix: &str) -> str:
     var out = ""
     out = out ++ "static inline " ++ c_type ++ " __with_checked_add_" ++ suffix ++ "(" ++ c_type ++ " a, " ++ c_type ++ " b) {\n"
     out = out ++ "    " ++ c_type ++ " r;\n"
@@ -840,13 +844,13 @@ fn cc_emit_checked_arith_helpers -> str:
     out = out ++ cc_emit_checked_unsigned_helpers("unsigned __int128", "u128")
     out ++ "\n"
 
-fn cc_base_name(raw: str) -> str:
+fn cc_base_name(raw: &str) -> str:
     let dot = cc_str_find_last_char(raw, 46)
     if dot < 0:
-        return raw
+        return with_str_clone_ref(raw)
     raw.slice((dot + 1) as i64, raw.len() as i64)
 
-fn cc_is_vec_method_name(name: str) -> i32:
+fn cc_is_vec_method_name(name: &str) -> i32:
     if name == "new":
         return 1
     if name == "push" or name == "get" or name == "len":
@@ -855,19 +859,19 @@ fn cc_is_vec_method_name(name: str) -> i32:
         return 1
     0
 
-fn cc_is_hashmap_method_name(name: str) -> i32:
+fn cc_is_hashmap_method_name(name: &str) -> i32:
     if name == "insert" or name == "contains" or name == "remove":
         return 1
     if name == "get" or name == "len" or name == "new":
         return 1
     0
 
-fn cc_is_option_method_name(name: str) -> i32:
+fn cc_is_option_method_name(name: &str) -> i32:
     if name == "is_some" or name == "unwrap" or name == "expect":
         return 1
     0
 
-fn cc_is_public_abi_name(name: str) -> i32:
+fn cc_is_public_abi_name(name: &str) -> i32:
     if name.starts_with("with_") or name.starts_with("rt_") or name.starts_with("wl_"):
         return 1
     if name.starts_with("migrate_") or name.starts_with("ci_"):
@@ -909,7 +913,7 @@ impl CCodegen:
             return "sym0"
         cc_sanitize_ident(self.canonical_extern_name(raw))
 
-    fn canonical_extern_name(name: str) -> str:
+    fn canonical_extern_name(name: &str) -> str:
         // c_import can suffix C symbols as "name.<n>" to avoid With-side name
         // collisions. The emitted C must still call the original C symbol.
         var dot_pos = -1
@@ -927,7 +931,7 @@ impl CCodegen:
                 j = j + 1
             if all_digits:
                 return name.slice(0, dot_pos as i64)
-        name
+        with_str_clone_ref(name)
 
     fn global_decl_node(sym: i32) -> NodeId:
         for di in 0..self.ast.decl_count():
@@ -950,10 +954,10 @@ impl CCodegen:
         if di >= 0 and di < self.sema.decl_source_paths.len() as i32:
             let path = self.sema.decl_source_paths.get(di as i64)
             if path.len() > 0:
-                return path
+                return with_str_clone_ref(path)
         self.source_path
 
-    fn source_text_for_path(path: str) -> str:
+    fn source_text_for_path(path: &str) -> str:
         if path.len() == 0 or path == self.source_path:
             return self.source_text
         let embedded_rel = embedded_std_rel_path(path)
@@ -967,7 +971,7 @@ impl CCodegen:
     fn decl_source_text(decl: NodeId) -> str:
         self.source_text_for_path(self.decl_source_path(decl))
 
-fn cc_path_with_slashes(path: str) -> str:
+fn cc_path_with_slashes(path: &str) -> str:
     var out = StringBuilder.with_capacity(path.len())
     for i in 0..path.len() as i32:
         let ch = path.byte_at(i as i64)
@@ -977,7 +981,7 @@ fn cc_path_with_slashes(path: str) -> str:
             out.push_byte(ch as u8)
     out.to_str()
 
-fn cc_path_find(text: str, needle: str) -> i32:
+fn cc_path_find(text: &str, needle: &str) -> i32:
     if needle.len() == 0 or text.len() < needle.len():
         return -1
     var i = 0
@@ -994,7 +998,7 @@ fn cc_path_find(text: str, needle: str) -> i32:
         i = i + 1
     -1
 
-fn cc_line_directive_path(path: str) -> str:
+fn cc_line_directive_path(path: &str) -> str:
     let p = cc_path_with_slashes(path)
     let anchors: Vec[str] = Vec.new()
     anchors.push("/out/gen/")
@@ -1054,7 +1058,7 @@ impl CCodegen:
             return ""
         cc_name.slice(9, cc_name.len())
 
-    fn module_exports_c_name(name: str) -> i32:
+    fn module_exports_c_name(name: &str) -> i32:
         for di in 0..self.ast.decl_count():
             let decl = self.ast.get_decl(di)
             if self.ast.kind(decl) != NodeKind.NK_FN_DECL:
@@ -1120,7 +1124,7 @@ impl CCodegen:
         self.canonical_body_cache.insert(fn_sym, out)
         out
 
-    fn lookup_body_sym_by_name(name: str) -> i32:
+    fn lookup_body_sym_by_name(name: &str) -> i32:
         if name.len() == 0:
             return 0
         let cached = self.body_fn_name_map.get(name)
@@ -1132,7 +1136,7 @@ impl CCodegen:
             if cc_intern_resolve(self.intern, sym) == name:
                 out = sym
                 break
-        self.body_fn_name_map.insert(name, out)
+        self.body_fn_name_map.insert(with_str_clone_ref(name), out)
         out
 
     fn has_body_for_sym(fn_sym: i32) -> i32:
@@ -1298,7 +1302,7 @@ impl CCodegen:
             found = vi
         found
 
-    mut fn payload_enum_literal(enum_tid: i32, variant_index: i32, payload_text: str) -> str:
+    mut fn payload_enum_literal(enum_tid: i32, variant_index: i32, payload_text: &str) -> str:
         let enum_c = self.c_type(enum_tid, 0)
         let tag = self.sema.type_reflection_variant_discriminant(enum_tid, variant_index)
         var out = "(" ++ enum_c ++ ")" ++ cc_lbrace() ++ ".tag = " ++ f"{tag}"
@@ -1306,11 +1310,11 @@ impl CCodegen:
             out = out ++ ", ." ++ self.payload_enum_variant_field(variant_index) ++ " = " ++ payload_text
         out ++ cc_rbrace()
 
-fn cc_str_concat_expr(left: str, right: str) -> str:
+fn cc_str_concat_expr(left: &str, right: &str) -> str:
     "with_str_concat(" ++ left ++ ", " ++ right ++ ")"
 
 impl CCodegen:
-    mut fn display_format_expr(tid: i32, expr: str, context: str) -> str:
+    mut fn display_format_expr(tid: i32, expr: &str, context: &str) -> str:
         let resolved = self.sema.resolve_alias(tid as TypeId)
         let tk = self.sema.get_type_kind(resolved)
         if tk == TypeKind.TY_STR:
@@ -1328,9 +1332,9 @@ impl CCodegen:
         self.fail("emit-c does not yet support Display formatting for aggregate " ++ context ++ " payloads")
         "WITH_STR_LIT(\"<unsupported>\")"
 
-    mut fn payload_enum_variant_format_expr(enum_tid: i32, expr: str, variant_index: i32, context: str) -> str:
+    mut fn payload_enum_variant_format_expr(enum_tid: i32, expr: &str, variant_index: i32, context: &str) -> str:
         let name_sym = self.sema.type_reflection_variant_name(enum_tid, variant_index)
-        let variant_name = self.sema.pool_resolve(name_sym)
+        let variant_name: str = with_str_clone_ref(self.sema.pool_resolve(name_sym))
         var out = "WITH_STR_LIT(\"" ++ cc_escape_c_string(variant_name) ++ "\")"
         let payload_count = self.sema.type_reflection_variant_payload_count(enum_tid, variant_index)
         if payload_count <= 0:
@@ -1343,7 +1347,7 @@ impl CCodegen:
         let payload_text = self.display_format_expr(payload_tid, payload_expr, context)
         cc_str_concat_expr(cc_str_concat_expr(out, "WITH_STR_LIT(\"(\")"), cc_str_concat_expr(payload_text, "WITH_STR_LIT(\")\")"))
 
-    mut fn payload_enum_format_expr(enum_tid: i32, expr: str, context: str) -> str:
+    mut fn payload_enum_format_expr(enum_tid: i32, expr: &str, context: &str) -> str:
         let variant_count = self.sema.type_reflection_variant_count(enum_tid)
         if variant_count <= 0:
             return "WITH_STR_LIT(\"<invalid enum>\")"
@@ -1358,7 +1362,7 @@ impl CCodegen:
             vi = vi - 1
         out
 
-    mut fn debug_format_expr(tid: i32, expr: str, context: str) -> str:
+    mut fn debug_format_expr(tid: i32, expr: &str, context: &str) -> str:
         let resolved = self.sema.resolve_alias(tid as TypeId)
         let tk = self.sema.get_type_kind(resolved)
         if tk == TypeKind.TY_ENUM and self.type_is_payload_enum(resolved as i32) != 0:
@@ -1480,11 +1484,11 @@ impl CCodegen:
             return -1
         od
 
-    fn storage_copy_assignment(dst_place: str, rval: str) -> str:
+    fn storage_copy_assignment(dst_place: &str, rval: &str) -> str:
         let _ = self
         "    " ++ cc_lbrace() ++ " __typeof__(" ++ rval ++ ") __tmp = " ++ rval ++ "; memcpy(&(" ++ dst_place ++ "), &__tmp, sizeof(" ++ dst_place ++ ") < sizeof(__tmp) ? sizeof(" ++ dst_place ++ ") : sizeof(__tmp)); " ++ cc_rbrace()
 
-    fn named_struct_tid(type_name: str) -> i32:
+    fn named_struct_tid(type_name: &str) -> i32:
         let sym = self.intern_intern(type_name)
         if not self.sema.named_types.contains(sym):
             return 0
@@ -1943,7 +1947,7 @@ impl CCodegen:
         let prefix = if signed: "i" else: "u"
         prefix ++ f"{bits}"
 
-    mut fn checked_int_bin_op_text(op: i32, lhs: str, rhs: str, result_tid: i32) -> str:
+    mut fn checked_int_bin_op_text(op: i32, lhs: &str, rhs: &str, result_tid: i32) -> str:
         let suffix = self.checked_int_helper_suffix(result_tid)
         if suffix.len() == 0:
             self.fail("C backend does not support checked integer arithmetic for this integer width yet")
@@ -1965,7 +1969,7 @@ impl CCodegen:
             return "0"
         helper ++ suffix ++ "((" ++ c_ty ++ ")(" ++ lhs ++ "), (" ++ c_ty ++ ")(" ++ rhs ++ "))"
 
-    mut fn checked_int_neg_text(inner: str, result_tid: i32) -> str:
+    mut fn checked_int_neg_text(inner: &str, result_tid: i32) -> str:
         let suffix = self.checked_int_helper_suffix(result_tid)
         if suffix.len() == 0 or suffix.byte_at(0) != 105:
             self.fail("C backend does not support checked integer negation for this integer type yet")
@@ -1973,7 +1977,7 @@ impl CCodegen:
         let c_ty = self.c_type(result_tid, 0)
         "__with_checked_neg_" ++ suffix ++ "((" ++ c_ty ++ ")(" ++ inner ++ "))"
 
-    mut fn c_decl(tid: i32, name: str) -> str:
+    mut fn c_decl(tid: i32, name: &str) -> str:
         let resolved = self.sema.resolve_alias(tid)
         if resolved != 0 and self.sema.get_type_kind(resolved) == TypeKind.TY_ARRAY:
             let elem_tid = self.sema.get_type_d0(resolved)
@@ -2991,7 +2995,7 @@ impl CCodegen:
             return "0"
         "((" ++ cty ++ ")(" ++ cc_exact_uint_expr(words.lo, words.hi) ++ "))"
 
-    mut fn cstr_literal_ref_expr(text: str, target_tid: i32) -> str:
+    mut fn cstr_literal_ref_expr(text: &str, target_tid: i32) -> str:
         let tid = if target_tid != 0: target_tid else: self.sema.ty_cstr_view as i32
         "((" ++ self.c_type(tid, 0) ++ ")&" ++ cc_cstr_literal_view_name(text) ++ ")"
 
@@ -3045,7 +3049,7 @@ impl CCodegen:
             out = out ++ "static const " ++ cstr_c ++ " " ++ view_name ++ " = " ++ cc_lbrace() ++ " .ptr = (const int8_t*)" ++ data_name ++ ", .len = " ++ f"{text.len()}" ++ " " ++ cc_rbrace() ++ ";\n"
         out ++ "\n"
 
-    mut fn global_init_text(node: i32, tid: i32, source_text: str) -> str:
+    mut fn global_init_text(node: i32, tid: i32, source_text: &str) -> str:
         var expr = node
         while expr != 0:
             let k = self.ast.kind(expr)
@@ -3066,7 +3070,7 @@ impl CCodegen:
         if kind == NodeKind.NK_FLOAT_LIT:
             let str_idx = self.ast.get_data0(expr)
             if str_idx >= 0 and str_idx < self.ast.state.strings.len() as i32:
-                return self.ast.get_string(str_idx)
+                return with_str_clone_ref(self.ast.get_string(str_idx))
             return "0.0"
         if kind == NodeKind.NK_STRING_LIT:
             let text = self.string_literal_node_payload_from_source(expr, source_text)
@@ -3112,7 +3116,7 @@ impl CCodegen:
             return "0"
         if ck == ConstKind.CK_FLOAT:
             if cd != 0:
-                let lit = if cd >= 0 and cd < self.ast.state.strings.len() as i32: self.ast.get_string(cd) else: ""
+                let lit = if cd >= 0 and cd < self.ast.state.strings.len() as i32: with_str_clone_ref(self.ast.get_string(cd)) else: ""
                 if lit.len() > 0:
                     return lit
             return "0.0"
@@ -3213,7 +3217,7 @@ impl CCodegen:
             return "1"
         "sizeof(" ++ self.c_type(inner, 0) ++ ")"
 
-    mut fn raw_pointer_binop_text(op: i32, lhs: str, rhs: str, lhs_tid: i32, rhs_tid: i32) -> str:
+    mut fn raw_pointer_binop_text(op: i32, lhs: &str, rhs: &str, lhs_tid: i32, rhs_tid: i32) -> str:
         let lhs_ptr = self.type_is_raw_pointer_tid(lhs_tid)
         let rhs_ptr = self.type_is_raw_pointer_tid(rhs_tid)
         if lhs_ptr and rhs_ptr and op == BinaryOp.OP_SUB:
@@ -3462,7 +3466,7 @@ impl CCodegen:
                 out = out ++ self.operand_text(body, body.agg_field_operands.get((start + i) as i64))
         out ++ cc_rbrace()
 
-    mut fn aggregate_struct_assignment_with_array_fields(body: &MirBody, rval_id: i32, dst_tid: i32, dst_place: str) -> str:
+    mut fn aggregate_struct_assignment_with_array_fields(body: &MirBody, rval_id: i32, dst_tid: i32, dst_place: &str) -> str:
         if rval_id < 0 or rval_id >= body.rval_kinds.len() as i32:
             return ""
         if body.rval_kinds.get(rval_id as i64) != RvalueKind.RK_AGGREGATE:
@@ -3563,7 +3567,7 @@ impl CCodegen:
                 return self.sema.get_generic_inst_arg(recv_tid as i32, 0)
         self.sema.ty_i64 as i32
 
-    fn atomic_order_text(order_text: str) -> str:
+    fn atomic_order_text(order_text: &str) -> str:
         let o = "(" ++ order_text ++ ")"
         "(" ++ o ++ " == 0 ? __ATOMIC_RELAXED : " ++ o ++ " == 1 ? __ATOMIC_ACQUIRE : " ++ o ++ " == 2 ? __ATOMIC_RELEASE : " ++ o ++ " == 3 ? __ATOMIC_ACQ_REL : __ATOMIC_SEQ_CST)"
 
@@ -4256,17 +4260,17 @@ impl CCodegen:
         self.active_direct_args.pop()
         self.active_direct_dests.pop()
 
-fn cc_call_infer_cache_key(kind: str, body_fn_sym: i32, callee_sym: i32, args_id: i32, dest_place: i32) -> str:
+fn cc_call_infer_cache_key(kind: &str, body_fn_sym: i32, callee_sym: i32, args_id: i32, dest_place: i32) -> str:
     kind ++ ":" ++ f"{body_fn_sym}" ++ ":" ++ f"{callee_sym}" ++ ":" ++ f"{args_id}" ++ ":" ++ f"{dest_place}"
 
 impl CCodegen:
-    fn call_infer_cache_lookup(kind: str, body_fn_sym: i32, callee_sym: i32, args_id: i32, dest_place: i32) -> i32:
+    fn call_infer_cache_lookup(kind: &str, body_fn_sym: i32, callee_sym: i32, args_id: i32, dest_place: i32) -> i32:
         let cached = self.call_infer_cache.get(cc_call_infer_cache_key(kind, body_fn_sym, callee_sym, args_id, dest_place))
         if cached.is_some():
             return cached.unwrap()
         -1234567
 
-    fn call_infer_cache_store(kind: str, body_fn_sym: i32, callee_sym: i32, args_id: i32, dest_place: i32, value: i32) -> Unit:
+    fn call_infer_cache_store(kind: &str, body_fn_sym: i32, callee_sym: i32, args_id: i32, dest_place: i32, value: i32) -> Unit:
         self.call_infer_cache.insert(cc_call_infer_cache_key(kind, body_fn_sym, callee_sym, args_id, dest_place), value)
 
     fn field_cache_lookup(struct_tid: i32, field_sym: i32) -> i32:
@@ -5283,11 +5287,11 @@ impl CCodegen:
             if dst != 0 and self.is_void_tid(dst) == 0:
                 return dst
             return self.sema.ty_f64 as i32
-        if kind == CcBuiltin.FMT_TO_STR or kind == CcBuiltin.FMT_DEBUG_STR or kind == CcBuiltin.FMT_DEBUG or kind == CcBuiltin.FMT_SPEC:
+        if kind == CcBuiltin.FMT_TO_STR or kind == CcBuiltin.FMT_DEBUG_STR or kind == CcBuiltin.FMT_DEBUG or kind == CcBuiltin.FMT_SPEC or kind == CcBuiltin.STR_CLONE_REF:
             return self.sema.ty_str as i32
         if kind == CcBuiltin.FMT_BUF_NEW:
             return CC_PSEUDO_TID_FMT_BUF
-        if kind == CcBuiltin.FMT_BUF_WRITE_STR or kind == CcBuiltin.FMT_BUF_WRITE_FMT:
+        if kind == CcBuiltin.FMT_BUF_WRITE_STR or kind == CcBuiltin.FMT_BUF_WRITE_STR_REF or kind == CcBuiltin.FMT_BUF_WRITE_FMT:
             return self.sema.ty_void as i32
         if kind == CcBuiltin.FMT_BUF_FINISH:
             return self.sema.ty_str as i32
@@ -5700,7 +5704,7 @@ impl CCodegen:
             return 1
         0
 
-    mut fn call_arg_address_text(body: &MirBody, op_id: i32, arg_text: str) -> str:
+    mut fn call_arg_address_text(body: &MirBody, op_id: i32, arg_text: &str) -> str:
         // A constant operand has no address; materialize it as a C99
         // compound literal, an addressable lvalue for the call's duration
         // (the LLVM backend's entry-alloca-and-store for the same shape).
@@ -5813,7 +5817,7 @@ impl CCodegen:
                     return self.body_sig_index(fn_sym)
         -1
 
-    mut fn emit_len_result(body: &MirBody, dest_place: i32, raw_expr: str, kind: CcBuiltin, has_ret: i32) -> str:
+    mut fn emit_len_result(body: &MirBody, dest_place: i32, raw_expr: &str, kind: CcBuiltin, has_ret: i32) -> str:
         let mode = cc_builtin_len_mode(kind)
         var out = "    " ++ cc_lbrace() ++ " int64_t __with_len = (int64_t)(" ++ raw_expr ++ ");"
         if mode == CcLenMode.I32:
@@ -5923,6 +5927,8 @@ fn cc_builtin_from_mir_intrinsic(intrinsic: MirIntrinsic) -> CcBuiltin:
     if intrinsic == MirIntrinsic.FMT_SPEC: return CcBuiltin.FMT_SPEC
     if intrinsic == MirIntrinsic.FMT_BUF_NEW: return CcBuiltin.FMT_BUF_NEW
     if intrinsic == MirIntrinsic.FMT_BUF_WRITE_STR: return CcBuiltin.FMT_BUF_WRITE_STR
+    if intrinsic == MirIntrinsic.FMT_BUF_WRITE_STR_REF: return CcBuiltin.FMT_BUF_WRITE_STR_REF
+    if intrinsic == MirIntrinsic.STR_CLONE_REF: return CcBuiltin.STR_CLONE_REF
     if intrinsic == MirIntrinsic.FMT_BUF_WRITE_FMT: return CcBuiltin.FMT_BUF_WRITE_FMT
     if intrinsic == MirIntrinsic.FMT_BUF_FINISH: return CcBuiltin.FMT_BUF_FINISH
     if intrinsic == MirIntrinsic.VEC_SLOT: return CcBuiltin.VEC_SLOT
@@ -7111,6 +7117,29 @@ impl CCodegen:
             let buf = self.operand_text(body, self.call_arg_operand(body, args_id, 0))
             let text = self.operand_text(body, self.call_arg_operand(body, args_id, 1))
             var out = "    with_fmt_buf_write_str((uint8_t*)(" ++ buf ++ "), " ++ text ++ ");\n"
+            out = out ++ f"    goto bb{next_bb};"
+            return out
+
+        if kind == CcBuiltin.FMT_BUF_WRITE_STR_REF:
+            if argc < 2:
+                self.fail("fmt_buf_write_str_ref expects two arguments")
+                return "    abort();"
+            let buf = self.operand_text(body, self.call_arg_operand(body, args_id, 0))
+            let text = self.operand_text(body, self.call_arg_operand(body, args_id, 1))
+            var out = "    with_fmt_buf_write_str_ref((uint8_t*)(" ++ buf ++ "), " ++ text ++ ");\n"
+            out = out ++ f"    goto bb{next_bb};"
+            return out
+
+        if kind == CcBuiltin.STR_CLONE_REF:
+            if argc < 1:
+                self.fail("str_clone_ref expects one argument")
+                return "    abort();"
+            let text = self.operand_text(body, self.call_arg_operand(body, args_id, 0))
+            var out = ""
+            if has_ret != 0:
+                out = out ++ "    " ++ self.place_text(body, dest_place) ++ " = with_str_clone_ref(" ++ text ++ ");\n"
+            else:
+                out = out ++ "    (void)with_str_clone_ref(" ++ text ++ ");\n"
             out = out ++ f"    goto bb{next_bb};"
             return out
 
@@ -9336,6 +9365,8 @@ impl CCodegen:
         out.write("#define fmt_buf_finish with_fmt_buf_finish\n")
         out.write("extern uint8_t* with_fmt_buf_new(void);\n")
         out.write("extern void with_fmt_buf_write_str(uint8_t*, with_str);\n")
+        out.write("extern void with_fmt_buf_write_str_ref(uint8_t*, const with_str*);\n")
+        out.write("extern with_str with_str_clone_ref(const with_str*);\n")
         out.write("extern void with_fmt_buf_write_i64_spec(uint8_t*, int64_t, int32_t, int64_t, int32_t, int32_t, int32_t);\n")
         out.write("extern void with_fmt_buf_write_f64_spec(uint8_t*, double, int64_t, int32_t, int32_t, int32_t);\n")
         out.write("extern void with_fmt_buf_write_str_spec(uint8_t*, with_str, int64_t, int32_t, int32_t);\n")

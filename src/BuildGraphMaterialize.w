@@ -5,6 +5,7 @@ use BuildGraphModel
 use BuildGraphRuntime
 use ComptimeValue
 use Sema
+extern fn with_str_clone_ref(s: &str) -> str
 
 type BuildGraphMaterializer {
     sema: Sema,
@@ -20,7 +21,7 @@ impl BuildGraphMaterializer:
         graph.error_msg = message
         graph
 
-    fn field_index(type_id: i32, field_name: str) -> i32:
+    fn field_index(type_id: i32, field_name: &str) -> i32:
         let field_sym = self.sema.pool_lookup_symbol(field_name)
         if field_sym == 0:
             return -1
@@ -30,7 +31,7 @@ impl BuildGraphMaterializer:
                 return i
         -1
 
-    fn field_value(value: &ComptimeValue, field_name: str) -> ComptimeValue:
+    fn field_value(value: &ComptimeValue, field_name: &str) -> ComptimeValue:
         if value.kind != ComptimeValueKind.CV_STRUCT:
             return comptime_value_invalid()
         let index = self.field_index(value.type_id, field_name)
@@ -38,19 +39,19 @@ impl BuildGraphMaterializer:
             return comptime_value_invalid()
         comptime_value_clone(self.extras.get((value.extra_start + index) as i64))
 
-    fn expect_str_field(value: &ComptimeValue, field_name: str) -> ComptimeValue:
+    fn expect_str_field(value: &ComptimeValue, field_name: &str) -> ComptimeValue:
         let field = self.field_value(value, field_name)
         if field.kind != ComptimeValueKind.CV_STR:
             return comptime_value_invalid()
         field
 
-    fn expect_i32_field(value: &ComptimeValue, field_name: str) -> ComptimeValue:
+    fn expect_i32_field(value: &ComptimeValue, field_name: &str) -> ComptimeValue:
         let field = self.field_value(value, field_name)
         if field.kind != ComptimeValueKind.CV_INT:
             return comptime_value_invalid()
         field
 
-    fn string_vec_field(value: &ComptimeValue, field_name: str) -> Vec[str]:
+    fn string_vec_field(value: &ComptimeValue, field_name: &str) -> Vec[str]:
         let out: Vec[str] = Vec.new()
         let field = self.field_value(value, field_name)
         if field.kind != ComptimeValueKind.CV_VEC and field.kind != ComptimeValueKind.CV_ARRAY:
@@ -58,15 +59,15 @@ impl BuildGraphMaterializer:
         for i in 0..field.extra_count:
             let item = self.extras.get((field.extra_start + i) as i64)
             if item.kind == ComptimeValueKind.CV_STR:
-                out.push(item.text)
+                out.push(with_str_clone_ref(item.text))
         out
 
-fn build_graph_materialized_target(kind: i32, name: str, entry: str, target_kind: i32, optimize_mode: i32, output: str) -> BuildGraphTarget:
+fn build_graph_materialized_target(kind: i32, name: &str, entry: &str, target_kind: i32, optimize_mode: i32, output: &str) -> BuildGraphTarget:
     BuildGraphTarget {
         kind,
-        name,
-        entry,
-        output,
+        name: with_str_clone_ref(name),
+        entry: with_str_clone_ref(entry),
+        output: with_str_clone_ref(output),
         target_kind,
         optimize_mode,
         system_libs: Vec.new(),
@@ -87,7 +88,7 @@ fn build_graph_materialized_target(kind: i32, name: str, entry: str, target_kind
     }
 
 impl BuildGraphMaterializer:
-    fn target_name_exists(graph: &BuildGraph, name: str) -> bool:
+    fn target_name_exists(graph: &BuildGraph, name: &str) -> bool:
         for i in 0..graph.targets.len() as i32:
             if graph.targets.get(i as i64).name == name:
                 return true
@@ -141,7 +142,7 @@ impl BuildGraphMaterializer:
             target.timeout_ms = timeout_field.data0 as i32
         let cwd_field = self.field_value(value, "cwd")
         if cwd_field.kind == ComptimeValueKind.CV_STR:
-            target.cwd = cwd_field.text
+            target.cwd = with_str_clone_ref(cwd_field.text)
         target.env = self.string_vec_field(value, "env")
         let network_field = self.field_value(value, "network")
         if network_field.kind == ComptimeValueKind.CV_BOOL:
@@ -208,7 +209,7 @@ impl BuildGraphMaterializer:
                     queue.push(t)
         let paths: Vec[str] = Vec.new()
         for i in 0..visited.len() as i32:
-            paths.push(self.sema.module_paths.get(visited.get(i as i64) as i64))
+            paths.push(with_str_clone_ref(self.sema.module_paths.get(visited.get(i as i64) as i64)))
         paths
 
     fn materialize_generated_source(value: &ComptimeValue, graph: BuildGraph) -> BuildGraph:
@@ -242,9 +243,9 @@ impl BuildGraphMaterializer:
         let default_target = self.expect_str_field(value, "default_target")
         if package_name.kind == ComptimeValueKind.CV_INVALID or package_version.kind == ComptimeValueKind.CV_INVALID or default_target.kind == ComptimeValueKind.CV_INVALID:
             return self.error("Build has a field with the wrong comptime value type")
-        graph.package_name = package_name.text
-        graph.package_version = package_version.text
-        graph.default_target = default_target.text
+        graph.package_name = with_str_clone_ref(package_name.text)
+        graph.package_version = with_str_clone_ref(package_version.text)
+        graph.default_target = with_str_clone_ref(default_target.text)
 
         let generated_sources = self.field_value(value, "generated_sources")
         if generated_sources.kind != ComptimeValueKind.CV_VEC and generated_sources.kind != ComptimeValueKind.CV_ARRAY:

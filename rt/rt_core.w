@@ -275,12 +275,10 @@ type RawStr:
     ptr: *const u8
     len: i64
 
-fn str_data(s: str) -> *const u8:
-    let p = &s as *const *const u8
-    unsafe *p
+fn str_data(s: &str) -> *const u8:
+    unsafe **(&s as *const *const *const u8)
 
-fn str_length(s: str) -> i64:
-    s.len()
+fn str_length(s: &str): s.len()
 
 fn make_str(ptr: *const u8, len: i64) -> str:
     let raw = RawStr { ptr: ptr, len: len }
@@ -744,6 +742,88 @@ fn rt_parse_limit_cstr(p: *const u8) -> i64:
         value = value * 10 + digit
         i = i + 1
 
+// Trap-on-address (#747 instrument, debug-allocator extension): set
+// WITH_DEBUG_ALLOC_TRAP_FREE=<decimal payload addr> to print every rt alloc and
+// free of that exact payload address (with the drop origin when the free path
+// carries one). When WITH_DEBUG_ALLOC_TRAP_FREE_HIT=<n> is nonzero, the n-th
+// free of the address panics so a debugger stops on the freeing call chain.
+// Works without WITH_DEBUG_ALLOC, so the allocation pattern under test is
+// unchanged. Values may be zero-padded (learn/trap lldb runs keep identical
+// env-block lengths for exact heap-layout replay).
+var dbg_trap_free_state: i32 = 0
+var dbg_trap_free_addr_v: i64 = 0
+var dbg_trap_free_hit_state: i32 = 0
+var dbg_trap_free_hit_v: i64 = 0
+var dbg_trap_free_count: i64 = 0
+var dbg_trap_alloc_hit_state: i32 = 0
+var dbg_trap_alloc_hit_v: i64 = 0
+var dbg_trap_alloc_count: i64 = 0
+
+fn dbg_trap_free_addr() -> i64:
+    if dbg_trap_free_state == 0:
+        let parsed = rt_parse_limit_cstr(rt_getenv(c"WITH_DEBUG_ALLOC_TRAP_FREE".ptr))
+        if parsed > 0:
+            dbg_trap_free_addr_v = parsed
+            dbg_trap_free_state = 2
+        else:
+            dbg_trap_free_state = 1
+    if dbg_trap_free_state == 2:
+        return dbg_trap_free_addr_v
+    0
+
+fn dbg_trap_free_hit() -> i64:
+    if dbg_trap_free_hit_state == 0:
+        let parsed = rt_parse_limit_cstr(rt_getenv(c"WITH_DEBUG_ALLOC_TRAP_FREE_HIT".ptr))
+        if parsed > 0:
+            dbg_trap_free_hit_v = parsed
+            dbg_trap_free_hit_state = 2
+        else:
+            dbg_trap_free_hit_state = 1
+    if dbg_trap_free_hit_state == 2:
+        return dbg_trap_free_hit_v
+    0
+
+fn dbg_trap_free_check(ptr_addr: i64, drop_origin_ptr: i64, drop_origin_len: i64):
+    if dbg_trap_free_addr() != ptr_addr:
+        return
+    dbg_trap_free_count = dbg_trap_free_count + 1
+    dbg_puts("debug-alloc: trap-free hit=" as *const u8, 27)
+    dbg_put_i64(dbg_trap_free_count)
+    dbg_puts(" addr=" as *const u8, 6)
+    dbg_put_i64(ptr_addr)
+    if drop_origin_ptr != 0 and drop_origin_len > 0:
+        dbg_puts(" origin=" as *const u8, 8)
+        dbg_puts(drop_origin_ptr as *const u8, drop_origin_len)
+    dbg_puts("\n" as *const u8, 1)
+    if dbg_trap_free_hit() == dbg_trap_free_count:
+        with_panic_core(make_str("debug-alloc: trapped free of watched address" as *const u8, 44), make_str("" as *const u8, 0), 0)
+
+fn dbg_trap_alloc_hit() -> i64:
+    if dbg_trap_alloc_hit_state == 0:
+        let parsed = rt_parse_limit_cstr(rt_getenv(c"WITH_DEBUG_ALLOC_TRAP_ALLOC_HIT".ptr))
+        if parsed > 0:
+            dbg_trap_alloc_hit_v = parsed
+            dbg_trap_alloc_hit_state = 2
+        else:
+            dbg_trap_alloc_hit_state = 1
+    if dbg_trap_alloc_hit_state == 2:
+        return dbg_trap_alloc_hit_v
+    0
+
+fn dbg_trap_alloc_check(ptr_addr: i64, origin: i64):
+    if dbg_trap_free_addr() != ptr_addr:
+        return
+    dbg_trap_alloc_count = dbg_trap_alloc_count + 1
+    dbg_puts("debug-alloc: trap-alloc hit=" as *const u8, 28)
+    dbg_put_i64(dbg_trap_alloc_count)
+    dbg_puts(" addr=" as *const u8, 6)
+    dbg_put_i64(ptr_addr)
+    dbg_puts(" origin=" as *const u8, 8)
+    dbg_put_i64(origin)
+    dbg_puts("\n" as *const u8, 1)
+    if dbg_trap_alloc_hit() == dbg_trap_alloc_count:
+        with_panic_core(make_str("debug-alloc: trapped alloc of watched address" as *const u8, 45), make_str("" as *const u8, 0), 0)
+
 fn rt_alloc_effective_limit_unlocked() -> i64:
     if rt_alloc_limit_state == 0:
         let raw = rt_getenv(c"WITH_MEMORY_LIMIT_BYTES".ptr)
@@ -1135,6 +1215,7 @@ fn rt_alloc_with_origin(size_arg: i64, origin: i64) -> *mut u8:
     rt_allocator_unlock()
     if payload_ok == 0:
         with_panic_core(make_str("allocator returned invalid payload" as *const u8, 34), make_str("" as *const u8, 0), 0)
+    dbg_trap_alloc_check(ptr as i64, origin)
     ptr
 
 fn rt_alloc(size_arg: i64) -> *mut u8:
@@ -1143,6 +1224,7 @@ fn rt_alloc(size_arg: i64) -> *mut u8:
 fn rt_free_unlocked_with_drop_origin(ptr: *mut u8, drop_origin_ptr: i64, drop_origin_len: i64):
     if ptr as i64 == 0:
         return
+    dbg_trap_free_check(ptr as i64, drop_origin_ptr, drop_origin_len)
     // #606 debug allocator: detect double-free before the generic ownership
     // panic so the report names the address; poison freed small payloads.
     if dbg_on() != 0:
@@ -1259,7 +1341,7 @@ fn rt_realloc(ptr: *mut u8, old_size: i64, new_size: i64) -> *mut u8:
     new_ptr
 
 // Null-terminate a str for syscalls
-fn str_has_interior_nul(s: str) -> bool:
+fn str_has_interior_nul(s: &str) -> bool:
     let p = str_data(s)
     let n = str_length(s)
     if p as i64 == 0:
@@ -1275,7 +1357,7 @@ fn str_has_interior_nul(s: str) -> bool:
 // bytes (§16.3c), which C would silently truncate at; that is forbidden, so the
 // conversion fails loudly instead of producing a poisoned C string. Raw interop
 // (`str_data(s) as *const c_char`) is unaffected and stays explicit/unsafe.
-fn str_to_cstr(s: str) -> *const u8:
+fn str_to_cstr(s: &str) -> *const u8:
     if str_has_interior_nul(s):
         let empty = make_str("" as *const u8, 0)
         with_panic_core("str to C string conversion: interior NUL byte", empty, 0)
@@ -1286,7 +1368,7 @@ fn str_to_cstr(s: str) -> *const u8:
     buf as *const u8
 
 pub fn with_str_to_cstr(s: str) -> *mut u8:
-    str_to_cstr(s) as *mut u8
+    str_to_cstr(&s) as *mut u8
 
 // ── Exported allocator/memory API for std/mem.w ───────────────────
 
@@ -1371,15 +1453,15 @@ pub fn with_runtime_set_argv(argc: i32, argv: *const *const u8) -> Unit:
 
 // ── Print functions ────────────────────────────────────────────────
 
-pub fn with_print_str(s: str) -> Unit:
+pub fn with_print_str(s: &str) -> Unit:
     let p = str_data(s)
-    let n = str_length(s)
+    let n = s.len()
     if p as i64 != 0 and n > 0:
         write_all(1, p, n)
 
-pub fn with_println_str(s: str) -> Unit:
+pub fn with_println_str(s: &str) -> Unit:
     let p = str_data(s)
-    let n = str_length(s)
+    let n = s.len()
     if p as i64 != 0 and n > 0:
         write_all(1, p, n)
     let _ = rt_write(1, "\n" as *const u8, 1)
@@ -1402,12 +1484,12 @@ pub fn with_println_bool(b: i32) -> Unit:
     else:
         write_all(1, "false\n" as *const u8, 6)
 
-pub fn with_write(s: str) -> Unit:
+pub fn with_write(s: &str) -> Unit:
     with_print_str(s)
 
-pub fn with_ewrite(s: str) -> Unit:
+pub fn with_ewrite(s: &str) -> Unit:
     let p = str_data(s)
-    let n = str_length(s)
+    let n = s.len()
     if p as i64 != 0 and n > 0:
         write_all(2, p, n)
 
@@ -1418,8 +1500,12 @@ pub fn with_eprintln(s: str) -> Unit:
         write_all(2, p, n)
     let _ = rt_write(2, "\n" as *const u8, 1)
 
-pub fn with_eprint(s: str) -> Unit:
-    with_eprintln(s)
+pub fn with_eprint(s: &str) -> Unit:
+    let p = str_data(s)
+    let n = s.len()
+    if p as i64 != 0 and n > 0:
+        write_all(2, p, n)
+    let _ = rt_write(2, "\n" as *const u8, 1)
 
 // ── Panic / assert ─────────────────────────────────────────────────
 
@@ -1621,6 +1707,14 @@ pub fn with_fmt_buf_new() -> *mut u8:
 
 pub fn with_fmt_buf_write_str(b: *mut u8, s: str) -> Unit:
     let slen = str_length(s)
+    if slen > 0:
+        fb_append(b, str_data(s), slen)
+
+// #747: append through a BORROWED str — the &str spelling for callers whose
+// text params borrow (CCodegen COut.write). Codegen keeps emitting the
+// consuming form for format strings; this one is source wiring only.
+pub fn with_fmt_buf_write_str_ref(b: *mut u8, s: &str) -> Unit:
+    let slen = s.len()
     if slen > 0:
         fb_append(b, str_data(s), slen)
 
@@ -1847,17 +1941,18 @@ pub fn with_str_concat(a: str, b: str) -> str:
     let al = str_length(a)
     let bl = str_length(b)
     let total = al + bl
-    if total == 0:
-        return make_str("" as *const u8, 0)
-    let out = rt_alloc(total + 1)
-    let ap = str_data(a)
-    let bp = str_data(b)
-    if ap as i64 != 0 and al > 0:
-        rt_memcpy(out, ap, al)
-    if bp as i64 != 0 and bl > 0:
-        rt_memcpy((out as i64 + al) as *mut u8, bp, bl)
-    unsafe *((out as i64 + total) as *mut u8) = 0
-    make_str(out as *const u8, total)
+    var result = make_str("" as *const u8, 0)
+    if total != 0:
+        let out = rt_alloc(total + 1)
+        let ap = str_data(a)
+        let bp = str_data(b)
+        if ap as i64 != 0 and al > 0:
+            rt_memcpy(out, ap, al)
+        if bp as i64 != 0 and bl > 0:
+            rt_memcpy((out as i64 + al) as *mut u8, bp, bl)
+        unsafe *((out as i64 + total) as *mut u8) = 0
+        result = make_str(out as *const u8, total)
+    result
 
 fn str_owned_capacity_from_ptr(ptr: *const u8) -> i64:
     if ptr as i64 == 0:
@@ -1869,13 +1964,16 @@ fn str_owned_capacity_from_ptr(ptr: *const u8) -> i64:
         return 0
     payload_size - 1
 
+fn str_concat_part_data(parts: *const str, index: i64): unsafe *((parts as i64 + index * 16) as *const *const u8)
+
+fn str_concat_part_len(parts: *const str, index: i64): unsafe *((parts as i64 + index * 16 + 8) as *const i64)
+
 fn str_concat_n_copy(parts: *const str, count: i64, total: i64) -> str:
     let out = rt_alloc(total + 1)
     var offset: i64 = 0
     for i in 0..count:
-        let part = unsafe parts[i]
-        let part_len = str_length(part)
-        let part_data = str_data(part)
+        let part_len = str_concat_part_len(parts, i)
+        let part_data = str_concat_part_data(parts, i)
         if part_data as i64 != 0 and part_len > 0:
             rt_memcpy((out as i64 + offset) as *mut u8, part_data, part_len)
         offset = offset + part_len
@@ -1885,8 +1983,7 @@ fn str_concat_n_copy(parts: *const str, count: i64, total: i64) -> str:
 pub fn with_str_concat_n(parts: *const str, count: i64) -> str:
     var total: i64 = 0
     for i in 0..count:
-        let part = unsafe parts[i]
-        total = total + str_length(part)
+        total = total + str_concat_part_len(parts, i)
     if total == 0:
         return make_str("" as *const u8, 0)
     str_concat_n_copy(parts, count, total)
@@ -1894,24 +1991,21 @@ pub fn with_str_concat_n(parts: *const str, count: i64) -> str:
 pub fn with_str_concat_n_move_first(parts: *const str, count: i64) -> str:
     var total: i64 = 0
     for i in 0..count:
-        let part = unsafe parts[i]
-        total = total + str_length(part)
+        total = total + str_concat_part_len(parts, i)
     if total == 0:
         return make_str("" as *const u8, 0)
     if count <= 0:
         return make_str("" as *const u8, 0)
 
-    let first = unsafe parts[0]
-    let first_len = str_length(first)
-    let first_ptr = str_data(first)
+    let first_len = str_concat_part_len(parts, 0)
+    let first_ptr = str_concat_part_data(parts, 0)
     let first_owned = rt_payload_start_is_owned(first_ptr)
     let first_cap = str_owned_capacity_from_ptr(first_ptr)
     if first_owned != 0 and first_ptr as i64 != 0 and first_cap >= total:
         var offset = first_len
         for i in 1..count:
-            let part = unsafe parts[i]
-            let part_len = str_length(part)
-            let part_data = str_data(part)
+            let part_len = str_concat_part_len(parts, i)
+            let part_data = str_concat_part_data(parts, i)
             if part_data as i64 != 0 and part_len > 0:
                 rt_memcpy((first_ptr as i64 + offset) as *mut u8, part_data, part_len)
             offset = offset + part_len
@@ -1931,9 +2025,8 @@ pub fn with_str_concat_n_move_first(parts: *const str, count: i64) -> str:
     let out = rt_alloc(new_size)
     var offset: i64 = 0
     for i in 0..count:
-        let part = unsafe parts[i]
-        let part_len = str_length(part)
-        let part_data = str_data(part)
+        let part_len = str_concat_part_len(parts, i)
+        let part_data = str_concat_part_data(parts, i)
         if part_data as i64 != 0 and part_len > 0:
             rt_memcpy((out as i64 + offset) as *mut u8, part_data, part_len)
         offset = offset + part_len
@@ -1956,11 +2049,39 @@ pub fn with_str_eq(a: str, b: str) -> i32:
         return 1
     if rt_memcmp(ap, bp, al) == 0: 1 else: 0
 
+pub fn with_str_eq_ref(a: &str, b: &str) -> i32:
+    let al = a.len()
+    let bl = b.len()
+    if al != bl:
+        return 0
+    if al == 0:
+        return 1
+    let ap = unsafe **(&a as *const *const *const u8)
+    let bp = unsafe **(&b as *const *const *const u8)
+    if ap as i64 == bp as i64:
+        return 1
+    if rt_memcmp(ap, bp, al) == 0: 1 else: 0
+
 pub fn with_str_cmp(a: str, b: str) -> i32:
     let al = str_length(a)
     let bl = str_length(b)
     let n = if al < bl: al else: bl
     let cmp = rt_memcmp(str_data(a), str_data(b), n)
+    if cmp != 0:
+        return cmp
+    if al < bl:
+        return -1
+    if al > bl:
+        return 1
+    0
+
+pub fn with_str_cmp_ref(a: &str, b: &str) -> i32:
+    let al = a.len()
+    let bl = b.len()
+    let n = if al < bl: al else: bl
+    let ap = unsafe **(&a as *const *const *const u8)
+    let bp = unsafe **(&b as *const *const *const u8)
+    let cmp = rt_memcmp(ap, bp, n)
     if cmp != 0:
         return cmp
     if al < bl:
@@ -1978,16 +2099,51 @@ pub fn with_str_clone(s: str) -> str:
     unsafe *((out as i64 + slen) as *mut u8) = 0
     make_str(out as *const u8, slen)
 
-pub fn with_str_len(s: str) -> i64:
-    str_length(s)
+// #747: owned copy from a BORROWED str — the clone spelling for reading an
+// owned field through a borrow (with_str_clone's consuming param cannot be
+// fed from one). &str passes the header by pointer, so this is a distinct
+// ABI from with_str_clone, not an overload. Reads the header through the
+// reference directly; str_data/str_length take consuming str.
+pub fn with_str_clone_ref(s: &str) -> str:
+    let slen = s.len()
+    if slen == 0:
+        return make_str("" as *const u8, 0)
+    // BOOTSTRAP INTERIM (#747): the honest read is `s as *const str` (the
+    // address-preserving reference value), but this object is seed-built and
+    // the frozen seed miscompiles that cast — its RK_CAST TY_STR branch
+    // extracts the DATA pointer, so the deref below reads text bytes as an
+    // address (SIGSEGV at 0x…"/private"). Fixed in CodegenDispatch.w on this
+    // branch; respell honestly once a reseed carries the fix. `&s` is the
+    // binding's slot address in both worlds: slot -> header -> data.
+    let data = unsafe **(&s as *const *const *const u8)
+    let out = rt_alloc(slen + 1)
+    rt_memcpy(out, data, slen)
+    unsafe *((out as i64 + slen) as *mut u8) = 0
+    make_str(out as *const u8, slen)
 
-pub fn with_str_byte_at(s: str, idx: i64) -> i32:
+pub fn with_str_len(s: &str) -> i64:
+    s.len()
+
+fn str_byte_at_ref(s: &str, idx: i64) -> i32:
     let slen = str_length(s)
     if idx < 0 or idx >= slen:
         return 0
     let p = str_data(s)
     (unsafe p[idx]) as i32
 
+pub fn with_str_byte_at(s: str, idx: i64) -> i32:
+    str_byte_at_ref(s, idx)
+
+pub fn with_str_byte_at_ref(s: &str, idx: i64) -> i32:
+    str_byte_at_ref(s, idx)
+
+// #747: slice/substr/trim/replace results are independent OWNED strs, so
+// they COPY. Returning a make_str view into the argument's buffer was
+// correct while str was Copy (nothing dropped), but under owned str the
+// argument stays with the caller (observer args) and both values drop: a
+// view at offset 0 IS the payload start, so its drop freed the caller's
+// still-owned buffer (double free), and any interior view dangled once the
+// caller's drop ran first. #748 view tokens can recover the zero-copy form.
 pub fn with_str_slice(s: str, start_arg: i64, end_arg: i64) -> str:
     let slen = str_length(s)
     var start = start_arg
@@ -1996,7 +2152,23 @@ pub fn with_str_slice(s: str, start_arg: i64, end_arg: i64) -> str:
     if end > slen: end = slen
     if start >= end:
         return make_str("" as *const u8, 0)
-    make_str((str_data(s) as i64 + start) as *const u8, end - start)
+    alloc_str((str_data(s) as i64 + start) as *const u8, end - start)
+
+// #747: slice through a BORROWED str header — same owned-copy semantics as
+// with_str_slice, callable from &str contexts (std wrappers whose text
+// params borrow). Codegen keeps emitting the consuming form; this one is
+// std-wiring only.
+pub fn with_str_slice_ref(s: &str, start_arg: i64, end_arg: i64) -> str:
+    let slen = s.len()
+    var start = start_arg
+    var end = end_arg
+    if start < 0: start = 0
+    if end > slen: end = slen
+    if start >= end:
+        return make_str("" as *const u8, 0)
+    // BOOTSTRAP INTERIM (#747): see with_str_clone_ref.
+    let data = unsafe **(&s as *const *const *const u8)
+    alloc_str((data as i64 + start) as *const u8, end - start)
 
 pub fn with_str_substr(s: str, start_arg: i64, length_arg: i64) -> str:
     let slen = str_length(s)
@@ -2007,22 +2179,34 @@ pub fn with_str_substr(s: str, start_arg: i64, length_arg: i64) -> str:
         return make_str("" as *const u8, 0)
     if start + length > slen:
         length = slen - start
-    make_str((str_data(s) as i64 + start) as *const u8, length)
+    alloc_str((str_data(s) as i64 + start) as *const u8, length)
 
-pub fn with_str_starts_with(s: str, prefix: str) -> i32:
+fn str_starts_with_ref(s: &str, prefix: &str) -> i32:
     let pl = str_length(prefix)
     let sl = str_length(s)
     if pl > sl: return 0
     if rt_memcmp(str_data(s), str_data(prefix), pl) == 0: 1 else: 0
 
-pub fn with_str_ends_with(s: str, suffix: str) -> i32:
+pub fn with_str_starts_with(s: str, prefix: str) -> i32:
+    str_starts_with_ref(s, prefix)
+
+pub fn with_str_starts_with_ref(s: &str, prefix: &str) -> i32:
+    str_starts_with_ref(s, prefix)
+
+fn str_ends_with_ref(s: &str, suffix: &str) -> i32:
     let sufl = str_length(suffix)
     let sl = str_length(s)
     if sufl > sl: return 0
     let offset = sl - sufl
     if rt_memcmp((str_data(s) as i64 + offset) as *const u8, str_data(suffix), sufl) == 0: 1 else: 0
 
-pub fn with_str_contains(hay: str, needle: str) -> i32:
+pub fn with_str_ends_with(s: str, suffix: str) -> i32:
+    str_ends_with_ref(s, suffix)
+
+pub fn with_str_ends_with_ref(s: &str, suffix: &str) -> i32:
+    str_ends_with_ref(s, suffix)
+
+fn str_contains_ref(hay: &str, needle: &str) -> i32:
     let nl = str_length(needle)
     let hl = str_length(hay)
     if nl == 0: return 1
@@ -2036,9 +2220,15 @@ pub fn with_str_contains(hay: str, needle: str) -> i32:
         i = i + 1
     0
 
+pub fn with_str_contains(hay: str, needle: str) -> i32:
+    str_contains_ref(hay, needle)
+
+pub fn with_str_contains_ref(hay: &str, needle: &str) -> i32:
+    str_contains_ref(hay, needle)
+
 // Byte/codepoint membership: `ch in some_str`. Chars lower to ints, so the
 // needle arrives as an i32 byte value (#234, §9.9).
-pub fn with_str_contains_char(hay: str, ch: i32) -> i32:
+fn str_contains_char_ref(hay: &str, ch: i32) -> i32:
     let hl = str_length(hay)
     let hp = str_data(hay)
     let target = (ch & 0xff) as u8
@@ -2049,7 +2239,13 @@ pub fn with_str_contains_char(hay: str, ch: i32) -> i32:
         i = i + 1
     0
 
-pub fn with_str_index_of(hay: str, needle: str) -> i64:
+pub fn with_str_contains_char(hay: str, ch: i32) -> i32:
+    str_contains_char_ref(hay, ch)
+
+pub fn with_str_contains_char_ref(hay: &str, ch: i32) -> i32:
+    str_contains_char_ref(hay, ch)
+
+fn str_index_of_ref(hay: &str, needle: &str) -> i64:
     let nl = str_length(needle)
     let hl = str_length(hay)
     if nl == 0: return 0
@@ -2063,7 +2259,13 @@ pub fn with_str_index_of(hay: str, needle: str) -> i64:
         i = i + 1
     -1
 
-pub fn with_str_trim(s: str) -> str:
+pub fn with_str_index_of(hay: str, needle: str) -> i64:
+    str_index_of_ref(hay, needle)
+
+pub fn with_str_index_of_ref(hay: &str, needle: &str) -> i64:
+    str_index_of_ref(hay, needle)
+
+fn str_trim_ref(s: &str) -> str:
     let slen = str_length(s)
     let sp = str_data(s)
     var start: i64 = 0
@@ -2078,13 +2280,20 @@ pub fn with_str_trim(s: str) -> str:
         if c != 32 and c != 9 and c != 10 and c != 13:
             break
         end = end - 1
-    if start == 0 and end == slen:
-        return s
-    make_str((sp as i64 + start) as *const u8, end - start)
+    if start >= end:
+        return make_str("" as *const u8, 0)
+    // #747: owned copy, never `return s`/a view (see with_str_slice).
+    alloc_str((sp as i64 + start) as *const u8, end - start)
 
-pub fn with_str_to_upper(s: str) -> str:
+pub fn with_str_trim(s: str) -> str:
+    str_trim_ref(s)
+
+pub fn with_str_trim_ref(s: &str) -> str:
+    str_trim_ref(s)
+
+fn str_to_upper_ref(s: &str) -> str:
     let slen = str_length(s)
-    if slen == 0: return s
+    if slen == 0: return make_str("" as *const u8, 0)  // #747: never return s (alias)
     let out = rt_alloc(slen + 1)
     let sp = str_data(s)
     var i: i64 = 0
@@ -2098,9 +2307,15 @@ pub fn with_str_to_upper(s: str) -> str:
     unsafe *((out as i64 + slen) as *mut u8) = 0
     make_str(out as *const u8, slen)
 
-pub fn with_str_to_lower(s: str) -> str:
+pub fn with_str_to_upper(s: str) -> str:
+    str_to_upper_ref(s)
+
+pub fn with_str_to_upper_ref(s: &str) -> str:
+    str_to_upper_ref(s)
+
+fn str_to_lower_ref(s: &str) -> str:
     let slen = str_length(s)
-    if slen == 0: return s
+    if slen == 0: return make_str("" as *const u8, 0)  // #747: never return s (alias)
     let out = rt_alloc(slen + 1)
     let sp = str_data(s)
     var i: i64 = 0
@@ -2114,7 +2329,13 @@ pub fn with_str_to_lower(s: str) -> str:
     unsafe *((out as i64 + slen) as *mut u8) = 0
     make_str(out as *const u8, slen)
 
-pub fn with_str_repeat(s: str, count: i64) -> str:
+pub fn with_str_to_lower(s: str) -> str:
+    str_to_lower_ref(s)
+
+pub fn with_str_to_lower_ref(s: &str) -> str:
+    str_to_lower_ref(s)
+
+fn str_repeat_ref(s: &str, count: i64) -> str:
     let slen = str_length(s)
     if count <= 0 or slen == 0:
         return make_str("" as *const u8, 0)
@@ -2128,11 +2349,19 @@ pub fn with_str_repeat(s: str, count: i64) -> str:
     unsafe *((out as i64 + total) as *mut u8) = 0
     make_str(out as *const u8, total)
 
-pub fn with_str_replace(s: str, old: str, new_s: str) -> str:
+pub fn with_str_repeat(s: str, count: i64) -> str:
+    str_repeat_ref(s, count)
+
+pub fn with_str_repeat_ref(s: &str, count: i64) -> str:
+    str_repeat_ref(s, count)
+
+fn str_replace_ref(s: &str, old: &str, new_s: &str) -> str:
     let sl = str_length(s)
     let ol = str_length(old)
     let nl = str_length(new_s)
-    if ol == 0 or sl == 0: return s
+    if sl == 0: return make_str("" as *const u8, 0)
+    // #747: the no-op paths copy, never `return s` (see with_str_slice).
+    if ol == 0: return alloc_str(str_data(s), sl)
     let sp = str_data(s)
     let op = str_data(old)
     let np = str_data(new_s)
@@ -2145,7 +2374,7 @@ pub fn with_str_replace(s: str, old: str, new_s: str) -> str:
             i = i + ol
         else:
             i = i + 1
-    if count == 0: return s
+    if count == 0: return alloc_str(sp, sl)
     let new_len = sl + count * (nl - ol)
     let out = rt_alloc(new_len + 1)
     var j: i64 = 0
@@ -2163,6 +2392,12 @@ pub fn with_str_replace(s: str, old: str, new_s: str) -> str:
     unsafe *((out as i64 + new_len) as *mut u8) = 0
     make_str(out as *const u8, new_len)
 
+pub fn with_str_replace(s: str, old: str, new_s: str) -> str:
+    str_replace_ref(s, old, new_s)
+
+pub fn with_str_replace_ref(s: &str, old: &str, new_s: &str) -> str:
+    str_replace_ref(s, old, new_s)
+
 pub fn with_str_from_cstr(s: *const u8) -> str:
     let len = cstr_len(s)
     make_str(s, len)
@@ -2177,7 +2412,7 @@ pub fn with_str_from_vec_u8(v: *const u8) -> str:
         return make_str("" as *const u8, 0)
     alloc_str(vec_get_ptr_field(vp), len)
 
-pub fn with_str_hash(s: str) -> u64:
+pub fn with_str_hash(s: &str) -> u64:
     fnv_hash(str_data(s), str_length(s))
 
 // ── Conversion functions ───────────────────────────────────────────
@@ -2215,6 +2450,27 @@ pub fn with_parse_i64(s: str) -> i64:
         neg = 1
         i = 1
     else if first == 43:  // '+'
+        i = 1
+    while i < slen:
+        let c = unsafe sp[i]
+        if c < 48 or c > 57:
+            break
+        result = result * 10 + (c - 48) as i64
+        i = i + 1
+    if neg != 0: 0 - result else: result
+
+pub fn with_parse_i64_ref(s: &str) -> i64:
+    let slen = s.len()
+    if slen == 0: return 0
+    let sp = unsafe **(&s as *const *const *const u8)
+    var result: i64 = 0
+    var neg: i32 = 0
+    var i: i64 = 0
+    let first = unsafe *sp
+    if first == 45:
+        neg = 1
+        i = 1
+    else if first == 43:
         i = 1
     while i < slen:
         let c = unsafe sp[i]
@@ -2297,7 +2553,7 @@ pub fn with_arg_at(idx: i32) -> str:
     let s = unsafe *((saved_argv_raw + idx as i64 * 8) as *const *const u8)
     make_str(s, cstr_len(s))
 
-pub fn with_getenv_str(name: str) -> str:
+pub fn with_getenv_str(name: &str) -> str:
     let cname = str_to_cstr(name)
     let val = rt_getenv(cname)
     if val as i64 == 0:
@@ -3138,7 +3394,7 @@ fn fs_mkdir_component(path: *const u8, mode: i32) -> i32:
         return 0
     rc
 
-pub fn with_fs_read_file(path: str) -> str:
+pub fn with_fs_read_file(path: &str) -> str:
     let cpath = str_to_cstr(path)
     if fs_path_is_dir_c(cpath):
         return make_str("" as *const u8, 0)
@@ -3163,7 +3419,7 @@ pub fn with_fs_read_file(path: str) -> str:
     unsafe *((buf as i64 + total) as *mut u8) = 0
     make_str(buf as *const u8, total)
 
-pub fn with_fs_write_file(path: str, data: str) -> i32:
+pub fn with_fs_write_file(path: &str, data: &str) -> i32:
     let cpath = str_to_cstr(path)
     // O_WRONLY=1, O_CREAT=0x200, O_TRUNC=0x400
     let fd = rt_open(cpath, 1 | 0x200 | 0x400, 0o644)
@@ -3178,22 +3434,22 @@ pub fn with_fs_write_file(path: str, data: str) -> i32:
     let _ = rt_close(fd)
     0
 
-pub fn with_fs_file_exists(path: str) -> i32:
+pub fn with_fs_file_exists(path: &str) -> i32:
     let cpath = str_to_cstr(path)
     if rt_access(cpath, 0) != 0:
         return 0
     1
 
-pub fn with_fs_is_dir(path: str) -> i32:
+pub fn with_fs_is_dir(path: &str) -> i32:
     let cpath = str_to_cstr(path)
     if fs_path_is_dir_c(cpath):
         return 1
     0
 
-pub fn with_fs_mkdir_p(path: str) -> i32:
+pub fn with_fs_mkdir_p(path: &str) -> i32:
     let cpath = str_to_cstr(path)
     // Create each directory component
-    let slen = str_length(path)
+    let slen = path.len()
     var i: i64 = 1
     while i < slen:
         if unsafe *((cpath as i64 + i) as *const u8) == 47:  // '/'
@@ -3205,7 +3461,7 @@ pub fn with_fs_mkdir_p(path: str) -> i32:
         i = i + 1
     fs_mkdir_component(cpath, 493)
 
-pub fn with_fs_remove_file(path: str) -> i32:
+pub fn with_fs_remove_file(path: &str) -> i32:
     let cpath = str_to_cstr(path)
     rt_unlink(cpath)
 
@@ -3233,46 +3489,46 @@ pub fn with_libc_unlink(path: *const i8) -> i32:
     let r = rt_unlink(path)
     if r < 0: -1 else: r
 
-pub fn with_fs_chmod(path: str, mode: i32) -> i32:
+pub fn with_fs_chmod(path: &str, mode: i32) -> i32:
     let cpath = str_to_cstr(path)
     rt_chmod(cpath, mode)
 
-pub fn with_fs_file_mode(path: str) -> i32:
+pub fn with_fs_file_mode(path: &str) -> i32:
     let cpath = str_to_cstr(path)
     rt_file_mode(cpath)
 
-pub fn with_fs_readlink(path: str) -> str:
+pub fn with_fs_readlink(path: &str) -> str:
     let cpath = str_to_cstr(path)
     rt_readlink(cpath)
 
-pub fn with_fs_rename_file(old_path: str, new_path: str) -> i32:
+pub fn with_fs_rename_file(old_path: &str, new_path: &str) -> i32:
     let cold = str_to_cstr(old_path)
     let cnew = str_to_cstr(new_path)
     rt_rename(cold, cnew)
 
-pub fn with_fs_create_dir(path: str) -> i32:
+pub fn with_fs_create_dir(path: &str) -> i32:
     let cpath = str_to_cstr(path)
     rt_mkdir(cpath, 493)  // 0755
 
-pub fn with_fs_remove_dir(path: str) -> i32:
+pub fn with_fs_remove_dir(path: &str) -> i32:
     let cpath = str_to_cstr(path)
     rt_rmdir(cpath)
 
-pub fn with_fs_remove_tree(path: str) -> i32:
+pub fn with_fs_remove_tree(path: &str) -> i32:
     let cpath = str_to_cstr(path)
     rt_remove_tree(cpath)
 
-pub fn with_fs_copy_tree(src: str, dst: str) -> i32:
+pub fn with_fs_copy_tree(src: &str, dst: &str) -> i32:
     let csrc = str_to_cstr(src)
     let cdst = str_to_cstr(dst)
     rt_copy_tree(csrc, cdst)
 
-pub fn with_fs_symlink(target: str, link_path: str) -> i32:
+pub fn with_fs_symlink(target: &str, link_path: &str) -> i32:
     let ctarget = str_to_cstr(target)
     let clink = str_to_cstr(link_path)
     rt_symlink(ctarget, clink)
 
-pub fn with_fs_list_files(path: str) -> str:
+pub fn with_fs_list_files(path: &str) -> str:
     let cpath = str_to_cstr(path)
     rt_list_files(cpath)
 
@@ -3302,7 +3558,7 @@ pub fn with_read_bytes_stdin(count: i32) -> str:
     unsafe *((buf as i64 + total) as *mut u8) = 0
     make_str(buf as *const u8, total)
 
-pub fn with_write_stdout(s: str) -> Unit:
+pub fn with_write_stdout(s: &str) -> Unit:
     with_print_str(s)
 
 pub fn with_flush_stdout() -> Unit:
@@ -3311,14 +3567,16 @@ pub fn with_flush_stdout() -> Unit:
 
 // ── String split/lines ─────────────────────────────────────────────
 
+// #747: parts are independent OWNED strs — each copies (see
+// with_str_split_vec's note).
 pub fn with_str_split(s: str, delim: str, out: *mut u8, count: *mut i64) -> Unit:
     let sl = str_length(s)
     let dl = str_length(delim)
     if sl == 0 or dl == 0:
-        if out as i64 != 0:
-            // Store s at out[0] (str is 16 bytes)
-            unsafe *(out as *mut str) = s
         if sl > 0:
+            if out as i64 != 0:
+                // Store a copy of s at out[0] (str is 16 bytes)
+                unsafe *(out as *mut str) = alloc_str(str_data(s), sl)
             unsafe *count = 1
         else:
             unsafe *count = 0
@@ -3331,7 +3589,7 @@ pub fn with_str_split(s: str, delim: str, out: *mut u8, count: *mut i64) -> Unit
     while i <= sl - dl:
         if rt_memcmp((sp as i64 + i) as *const u8, dp, dl) == 0:
             if out as i64 != 0:
-                let part = make_str((sp as i64 + start) as *const u8, i - start)
+                let part = alloc_str((sp as i64 + start) as *const u8, i - start)
                 unsafe *((out as i64 + n * 16) as *mut str) = part
             n = n + 1
             start = i + dl
@@ -3339,26 +3597,30 @@ pub fn with_str_split(s: str, delim: str, out: *mut u8, count: *mut i64) -> Unit
         else:
             i = i + 1
     if out as i64 != 0:
-        let last = make_str((sp as i64 + start) as *const u8, sl - start)
+        let last = alloc_str((sp as i64 + start) as *const u8, sl - start)
         unsafe *((out as i64 + n * 16) as *mut str) = last
     n = n + 1
     unsafe *count = n
 
-pub fn with_lines_out(out: *mut u8, s: str) -> Unit:
+fn with_lines_data_out(out: *mut u8, sp: *const u8, sl: i64) -> Unit:
     with_vec_new_out(out, 16)  // sizeof(str) = 16
-    let sp = str_data(s)
-    let sl = str_length(s)
     var start: i64 = 0
     var i: i64 = 0
     while i < sl:
         if (unsafe sp[i]) == 10:  // '\n'
-            let line = make_str((sp as i64 + start) as *const u8, i - start)
+            let line = alloc_str((sp as i64 + start) as *const u8, i - start)
             with_vec_push(out, &line as *const u8)
             start = i + 1
         i = i + 1
     if start < sl:
-        let line = make_str((sp as i64 + start) as *const u8, sl - start)
+        let line = alloc_str((sp as i64 + start) as *const u8, sl - start)
         with_vec_push(out, &line as *const u8)
+
+pub fn with_lines_out(out: *mut u8, s: str) -> Unit:
+    with_lines_data_out(out, str_data(s), str_length(s))
+
+pub fn with_lines_out_ref(out: *mut u8, s: &str) -> Unit:
+    with_lines_data_out(out, unsafe **(&s as *const *const *const u8), s.len())
 
 pub fn with_lines(s: str) -> (*mut u8, i64, i64, i64):
     // Allocate a Vec on the stack-return area
@@ -3406,13 +3668,18 @@ pub fn with_str_join(parts: *mut u8, sep: str) -> str:
 pub fn with_vec_str_join(parts: *mut u8, sep: str) -> str:
     with_str_join(parts, sep)
 
-pub fn with_str_split_vec(out: *mut u8, s: str, delim: str) -> Unit:
+// #747: split/lines parts are independent OWNED strs, so each part copies
+// (see with_str_slice) — a view part at offset 0 double-freed the source
+// buffer when the parts vec dropped, and every part dangled after the
+// source's own drop.
+fn str_split_vec_ref(out: *mut u8, s: &str, delim: &str) -> Unit:
     with_vec_new_out(out, 16)  // sizeof(str) = 16
     let sl = str_length(s)
     if sl == 0: return
     let dl = str_length(delim)
     if dl == 0:
-        with_vec_push(out, &s as *const u8)
+        let whole = alloc_str(str_data(s), sl)
+        with_vec_push(out, &whole as *const u8)
         return
     let sp = str_data(s)
     let dp = str_data(delim)
@@ -3420,14 +3687,20 @@ pub fn with_str_split_vec(out: *mut u8, s: str, delim: str) -> Unit:
     var i: i64 = 0
     while i <= sl - dl:
         if rt_memcmp((sp as i64 + i) as *const u8, dp, dl) == 0:
-            let part = make_str((sp as i64 + start) as *const u8, i - start)
+            let part = alloc_str((sp as i64 + start) as *const u8, i - start)
             with_vec_push(out, &part as *const u8)
             start = i + dl
             i = start
         else:
             i = i + 1
-    let last = make_str((sp as i64 + start) as *const u8, sl - start)
+    let last = alloc_str((sp as i64 + start) as *const u8, sl - start)
     with_vec_push(out, &last as *const u8)
+
+pub fn with_str_split_vec(out: *mut u8, s: str, delim: str) -> Unit:
+    str_split_vec_ref(out, s, delim)
+
+pub fn with_str_split_vec_ref(out: *mut u8, s: &str, delim: &str) -> Unit:
+    str_split_vec_ref(out, s, delim)
 
 // ── Time ───────────────────────────────────────────────────────────
 
@@ -3455,7 +3728,7 @@ pub fn with_process_alive(pid: i32) -> i32:
     let rc = rt_kill(pid, 0)
     if rc == 0: 1 else: 0
 
-pub fn with_fs_mkdir(path: str) -> i32:
+pub fn with_fs_mkdir(path: &str) -> i32:
     let cpath = str_to_cstr(path)
     rt_mkdir(cpath, 493)
 

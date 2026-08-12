@@ -11,6 +11,7 @@ use InternPool
 use Diagnostic
 use TargetSpec
 
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_parse_i64(s: str) -> i64
 extern fn str_from_byte(b: i32) -> str
 
@@ -102,19 +103,23 @@ type InterpolatedExprParseAttempt {
     used_shared_diags: i32,
 }
 
-fn Parser.init(tokens: TokenList, source: str, file_id: i32, intern: InternPool, diags: DiagnosticList) -> Parser:
+fn Parser.init(tokens: TokenList, source: &str, file_id: i32, intern: InternPool, diags: DiagnosticList) -> Parser:
     Parser.init_with_pool(move tokens, source, file_id, intern, move diags, AstPool.new())
 
-fn Parser.init_with_pool(tokens: TokenList, source: str, file_id: i32, intern: InternPool, diags: DiagnosticList, pool: AstPool) -> Parser:
+fn Parser.init_with_pool(tokens: TokenList, source: &str, file_id: i32, intern: InternPool, diags: DiagnosticList, pool: AstPool) -> Parser:
+    // #747: store the pool that HOLDS the file id. `var file_pool = pool`
+    // MOVES the pool under owned semantics; the literal previously stored the
+    // moved-from `pool` (blank) while the real pool dropped with file_pool at
+    // exit. The Copy world aliased the two headers, which hid both defects.
     var file_pool = pool
     file_pool.set_current_file_id(AstFileId(file_id))
     Parser {
         tokens,
         pos: 0,
-        pool,
+        pool: file_pool,
         intern,
         diags,
-        source,
+        source: with_str_clone_ref(source),
         file_id,
         suppress_as: 0,
         suppress_brace: 0,
@@ -340,7 +345,7 @@ fn parser_is_keyword_tag(tag: i32) -> bool:
     false
 
 impl Parser:
-    mut fn emit_help_error(msg: str, help: str):
+    mut fn emit_help_error(msg: &str, help: &str):
         let span = Span { file: self.file_id, start: self.current_start(), end: self.current_end() }
         var diag = Diagnostic.err(msg, span)
         diag.add_help(help)
@@ -369,7 +374,7 @@ impl Parser:
         let text = self.source.slice(s as i64, e as i64)
         self.intern.intern(text)
 
-    fn is_ident_named(name: str) -> bool:
+    fn is_ident_named(name: &str) -> bool:
         if self.peek() != TokenKind.TK_IDENT:
             return false
         let s = self.current_start()
@@ -400,21 +405,21 @@ impl Parser:
             return self.tokens.get_tag(p)
         TokenKind.TK_EOF
 
-    mut fn emit_error(msg: str):
+    mut fn emit_error(msg: &str):
         let span = Span { file: self.file_id, start: self.current_start(), end: self.current_end() }
         self.diags.emit(Diagnostic.err(msg, span))
 
-    mut fn emit_error_span(msg: str, start: i32, end: i32):
+    mut fn emit_error_span(msg: &str, start: i32, end: i32):
         let span = Span { file: self.file_id, start, end }
         self.diags.emit(Diagnostic.err(msg, span))
 
-    mut fn emit_error_code(msg: str, code: str):
+    mut fn emit_error_code(msg: &str, code: &str):
         let span = Span { file: self.file_id, start: self.current_start(), end: self.current_end() }
         var diag = Diagnostic.err(msg, span)
         diag.set_code(code)
         self.diags.emit(move diag)
 
-    fn effect_name_bit(name: str) -> i32:
+    fn effect_name_bit(name: &str) -> i32:
         if name == "read":
             return 1
         if name == "write":
@@ -2781,10 +2786,10 @@ impl Parser:
 
 // ── error decl (desugars to enum) ────────────────────────────────
 
-fn parser_error_from_variant_name(source_name: str) -> str:
+fn parser_error_from_variant_name(source_name: &str) -> str:
     if source_name.len() > 5 and source_name.ends_with("Error"):
         return source_name.slice(0, source_name.len() - 5)
-    source_name
+    with_str_clone_ref(source_name)
 
 impl Parser:
     mut fn parse_error_decl(is_pub: i32, start: i32) -> NodeId:
@@ -3669,7 +3674,7 @@ impl Parser:
 
 // ── Literal parsing ─────────────────────────────────────────────
 
-fn numeric_literal_suffix_start(text: str, suffix: str) -> i32:
+fn numeric_literal_suffix_start(text: &str, suffix: &str) -> i32:
     let len = text.len() as i32
     let slen = suffix.len() as i32
     if len <= slen:
@@ -3679,7 +3684,7 @@ fn numeric_literal_suffix_start(text: str, suffix: str) -> i32:
         return direct_start
     -1
 
-fn numeric_literal_suffix_start_any(text: str) -> i32:
+fn numeric_literal_suffix_start_any(text: &str) -> i32:
     var start = numeric_literal_suffix_start(text, "usize")
     if start >= 0: return start
     start = numeric_literal_suffix_start(text, "isize")
@@ -3708,7 +3713,7 @@ fn numeric_literal_suffix_start_any(text: str) -> i32:
     if start >= 0: return start
     numeric_literal_suffix_start(text, "f32")
 
-fn numeric_literal_suffix_is_separated(text: str) -> bool:
+fn numeric_literal_suffix_is_separated(text: &str) -> bool:
     let start = numeric_literal_suffix_start_any(text)
     start > 0 and text.byte_at((start - 1) as i64) == 95
 
@@ -3716,7 +3721,7 @@ impl Parser:
     mut fn emit_numeric_suffix_separator_error(start: i32, end: i32):
         self.emit_error_span("numeric separator '_' may not precede the type suffix; write 1_000u64 not 1_000_u64", start, end)
 
-fn numeric_literal_suffix_code(text: str) -> i32:
+fn numeric_literal_suffix_code(text: &str) -> i32:
     if numeric_literal_suffix_start(text, "usize") >= 0: return LiteralSuffix.Usize
     if numeric_literal_suffix_start(text, "isize") >= 0: return LiteralSuffix.Isize
     if numeric_literal_suffix_start(text, "u128") >= 0: return LiteralSuffix.U128
@@ -3733,10 +3738,10 @@ fn numeric_literal_suffix_code(text: str) -> i32:
     if numeric_literal_suffix_start(text, "f32") >= 0: return LiteralSuffix.F32
     LiteralSuffix.None
 
-fn numeric_literal_core(text: str) -> str:
+fn numeric_literal_core(text: &str) -> str:
     let suffix = numeric_literal_suffix_code(text)
     if suffix == LiteralSuffix.None:
-        return text
+        return with_str_clone_ref(text)
     if suffix == LiteralSuffix.Usize:
         return text.slice(0, numeric_literal_suffix_start(text, "usize") as i64)
     if suffix == LiteralSuffix.Isize:
@@ -3765,9 +3770,9 @@ fn numeric_literal_core(text: str) -> str:
         return text.slice(0, numeric_literal_suffix_start(text, "f64") as i64)
     if suffix == LiteralSuffix.F32:
         return text.slice(0, numeric_literal_suffix_start(text, "f32") as i64)
-    text
+    with_str_clone_ref(text)
 
-fn int_literal_core_radix(core: str) -> i32:
+fn int_literal_core_radix(core: &str) -> i32:
     if core.len() > 2 and core.byte_at(0) == 48 and (core.byte_at(1) == 120 or core.byte_at(1) == 88):
         return 16
     if core.len() > 2 and core.byte_at(0) == 48 and (core.byte_at(1) == 98 or core.byte_at(1) == 66):
@@ -3776,13 +3781,13 @@ fn int_literal_core_radix(core: str) -> i32:
         return 8
     10
 
-fn int_literal_core_digit_start(core: str) -> i32:
+fn int_literal_core_digit_start(core: &str) -> i32:
     let radix = int_literal_core_radix(core)
     if radix == 10:
         return 0
     2
 
-fn normalize_int_literal_digits(core: str) -> str:
+fn normalize_int_literal_digits(core: &str) -> str:
     let len = core.len() as i32
     let start = int_literal_core_digit_start(core)
     var digits = ""
@@ -3794,12 +3799,12 @@ fn normalize_int_literal_digits(core: str) -> str:
         i = i + 1
     digits
 
-fn int_literal_fast_i64(core: str) -> ExactIntI64:
+fn int_literal_fast_i64(core: &str) -> ExactIntI64:
     let digits = normalize_int_literal_digits(core)
     exact_int_try_i64(exact_int_parse_digits(digits, int_literal_core_radix(core)))
 
 impl Parser:
-    mut fn build_int_literal_node(start: i32, end: i32, text: str) -> NodeId:
+    mut fn build_int_literal_node(start: i32, end: i32, text: &str) -> NodeId:
         if numeric_literal_suffix_is_separated(text):
             self.emit_numeric_suffix_separator_error(start, end)
         let suffix = numeric_literal_suffix_code(text)
@@ -3870,7 +3875,7 @@ impl Parser:
         let node = self.pool.add_node(NodeKind.NK_STRING_LIT, start, end, sym, 0, 0)
         return self.parse_postfix(node)
 
-fn regex_literal_close_slash(text: str) -> i32:
+fn regex_literal_close_slash(text: &str) -> i32:
     let len = text.len() as i32
     var i = 1
     var in_class = 0
@@ -3892,7 +3897,7 @@ fn regex_literal_close_slash(text: str) -> i32:
         i = i + 1
     -1
 
-fn regex_literal_escape_runtime(text: str) -> str:
+fn regex_literal_escape_runtime(text: &str) -> str:
     var out = ""
     var i: i64 = 0
     while i < text.len():
@@ -3929,7 +3934,7 @@ impl Parser:
         self.pool.add_extra(lhs)
         self.pool.add_node(NodeKind.NK_CALL, start, end, field, arg_start, 1)
 
-    mut fn desugar_interpolated_string(content: str, start: i32, end: i32) -> NodeId:
+    mut fn desugar_interpolated_string(content: &str, start: i32, end: i32) -> NodeId:
         // Emit NodeKind.NK_FSTRING with segments in extra_data.
         // d0 = segment_count, d1 = extra_start, d2 = 0
         //
@@ -4102,7 +4107,7 @@ fn interp_quote_source_backslash_count(raw_backslashes: i32) -> i32:
     raw_backslashes / 2
 
 impl Parser:
-    fn interp_normalize_expr_text(text: str) -> str:
+    fn interp_normalize_expr_text(text: &str) -> str:
         // Holes carry raw source text, and two nested-string spellings
         // coexist: a bare "..." keeps its bytes verbatim (its \t, \x41,
         // \" are ordinary string escapes for the re-lex), while the outer
@@ -4195,7 +4200,7 @@ impl Parser:
             i = i + 1
         out
 
-    fn interp_clean_segment(content: str, from: i32, to: i32) -> str:
+    fn interp_clean_segment(content: &str, from: i32, to: i32) -> str:
         // Replace {{ → { and }} → } in literal segments (Python-style brace escaping).
         var out = ""
         var i = from
@@ -4213,7 +4218,7 @@ impl Parser:
             i = i + 1
         out
 
-    fn parse_format_spec_text(spec_text: str, start: i32, end: i32) -> NodeId:
+    fn parse_format_spec_text(spec_text: &str, start: i32, end: i32) -> NodeId:
         // Parse format spec grammar: [[fill]align][sign]['#']['0'][width]['.' precision][mode]
         // Returns NodeKind.NK_FSTRING_SPEC node, or 0 if empty
         let slen = spec_text.len() as i32
@@ -4289,7 +4294,7 @@ impl Parser:
         let flags = mode | ((fill & 255) << 8) | ((align & 3) << 16) | ((sign_plus & 1) << 18) | ((alternate & 1) << 19) | ((zero_pad & 1) << 20)
         self.pool.add_node(NodeKind.NK_FSTRING_SPEC, start, end, flags, width, precision)
 
-    mut fn parse_interpolated_expr(expr_text: str, base_start: i32) -> NodeId:
+    mut fn parse_interpolated_expr(expr_text: &str, base_start: i32) -> NodeId:
         var attempt = self.parse_interpolated_expr_attempt(expr_text, 1, base_start)
         self.intern = attempt.intern
         self.pool = attempt.pool
@@ -4308,7 +4313,7 @@ fn offset_interpolated_expr_spans(pool: AstPool, first_node: i32, delta: i32):
         ni = ni + 1
 
 impl Parser:
-    mut fn parse_interpolated_expr_attempt(expr_text: str, use_shared_diags: i32, base_start: i32) -> InterpolatedExprParseAttempt:
+    mut fn parse_interpolated_expr_attempt(expr_text: &str, use_shared_diags: i32, base_start: i32) -> InterpolatedExprParseAttempt:
         // Re-lex and parse the expression text.
         let source_text = self.interp_normalize_expr_text(expr_text)
         var lexer = Lexer.init(source_text, 0)
@@ -4390,7 +4395,7 @@ impl Parser:
         let value64 = value as i64
         self.pool.add_node(NodeKind.NK_INT_LIT, start, end, ast_int_part0(value64), ast_int_part1(value64), ast_int_part2(value64))
 
-fn strip_string_token_text(text: str) -> str:
+fn strip_string_token_text(text: &str) -> str:
     // f"..." → content between f" and closing "
     if text.len() >= 3 and text.byte_at(0) == 102 and text.byte_at(1) == 34:  // f"
         return text.slice(2, text.len() as i64 - 1)
@@ -4418,12 +4423,12 @@ fn strip_string_token_text(text: str) -> str:
         return text.slice(1, text.len() as i64 - 1)
     ""
 
-fn is_fstring_token_text(text: str) -> bool:
+fn is_fstring_token_text(text: &str) -> bool:
     if text.len() < 3:
         return false
     text.byte_at(0) == 102 and text.byte_at(1) == 34  // f"
 
-fn is_raw_string_token_text(text: str) -> bool:
+fn is_raw_string_token_text(text: &str) -> bool:
     if text.len() < 3:
         return false
     if text.byte_at(0 as i64) != 114:  // r
@@ -4435,7 +4440,7 @@ fn is_raw_string_token_text(text: str) -> bool:
         return true
     false
 
-fn dedent_multiline(text: str) -> str:
+fn dedent_multiline(text: &str) -> str:
     let len = text.len() as i32
     var min_indent = -1
     var line_start = 0
@@ -4459,7 +4464,7 @@ fn dedent_multiline(text: str) -> str:
         i = i + 1
 
     if min_indent <= 0:
-        return text
+        return with_str_clone_ref(text)
 
     var out = ""
     line_start = 0
@@ -5202,7 +5207,7 @@ impl Parser:
 // ── Control flow expressions ─────────────────────────────────────
 
 // Returns 1 if the token at `pos` is the first non-whitespace on its line.
-fn is_first_on_line(source: str, pos: i32) -> i32:
+fn is_first_on_line(source: &str, pos: i32) -> i32:
     var p = pos - 1
     while p >= 0:
         let ch = source.byte_at(p as i64)
@@ -5406,7 +5411,7 @@ impl Parser:
     // references. `{{`/`}}` are literal braces; a bare `$` is escaped to `$$` so
     // user text cannot accidentally form an LLVM substitution. Unknown names are a
     // compile error.
-    mut fn rewrite_asm_template(tmpl: str, names: &Vec[i32]) -> str:
+    mut fn rewrite_asm_template(tmpl: &str, names: &Vec[i32]) -> str:
         var out = ""
         var i = 0
         let n = tmpl.len() as i32
@@ -5422,12 +5427,12 @@ impl Parser:
                         j = j + 1
                     if j >= n:
                         self.emit_error("unterminated '{' in asm template")
-                        return tmpl
+                        return with_str_clone_ref(tmpl)
                     let nm = tmpl.slice((i + 1) as i64, j as i64)
                     let idx = self.asm_operand_index(names, self.intern.intern(nm))
                     if idx < 0:
                         self.emit_error("asm template references unknown binding '" ++ nm ++ "'")
-                        return tmpl
+                        return with_str_clone_ref(tmpl)
                     out = out ++ f"${idx}"
                     i = j + 1
             else if c == 125:  // '}'
@@ -8054,7 +8059,7 @@ impl Parser:
 
 // ── Integer parsing helper ───────────────────────────────────────
 
-fn parse_int(text: str) -> i32:
+fn parse_int(text: &str) -> i32:
     let value = parse_i64(text)
     if value < -2147483648:
         return (-2147483648) as i32
@@ -8062,7 +8067,7 @@ fn parse_int(text: str) -> i32:
         return 2147483647
     value as i32
 
-fn parse_i64(text: str) -> i64:
+fn parse_i64(text: &str) -> i64:
     let base_text = numeric_literal_core(text)
     let len = base_text.len() as i32
     if len == 0:

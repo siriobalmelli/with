@@ -11,12 +11,15 @@ use std.process
 use Lexer
 use Token
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
-extern fn with_str_clone(s: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_str_clone_ref(s: &str) -> str
 
+fn read_file(path: &str): unsafe { with_fs_read_file(path) }
+fn write_file(path: &str, data: &str): unsafe { with_fs_write_file(path, data) }
+fn owned_text(s: &str): unsafe { with_str_clone_ref(s) }
 
-fn deny_key(fn_name: str, param: str) -> str: fn_name ++ "\t" ++ param
+fn deny_key(fn_name: &str, param: &str) -> str: fn_name ++ "\t" ++ param
 
 fn main -> i32:
     let argv = args()
@@ -26,18 +29,18 @@ fn main -> i32:
     for i in 1..argv.len():
         let a = argv.get(i)
         if a == "--apply": apply = true
-        else if deny_path.len() == 0: deny_path = with_str_clone(a)
-        else: files.push(with_str_clone(a))
+        else if deny_path.len() == 0: deny_path = owned_text(a)
+        else: files.push(owned_text(a))
     if files.len() == 0:
         eprint("usage: migrate_param_borrows [--apply] <denylist> <file.w>...")
         return 2
     var denied: Vec[str] = Vec.new()
-    for line in with_fs_read_file(deny_path).split("\n"):
-        if line.len() > 0: denied.push(with_str_clone(line))
+    for line in read_file(deny_path).split("\n"):
+        if line.len() > 0: denied.push(owned_text(line))
     var total = 0
     for fi in 0..files.len():
         let path = files.get(fi)
-        let text = with_fs_read_file(path)
+        let text = read_file(path)
         if text.len() == 0: continue
         var lexer = Lexer.init(text, 0)
         let tokens = lexer.tokenize()
@@ -123,13 +126,13 @@ fn main -> i32:
                 print(path ++ ": " ++ labels.get(oi))
             continue
         // Apply back-to-front so earlier offsets stay valid.
-        var out = with_str_clone(text)
+        var out = owned_text(text)
         var oi = offsets.len() as i32 - 1
         while oi >= 0:
             let at = offsets.get(oi as i64) as i64
             out = out.slice(0, at) ++ "&" ++ out.slice(at, out.len())
             oi = oi - 1
-        if with_fs_write_file(path, out) != 0:
+        if write_file(path, out) != 0:
             eprint("migrate-param-borrows: cannot write " ++ path)
             return 1
         print(f"{path}: {offsets.len() as i32} params borrowed")

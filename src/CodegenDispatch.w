@@ -9,12 +9,13 @@ use Overflow
 use AnalysisTypes
 use std.builtins.int_to_string
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_eprint(s: &str) -> Unit
 
 // ── gen_function_dispatch: MIR-first, AST fallback for unsupported patterns ──
 
 impl Codegen:
-    mut fn fail_mir_codegen_for_function(fn_node: i32, reason: str):
+    mut fn fail_mir_codegen_for_function(fn_node: i32, reason: &str):
         let fn_sym = self.sema.fn_decl_semantic_symbol(fn_node, self.pool.get_data0(fn_node))
         let sema_name = self.sema_symbol_text(fn_sym)
         let fn_name = if sema_name.len() > 0: sema_name else: self.function_symbol_name(fn_sym)
@@ -288,7 +289,7 @@ impl Codegen:
                 return str_ty
         self.mir_sema_type_to_llvm(elem_tid)
 
-fn codegen_regex_flag_options(flags: str) -> i32:
+fn codegen_regex_flag_options(flags: &str) -> i32:
     var options: i32 = 0
     var i: i64 = 0
     while i < flags.len():
@@ -308,7 +309,7 @@ fn codegen_regex_flag_options(flags: str) -> i32:
         i = i + 1
     options
 
-fn codegen_regex_state_flags(flags: str) -> i32:
+fn codegen_regex_state_flags(flags: &str) -> i32:
     var state_flags: i32 = 0
     var i: i64 = 0
     while i < flags.len():
@@ -318,7 +319,7 @@ fn codegen_regex_state_flags(flags: str) -> i32:
     state_flags
 
 impl Codegen:
-    fn ensure_regex_runtime_fn(name: str, ret_ty: i64, params: &Vec[i64]) -> i64:
+    fn ensure_regex_runtime_fn(name: &str, ret_ty: i64, params: &Vec[i64]) -> i64:
         var fn_val = wl_get_named_function(self.llmod, name)
         if fn_val != 0:
             return fn_val
@@ -338,7 +339,7 @@ impl Codegen:
         self.had_error = 1
         0
 
-    fn regex_literal_global(name: str, ty: i64, init: i64) -> i64:
+    fn regex_literal_global(name: &str, ty: i64, init: i64) -> i64:
         var gv = wl_get_named_global(self.llmod, name)
         if gv != 0:
             return gv
@@ -360,8 +361,8 @@ impl Codegen:
         let pat_sym = body.const_d0.get(const_id as i64)
         let flags_sym = body.const_d1.get(const_id as i64)
         let node = body.const_d2.get(const_id as i64)
-        let raw_pattern = if pat_sym != 0: self.intern.resolve(pat_sym) else: ""
-        let raw_flags = if flags_sym != 0: self.intern.resolve(flags_sym) else: ""
+        let raw_pattern = if pat_sym != 0: with_str_clone_ref(self.intern.resolve(pat_sym)) else: ""
+        let raw_flags = if flags_sym != 0: with_str_clone_ref(self.intern.resolve(flags_sym)) else: ""
         let pattern = self.decode_string_escapes(raw_pattern)
         let flags = self.decode_string_escapes(raw_flags)
         let options = codegen_regex_flag_options(flags)
@@ -378,7 +379,12 @@ impl Codegen:
         let literal_ft = wl_global_get_value_type(literal_fn)
         let literal_args: Vec[i64] = Vec.new()
         literal_args.push(code_global)
-        literal_args.push(self.gen_string_literal_raw(pattern))
+        // __literal_code takes `pattern: &str` (flipped decl): pass the
+        // ADDRESS of the constant str header (gen_string_literal_ref), not
+        // the %str value — the by-value push was a per-path ABI derivation
+        // (D6) and every regex-literal function failed LLVM verification
+        // against the pointer-ABI signature.
+        literal_args.push(self.gen_string_literal_ref(pattern))
         literal_args.push(wl_const_int(i32_ty, options as i64, 0))
         let code_ptr = wl_build_call(self.builder, literal_ft, literal_fn, vec_data_i64(&literal_args), 3)
         let cap_params: Vec[i64] = Vec.new()
@@ -1091,7 +1097,7 @@ impl Codegen:
         // Must do this before the raw range check, because a symbol value (e.g. 132 for "ast")
         // can accidentally pass field_token < elem_count on large structs.
         var normalized_field = field_token
-        var field_text = self.intern.resolve(field_token)
+        var field_text: str = with_str_clone_ref(self.intern.resolve(field_token))
         if field_text.len() == 0:
             field_text = self.sema_symbol_text(field_token)
         if field_text.len() > 0:
@@ -1657,7 +1663,7 @@ impl Codegen:
             if cd >= 0 and cd < self.pool.state.strings.len() as i32:
                 let float_text = self.pool.get_string(cd)
                 if float_text.len() > 0:
-                    fval = with_parse_float(float_text)
+                    fval = with_parse_float(with_str_clone_ref(float_text))
             return wl_const_real(float_ty, fval)
 
         if ck == ConstKind.CK_ZERO_SIZED:
@@ -2035,6 +2041,22 @@ impl Codegen:
             return val
         self.coerce_value_to_type(val, llvm_ty)
 
+    // #293's &str-compares-as-str rule applied to ORDERING ops: the BTree
+    // walk compares a Vec.get &str view against an owned str key; without
+    // this route the mixed operands fell through to a raw `icmp slt ptr,
+    // %str` (invalid IR, surfaced by the post-SROA verifier in every
+    // generic str-keyed map instantiation).
+    mut fn mir_build_str_order_from_sema(op: i32, lhs: i64, rhs: i64, lhs_sema: i32, rhs_sema: i32) -> i64:
+        if self.mir_compare_dispatch_kind(lhs_sema) != 1 or self.mir_compare_dispatch_kind(rhs_sema) != 1:
+            return 0
+        let lhs_cmp = self.mir_coerce_compare_operand(lhs, lhs_sema)
+        let rhs_cmp = self.mir_coerce_compare_operand(rhs, rhs_sema)
+        if wl_type_of(lhs_cmp) != wl_type_of(rhs_cmp):
+            return 0
+        if not self.is_str_type(wl_type_of(lhs_cmp)):
+            return 0
+        self.compare_str_order(lhs_cmp, rhs_cmp, op)
+
     mut fn mir_build_eq_from_sema(op: i32, lhs: i64, rhs: i64, lhs_sema: i32, rhs_sema: i32) -> i64:
         let lhs_kind = self.mir_compare_dispatch_kind(lhs_sema)
         let rhs_kind = self.mir_compare_dispatch_kind(rhs_sema)
@@ -2284,6 +2306,11 @@ impl Codegen:
             if op == BinaryOp.OP_LT or op == BinaryOp.OP_GT or op == BinaryOp.OP_LTE or op == BinaryOp.OP_GTE:
                 return self.compare_str_order(lhs, rhs, op)
 
+        if op == BinaryOp.OP_LT or op == BinaryOp.OP_GT or op == BinaryOp.OP_LTE or op == BinaryOp.OP_GTE:
+            let sema_ord = self.mir_build_str_order_from_sema(op, lhs, rhs, lhs_sema, rhs_sema)
+            if sema_ord != 0:
+                return sema_ord
+
         if op == BinaryOp.OP_EQ or op == BinaryOp.OP_NEQ:
             let sema_cmp = self.mir_build_eq_from_sema(op, lhs, rhs, lhs_sema, rhs_sema)
             if sema_cmp != 0:
@@ -2349,8 +2376,20 @@ impl Codegen:
         if wl_get_type_kind(lty) == wl_integer_type_kind() and wl_get_type_kind(rty) == wl_integer_type_kind():
             if wl_get_int_type_width(rty) > wl_get_int_type_width(lty):
                 wider_ty = rty
-        let lhs_unsigned = is_unsigned or self.mir_sema_type_is_unsigned(lhs_sema)
-        let rhs_unsigned = is_unsigned or self.mir_sema_type_is_unsigned(rhs_sema)
+        // #765: a nested rvalue operand (an inline shift in compare position)
+        // can arrive with NO sema type record — defaulting it to signed
+        // sext'd a u8 shift result while the peer zext'd, one icmp with mixed
+        // extensions ((1u8 << 7) == 128u8 was false). Sema separately rejects
+        // genuinely mixed-signedness compares, so an absent record safely
+        // adopts the peer's signedness.
+        var lhs_unsigned = is_unsigned or self.mir_sema_type_is_unsigned(lhs_sema)
+        var rhs_unsigned = is_unsigned or self.mir_sema_type_is_unsigned(rhs_sema)
+        if lhs_sema == 0 and rhs_sema != 0:
+            lhs_unsigned = rhs_unsigned
+        if rhs_sema == 0 and lhs_sema != 0:
+            rhs_unsigned = lhs_unsigned
+        if (op == BinaryOp.OP_EQ or op == BinaryOp.OP_NEQ) and with_getenv_str("WITH_TRACE_CMP").len() > 0:
+            with_eprint(f"[cmp] op={op} lhs_sema={lhs_sema} rhs_sema={rhs_sema} lu={if lhs_unsigned: 1 else: 0} ru={if rhs_unsigned: 1 else: 0} lw={wl_get_int_type_width(lty)} rw={wl_get_int_type_width(rty)}")
         let l = self.coerce_int_ext(lhs, wider_ty, lhs_unsigned)
         let r = self.coerce_int_ext(rhs, wider_ty, rhs_unsigned)
         let arith_unsigned = lhs_unsigned or rhs_unsigned
@@ -2384,7 +2423,13 @@ impl Codegen:
         if op == BinaryOp.OP_AND or op == BinaryOp.OP_BIT_AND: return wl_build_and(self.builder, l, r)
         if op == BinaryOp.OP_OR or op == BinaryOp.OP_BIT_OR: return wl_build_or(self.builder, l, r)
         if op == BinaryOp.OP_BIT_XOR: return wl_build_xor(self.builder, l, r)
-        if op == BinaryOp.OP_CONCAT: return self.mir_str_concat(lhs, rhs)
+        // A `&str` operand concatenates as the str it points at, not as a bare
+        // pointer — same view read as comparisons (#293). Under #747 a borrowed
+        // param concatenated its POINTER bytes as a header (garbage output).
+        if op == BinaryOp.OP_CONCAT:
+            let cc_lhs = self.mir_coerce_compare_operand(lhs, lhs_sema)
+            let cc_rhs = self.mir_coerce_compare_operand(rhs, rhs_sema)
+            return self.mir_str_concat(cc_lhs, cc_rhs)
         with_eprint("error: unsupported MIR binary op '" ++ mir_binop_name(op) ++ "' reached LLVM codegen")
         self.had_error = 1
         wl_get_undef(wl_i32_type(self.context))
@@ -2461,7 +2506,10 @@ impl Codegen:
         let arr_alloca = self.create_entry_alloca(arr_ty)
         for i in 0..arg_count:
             let op_id = body.call_arg_operands.get((arg_start + i) as i64)
-            let value = self.mir_eval_operand(body, op_id, str_ty)
+            let value_raw = self.mir_eval_operand(body, op_id, str_ty)
+            // #293/#747: a &str part loads its pointee header, not the pointer.
+            let value_sema = self.mir_operand_sema_type(body, op_id)
+            let value = self.mir_coerce_compare_operand(value_raw, value_sema)
             let indices: Vec[i64] = Vec.new()
             indices.push(wl_const_int(wl_i32_type(self.context), 0, 0))
             indices.push(wl_const_int(wl_i32_type(self.context), i as i64, 0))
@@ -2477,40 +2525,46 @@ impl Codegen:
         let concat_sym = self.intern.intern(concat_name)
         let fv = self.fn_values.get(concat_sym)
         let ft = self.fn_fn_types.get(concat_sym)
+        var result: i64 = 0
         if fv.is_some() and ft.is_some():
             let fn_value: i64 = fv.unwrap()
             let fn_type: i64 = ft.unwrap()
             let args: Vec[i64] = Vec.new()
             args.push(parts_ptr)
             args.push(wl_const_int(wl_i64_type(self.context), arg_count as i64, 0))
-            return self.build_call_fn_value(concat_sym, fn_value, fn_type, -1, 0, args, 2, concat_name, 0)
-
-        let param_types: Vec[i64] = Vec.new()
-        var ret_ty = str_ty
-        var has_sret = 0
-        let byval_types: Vec[i64] = Vec.new()
-        let direct_types: Vec[i64] = Vec.new()
-        if self.internal_abi_needs_sret(str_ty):
-            has_sret = 1
-            ret_ty = wl_void_type(self.context)
+            result = self.build_call_fn_value(concat_sym, fn_value, fn_type, -1, 0, args, 2, concat_name, 0)
+        else:
+            let param_types: Vec[i64] = Vec.new()
+            var ret_ty = str_ty
+            var has_sret = 0
+            let byval_types: Vec[i64] = Vec.new()
+            let direct_types: Vec[i64] = Vec.new()
+            if self.internal_abi_needs_sret(str_ty):
+                has_sret = 1
+                ret_ty = wl_void_type(self.context)
+                param_types.push(wl_ptr_type(self.context))
             param_types.push(wl_ptr_type(self.context))
-        param_types.push(wl_ptr_type(self.context))
-        byval_types.push(0)
-        direct_types.push(0)
-        param_types.push(wl_i64_type(self.context))
-        byval_types.push(0)
-        direct_types.push(0)
-        let fn_type = wl_function_type(ret_ty, vec_data_i64(&param_types), param_types.len() as i32, 0)
-        let func = wl_add_function(self.llmod, concat_name, fn_type)
-        if has_sret != 0:
-            wl_add_sret_attr(self.context, func, 0, str_ty)
-            self.record_c_abi_transform(concat_sym, has_sret, str_ty, 0, move byval_types, 0, move direct_types, 0)
-        self.fn_values.insert(concat_sym, func)
-        self.fn_fn_types.insert(concat_sym, fn_type)
-        let args: Vec[i64] = Vec.new()
-        args.push(parts_ptr)
-        args.push(wl_const_int(wl_i64_type(self.context), arg_count as i64, 0))
-        self.build_call_fn_value(concat_sym, func, fn_type, -1, 0, args, 2, concat_name, 0)
+            byval_types.push(0)
+            direct_types.push(0)
+            param_types.push(wl_i64_type(self.context))
+            byval_types.push(0)
+            direct_types.push(0)
+            let fn_type = wl_function_type(ret_ty, vec_data_i64(&param_types), param_types.len() as i32, 0)
+            let func = wl_add_function(self.llmod, concat_name, fn_type)
+            if has_sret != 0:
+                wl_add_sret_attr(self.context, func, 0, str_ty)
+                self.record_c_abi_transform(concat_sym, has_sret, str_ty, 0, move byval_types, 0, move direct_types, 0)
+            self.fn_values.insert(concat_sym, func)
+            self.fn_fn_types.insert(concat_sym, fn_type)
+            let args: Vec[i64] = Vec.new()
+            args.push(parts_ptr)
+            args.push(wl_const_int(wl_i64_type(self.context), arg_count as i64, 0))
+            result = self.build_call_fn_value(concat_sym, func, fn_type, -1, 0, args, 2, concat_name, 0)
+
+        // The ordinary runtime helper borrows every part. MIR owns and drops
+        // any rvalue temporaries at the statement boundary. The move-first
+        // helper alone consumes part zero as the self-assignment optimization.
+        result
 
     fn mir_display_resolved_type(sema_ty: i32) -> i32:
         if sema_ty <= 0:
@@ -2735,7 +2789,7 @@ impl Codegen:
         a.push(coerced)
         self.call_internal_runtime_fn(fn_name, pts, a, 1, str_ty)
 
-    mut fn call_runtime_str_fn(fn_name: str, arg: i64, str_ty: i64) -> i64:
+    mut fn call_runtime_str_fn(fn_name: &str, arg: i64, str_ty: i64) -> i64:
         let sym = self.intern.intern(fn_name)
         let fv = self.fn_values.get(sym)
         let ft = self.fn_fn_types.get(sym)
@@ -2751,7 +2805,7 @@ impl Codegen:
         a.push(arg)
         self.call_internal_runtime_fn(fn_name, pts, a, 1, str_ty)
 
-    mut fn ensure_internal_runtime_fn(name: str, orig_param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
+    mut fn ensure_internal_runtime_fn(name: &str, orig_param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
         let sym = self.intern.intern(name)
         let fv = self.fn_values.get(sym)
         if fv.is_some():
@@ -2791,7 +2845,7 @@ impl Codegen:
         self.fn_fn_types.insert(sym, fn_type)
         func
 
-    mut fn call_internal_runtime_fn(name: str, orig_param_types: &Vec[i64], args: &Vec[i64], arg_count: i32, ret_ty: i64) -> i64:
+    mut fn call_internal_runtime_fn(name: &str, orig_param_types: &Vec[i64], args: &Vec[i64], arg_count: i32, ret_ty: i64) -> i64:
         let sym = self.intern.intern(name)
         let func = self.ensure_internal_runtime_fn(name, orig_param_types, arg_count, ret_ty)
         let ft = self.fn_fn_types.get(sym).unwrap() as i64
@@ -2866,7 +2920,7 @@ impl Codegen:
         var fi = 0
         while fi < f_count:
             let f_name_sym = self.struct_field_names.get((f_start + fi) as i64)
-            let f_name = self.intern.resolve(f_name_sym)
+            let f_name: str = with_str_clone_ref(self.intern.resolve(f_name_sym))
 
             // Separator
             if fi > 0:
@@ -3159,7 +3213,7 @@ impl Codegen:
 
     // ── FmtBuffer codegen helpers ────────────────────────────────────
 
-    mut fn ensure_fmt_buf_fn(name: str, param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
+    mut fn ensure_fmt_buf_fn(name: &str, param_types: &Vec[i64], param_count: i32, ret_ty: i64) -> i64:
         self.ensure_internal_runtime_fn(name, param_types, param_count, ret_ty)
 
     mut fn gen_fmt_buf_new() -> i64:
@@ -3184,6 +3238,31 @@ impl Codegen:
         args.push(buf)
         args.push(s)
         self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 2, "with_fmt_buf_write_str", 0)
+
+    mut fn gen_fmt_buf_write_str_ref(buf: i64, s: i64):
+        let ptr_ty = wl_ptr_type(self.context)
+        let pts: Vec[i64] = Vec.new()
+        pts.push(ptr_ty)
+        pts.push(ptr_ty)
+        let func = self.ensure_fmt_buf_fn("with_fmt_buf_write_str_ref", pts, 2, wl_void_type(self.context))
+        let ft_sym = self.intern.intern("with_fmt_buf_write_str_ref")
+        let ft = self.fn_fn_types.get(ft_sym).unwrap() as i64
+        let args: Vec[i64] = Vec.new()
+        args.push(buf)
+        args.push(s)
+        self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 2, "with_fmt_buf_write_str_ref", 0)
+
+    mut fn gen_str_clone_ref(s: i64) -> i64:
+        let ptr_ty = wl_ptr_type(self.context)
+        let str_ty = self.resolve_named_type(self.intern.intern("str"))
+        let pts: Vec[i64] = Vec.new()
+        pts.push(ptr_ty)
+        let func = self.ensure_fmt_buf_fn("with_str_clone_ref", pts, 1, str_ty)
+        let ft_sym = self.intern.intern("with_str_clone_ref")
+        let ft = self.fn_fn_types.get(ft_sym).unwrap() as i64
+        let args: Vec[i64] = Vec.new()
+        args.push(s)
+        self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 1, "with_str_clone_ref", 0)
 
     mut fn gen_fmt_buf_write_fmt(buf: i64, val: i64, flags: i32, width: i32, precision: i32, mode: i32):
         // Dispatch by LLVM type: integer → i64_spec, float → f64_spec, string → str_spec
@@ -3653,6 +3732,32 @@ impl Codegen:
                     if src_tk == 0 and src_resolved >= self.mir_type_kinds_len() as i32 and src_resolved > 0:
                         src_tk = self.sema.get_type_kind(self.sema.resolve_alias(src_resolved as TypeId) as i32)
                 if src_tk == TypeKind.TY_STR:
+                    // #747: a cast to `*const str`/`*mut str` is address-
+                    // preserving. Sema auto-derefs a &str source, so the
+                    // operand place IS the referenced str and its address is
+                    // the reference value unchanged; extracting the data
+                    // pointer here handed callers the text bytes as a header.
+                    // Byte-pointer targets (`*const u8`) keep the data pointer.
+                    var tgt_pointee_tk = 0
+                    if d1 > 0:
+                        let tgt_resolved = self.mir_resolve_alias_at(d1)
+                        var tgt_tk = self.mir_type_kind_at(tgt_resolved)
+                        var tgt_pointee = self.mir_type_d0_at(tgt_resolved)
+                        if tgt_tk == 0 and tgt_resolved >= self.mir_type_kinds_len() as i32 and tgt_resolved > 0:
+                            let tgt_sema = self.sema.resolve_alias(tgt_resolved as TypeId) as i32
+                            tgt_tk = self.sema.get_type_kind(tgt_sema)
+                            tgt_pointee = self.sema.get_type_d0(tgt_sema)
+                        if tgt_tk == TypeKind.TY_PTR and tgt_pointee > 0:
+                            let pointee_resolved = self.mir_resolve_alias_at(tgt_pointee)
+                            tgt_pointee_tk = self.mir_type_kind_at(pointee_resolved)
+                            if tgt_pointee_tk == 0 and pointee_resolved >= self.mir_type_kinds_len() as i32 and pointee_resolved > 0:
+                                tgt_pointee_tk = self.sema.get_type_kind(self.sema.resolve_alias(pointee_resolved as TypeId) as i32)
+                    if tgt_pointee_tk == TypeKind.TY_STR:
+                        let str_place_ptr = self.mir_try_place_ptr_for_ref(body, d0)
+                        if str_place_ptr != 0:
+                            if wl_type_of(str_place_ptr) != cast_ty:
+                                return wl_build_bitcast(self.builder, str_place_ptr, cast_ty)
+                            return str_place_ptr
                     let str_val = self.mir_eval_operand(body, d0, 0)
                     let str_ptr = self.extract_str_ptr(str_val)
                     if str_ptr != 0:
@@ -3872,7 +3977,7 @@ impl Codegen:
         self.current_drop_origin_len = 0
         if origin_sym == 0:
             return
-        let text = self.intern.resolve(origin_sym)
+        let text: str = with_str_clone_ref(self.intern.resolve(origin_sym))
         if text.len() == 0:
             return
         self.current_drop_origin_ptr = self.const_c_string_pointer(text, wl_ptr_type(self.context))
@@ -4403,7 +4508,7 @@ impl Codegen:
         let te_start = self.mir_type_d1_at(resolved)
         self.mir_type_extra_at(te_start + index)
 
-    fn ensure_hashmap_slot_runtime_fn(name: str, ret_ty: i64) -> i64:
+    fn ensure_hashmap_slot_runtime_fn(name: &str, ret_ty: i64) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0:
             return existing
@@ -4537,7 +4642,7 @@ impl Codegen:
         let te_start = self.mir_type_d1_at(resolved)
         self.mir_type_extra_at(te_start)
 
-    fn ensure_slotmap_slot_runtime_fn(name: str, ret_ty: i64) -> i64:
+    fn ensure_slotmap_slot_runtime_fn(name: &str, ret_ty: i64) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0:
             return existing
@@ -4646,13 +4751,13 @@ impl Codegen:
         if tk == TypeKind.TY_ARRAY:
             self.mir_emit_drop_array_ptr(ptr, ty, resolved)
             return
-        // #747 (#691 second half): the str drop dispatch is NOT wired yet.
-        // Sema still classifies str as Copy/no-drop, but this dispatcher is
-        // reached KIND-FIRST by struct-field glue — freeing str fields while
-        // every str is a shared view was the battery-7 bridge-object UAF
-        // (source text munmapped mid-compile, defs vec remapped the hole).
-        // Wire `if tk == TY_STR: self.mir_emit_str_free_ptr(ptr)` here ONLY
-        // together with the is_copy/type_needs_drop flip.
+        // #747 (#691 second half): dropping an owned str frees its buffer
+        // through the runtime's payload-start ownership check (literals and
+        // borrowed views are no-ops). Wired together with the is_copy/
+        // type_needs_drop flip — never ahead of it (battery-7 UAF).
+        if tk == TypeKind.TY_STR:
+            self.mir_emit_str_free_ptr(ptr)
+            return
         // #606 (A5 narrow): a std Vec[T] with a Drop element drops each element then
         // frees the buffer. POD-element Vecs return false here and fall through.
         if tk == TypeKind.TY_GENERIC_INST and self.mir_emit_drop_vec_ptr(ptr, drop_sema_ty):
@@ -5687,7 +5792,7 @@ impl Codegen:
             args.push(ptrs.get(i as i64))
             wl_build_call(self.builder, free_ty, free_fn, vec_data_i64(&args), 1)
 
-    mut fn mir_eval_call_operand_info(body: &MirBody, operand_id: i32, expected_ty: i64, expected_sema_ty: i32, is_c_abi_arg: i32, call_context: str, arg_index: i32) -> CallArgValue:
+    mut fn mir_eval_call_operand_info(body: &MirBody, operand_id: i32, expected_ty: i64, expected_sema_ty: i32, is_c_abi_arg: i32, call_context: &str, arg_index: i32) -> CallArgValue:
         var eval_expected_ty = expected_ty
         if expected_ty != 0 and wl_get_type_kind(expected_ty) == wl_pointer_type_kind():
             eval_expected_ty = 0
@@ -5715,7 +5820,7 @@ impl Codegen:
             self.debug_call_coerce_failure(call_context, 0, arg_index, 0, out, expected_ty)
         CallArgValue { value: coerced, cleanup_ptr: 0 }
 
-    mut fn mir_eval_call_operand(body: &MirBody, operand_id: i32, expected_ty: i64, call_context: str, arg_index: i32) -> i64:
+    mut fn mir_eval_call_operand(body: &MirBody, operand_id: i32, expected_ty: i64, call_context: &str, arg_index: i32) -> i64:
         self.mir_eval_call_operand_info(body, operand_id, expected_ty, 0, 0, call_context, arg_index).value
 
     fn mir_unwrap_ref_like_sema_type(sema_ty: i32) -> i32:
@@ -6142,7 +6247,7 @@ impl Codegen:
                 return ti
         0
 
-    fn mir_find_named_type_text(type_name: str) -> i32:
+    fn mir_find_named_type_text(type_name: &str) -> i32:
         if type_name.len() == 0:
             return 0
         for ti in 0..self.mir_type_kinds_len() as i32:
@@ -6262,7 +6367,7 @@ impl Codegen:
             let elem_count = self.mir_type_d1_at(resolved)
             var tuple_idx = field_token
             if tuple_idx < 0 or tuple_idx >= elem_count:
-                var field_text = self.intern.resolve(field_token)
+                var field_text: str = with_str_clone_ref(self.intern.resolve(field_token))
                 if field_text.len() == 0:
                     field_text = self.sema_symbol_text(field_token)
                 var valid_index = if field_text.len() > 0: 1 else: 0
@@ -6401,7 +6506,7 @@ impl Codegen:
                 let live_enum_sym = self.generic_enum_inst_syms.get(live_resolved)
                 if live_enum_sym.is_some():
                     return live_enum_sym.unwrap()
-                var live_mangled = self.intern.resolve(live_base_sym)
+                var live_mangled: str = with_str_clone_ref(self.intern.resolve(live_base_sym))
                 let live_arg_count = self.sema.get_generic_inst_arg_count(live_resolved)
                 for ai in 0..live_arg_count:
                     let arg_tid = self.sema.get_generic_inst_arg(live_resolved, ai)
@@ -6437,7 +6542,7 @@ impl Codegen:
             let enum_sym = self.generic_enum_inst_syms.get(resolved)
             if enum_sym.is_some():
                 return enum_sym.unwrap()
-            var mangled = self.intern.resolve(base_sym)
+            var mangled: str = with_str_clone_ref(self.intern.resolve(base_sym))
             let arg_count = self.mir_type_d2_at(resolved)
             let te_start = self.mir_type_d1_at(resolved)
             for ai in 0..arg_count:
@@ -6489,7 +6594,7 @@ impl Codegen:
         if arg_count != tp_count:
             return 0
 
-        var mangled = self.intern.resolve(base_sym)
+        var mangled: str = with_str_clone_ref(self.intern.resolve(base_sym))
         let pending_syms: Vec[i32] = Vec.new()
         let pending_types: Vec[i64] = Vec.new()
         let pending_sema_types: Vec[i32] = Vec.new()
@@ -6825,7 +6930,7 @@ impl Codegen:
             return self.codegen_dyn_trait_symbol_from_type_node(self.pool.get_data0(type_node))
         0
 
-    mut fn mir_emit_dyn_call_error(msg: str, next_bb: i32) -> bool:
+    mut fn mir_emit_dyn_call_error(msg: &str, next_bb: i32) -> bool:
         with_eprint(msg)
         self.had_error = 1
         if next_bb >= 0 and next_bb < self.mir_bb_values.len() as i32:
@@ -6991,7 +7096,7 @@ impl Codegen:
                 let tk = self.sema.get_type_kind(resolved as TypeId)
                 if tk == TypeKind.TY_REF or tk == TypeKind.TY_PTR:
                     resolved = self.sema.resolve_alias(self.sema.get_type_d0(resolved as TypeId) as TypeId) as i32
-                var field_text = self.intern.resolve(field)
+                var field_text: str = with_str_clone_ref(self.intern.resolve(field))
                 if field_text.len() == 0:
                     field_text = self.sema_symbol_text(field)
                 let sema_field = if field_text.len() > 0: self.sema.pool_lookup_symbol(field_text) else: 0
@@ -7039,16 +7144,16 @@ impl Codegen:
     fn codegen_method_symbol_text(method_sym: i32) -> str:
         let text = self.intern.resolve(method_sym)
         if text.len() > 0:
-            return text
+            return with_str_clone_ref(text)
         self.sema_symbol_text(method_sym)
 
     fn codegen_ast_method_symbol_text(method_sym: i32) -> str:
         let text = self.sema.pool_resolve_symbol(method_sym)
         if text.len() > 0:
-            return text
+            return with_str_clone_ref(text)
         self.codegen_method_symbol_text(method_sym)
 
-    fn trait_decl_has_method_named(trait_sym: i32, method_name: str) -> bool:
+    fn trait_decl_has_method_named(trait_sym: i32, method_name: &str) -> bool:
         if trait_sym == 0 or method_name.len() == 0:
             return false
         for ti in 0..self.trait_idx_syms.len() as i32:
@@ -7063,7 +7168,7 @@ impl Codegen:
             return false
         false
 
-    fn impl_decl_method_named(impl_node: i32, method_name: str) -> i32:
+    fn impl_decl_method_named(impl_node: i32, method_name: &str) -> i32:
         if impl_node == 0 or method_name.len() == 0:
             return 0
         var impl_index = -1
@@ -7088,7 +7193,7 @@ impl Codegen:
             if self.pool.get_data1(decl) == 0:
                 continue
             let fn_text = self.codegen_symbol_text(self.pool.get_data0(decl))
-            var bare = fn_text
+            var bare = with_str_clone_ref(fn_text)
             for dot_i in 0..fn_text.len() as i32:
                 if fn_text.byte_at(dot_i as i64) == 46:
                     bare = fn_text.slice((dot_i + 1) as i64, fn_text.len() as i64)
@@ -7136,7 +7241,7 @@ impl Codegen:
         if tk == 0 and resolved >= self.mir_type_kinds_len() as i32 and resolved > 0:
             tk = self.sema.get_type_kind(self.sema.resolve_alias(resolved as TypeId))
         let method_full_name = self.codegen_method_symbol_text(method_sym)
-        var method_name = method_full_name
+        var method_name = with_str_clone_ref(method_full_name)
         for method_dot_i in 0..method_full_name.len() as i32:
             if method_full_name.byte_at(method_dot_i as i64) == 46:
                 method_name = method_full_name.slice((method_dot_i + 1) as i64, method_full_name.len() as i64)
@@ -7176,7 +7281,7 @@ impl Codegen:
             return MirIntrinsic.NONE
         var type_name = self.sema_symbol_text(type_name_sym)
         if type_name.len() == 0:
-            type_name = self.intern.resolve(type_name_sym)
+            type_name = with_str_clone_ref(self.intern.resolve(type_name_sym))
         if type_name == "Vec":
             if method_name == "new": return MirIntrinsic.VEC_NEW
             if method_name == "with_capacity": return MirIntrinsic.VEC_WITH_CAPACITY
@@ -7398,7 +7503,7 @@ impl Codegen:
         if recv_ty == 0 or method_sym == 0:
             return MirIntrinsic.NONE
         let method_full_name = self.codegen_method_symbol_text(method_sym)
-        var method_name = method_full_name
+        var method_name = with_str_clone_ref(method_full_name)
         for method_dot_i in 0..method_full_name.len() as i32:
             if method_full_name.byte_at(method_dot_i as i64) == 46:
                 method_name = method_full_name.slice((method_dot_i + 1) as i64, method_full_name.len() as i64)
@@ -9188,92 +9293,96 @@ impl Codegen:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
             let index = self.mir_intrinsic_arg(body, args_id, 1)
             let index64 = self.coerce_int(index, i64_ty)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
             param_types.push(i64_ty)
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
+            args.push(self.build_str_ref_from_value(recv))
             args.push(index64)
-            result = self.call_internal_runtime_fn("with_str_byte_at", param_types, args, 2, i32_ty)
+            result = self.call_internal_runtime_fn("with_str_byte_at_ref", param_types, args, 2, i32_ty)
 
         else if intrinsic == MirIntrinsic.STR_SLICE:
+            // #747: slice returns an OWNED str, and MIR schedules a drop for
+            // it. The old zero-copy view (gep + len) was a Copy-world relic:
+            // dropping the view freed a pointer INTO the receiver's live
+            // buffer (for start=0, the receiver's own block — the stage2
+            // lexer freed its source out from under itself and the allocator
+            // recycled it into the token vecs). Call the copying runtime
+            // slice instead; #748 view tokens can recover the zero-copy form.
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let str_ptr = wl_build_extract_value(self.builder, recv, 0)
             let start = self.mir_intrinsic_arg(body, args_id, 1)
             let end = self.mir_intrinsic_arg(body, args_id, 2)
             let start64 = self.coerce_int(start, i64_ty)
             let end64 = self.coerce_int(end, i64_ty)
-            let i8_ty = wl_i8_type(self.context)
-            let indices: Vec[i64] = Vec.new()
-            indices.push(start64)
-            let new_ptr = wl_build_gep(self.builder, i8_ty, str_ptr, vec_data_i64(&indices), 1)
-            let new_len = wl_build_sub(self.builder, end64, start64)
-            result = self.build_str_value(new_ptr, new_len)
+            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let param_types: Vec[i64] = Vec.new()
+            param_types.push(wl_ptr_type(self.context))
+            param_types.push(i64_ty)
+            param_types.push(i64_ty)
+            let args: Vec[i64] = Vec.new()
+            args.push(self.build_str_ref_from_value(recv))
+            args.push(start64)
+            args.push(end64)
+            result = self.call_internal_runtime_fn("with_str_slice_ref", param_types, args, 3, str_ty)
 
         else if intrinsic == MirIntrinsic.STR_CONTAINS:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let needle = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let needle = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
+            param_types.push(wl_ptr_type(self.context))
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
-            args.push(needle)
-            let raw = self.call_internal_runtime_fn("with_str_contains", param_types, args, 2, i32_ty)
+            args.push(self.build_str_ref_from_value(recv))
+            args.push(self.build_str_ref_from_value(needle))
+            let raw = self.call_internal_runtime_fn("with_str_contains_ref", param_types, args, 2, i32_ty)
             result = wl_build_icmp(self.builder, wl_int_ne(), raw, wl_const_int(i32_ty, 0, 0))
 
         else if intrinsic == MirIntrinsic.STR_CONTAINS_CHAR:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
             let ch = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
             param_types.push(i32_ty)
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
+            args.push(self.build_str_ref_from_value(recv))
             args.push(ch)
-            let raw = self.call_internal_runtime_fn("with_str_contains_char", param_types, args, 2, i32_ty)
+            let raw = self.call_internal_runtime_fn("with_str_contains_char_ref", param_types, args, 2, i32_ty)
             result = wl_build_icmp(self.builder, wl_int_ne(), raw, wl_const_int(i32_ty, 0, 0))
 
         else if intrinsic == MirIntrinsic.STR_STARTS_WITH:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let prefix = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let prefix = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
+            param_types.push(wl_ptr_type(self.context))
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
-            args.push(prefix)
-            let raw = self.call_internal_runtime_fn("with_str_starts_with", param_types, args, 2, i32_ty)
+            args.push(self.build_str_ref_from_value(recv))
+            args.push(self.build_str_ref_from_value(prefix))
+            let raw = self.call_internal_runtime_fn("with_str_starts_with_ref", param_types, args, 2, i32_ty)
             result = wl_build_icmp(self.builder, wl_int_ne(), raw, wl_const_int(i32_ty, 0, 0))
 
         else if intrinsic == MirIntrinsic.STR_ENDS_WITH:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let suffix = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let suffix = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
+            param_types.push(wl_ptr_type(self.context))
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
-            args.push(suffix)
-            let raw = self.call_internal_runtime_fn("with_str_ends_with", param_types, args, 2, i32_ty)
+            args.push(self.build_str_ref_from_value(recv))
+            args.push(self.build_str_ref_from_value(suffix))
+            let raw = self.call_internal_runtime_fn("with_str_ends_with_ref", param_types, args, 2, i32_ty)
             result = wl_build_icmp(self.builder, wl_int_ne(), raw, wl_const_int(i32_ty, 0, 0))
 
         else if intrinsic == MirIntrinsic.STR_FIND:
             let recv = self.mir_intrinsic_recv_str_value(body, args_id)
-            let needle = self.mir_intrinsic_arg(body, args_id, 1)
-            let str_ty = self.resolve_named_type(self.intern.intern("str"))
+            let needle = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let param_types: Vec[i64] = Vec.new()
-            param_types.push(str_ty)
-            param_types.push(str_ty)
+            param_types.push(wl_ptr_type(self.context))
+            param_types.push(wl_ptr_type(self.context))
             let args: Vec[i64] = Vec.new()
-            args.push(recv)
-            args.push(needle)
-            result = self.call_internal_runtime_fn("with_str_index_of", param_types, args, 2, i64_ty)
+            args.push(self.build_str_ref_from_value(recv))
+            args.push(self.build_str_ref_from_value(needle))
+            result = self.call_internal_runtime_fn("with_str_index_of_ref", param_types, args, 2, i64_ty)
 
         else if intrinsic == MirIntrinsic.VECITER_NEXT:
             // VecIter[T].next() — advance iterator, return Option[T]
@@ -10349,66 +10458,72 @@ impl Codegen:
         else if intrinsic == MirIntrinsic.STR_TRIM:
             let r1 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t1 = wl_type_of(r1)
-            let f1 = self.ensure_c_fn("with_str_trim", t1, 1)
+            let p1: Vec[i64] = Vec.new()
+            p1.push(wl_ptr_type(self.context))
             let a1: Vec[i64] = Vec.new()
-            a1.push(r1)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_trim", t1, 1), f1, vec_data_i64(&a1), 1)
+            a1.push(self.build_str_ref_from_value(r1))
+            result = self.call_internal_runtime_fn("with_str_trim_ref", p1, a1, 1, t1)
 
         else if intrinsic == MirIntrinsic.STR_TO_UPPER:
             let r2 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t2 = wl_type_of(r2)
-            let f2 = self.ensure_c_fn("with_str_to_upper", t2, 1)
+            let p2: Vec[i64] = Vec.new()
+            p2.push(wl_ptr_type(self.context))
             let a2: Vec[i64] = Vec.new()
-            a2.push(r2)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_to_upper", t2, 1), f2, vec_data_i64(&a2), 1)
+            a2.push(self.build_str_ref_from_value(r2))
+            result = self.call_internal_runtime_fn("with_str_to_upper_ref", p2, a2, 1, t2)
 
         else if intrinsic == MirIntrinsic.STR_TO_LOWER:
             let r3 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t3 = wl_type_of(r3)
-            let f3 = self.ensure_c_fn("with_str_to_lower", t3, 1)
+            let p3: Vec[i64] = Vec.new()
+            p3.push(wl_ptr_type(self.context))
             let a3: Vec[i64] = Vec.new()
-            a3.push(r3)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_to_lower", t3, 1), f3, vec_data_i64(&a3), 1)
+            a3.push(self.build_str_ref_from_value(r3))
+            result = self.call_internal_runtime_fn("with_str_to_lower_ref", p3, a3, 1, t3)
 
         else if intrinsic == MirIntrinsic.STR_REPLACE:
             let r4 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t4 = wl_type_of(r4)
-            let s4a = self.mir_intrinsic_arg(body, args_id, 1)
-            let s4b = self.mir_intrinsic_arg(body, args_id, 2)
-            let f4 = self.ensure_c_fn("with_str_replace", t4, 3)
+            let s4a = self.mir_intrinsic_arg_str_value(body, args_id, 1)
+            let s4b = self.mir_intrinsic_arg_str_value(body, args_id, 2)
+            let p4: Vec[i64] = Vec.new()
+            p4.push(wl_ptr_type(self.context))
+            p4.push(wl_ptr_type(self.context))
+            p4.push(wl_ptr_type(self.context))
             let a4: Vec[i64] = Vec.new()
-            a4.push(r4)
-            a4.push(s4a)
-            a4.push(s4b)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_replace", t4, 3), f4, vec_data_i64(&a4), 3)
+            a4.push(self.build_str_ref_from_value(r4))
+            a4.push(self.build_str_ref_from_value(s4a))
+            a4.push(self.build_str_ref_from_value(s4b))
+            result = self.call_internal_runtime_fn("with_str_replace_ref", p4, a4, 3, t4)
 
         else if intrinsic == MirIntrinsic.STR_SPLIT:
             let r6 = self.mir_intrinsic_recv_str_value(body, args_id)
             let t6 = wl_type_of(r6)
-            let d6 = self.mir_intrinsic_arg(body, args_id, 1)
+            let d6 = self.mir_intrinsic_arg_str_value(body, args_id, 1)
             let vt6 = self.get_or_create_vec_type(0, t6)
             let out6 = self.create_entry_alloca(vt6)
-            let f6 = self.ensure_c_fn("with_str_split_vec", wl_void_type(self.context), 3)
             let p6: Vec[i64] = Vec.new()
             p6.push(wl_ptr_type(self.context))
-            p6.push(t6)
-            p6.push(t6)
-            let ft6 = wl_function_type(wl_void_type(self.context), vec_data_i64(&p6), 3, 0)
+            p6.push(wl_ptr_type(self.context))
+            p6.push(wl_ptr_type(self.context))
             let a6: Vec[i64] = Vec.new()
             a6.push(out6)
-            a6.push(r6)
-            a6.push(d6)
-            let _ = wl_build_call(self.builder, ft6, f6, vec_data_i64(&a6), 3)
+            a6.push(self.build_str_ref_from_value(r6))
+            a6.push(self.build_str_ref_from_value(d6))
+            let _ = self.call_internal_runtime_fn("with_str_split_vec_ref", p6, a6, 3, wl_void_type(self.context))
             result = wl_build_load(self.builder, vt6, out6)
 
         else if intrinsic == MirIntrinsic.STR_INDEX_OF:
             let r5 = self.mir_intrinsic_recv_str_value(body, args_id)
-            let n5 = self.mir_intrinsic_arg(body, args_id, 1)
-            let f5 = self.ensure_c_fn("with_str_index_of", i64_ty, 2)
+            let n5 = self.mir_intrinsic_arg_str_value(body, args_id, 1)
+            let p5: Vec[i64] = Vec.new()
+            p5.push(wl_ptr_type(self.context))
+            p5.push(wl_ptr_type(self.context))
             let a5: Vec[i64] = Vec.new()
-            a5.push(r5)
-            a5.push(n5)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_index_of", i64_ty, 2), f5, vec_data_i64(&a5), 2)
+            a5.push(self.build_str_ref_from_value(r5))
+            a5.push(self.build_str_ref_from_value(n5))
+            result = self.call_internal_runtime_fn("with_str_index_of_ref", p5, a5, 2, i64_ty)
 
         else if intrinsic == MirIntrinsic.MAP_INCREMENT or intrinsic == MirIntrinsic.MAP_DECREMENT:
             let r7 = self.mir_intrinsic_arg(body, args_id, 0)
@@ -10512,11 +10627,13 @@ impl Codegen:
             let sr_n = self.mir_intrinsic_arg(body, args_id, 1)
             let sr_n64 = self.coerce_int(sr_n, i64_ty)
             let sr_ty = wl_type_of(sr_recv)
-            let sr_fn = self.ensure_c_fn("with_str_repeat", sr_ty, 2)
+            let sr_params: Vec[i64] = Vec.new()
+            sr_params.push(wl_ptr_type(self.context))
+            sr_params.push(i64_ty)
             let sr_args: Vec[i64] = Vec.new()
-            sr_args.push(sr_recv)
+            sr_args.push(self.build_str_ref_from_value(sr_recv))
             sr_args.push(sr_n64)
-            result = wl_build_call(self.builder, self.get_runtime_fn_type("with_str_repeat", sr_ty, 2), sr_fn, vec_data_i64(&sr_args), 2)
+            result = self.call_internal_runtime_fn("with_str_repeat_ref", sr_params, sr_args, 2, sr_ty)
 
         else:
             return false
@@ -11001,6 +11118,16 @@ impl Codegen:
             self.gen_fmt_buf_write_str(fb_buf, fb_str)
             result = wl_const_int(wl_i32_type(self.context), 0, 0)
 
+        else if intrinsic == MirIntrinsic.FMT_BUF_WRITE_STR_REF:
+            let fb_buf = self.mir_intrinsic_arg(body, args_id, 0)
+            let fb_str_ref = self.mir_intrinsic_arg(body, args_id, 1)
+            self.gen_fmt_buf_write_str_ref(fb_buf, fb_str_ref)
+            result = wl_const_int(wl_i32_type(self.context), 0, 0)
+
+        else if intrinsic == MirIntrinsic.STR_CLONE_REF:
+            let clone_str_ref = self.mir_intrinsic_arg(body, args_id, 0)
+            result = self.gen_str_clone_ref(clone_str_ref)
+
         else if intrinsic == MirIntrinsic.FMT_BUF_WRITE_FMT:
             // args: [buf, value, flags, width, precision, sema_type_id]
             let fb_buf = self.mir_intrinsic_arg(body, args_id, 0)
@@ -11410,7 +11537,7 @@ impl Codegen:
         let base_sym = self.mir_type_d0_at(resolved)
         let cg_sym = self.sema_sym_to_codegen_sym(base_sym)
         if cg_sym != 0:
-            return self.intern.resolve(cg_sym)
+            return with_str_clone_ref(self.intern.resolve(cg_sym))
         self.sema_symbol_text(base_sym)
 
     mut fn mir_type_name(sema_ty: i32) -> str:
@@ -11435,11 +11562,11 @@ impl Codegen:
             if raw_cg_sym != 0:
                 let raw_text = self.intern.resolve(raw_cg_sym)
                 if raw_text.len() > 0:
-                    return raw_text
+                    return with_str_clone_ref(raw_text)
             return self.sema_symbol_text(raw_sym)
         let text = self.intern.resolve(sym)
         if text.len() > 0:
-            return text
+            return with_str_clone_ref(text)
         self.sema_symbol_text(sym)
 
     fn mir_llvm_type_is_scoped_join_handle(ty: i64) -> bool:
@@ -13637,12 +13764,12 @@ impl Codegen:
                         if self.pool.kind(gc_builtin_base) == NodeKind.NK_IDENT:
                             let gc_builtin_ast_name = self.intern.resolve(self.pool.get_data0(gc_builtin_base))
                             if gc_builtin_ast_name.len() > 0:
-                                gc_builtin_name = gc_builtin_ast_name
+                                gc_builtin_name = with_str_clone_ref(gc_builtin_ast_name)
                 let gc_name = if gc_callee_sym > 0: self.codegen_symbol_text(gc_callee_sym) else: "?"
                 if gc_name == "track":
                     if self.mir_emit_async_scope_track_call(body, args_id, dest_place, next_bb):
                         return true
-                var gc_tail_name = gc_name
+                var gc_tail_name = with_str_clone_ref(gc_name)
                 for gc_tail_i in 0..gc_name.len() as i32:
                     if gc_name.byte_at(gc_tail_i as i64) == 46:
                         gc_tail_name = gc_name.slice((gc_tail_i + 1) as i64, gc_name.len() as i64)
@@ -13924,7 +14051,7 @@ impl Codegen:
                         gc_synth_owner_sym = self.find_struct_type_by_llvm(gc_synth_recv_llvm_ty)
                     if gc_synth_owner_sym != 0:
                         let gc_synth_callee_name = self.intern.resolve(gc_callee_sym)
-                        var gc_synth_method_name = gc_synth_callee_name
+                        var gc_synth_method_name = with_str_clone_ref(gc_synth_callee_name)
                         for gc_synth_di in 0..gc_synth_callee_name.len() as i32:
                             if gc_synth_callee_name.byte_at(gc_synth_di as i64) == 46:
                                 gc_synth_method_name = gc_synth_callee_name.slice((gc_synth_di + 1) as i64, gc_synth_callee_name.len() as i64)
@@ -14180,7 +14307,7 @@ impl Codegen:
                     let gc_static_recv_type = self.ast_static_type_expr(gc_static_type_expr)
                     if gc_static_recv_type > 0:
                         let gc_static_type_name = self.sema.type_name(gc_static_recv_type)
-                        let gc_static_method_name = self.intern.resolve(gc_static_method_sym)
+                        let gc_static_method_name: str = with_str_clone_ref(self.intern.resolve(gc_static_method_sym))
                         let gc_static_fn_sym = self.intern.intern(gc_static_type_name ++ "." ++ gc_static_method_name)
                         let gc_static_fv = self.fn_values.get(gc_static_fn_sym)
                         let gc_static_ft = self.fn_fn_types.get(gc_static_fn_sym)
@@ -14581,7 +14708,7 @@ impl Codegen:
                     if self.pool.kind(gc_cur_recv) == NodeKind.NK_IDENT:
                         let gc_cur_method_sym = self.pool.get_data1(gc_callee_field)
                         let gc_cur_method = self.codegen_ast_method_symbol_text(gc_cur_method_sym)
-                        let gc_cur_name = if gc_cur_method.len() > 0: gc_cur_method else: if gc_callee_sym > 0: self.intern.resolve(gc_callee_sym) else: ""
+                        let gc_cur_name = if gc_cur_method.len() > 0: gc_cur_method else: if gc_callee_sym > 0: with_str_clone_ref(self.intern.resolve(gc_callee_sym)) else: ""
                         if gc_cur_name.len() > 0:
                             var gc_cur_base_sym = 0
                             let gc_cur_base_opt = self.mono_struct_base.get(self.current_method_owner_sym)
@@ -14852,7 +14979,7 @@ impl Codegen:
                                 self.pool.get_data1(fatal_recv)
                             else:
                                 0
-                        with_eprint(f"[generic-call-unhandled] recv_ast_ty={self.ast_static_type_expr(fatal_recv)} recv_mir_ty={fatal_recv_ty} base_ast_ty={fatal_base_ty} base_local_ty={fatal_base_local_ty} owner={self.function_symbol_name(self.current_method_owner_sym)} field_sym={fatal_field} field_text={if fatal_field != 0: self.intern.resolve(fatal_field) else: \"\"}")
+                        with_eprint(f"[generic-call-unhandled] recv_ast_ty={self.ast_static_type_expr(fatal_recv)} recv_mir_ty={fatal_recv_ty} base_ast_ty={fatal_base_ty} base_local_ty={fatal_base_local_ty} owner={self.function_symbol_name(self.current_method_owner_sym)} field_sym={fatal_field} field_text={if fatal_field != 0: with_str_clone_ref(self.intern.resolve(fatal_field)) else: \"\"}")
                     with_eprint(f"FATAL: unhandled MirIntrinsic.GENERIC_CALL sym={gc_name} node_kind={self.pool.kind(gc_node)} recv_ty={fatal_recv_ty} recv_kind={if fatal_recv != 0: self.pool.kind(fatal_recv) else: -1} arg_count={fatal_mir_count}")
                     self.had_error = 1
                     return false
@@ -15365,14 +15492,14 @@ impl Codegen:
 
         false
 
-    fn mir_cleanup_dump_enabled(name_str: str) -> bool:
+    fn mir_cleanup_dump_enabled(name_str: &str) -> bool:
         let _ = self
         let raw = with_getenv_str("WITH_DUMP_MIR_CLEANUP_FN")
         if raw.len() == 0:
             return false
         raw == "*" or raw == name_str
 
-    mut fn run_mir_cleanup_passes(function: i64, name_str: str):
+    mut fn run_mir_cleanup_passes(function: i64, name_str: &str):
         if function == 0:
             return
         let should_dump = self.mir_cleanup_dump_enabled(name_str)
@@ -15402,7 +15529,7 @@ impl Codegen:
         let name_sym = body.fn_sym
         let resolved_name = self.intern.resolve(name_sym)
         let sema_name = self.sema_symbol_text(name_sym)
-        let name_str = if resolved_name.len() > 0: resolved_name else: if sema_name.len() > 0: sema_name else: self.fn_decl_name_from_node(fn_node)
+        let name_str = if resolved_name.len() > 0: with_str_clone_ref(resolved_name) else: if sema_name.len() > 0: sema_name else: self.fn_decl_name_from_node(fn_node)
         if name_sym == 0:
             return
         self.generated_mir_body_syms.insert(name_sym, 1)
@@ -15829,7 +15956,7 @@ impl Codegen:
     mut fn gen_function_mir_mono(mono_sym: i32, fn_node: i32, body: &MirBody):
         let intern_name = self.intern.resolve(mono_sym)
         let sema_name = self.sema_symbol_text(mono_sym)
-        let name_str = if intern_name.len() > 0: intern_name else: sema_name
+        let name_str = if intern_name.len() > 0: with_str_clone_ref(intern_name) else: sema_name
         let fv = self.fn_values.get(mono_sym)
         if not fv.is_some():
             with_eprint("error: no fn_value for MIR mono function: " ++ name_str)
@@ -16355,7 +16482,7 @@ impl Codegen:
     fn codegen_symbol_text(sym: i32) -> str:
         let text = self.intern.resolve(sym)
         if text.len() > 0:
-            return text
+            return with_str_clone_ref(text)
         self.sema_symbol_text(sym)
 
     fn codegen_symbols_match(a: i32, b: i32) -> bool:
@@ -16382,7 +16509,7 @@ impl Codegen:
             return semantic_text
         let ast_text = self.intern.resolve(parsed)
         if ast_text.len() > 0:
-            return ast_text
+            return with_str_clone_ref(ast_text)
         self.sema_symbol_text(parsed)
 
     fn fn_decl_semantic_text(decl: i32) -> str:
@@ -16605,7 +16732,7 @@ impl Codegen:
             return mono_sym
 
         let base_name = self.intern.resolve(owner_sym)
-        var mangled = base_name
+        var mangled: str = with_str_clone_ref(base_name)
         for ti in 0..tp_syms.len() as i32:
             let tp_sym = tp_syms.get(ti as i64)
             let bty = self.find_binding_type(bind_syms, bind_tys, tp_sym)
@@ -16643,12 +16770,12 @@ impl Codegen:
         if tk == TypeKind.TY_STRUCT:
             let name_sym = self.sema.get_type_d0(resolved)
             if name_sym != 0:
-                return self.intern.resolve(name_sym)
+                return with_str_clone_ref(self.intern.resolve(name_sym))
             return "struct"
         if tk == TypeKind.TY_ENUM:
             let name_sym = self.sema.get_type_d0(resolved)
             if name_sym != 0:
-                return self.intern.resolve(name_sym)
+                return with_str_clone_ref(self.intern.resolve(name_sym))
             return "enum"
         if tk == TypeKind.TY_PTR or tk == TypeKind.TY_REF:
             return "ptr"
@@ -16663,7 +16790,7 @@ impl Codegen:
         if tk == TypeKind.TY_GENERIC_INST:
             let name_sym = self.sema.get_type_d0(resolved)
             if name_sym != 0:
-                return self.intern.resolve(name_sym)
+                return with_str_clone_ref(self.intern.resolve(name_sym))
             return "generic"
         if tk == TypeKind.TY_NEVER:
             return "never"
@@ -16678,7 +16805,7 @@ impl Codegen:
         let base_sym = self.sema.get_type_d0(resolved)
         if base_sym == 0:
             return ""
-        var mangled = self.intern.resolve(base_sym)
+        var mangled: str = with_str_clone_ref(self.intern.resolve(base_sym))
         let arg_count = self.sema.get_generic_inst_arg_count(resolved as i32)
         for ai in 0..arg_count:
             let arg_tid = self.sema.get_generic_inst_arg(resolved as i32, ai)
@@ -16711,10 +16838,10 @@ impl Codegen:
         if tk == wl_struct_type_kind():
             let st_sym = self.find_struct_type_by_llvm(ty)
             if st_sym != 0:
-                return self.intern.resolve(st_sym)
+                return with_str_clone_ref(self.intern.resolve(st_sym))
             let es = self.enum_by_llvm.get(ty)
             if es.is_some():
-                return self.intern.resolve(es.unwrap())
+                return with_str_clone_ref(self.intern.resolve(es.unwrap()))
             // An anonymous struct as bare "struct" made #731's mismatch
             // unactionable; render one level of element structure.
             var anon = "struct{"
@@ -16726,7 +16853,7 @@ impl Codegen:
                 let ek = wl_get_type_kind(ety)
                 if ek == wl_struct_type_kind():
                     let esym = self.find_struct_type_by_llvm(ety)
-                    anon = anon ++ (if esym != 0: self.intern.resolve(esym) else: f"struct#{wl_count_struct_elem_types(ety)}")
+                    anon = anon ++ (if esym != 0: with_str_clone_ref(self.intern.resolve(esym)) else: f"struct#{wl_count_struct_elem_types(ety)}")
                 else if ek == wl_integer_type_kind():
                     anon = anon ++ f"i{wl_get_int_type_width(ety)}"
                 else if ek == wl_pointer_type_kind():
@@ -17547,8 +17674,12 @@ impl Codegen:
             self.collect_captures(self.pool.get_data1(node))
             return
 
-    fn decode_string_escapes(text: str) -> str:
-        var out = ""
+    fn decode_string_escapes(text: &str) -> str:
+        // Decoding never grows the input: an escape consumes at least as many
+        // bytes as it emits. Repeated `out = out ++ byte` made this quadratic
+        // and exhausted tens of GiB while constant-folding embedded source
+        // literals in a migrated compiler.
+        var out = StringBuilder.with_capacity(text.len())
         let len = text.len() as i32
         var i = 0
         while i < len:
@@ -17560,28 +17691,28 @@ impl Codegen:
                     let hi = self.hex_digit_value(text[i + 1])
                     let lo = self.hex_digit_value(text[i + 2])
                     if hi >= 0 and lo >= 0:
-                        out = out ++ str_from_byte(hi * 16 + lo)
+                        out.push_char(hi * 16 + lo)
                         i = i + 2
                     else:
-                        out = out ++ text.slice(i as i64, i as i64 + 1)
+                        out.push_char(esc)
                 else if esc == 110:
-                    out = out ++ "\n"
+                    out.push_char(10)
                 else if esc == 116:
-                    out = out ++ "\t"
+                    out.push_char(9)
                 else if esc == 114:
-                    out = out ++ "\r"
+                    out.push_char(13)
                 else if esc == 48:
-                    out = out ++ str_from_byte(0)
+                    out.push_char(0)
                 else if esc == 92:
-                    out = out ++ "\\"
+                    out.push_char(92)
                 else if esc == 34:
-                    out = out ++ "\""
+                    out.push_char(34)
                 else:
-                    out = out ++ text.slice(i as i64, i as i64 + 1)
+                    out.push_char(esc)
             else:
-                out = out ++ text.slice(i as i64, i as i64 + 1)
+                out.push_char(ch)
             i = i + 1
-        out
+        out.to_str()
 
     fn hex_digit_value(ch: i32) -> i32:
         if ch >= 48 and ch <= 57:
@@ -17592,7 +17723,7 @@ impl Codegen:
             return ch - 55
         -1
 
-    fn gen_string_literal_raw(text: str) -> i64:
+    fn gen_string_literal_raw(text: &str) -> i64:
         let str_sym = self.intern.intern("str")
         let st_opt = self.struct_type_map.get(str_sym)
         if not st_opt.is_some():
@@ -17607,7 +17738,7 @@ impl Codegen:
         wl_build_store(self.builder, wl_const_int(wl_i64_type(self.context), text.len(), 1), len_gep)
         wl_build_load(self.builder, str_type, alloca)
 
-    fn gen_string_literal_ref(text: str) -> i64:
+    fn gen_string_literal_ref(text: &str) -> i64:
         let str_type = self.str_llvm_type()
         if str_type == 0:
             with_eprint("error: str builtin type not found")
@@ -17632,7 +17763,7 @@ impl Codegen:
             return as_ptr
         str_global
 
-    fn gen_c_string_literal_ref(text: str) -> i64:
+    fn gen_c_string_literal_ref(text: &str) -> i64:
         let cstr_sym = self.intern.intern("CStr")
         let st_opt = self.struct_type_map.get(cstr_sym)
         if not st_opt.is_some():
@@ -17662,7 +17793,7 @@ impl Codegen:
     fn gen_src_intrinsic(node: i32) -> i64:
         let span_start = self.pool.get_start(node)
         let source_path = if self.current_decl_source_file.len() > 0 and self.current_decl_source_file != "<unknown>":
-            with_str_clone(self.current_decl_source_file)
+            with_str_clone_ref(self.current_decl_source_file)
         else:
             self.source_file
         var source_text = self.source_text
@@ -17777,13 +17908,13 @@ impl Codegen:
         args.push(ptr_val)
         wl_build_call(self.builder, fn_type, fn_val, vec_data_i64(&args), 1)
 
-    fn ensure_c_fn(name: str, ret_ty: i64, param_count: i32) -> i64:
+    fn ensure_c_fn(name: &str, ret_ty: i64, param_count: i32) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0: return existing
         let fn_ty = self.get_runtime_fn_type(name, ret_ty, param_count)
         wl_add_function(self.llmod, name, fn_ty)
 
-    fn get_runtime_fn_type(name: str, ret_ty: i64, param_count: i32) -> i64:
+    fn get_runtime_fn_type(name: &str, ret_ty: i64, param_count: i32) -> i64:
         let str_sym = self.intern.intern("str")
         let st_opt = self.struct_type_map.get(str_sym)
         let str_type = if st_opt.is_some(): self.struct_llvm_types.get(st_opt.unwrap() as i64) else: wl_i64_type(self.context)
@@ -17817,7 +17948,7 @@ impl Codegen:
                 params.push(i64_ty)
         wl_function_type(ret_ty, vec_data_i64(&params), param_count, 0)
 
-    fn emit_runtime_panic(msg: str) -> Unit:
+    fn emit_runtime_panic(msg: &str) -> Unit:
         self.emit_runtime_panic_value(self.gen_string_literal_raw(msg), self.gen_string_literal_raw(""))
 
     fn emit_runtime_panic_value(msg: i64, loc: i64) -> Unit:
@@ -17834,13 +17965,13 @@ impl Codegen:
     // VecIter[T] = { data_ptr: i64, len: i64, idx: i64 }
     // next() returns Option[T]: checks idx < len, loads T from data_ptr, increments idx.
 
-    fn ensure_vec_runtime_fn(name: str, ret_ty: i64, param_count: i32) -> i64:
+    fn ensure_vec_runtime_fn(name: &str, ret_ty: i64, param_count: i32) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0: return existing
         let fn_ty = self.get_vec_fn_type(name, ret_ty, param_count)
         wl_add_function(self.llmod, name, fn_ty)
 
-    fn get_vec_fn_type(name: str, ret_ty: i64, param_count: i32) -> i64:
+    fn get_vec_fn_type(name: &str, ret_ty: i64, param_count: i32) -> i64:
         let ptr_ty = wl_ptr_type(self.context)
         let i64_ty = wl_i64_type(self.context)
         let params: Vec[i64] = Vec.new()
@@ -17857,7 +17988,7 @@ impl Codegen:
 
     // ── HashMap method dispatch ───────────────────────────────────────
 
-    fn ensure_hm_fn(name: str, ret_ty: i64) -> i64:
+    fn ensure_hm_fn(name: &str, ret_ty: i64) -> i64:
         let existing = wl_get_named_function(self.llmod, name)
         if existing != 0: return existing
         let ptr_ty = wl_ptr_type(self.context)
@@ -17996,7 +18127,7 @@ impl Codegen:
         // Get the type name from the AST node
         var type_name = ""
         if self.pool.kind(tp_node) == NodeKind.NK_IDENT or self.pool.kind(tp_node) == NodeKind.NK_TYPE_NAMED:
-            type_name = self.intern.resolve(self.pool.get_data0(tp_node))
+            type_name = with_str_clone_ref(self.intern.resolve(self.pool.get_data0(tp_node)))
         else:
             type_name = "unknown"
         self.gen_string_literal_raw(type_name)

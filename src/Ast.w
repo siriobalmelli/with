@@ -11,11 +11,12 @@ use Token
 use InternPool
 use std.collections.HashMap
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn abort() -> Unit
 
-fn ast_pool_phase_bug(message: str):
+fn ast_pool_phase_bug(message: &str):
     with_eprint(message)
     abort()
 
@@ -253,6 +254,7 @@ enum FnFlags: i32:
     BEFORE = 8192
     AFTER = 16384
     BENCH = 32768
+
 // Metadata packing unit used to encode required-parameter count into
 // fn_meta flags without affecting existing FnFlags.* parity checks.
 const FN_META_REQUIRED_UNIT: i32 = 65536
@@ -512,7 +514,7 @@ type AstPoolState {
     fn_param_pattern_meta_map: HashMap[i32, i32],
     for_meta_map: HashMap[i32, i32],
     block_meta_map: HashMap[i32, i32],
-    fn_param_defaults: HashMap[i32, i32],
+    fn_param_defaults: HashMap[i64, i32],
     must_use_type_set: HashMap[i32, i32],
     no_await_guard_type_set: HashMap[i32, i32],
     no_alloc_fn_set: HashMap[i32, i32],
@@ -672,11 +674,11 @@ impl AstPool:
         idx
 
     // Add a string to the string table, returns the string index.
-    fn add_string(s: str) -> i32:
+    fn add_string(s: &str) -> i32:
         if self.state.frozen != 0:
             ast_pool_phase_bug("BUG: AstPool.add_string called after freeze")
         let idx = self.state.strings.len() as i32
-        self.state.strings.push(s)
+        self.state.strings.push(with_str_clone_ref(s))
         idx
 
     // The file a node was parsed from (0 = root/unknown). See the `files`
@@ -731,7 +733,7 @@ impl AstPool:
         let digit_idx = self.int_literal_digit_idx(idx)
         if digit_idx < 0:
             return ""
-        self.get_string(digit_idx)
+        with_str_clone_ref(self.get_string(digit_idx))
 
 const AST_INT_PART_BASE: i64 = 2097152
 const AST_INT_PART_BASE2: i64 = 4398046511104
@@ -938,7 +940,7 @@ fn exact_int_digit_value(ch: i32) -> i32:
         return ch - 55
     -1
 
-fn exact_int_parse_digits(digits: str, radix: i32) -> ExactIntValue:
+fn exact_int_parse_digits(digits: &str, radix: i32) -> ExactIntValue:
     if radix < 2 or radix > 16:
         return exact_int_invalid()
     var acc = exact_int_value(0, 0)
@@ -1166,7 +1168,7 @@ impl AstPool:
     fn optional_chain_arg_start(extra_start: i32) -> i32:
         extra_start + 2
 
-    fn get_string(idx: i32) -> str:
+    fn get_string(idx: i32) -> &str:
         self.state.strings.get(idx as i64)
 
     fn get_start(idx: NodeId) -> i32:
@@ -1178,7 +1180,7 @@ impl AstPool:
     fn node_count() -> i32:
         self.state.kinds.len() as i32
 
-    fn require_same_storage(other: &AstPool, context: str):
+    fn require_same_storage(other: &AstPool, context: &str):
         if self.state != other.state:
             ast_pool_phase_bug("BUG: mismatched AstPool storage at " ++ context)
 
@@ -1423,11 +1425,11 @@ impl AstPool:
         self.get_extra(param_start + param_idx * FN_PARAM_STRIDE + 2)
 
     fn set_fn_param_default(param_start: i32, param_idx: i32, default_node: i32):
-        let key = param_start * 1000 + param_idx
+        let key = (param_start as i64) * 1000 + (param_idx as i64)
         self.state.fn_param_defaults.insert(key, default_node)
 
     fn get_fn_param_default(param_start: i32, param_idx: i32) -> i32:
-        let key = param_start * 1000 + param_idx
+        let key = (param_start as i64) * 1000 + (param_idx as i64)
         if self.state.fn_param_defaults.contains(key):
             return self.state.fn_param_defaults.get(key).unwrap()
         0

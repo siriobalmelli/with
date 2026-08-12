@@ -12,9 +12,10 @@ use CiPrint
 use CImport
 use std.string.StringBuilder
 
-extern fn with_write_stdout(s: str) -> Unit
+extern fn with_write_stdout(s: &str) -> Unit
 extern fn with_flush_stdout() -> Unit
-extern fn with_fs_list_files(path: str) -> str
+extern fn with_fs_list_files(path: &str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 // Width-slice mode: when > 0, skip declarations belonging to
 // non-target PCRE2 width families during migration.
@@ -30,7 +31,7 @@ pub fn migrate_set_width_slice(val: i32) -> Unit:
 // prune_width_family_decls shell function:
 //   - PCRE2_UCHAR16, PCRE2_UCHAR32, PCRE2_SPTR16, PCRE2_SPTR32
 //   - Any identifier ending in _16 or _32
-fn ci_migrate_is_width_family_name(name: str) -> bool:
+fn ci_migrate_is_width_family_name(name: &str) -> bool:
     if g_migrate_width_slice == 0:
         return false
     let len = name.len() as i32
@@ -85,7 +86,7 @@ var g_ci_translate_migrate_mode: i32 = 0
 pub fn ci_translate_in_migrate_mode -> bool: g_ci_translate_migrate_mode != 0
 var g_migrate_unsafe_extern_fn_names: str = ""
 
-fn ci_migrate_text_is_blank(text: str) -> bool:
+fn ci_migrate_text_is_blank(text: &str) -> bool:
     var i: i64 = 0
     while i < text.len():
         let ch = text.byte_at(i)
@@ -94,20 +95,20 @@ fn ci_migrate_text_is_blank(text: str) -> bool:
         i = i + 1
     true
 
-pub fn migrate_set_shared_defs(prefix: str) -> Unit:
-    g_migrate_shared_defs_prefix = prefix
+pub fn migrate_set_shared_defs(prefix: &str) -> Unit:
+    g_migrate_shared_defs_prefix = with_str_clone_ref(prefix)
 
-pub fn migrate_set_directory_one_basename(basename: str) -> Unit:
-    g_migrate_directory_one_basename = basename
+pub fn migrate_set_directory_one_basename(basename: &str) -> Unit:
+    g_migrate_directory_one_basename = with_str_clone_ref(basename)
 
-pub fn migrate_set_shared_fragment_path(path: str) -> Unit:
-    g_migrate_shared_fragment_path = path
+pub fn migrate_set_shared_fragment_path(path: &str) -> Unit:
+    g_migrate_shared_fragment_path = with_str_clone_ref(path)
 
-pub fn migrate_add_include_path(path: str) -> Unit:
-    g_migrate_include_paths.push(path)
+pub fn migrate_add_include_path(path: &str) -> Unit:
+    g_migrate_include_paths.push(with_str_clone_ref(path))
 
-pub fn migrate_add_forced_include(path: str) -> Unit:
-    g_migrate_forced_includes.push(path)
+pub fn migrate_add_forced_include(path: &str) -> Unit:
+    g_migrate_forced_includes.push(with_str_clone_ref(path))
 
 pub fn migrate_reset_options() -> Unit:
     g_migrate_width_slice = 0
@@ -137,10 +138,10 @@ fn ci_migrate_shared_defs_reset:
     g_migrate_shared_pending_extern_vars = Vec.new()
     g_migrate_shared_usage_idents = ""
 
-fn ci_migrate_shared_decl_key(kind: str, name: str) -> str:
+fn ci_migrate_shared_decl_key(kind: &str, name: &str) -> str:
     "|" ++ kind ++ ":" ++ name ++ "|"
 
-fn ci_migrate_type_render_has_concrete_body(name: str, rendered: str) -> bool:
+fn ci_migrate_type_render_has_concrete_body(name: &str, rendered: &str) -> bool:
     let safe_name = ci_escape_reserved(name)
     ci_str_contains(rendered, "type " ++ safe_name ++ " {") or ci_str_contains(rendered, "type " ++ safe_name ++ " = union {")
 
@@ -152,7 +153,7 @@ fn ci_migrate_type_render_has_concrete_body(name: str, rendered: str) -> bool:
 // declaration was redirected to the shared buffer (caller must skip
 // per-file emit). Returns false when shared-defs mode is off OR when
 // the declaration was already seen (caller's per-file emit is a no-op).
-fn ci_migrate_shared_decl_upgrade_opaque_type(name: str, rendered: str):
+fn ci_migrate_shared_decl_upgrade_opaque_type(name: &str, rendered: &str):
     let opaque_marker = "type " ++ ci_escape_reserved(name) ++ " = opaque"
     var i = 0
     while i < g_migrate_shared_decl_buf.len() as i32:
@@ -172,7 +173,7 @@ fn ci_migrate_shared_decl_upgrade_opaque_type(name: str, rendered: str):
             break
         j = j + 1
 
-fn ci_migrate_shared_decl_add(kind: str, name: str, rendered: str) -> bool:
+fn ci_migrate_shared_decl_add(kind: &str, name: &str, rendered: &str) -> bool:
     if not ci_migrate_shared_defs_active():
         return false
     let key = ci_migrate_shared_decl_key(kind, name)
@@ -185,7 +186,7 @@ fn ci_migrate_shared_decl_add(kind: str, name: str, rendered: str) -> bool:
     g_migrate_shared_decl_records.push(f"@@DECL|{kind}|{name}\n{rendered}\n@@END\n")
     true
 
-fn ci_migrate_shared_ownerless_extern_add(kind: str, name: str, rendered: str) -> bool:
+fn ci_migrate_shared_ownerless_extern_add(kind: &str, name: &str, rendered: &str) -> bool:
     if not ci_migrate_shared_defs_active():
         return false
     let key = ci_migrate_shared_decl_key(kind, name)
@@ -195,7 +196,7 @@ fn ci_migrate_shared_ownerless_extern_add(kind: str, name: str, rendered: str) -
     g_migrate_shared_pending_extern_vars.push(CiMigratePendingSharedExternVar { kind: ci_ir_owned_text(kind), name: ci_ir_owned_text(name), rendered: ci_ir_owned_text(rendered) })
     true
 
-fn ci_migrate_text_mentions_ident(text: str, name: str) -> bool:
+fn ci_migrate_text_mentions_ident(text: &str, name: &str) -> bool:
     if name.len() == 0 or name.len() > text.len():
         return false
     let tlen = text.len()
@@ -214,14 +215,14 @@ fn ci_migrate_text_mentions_ident(text: str, name: str) -> bool:
         start = pos + 1
     false
 
-fn ci_migrate_shared_note_ident(name: str):
+fn ci_migrate_shared_note_ident(name: &str):
     if name.len() == 0:
         return
     let key = "|" ++ name ++ "|"
     if ci_find_str(g_migrate_shared_usage_idents, key) < 0:
         g_migrate_shared_usage_idents = g_migrate_shared_usage_idents ++ key
 
-fn ci_migrate_shared_note_output_uses(output: str):
+fn ci_migrate_shared_note_output_uses(output: &str):
     if not ci_migrate_shared_defs_active():
         return
     var i = 0
@@ -241,7 +242,7 @@ fn ci_migrate_libc_reset:
     g_migrate_libc_symbols_used = ""
     return
 
-fn ci_migrate_note_libc_symbol(name: str):
+fn ci_migrate_note_libc_symbol(name: &str):
     if name.len() == 0:
         return
     let key = "|" ++ name ++ "|"
@@ -256,7 +257,7 @@ fn ci_migrate_reset_unsafe_extern_fns():
     g_migrate_unsafe_extern_fn_names = ""
     return
 
-fn ci_migrate_note_unsafe_extern_fn(name: str):
+fn ci_migrate_note_unsafe_extern_fn(name: &str):
     if name.len() == 0:
         return
     let key = "|" ++ name ++ "|"
@@ -264,12 +265,12 @@ fn ci_migrate_note_unsafe_extern_fn(name: str):
         g_migrate_unsafe_extern_fn_names = g_migrate_unsafe_extern_fn_names ++ key
     return
 
-pub fn ci_migrate_extern_fn_call_requires_unsafe(name: str) -> bool:
+pub fn ci_migrate_extern_fn_call_requires_unsafe(name: &str) -> bool:
     if name.len() == 0:
         return false
     ci_find_str(g_migrate_unsafe_extern_fn_names, "|" ++ name ++ "|") >= 0
 
-fn ci_migrate_type_is_raw_pointer(ty: str) -> bool:
+fn ci_migrate_type_is_raw_pointer(ty: &str) -> bool:
     let t = ci_trim(ci_pointer_type_explicit_mut(ty))
     ci_starts_with(t, "*")
 
@@ -280,11 +281,11 @@ fn ci_migrate_fn_has_raw_pointer_param(session: i64, idx: i32) -> bool:
             return true
     false
 
-fn ci_migrate_insert_libc_use(output: str) -> str:
+fn ci_migrate_insert_libc_use(output: &str) -> str:
     if not ci_migrate_needs_libc():
-        return output
+        return with_str_clone_ref(output)
     if ci_find_str(output, "\nuse std.libc\n") >= 0:
-        return output
+        return with_str_clone_ref(output)
     let header_end = ci_find_str(output, "\n\n")
     if header_end >= 0:
         output.slice(0, header_end as i64) ++ "\nuse std.libc" ++ output.slice(header_end as i64, output.len())
@@ -296,8 +297,8 @@ fn ci_migrate_shared_module_prefix() -> str:
         return g_migrate_shared_defs_prefix.slice(0, g_migrate_shared_defs_prefix.len() - 5)
     g_migrate_shared_defs_prefix
 
-fn ci_migrate_source_module_suffix(path: str) -> str:
-    var rel = path
+fn ci_migrate_source_module_suffix(path: &str) -> str:
+    var rel = with_str_clone_ref(path)
     if g_migrate_directory_input_dir.len() > 0 and ci_starts_with(path, g_migrate_directory_input_dir):
         rel = path.slice(g_migrate_directory_input_dir.len(), path.len())
     while rel.len() > 0 and rel.byte_at(0) == 47:
@@ -313,7 +314,7 @@ fn ci_migrate_source_module_suffix(path: str) -> str:
             out = out ++ rel.slice(i as i64, (i + 1) as i64)
     out
 
-fn ci_migrate_source_module_path(path: str) -> str:
+fn ci_migrate_source_module_path(path: &str) -> str:
     let prefix = ci_migrate_shared_module_prefix()
     let suffix = ci_migrate_source_module_suffix(path)
     if prefix.len() == 0:
@@ -322,19 +323,19 @@ fn ci_migrate_source_module_path(path: str) -> str:
         return prefix
     prefix ++ "." ++ suffix
 
-fn ci_migrate_pipe_i32_contains(items: str, want: i32) -> bool:
+fn ci_migrate_pipe_i32_contains(items: &str, want: i32) -> bool:
     let needle = "|" ++ i64_to_string(want as i64) ++ "|"
     ci_find_str(items, needle) >= 0
 
-fn ci_migrate_add_import_once(imports: str, module_path: str) -> str:
+fn ci_migrate_add_import_once(imports: &str, module_path: &str) -> str:
     if module_path.len() == 0:
-        return imports
+        return with_str_clone_ref(imports)
     let line = "use " ++ module_path ++ "\n"
     if ci_find_str(imports, line) >= 0:
-        return imports
+        return with_str_clone_ref(imports)
     imports ++ line
 
-fn ci_migrate_project_imports_for_file(project_active: bool, project: &CiProject, input_path: str) -> str:
+fn ci_migrate_project_imports_for_file(project_active: bool, project: &CiProject, input_path: &str) -> str:
     if not project_active or not ci_migrate_shared_defs_active() or g_migrate_directory_input_dir.len() == 0:
         return ""
     let current_module = project.ensure_module(input_path)
@@ -353,9 +354,9 @@ fn ci_migrate_project_imports_for_file(project_active: bool, project: &CiProject
 // Replace all occurrences of needle with replacement, assuming few matches.
 // Unlike ci_str_replace (O(n²) char-by-char concatenation), this is O(n * k)
 // where k = number of matches, suitable for large outputs with sparse matches.
-fn ci_replace_sparse(text: str, needle: str, replacement: str) -> str:
+fn ci_replace_sparse(text: &str, needle: &str, replacement: &str) -> str:
     if needle.len() == 0 or needle.len() > text.len():
-        return text
+        return with_str_clone_ref(text)
     var result = ""
     var start: i64 = 0
     let tlen = text.len()
@@ -371,7 +372,7 @@ fn ci_replace_sparse(text: str, needle: str, replacement: str) -> str:
         start = abs_idx + nlen
     result
 
-fn ci_comment_prefix_lines(text: str) -> str:
+fn ci_comment_prefix_lines(text: &str) -> str:
     var result = ""
     var start: i64 = 0
     let tlen = text.len()
@@ -389,7 +390,7 @@ fn ci_comment_prefix_lines(text: str) -> str:
         start = end
     result
 
-fn ci_migrate_normalize_output(text: str) -> str:
+fn ci_migrate_normalize_output(text: &str) -> str:
     if text.len() == 0:
         return ""
     var end = text.len()
@@ -397,14 +398,14 @@ fn ci_migrate_normalize_output(text: str) -> str:
         end = end - 1
     ci_str_replace(text.slice(0, end), "-> void", "-> Unit") ++ "\n"
 
-fn ci_migrate_publicize_shared_line(line: str) -> str:
+fn ci_migrate_publicize_shared_line(line: &str) -> str:
     if line.starts_with("pub "):
-        return line
+        return with_str_clone_ref(line)
     if line.starts_with("type ") or line.starts_with("let ") or line.starts_with("var ") or line.starts_with("fn ") or line.starts_with("unsafe fn ") or line.starts_with("extern fn ") or line.starts_with("extern let ") or line.starts_with("extern var "):
         return "pub " ++ line
-    line
+    with_str_clone_ref(line)
 
-fn ci_migrate_publicize_shared_defs(text: str) -> str:
+fn ci_migrate_publicize_shared_defs(text: &str) -> str:
     var out = ""
     var start: i64 = 0
     let n = text.len()
@@ -419,14 +420,35 @@ fn ci_migrate_publicize_shared_defs(text: str) -> str:
         start = end
     out
 
-fn ci_migrate_render_preamble_fn(signature: str, colon_expr: str, brace_expr: str) -> str:
+fn ci_migrate_render_preamble_fn(signature: &str, colon_expr: &str, brace_expr: &str) -> str:
     if migrate_prefer_brace():
         return signature ++ " {\n    " ++ brace_expr ++ "\n}\n"
     signature ++ ": " ++ colon_expr ++ "\n"
 
+fn ci_migrate_render_overflow_helper(op: &str, ty: &str, is_signed: bool):
+    let token = if op == "add": "+%" else if op == "sub": "-%" else: "*%"
+    let overflow = if op == "add":
+        if is_signed: "((result ^ a) & (result ^ b)) < 0" else: "result < a"
+    else if op == "sub":
+        if is_signed: "((a ^ b) & (result ^ a)) < 0" else: "a < b"
+    else if is_signed:
+        "if a == 0 or b == 0: false else if a == -1: result == b else if b == -1: result == a else: result / b != a"
+    else:
+        "if b == 0: false else: result / b != a"
+    let signature = "unsafe fn __with_builtin_" ++ op ++ "_overflow_" ++ ty ++ "(a: " ++ ty ++ ", b: " ++ ty ++ ", out: *mut " ++ ty ++ ") -> bool"
+    let body = "    let result = a " ++ token ++ " b\n    unsafe { (*out = result) }\n    " ++ overflow ++ "\n"
+    if migrate_prefer_brace():
+        return signature ++ " {\n" ++ body ++ "}\n"
+    signature ++ ":\n" ++ body
+
+fn ci_migrate_render_overflow_helpers(ty: &str, is_signed: bool):
+    ci_migrate_render_overflow_helper("add", ty, is_signed) ++
+    ci_migrate_render_overflow_helper("sub", ty, is_signed) ++
+    ci_migrate_render_overflow_helper("mul", ty, is_signed)
+
 // Write the shared defs module (defs.w) to output_dir.
 // Contains: preamble + hardcoded extras + shared declarations.
-fn ci_migrate_write_shared_defs(output_dir: str):
+fn ci_migrate_write_shared_defs(output_dir: &str):
     var defs = StringBuilder.new()
     defs.push_str("// ")
     defs.push_str(g_migrate_shared_defs_prefix)
@@ -458,7 +480,7 @@ fn ci_migrate_write_shared_defs(output_dir: str):
     else:
         eprint("migrate: wrote shared defs: " ++ defs_path)
 
-fn ci_migrate_write_shared_fragment(path: str):
+fn ci_migrate_write_shared_fragment(path: &str):
     let fragment = ci_migrate_shared_fragment_text()
     if with_fs_write_file(path, fragment) != 0:
         eprint(f"migrate: failed to write shared fragment: {path}")
@@ -475,7 +497,7 @@ fn ci_migrate_shared_fragment_text() -> str:
     fragment.push_str(f"@@USES\n{g_migrate_shared_usage_idents}\n@@END\n")
     fragment.to_str()
 
-fn ci_migrate_merge_usage_keys(keys: str):
+fn ci_migrate_merge_usage_keys(keys: &str):
     var i = 0
     let n = keys.len() as i32
     while i < n:
@@ -491,7 +513,7 @@ fn ci_migrate_merge_usage_keys(keys: str):
             ci_migrate_shared_note_ident(keys.slice(start as i64, i as i64))
         i = i + 1
 
-fn ci_migrate_merge_shared_fragment_text(text: str):
+fn ci_migrate_merge_shared_fragment_text(text: &str):
     var pos = 0
     let n = text.len() as i32
     while pos < n:
@@ -524,7 +546,7 @@ fn ci_migrate_merge_shared_fragment_text(text: str):
             ci_migrate_merge_usage_keys(body)
         pos = body_end + 7
 
-fn ci_migrate_merge_shared_fragment_texts(output_dir: str, fragments: &Vec[str]):
+fn ci_migrate_merge_shared_fragment_texts(output_dir: &str, fragments: &Vec[str]):
     ci_migrate_shared_defs_reset()
     var i = 0
     while i < fragments.len() as i32:
@@ -595,6 +617,19 @@ fn ci_migrate_preamble_text() -> str:
     p = p ++ "type c_longlong = i64\n"
     p = p ++ "type c_ulonglong = u64\n"
     p = p ++ "type c_longdouble = f64\n"
+    // Clang's overflow builtins both store the wrapped result and report the
+    // overflow bit. Keep both effects: the structural call lowerer selects
+    // the helper from the result-pointer type and rejects mixed types loudly.
+    p = p ++ ci_migrate_render_overflow_helpers("i8", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u8", false)
+    p = p ++ ci_migrate_render_overflow_helpers("i16", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u16", false)
+    p = p ++ ci_migrate_render_overflow_helpers("i32", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u32", false)
+    p = p ++ ci_migrate_render_overflow_helpers("i64", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u64", false)
+    p = p ++ ci_migrate_render_overflow_helpers("i128", true)
+    p = p ++ ci_migrate_render_overflow_helpers("u128", false)
     // Builtin and runtime wrappers
     p = p ++ "extern fn with_clz(x: i32) -> i32\n"
     p = p ++ "extern fn with_ctz(x: i32) -> i32\n"
@@ -619,8 +654,57 @@ fn ci_migrate_preamble_text() -> str:
     p = p ++ "extern fn with_va_end(ap: *mut i8) -> Unit\n\n"
     p
 
+// The with_* runtime externs the preamble above declares. A C prototype for
+// one of these names is a redeclaration of the same flat-namespace symbol —
+// the preamble's spelling is the one every migrator-generated call matches.
+fn ci_migrate_preamble_declares_runtime_extern(name: &str) -> bool:
+    name == "with_clz" or name == "with_ctz" or name == "with_popcount" or
+    name == "with_bswap16" or name == "with_bswap32" or name == "with_bswap64" or
+    name == "with_clzl" or name == "with_clzll" or name == "with_ctzl" or
+    name == "with_ctzll" or name == "with_abs" or name == "with_alloc" or
+    name == "with_alloc_zeroed" or name == "with_realloc" or name == "with_free" or
+    name == "with_memcpy" or name == "with_memmove" or name == "with_memset" or
+    name == "with_memcmp" or name == "with_va_start" or name == "with_va_end"
+
+fn ci_migrate_is_runtime_cabi_function(name: &str) -> bool:
+    if ci_starts_with(name, "with_"):
+        return true
+    name == "i32_to_str" or name == "i64_to_string" or name == "str_from_byte"
+
+// The compiler's emitted C ABI uses with_* names plus three legacy conversion
+// names and C-layout types such as with_str. Migrated source also embeds std,
+// whose canonical declarations use the same physical symbols with humane With
+// types (`str`, `Never`, and so on). Keep those two type surfaces out of With's
+// flat namespace while preserving the original linker symbol. The fixed
+// preamble externs are already canonical migrator declarations, so their names
+// remain unchanged.
+pub fn ci_migrate_c_function_name(name: &str) -> str:
+    let safe_name = ci_escape_reserved(name)
+    if ci_translate_in_migrate_mode() and ci_migrate_is_runtime_cabi_function(name) and not ci_migrate_preamble_declares_runtime_extern(name):
+        return "__with_cabi_" ++ safe_name
+    safe_name
+
+// Pre-D5 emitted C flattened borrowed str parameters to by-value with_str.
+// The current runtime's canonical signatures borrow those places, so linking
+// the old C declaration directly would pass {ptr,len} where FnAbi expects one
+// place address. This is the single compatibility descriptor for that ABI
+// transition; each bit is a canonical borrowed-with_str parameter index.
+fn ci_migrate_runtime_borrowed_str_param_mask(name: &str) -> i32:
+    if name == "with_regex_compile" or name == "with_str_len" or
+       name == "with_println_str" or name == "with_eprint" or
+       name == "with_write" or name == "with_ewrite":
+        return 1
+    if name == "with_regex_match_spans_alloc_at" or name == "with_regex_group_name_to_index":
+        return 2
+    if name == "with_regex_substitute":
+        return 6
+    0
+
+fn ci_migrate_runtime_param_is_borrowed_str(mask: i32, param_index: i32) -> bool:
+    mask != 0 and param_index >= 0 and (mask & (1 << (param_index as u32))) != 0
+
 // ── Migrate entry points (moved from CImport.w in D3) ─────────
-pub fn migrate_add_define(define: str) -> Unit:
+pub fn migrate_add_define(define: &str) -> Unit:
     // define is "NAME=VALUE" or just "NAME"
     if ci_str_contains(define, "="):
         let eq_pos = ci_find_substr(define, "=")
@@ -682,7 +766,7 @@ fn ci_collect_macro_type_aliases(session: i64) -> str:
         i = i + 1
     aliases
 
-fn ci_migrate_prepare_include_path(input_path: str):
+fn ci_migrate_prepare_include_path(input_path: &str):
     with_cimport_clear_include_paths()
     var dir_end = input_path.len() as i32 - 1
     while dir_end > 0 and input_path.byte_at(dir_end as i64) != 47:  // '/'
@@ -727,7 +811,7 @@ fn ci_migrate_source_prefix() -> str:
         prefix = prefix ++ "#include \"" ++ g_migrate_forced_includes.get(i as i64) ++ "\"\n"
     prefix
 
-fn ci_migrate_wrapped_source(input_path: str) -> str:
+fn ci_migrate_wrapped_source(input_path: &str) -> str:
     let raw_source = with_fs_read_file(input_path)
     if raw_source.len() == 0:
         return ""
@@ -743,7 +827,7 @@ fn ci_migrate_project_var_owner_rank(definition_kind: i32) -> i32:
     0
 
 impl CiProject:
-    fn migrate_var_type_id(session: i64, idx: i32, owner_type: str) -> CiTypeId:
+    fn migrate_var_type_id(session: i64, idx: i32, owner_type: &str) -> CiTypeId:
         let cursor = with_cimport_decl_cursor(session, idx)
         if cursor < 0:
             return 0 as CiTypeId
@@ -754,7 +838,7 @@ impl CiProject:
             ty_id = self.types.type_from_translated_text(owner_type)
         ty_id
 
-    mut fn migrate_scan_file(input_path: str) -> i32:
+    mut fn migrate_scan_file(input_path: &str) -> i32:
         ci_migrate_prepare_include_path(input_path)
         ci_prepare_clang_resource_dir()
         let source = ci_migrate_wrapped_source(input_path)
@@ -857,7 +941,15 @@ impl CiProject:
         with_cimport_dispose(session)
         0
 
-fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool, project: &CiProject) -> i32:
+fn ci_migrate_decl_is_filtered(session: i64, name: &str):
+    if name.len() == 0 or ci_is_system_decl(name):
+        return true
+    let loc = ci_get_decl_location(session, name)
+    if loc.len() > 0 and ci_is_system_path(loc):
+        return true
+    ci_migrate_is_width_family_name(name)
+
+fn ci_migrate_file_inner(input_path: &str, output_path: &str, project_active: bool, project: &CiProject) -> i32:
     if with_cimport_available() == 0:
         eprint("migrate: libclang not available")
         return 1
@@ -886,8 +978,8 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
         eprint("migrate: cannot read " ++ input_path)
         return 1
     let source_prefix = ci_migrate_source_prefix()
-    g_migrate_current_input_path = input_path
-    g_migrate_raw_source = source
+    g_migrate_current_input_path = with_str_clone_ref(input_path)
+    g_migrate_raw_source = with_str_clone_ref(source)
 
     // Pass to libclang via cimport_parse
     let session = with_cimport_parse(source)
@@ -955,17 +1047,7 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
     var i = 0
     while i < count:
         let decl_name = with_cimport_decl_name(session, i)
-        // Skip system types/functions by name pattern
-        if ci_is_system_decl(decl_name):
-            i = i + 1
-            continue
-        // Skip declarations from system headers (check source location)
-        let decl_loc = ci_get_decl_location(session, decl_name)
-        if decl_loc.len() > 0 and ci_is_system_path(decl_loc):
-            i = i + 1
-            continue
-        // C2: skip width-family declarations when width slicing is active
-        if ci_migrate_is_width_family_name(decl_name):
+        if ci_migrate_decl_is_filtered(session, decl_name):
             i = i + 1
             continue
         let kind = with_cimport_decl_kind(session, i)
@@ -973,8 +1055,9 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
             output_parts.push(ci_migrate_translate_function(session, i, translated_structs, input_path, project_active, project))
         else if kind == CK_STRUCT or kind == CK_UNION:
             let struct_result = ci_translate_struct(session, i, kind == CK_UNION, translated_structs, demoted_types, count)
+            let struct_result_len = struct_result.len()
             output_parts.push(struct_result)
-            if struct_result.len() > 0:
+            if struct_result_len > 0:
                 let sname = with_cimport_decl_name(session, i)
                 if sname.len() > 0 and sname.byte_at(0) != 95:
                     translated_structs = translated_structs ++ "|" ++ sname ++ "|"
@@ -987,8 +1070,9 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
             output_parts.push(ci_translate_enum(session, i))
         else if kind == CK_TYPEDEF:
             let td_result = ci_translate_typedef(session, i, count)
+            let td_result_len = td_result.len()
             output_parts.push(td_result)
-            if td_result.len() > 0:
+            if td_result_len > 0:
                 let td_name = with_cimport_decl_name(session, i)
                 if td_name.len() > 0 and td_name.byte_at(0) != 95:
                     translated_structs = translated_structs ++ "|" ++ td_name ++ "|"
@@ -1056,14 +1140,14 @@ fn ci_migrate_file_inner(input_path: str, output_path: str, project_active: bool
     g_migrate_fn_translated_total = g_migrate_fn_translated_total + g_migrate_fn_translated
     0
 
-pub fn migrate_c_file(input_path: str, output_path: str) -> i32:
+pub fn migrate_c_file(input_path: &str, output_path: &str) -> i32:
     var project = CiProject.new()
     g_ci_translate_migrate_mode = 1
     let rc = ci_migrate_file_inner(input_path, output_path, false, &project)
     g_ci_translate_migrate_mode = 0
     rc
 
-fn ci_migrate_path_basename(path: str) -> str:
+fn ci_migrate_path_basename(path: &str) -> str:
     var end = path.len() as i32
     while end > 0 and path.byte_at((end - 1) as i64) == 47:
         end = end - 1
@@ -1072,13 +1156,13 @@ fn ci_migrate_path_basename(path: str) -> str:
         start = start - 1
     path.slice((start + 1) as i64, end as i64)
 
-fn ci_migrate_excludes_contains(excludes: str, basename: str) -> bool:
+fn ci_migrate_excludes_contains(excludes: &str, basename: &str) -> bool:
     if excludes.len() == 0 or basename.len() == 0:
         return false
     let needle = "|" ++ basename ++ "|"
     ci_find_str(excludes, needle) >= 0
 
-fn ci_migrate_pcre2_order_rank(basename: str) -> i32:
+fn ci_migrate_pcre2_order_rank(basename: &str) -> i32:
     if basename == "pcre2_chkdint.c": return 10
     if basename == "pcre2_chartables.c": return 20
     if basename == "pcre2_tables.c": return 30
@@ -1113,7 +1197,7 @@ fn ci_migrate_pcre2_order_rank(basename: str) -> i32:
     if basename == "pcre2test.c": return 320
     1000
 
-fn ci_migrate_file_before(a: str, b: str) -> bool:
+fn ci_migrate_file_before(a: &str, b: &str) -> bool:
     let abase = ci_migrate_path_basename(a)
     let bbase = ci_migrate_path_basename(b)
     let arank = ci_migrate_pcre2_order_rank(abase)
@@ -1130,18 +1214,18 @@ fn ci_migrate_sorted_files(files: &Vec[str]) -> Vec[str]:
         while i < files.len() as i32:
             let path = files.get(i as i64)
             if ci_migrate_pcre2_order_rank(ci_migrate_path_basename(path)) == rank:
-                sorted.push(path)
+                sorted.push(with_str_clone_ref(path))
             i = i + 1
         rank = rank + 10
     var i = 0
     while i < files.len() as i32:
         let path = files.get(i as i64)
         if ci_migrate_pcre2_order_rank(ci_migrate_path_basename(path)) == 1000:
-            sorted.push(path)
+            sorted.push(with_str_clone_ref(path))
         i = i + 1
     sorted
 
-fn ci_migrate_directory_output_path(input_dir: str, output_dir: str, file_path: str) -> str:
+fn ci_migrate_directory_output_path(input_dir: &str, output_dir: &str, file_path: &str) -> str:
     var out_path = ""
     if ci_starts_with(file_path, input_dir):
         let relative = file_path.slice(input_dir.len(), file_path.len())
@@ -1153,7 +1237,7 @@ fn ci_migrate_directory_output_path(input_dir: str, output_dir: str, file_path: 
         out_path = f"{output_dir}/{file_path}.w"
     out_path
 
-fn ci_migrate_print_progress(file_path: str, current: i32, total: i32):
+fn ci_migrate_print_progress(file_path: &str, current: i32, total: i32):
     let base = ci_migrate_path_basename(file_path)
     var percent = 0
     if total > 0:
@@ -1161,36 +1245,36 @@ fn ci_migrate_print_progress(file_path: str, current: i32, total: i32):
     with_write_stdout(f"migrate: processing {base} - {current}/{total}, {percent}% completed\n")
     with_flush_stdout()
 
-fn ci_migrate_ensure_parent_dir(path: str):
+fn ci_migrate_ensure_parent_dir(path: &str):
     var dir_end = path.len() as i32 - 1
     while dir_end > 0 and path.byte_at(dir_end as i64) != 47:
         dir_end = dir_end - 1
     if dir_end > 0:
         with_fs_mkdir_p(path.slice(0, dir_end as i64))
 
-fn ci_migrate_path_is_c_file(path: str) -> bool:
+fn ci_migrate_path_is_c_file(path: &str) -> bool:
     path.len() > 2 and path.slice(path.len() - 2, path.len()) == ".c"
 
-fn ci_migrate_basename_is_hidden(path: str) -> bool:
+fn ci_migrate_basename_is_hidden(path: &str) -> bool:
     let base = ci_migrate_path_basename(path)
     base.len() > 0 and base.byte_at(0) == 46
 
-fn ci_migrate_sorted_insert(files: &Vec[str], path: str) -> Vec[str]:
+fn ci_migrate_sorted_insert(files: &Vec[str], path: &str) -> Vec[str]:
     let sorted: Vec[str] = Vec.new()
     var inserted = false
     var i = 0
     while i < files.len() as i32:
         let existing = files.get(i as i64)
         if not inserted and ci_str_compare(path, existing) < 0:
-            sorted.push(path)
+            sorted.push(with_str_clone_ref(path))
             inserted = true
-        sorted.push(existing)
+        sorted.push(with_str_clone_ref(existing))
         i = i + 1
     if not inserted:
-        sorted.push(path)
+        sorted.push(with_str_clone_ref(path))
     sorted
 
-fn ci_migrate_collect_c_files(input_dir: str, exclude_basenames: str) -> Vec[str]:
+fn ci_migrate_collect_c_files(input_dir: &str, exclude_basenames: &str) -> Vec[str]:
     var files: Vec[str] = Vec.new()
     let listing = with_fs_list_files(input_dir)
     var pos = 0
@@ -1207,7 +1291,7 @@ fn ci_migrate_collect_c_files(input_dir: str, exclude_basenames: str) -> Vec[str
         pos = line_end + 1
     files
 
-fn ci_migrate_directory_filewise(input_dir: str, output_dir: str, files: &Vec[str]) -> i32:
+fn ci_migrate_directory_filewise(input_dir: &str, output_dir: &str, files: &Vec[str]) -> i32:
     let fragments: Vec[str] = Vec.new()
     with_fs_mkdir_p(output_dir)
     var migrated = 0
@@ -1241,9 +1325,9 @@ fn ci_migrate_directory_filewise(input_dir: str, output_dir: str, files: &Vec[st
     if migrated == 0: 1 else: 0
 
 // Translate a directory of .c files to .w files.
-pub fn migrate_c_directory(input_dir: str, output_dir: str, exclude_basenames: str) -> i32:
+pub fn migrate_c_directory(input_dir: &str, output_dir: &str, exclude_basenames: &str) -> i32:
     g_migrate_fn_translated_total = 0
-    g_migrate_directory_input_dir = input_dir
+    g_migrate_directory_input_dir = with_str_clone_ref(input_dir)
     if ci_migrate_shared_defs_active():
         ci_migrate_shared_defs_reset()
     // Create output directory
@@ -1311,7 +1395,7 @@ pub fn migrate_c_directory(input_dir: str, output_dir: str, exclude_basenames: s
 // 2. Non-static functions get @[c_export]
 // 3. Goto-containing functions use state-variable transform
 // 4. Never silently demotes to extern or emits callable failure stubs.
-fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, primary_path: str, project_active: bool, project: &CiProject) -> str:
+fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, primary_path: &str, project_active: bool, project: &CiProject) -> str:
     // B9: every function gets a fresh per-function temp counter
     // so temp names are `__ci_expr_TAG_0`, `__ci_expr_TAG_1`, ...
     // rather than source-offset-keyed. The counter is cursor-
@@ -1321,12 +1405,9 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
     if name.len() == 0:
         return ""
 
-    // Skip system internal names (__ prefix or _[A-Z] prefix)
-    // but keep application-internal names like _pcre2_*
-    if name.len() >= 2 and name.byte_at(0) == 95:
-        let second = name.byte_at(1)
-        if second == 95 or (second >= 65 and second <= 90):
-            return ""
+    // The declaration walk already filters actual system declarations through
+    // ci_is_system_decl and their source paths. Do not repeat a spelling-only
+    // filter here: emit-C deliberately owns the reserved __with_* namespace.
 
     // Skip libc functions that are mapped to With equivalents
     if ci_is_mapped_libc_fn(name):
@@ -1344,9 +1425,10 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
         return ""
 
     let storage = with_cimport_fn_storage_class(session, idx)
-    let safe_name = ci_escape_reserved(name)
+    let safe_name = ci_migrate_c_function_name(name)
     let param_count = with_cimport_fn_param_count(session, idx)
     let is_variadic = with_cimport_fn_is_variadic(session, idx)
+    let runtime_borrow_mask = ci_migrate_runtime_borrowed_str_param_mask(name)
 
     // Build parameter list — use cursor API for real param names
     // (the old decl API returns "" for many PCRE2 functions)
@@ -1383,12 +1465,16 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
             let msg = f"migrate: untranslatable function '{name}': setjmp/longjmp (call to '{sj_name}') is not supported{loc_suffix}"
             return ci_migrate_fail_function(msg)
     var params = ""
+    var physical_params = ""
+    var call_args = ""
     var has_unsupported = false
     var unsupported_reason = ""
 
     for pi in 0..param_count:
         if pi > 0:
             params = params ++ ", "
+            physical_params = physical_params ++ ", "
+            call_args = call_args ++ ", "
         let raw_ptype = with_cimport_fn_param_type_translated(session, idx, pi)
         var ptype = ci_pointer_type_explicit_mut(raw_ptype)
 
@@ -1396,13 +1482,25 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
             has_unsupported = true
             unsupported_reason = ptype.slice(14, ptype.len())
 
-        // Use cursor API name if available, fall back to old API
-        var pname = with_cimport_fn_param_name(session, idx, pi)
+        // Definition param names are authoritative: the translated body
+        // references the DEFINITION's spellings, and a -include'd prototype
+        // may name the same params differently — naming the signature from
+        // the registry cursor then skews it against every body reference
+        // (#740 census: `__param_c` signature vs `__param__1` body).
+        var pname = ci_get_nth_pipe_entry(cursor_param_names, pi)
         if pname.len() == 0:
-            pname = ci_get_nth_pipe_entry(cursor_param_names, pi)
+            pname = with_cimport_fn_param_name(session, idx, pi)
         let escaped_pname = if pname.len() > 0: ci_escape_reserved(pname) else: ""
         let sig_pname = ci_param_signature_name(escaped_pname, pi)
         params = params ++ sig_pname ++ ": " ++ ci_unsafe_fn_ptr_type(ptype)
+        if ci_migrate_runtime_param_is_borrowed_str(runtime_borrow_mask, pi):
+            if ptype != "with_str":
+                has_unsupported = true
+                unsupported_reason = f"runtime borrow bridge expected with_str parameter {pi}, found {ptype}"
+            physical_params = physical_params ++ sig_pname ++ ": &with_str"
+        else:
+            physical_params = physical_params ++ sig_pname ++ ": " ++ ci_unsafe_fn_ptr_type(ptype)
+        call_args = call_args ++ sig_pname
 
     if is_variadic != 0:
         if param_count > 0:
@@ -1426,6 +1524,14 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
     if fn_cursor < 0 or with_ci_cursor_is_definition(session, fn_cursor) == 0:
         if storage == CX_SC_STATIC:
             return ""
+        // #740 census class 2: the migrate preamble already declares the fixed
+        // with_* runtime externs (with_memcpy & co, *i8-shaped). Re-emitting a
+        // C prototype for the same symbol under its C spelling (`void*` →
+        // *mut c_void) leaves one flat extern name with two signatures and
+        // every preamble-shaped call mismatched. Prototype-only redeclarations
+        // skip; definitions still translate (and collide loudly).
+        if ci_migrate_preamble_declares_runtime_extern(name):
+            return ""
         let owner_path = ci_migrate_project_fn_owner_path(project_active, project, name)
         if ci_migrate_shared_defs_active() and g_migrate_no_c_export != 0 and owner_path.len() > 0:
             return ""
@@ -1433,10 +1539,14 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
         g_migrate_fn_translated = g_migrate_fn_translated + 1
         let cc = with_cimport_fn_calling_conv(session, idx)
         let cc_prefix = if cc != "c" and cc.len() > 0: "@[callconv(\"" ++ cc ++ "\")]\n" else: ""
+        let ret_render = ci_unsafe_fn_ptr_type(ret)
+        if runtime_borrow_mask != 0:
+            let physical_name = "__with_cabi_physical_" ++ ci_escape_reserved(name)
+            return "@[link_name(\"" ++ name ++ "\")]\n" ++ cc_prefix ++ "extern fn " ++ physical_name ++ "(" ++ physical_params ++ ") -> " ++ ret_render ++ "\n" ++
+                "unsafe fn " ++ safe_name ++ "(" ++ params ++ ") -> " ++ ret_render ++ ":\n    " ++ physical_name ++ "(" ++ call_args ++ ")\n"
         // A renamed extern (keyword or prelude collision) keeps its C
         // linkage through the original symbol.
         let link_prefix = if safe_name != name: "@[link_name(\"" ++ name ++ "\")]\n" else: ""
-        let ret_render = ci_unsafe_fn_ptr_type(ret)
         return link_prefix ++ cc_prefix ++ "extern fn " ++ safe_name ++ "(" ++ params ++ ") -> " ++ ret_render ++ "\n"
 
     // @[c_export] for non-static functions (preserves C ABI)
@@ -1494,12 +1604,12 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: str, pri
 
 
 // ── ci_migrate_var_* helpers (moved from CImport.w in D3) ─────
-fn ci_migrate_set_error(msg: str):
+fn ci_migrate_set_error(msg: &str):
     if g_migrate_file_error.len() == 0:
-        g_migrate_file_error = msg
+        g_migrate_file_error = with_str_clone_ref(msg)
 
-fn ci_migrate_fail_function(msg: str) -> str:
-    eprint(msg)
+fn ci_migrate_fail_function(msg: &str) -> str:
+    eprint(with_str_clone_ref(msg))
     ci_migrate_set_error(msg)
     ""
 
@@ -1509,18 +1619,18 @@ fn ci_migrate_var_definition_kind(session: i64, idx: i32) -> i32:
 fn ci_migrate_var_is_definition(session: i64, idx: i32) -> bool:
     ci_migrate_var_definition_kind(session, idx) != CI_VAR_DECL_ONLY
 
-fn ci_migrate_project_var_symbol(project_active: bool, project: &CiProject, name: str) -> i32:
+fn ci_migrate_project_var_symbol(project_active: bool, project: &CiProject, name: &str) -> i32:
     if not project_active or name.len() == 0:
         return -1
     project.find_symbol(CiProjectSymbolKind.CIPS_VAR, name)
 
-fn ci_migrate_project_var_owner_path(project_active: bool, project: &CiProject, name: str) -> str:
+fn ci_migrate_project_var_owner_path(project_active: bool, project: &CiProject, name: &str) -> str:
     let symbol_id = ci_migrate_project_var_symbol(project_active, project, name)
     if symbol_id < 0:
         return ""
     project.owner_module_path(symbol_id)
 
-fn ci_migrate_project_var_resolved_type(project_active: bool, project: &CiProject, name: str) -> str:
+fn ci_migrate_project_var_resolved_type(project_active: bool, project: &CiProject, name: &str) -> str:
     let symbol_id = ci_migrate_project_var_symbol(project_active, project, name)
     if symbol_id < 0:
         return ""
@@ -1531,18 +1641,18 @@ fn ci_migrate_project_var_resolved_type(project_active: bool, project: &CiProjec
         return ci_print_type(project.types, symbol.resolved_ty)
     ""
 
-fn ci_migrate_project_fn_symbol(project_active: bool, project: &CiProject, name: str) -> i32:
+fn ci_migrate_project_fn_symbol(project_active: bool, project: &CiProject, name: &str) -> i32:
     if not project_active or name.len() == 0:
         return -1
     project.find_symbol(CiProjectSymbolKind.CIPS_FN, name)
 
-fn ci_migrate_project_fn_owner_path(project_active: bool, project: &CiProject, name: str) -> str:
+fn ci_migrate_project_fn_owner_path(project_active: bool, project: &CiProject, name: &str) -> str:
     let symbol_id = ci_migrate_project_fn_symbol(project_active, project, name)
     if symbol_id < 0:
         return ""
     project.owner_module_path(symbol_id)
 
-fn ci_migrate_collect_unsafe_extern_fns(session: i64, count: i32, primary_path: str, project_active: bool, project: &CiProject):
+fn ci_migrate_collect_unsafe_extern_fns(session: i64, count: i32, primary_path: &str, project_active: bool, project: &CiProject):
     ci_migrate_reset_unsafe_extern_fns()
     var i = 0
     while i < count:
@@ -1550,29 +1660,24 @@ fn ci_migrate_collect_unsafe_extern_fns(session: i64, count: i32, primary_path: 
             i = i + 1
             continue
         let name = with_cimport_decl_name(session, i)
-        let cursor = with_cimport_decl_cursor(session, i)
-        let loc = if cursor >= 0: with_ci_cursor_location(session, cursor) else: ""
-        if name.len() == 0 or ci_is_system_decl(name) or (loc.len() > 0 and ci_is_system_path(loc)):
-            i = i + 1
-            continue
-        if ci_migrate_is_width_family_name(name):
+        if ci_migrate_decl_is_filtered(session, name):
             i = i + 1
             continue
         let owner_path = ci_migrate_project_fn_owner_path(project_active, project, name)
         let local_def = ci_find_fn_cursor(session, name)
         if local_def >= 0 and (owner_path.len() == 0 or owner_path == primary_path) and ci_migrate_fn_has_raw_pointer_param(session, i):
-            ci_migrate_note_unsafe_extern_fn(ci_escape_reserved(name))
+            ci_migrate_note_unsafe_extern_fn(ci_migrate_c_function_name(name))
         if with_cimport_fn_storage_class(session, i) == CX_SC_STATIC:
             i = i + 1
             continue
         if (owner_path.len() > 0 and owner_path != primary_path) and ci_migrate_fn_has_raw_pointer_param(session, i):
-            ci_migrate_note_unsafe_extern_fn(ci_escape_reserved(name))
+            ci_migrate_note_unsafe_extern_fn(ci_migrate_c_function_name(name))
         if owner_path.len() == 0 and local_def < 0:
-            ci_migrate_note_unsafe_extern_fn(ci_escape_reserved(name))
+            ci_migrate_note_unsafe_extern_fn(ci_migrate_c_function_name(name))
         i = i + 1
     return
 
-fn ci_migrate_var_emits_definition(session: i64, idx: i32, primary_path: str, project_active: bool, project: &CiProject) -> bool:
+fn ci_migrate_var_emits_definition(session: i64, idx: i32, primary_path: &str, project_active: bool, project: &CiProject) -> bool:
     if ci_migrate_var_definition_kind(session, idx) == CI_VAR_DECL_ONLY:
         return false
     if project_active and with_cimport_var_storage_class(session, idx) != CX_SC_STATIC:
@@ -1582,7 +1687,7 @@ fn ci_migrate_var_emits_definition(session: i64, idx: i32, primary_path: str, pr
             return owner_path == primary_path
     true
 
-fn ci_migrate_var_in_primary_file(session: i64, idx: i32, primary_path: str) -> bool:
+fn ci_migrate_var_in_primary_file(session: i64, idx: i32, primary_path: &str) -> bool:
     if primary_path.len() == 0:
         return false
     let cursor = with_cimport_decl_cursor(session, idx)
@@ -1590,7 +1695,7 @@ fn ci_migrate_var_in_primary_file(session: i64, idx: i32, primary_path: str) -> 
         return false
     with_ci_cursor_in_file(session, cursor, primary_path) != 0
 
-fn ci_migrate_var_priority(session: i64, idx: i32, primary_path: str) -> i32:
+fn ci_migrate_var_priority(session: i64, idx: i32, primary_path: &str) -> i32:
     let kind = ci_migrate_var_definition_kind(session, idx)
     if kind == CI_VAR_FULL_DEF:
         if ci_migrate_var_in_primary_file(session, idx, primary_path):
@@ -1604,7 +1709,7 @@ fn ci_migrate_var_priority(session: i64, idx: i32, primary_path: str) -> i32:
         return 2
     1
 
-fn ci_migrate_find_best_var_decl(session: i64, count: i32, name: str, primary_path: str) -> i32:
+fn ci_migrate_find_best_var_decl(session: i64, count: i32, name: &str, primary_path: &str) -> i32:
     var best = -1
     var best_priority = -1
     var i = 0
@@ -1634,7 +1739,7 @@ fn ci_migrate_var_owner_type(session: i64, idx: i32) -> str:
                         actual_type = init_type
     ci_unsafe_fn_ptr_type(actual_type)
 
-fn ci_migrate_var_resolved_type(session: i64, idx: i32, count: i32, primary_path: str, project_active: bool, project: &CiProject) -> str:
+fn ci_migrate_var_resolved_type(session: i64, idx: i32, count: i32, primary_path: &str, project_active: bool, project: &CiProject) -> str:
     let name = with_cimport_decl_name(session, idx)
     if with_cimport_var_storage_class(session, idx) != CX_SC_STATIC:
         let shared_type = ci_migrate_project_var_resolved_type(project_active, project, name)
@@ -1651,16 +1756,14 @@ fn ci_migrate_var_resolved_type(session: i64, idx: i32, count: i32, primary_path
     ci_migrate_var_owner_type(session, idx)
 
 // ── ci_migrate_translate_var/s (moved from CImport.w in D3) ─────
-fn ci_migrate_translate_var(session: i64, idx: i32, count: i32, primary_path: str, want_definitions: bool, project_active: bool, project: &CiProject) -> str:
+fn ci_migrate_translate_var(session: i64, idx: i32, count: i32, primary_path: &str, want_definitions: bool, project_active: bool, project: &CiProject) -> str:
     let name = with_cimport_decl_name(session, idx)
     if name.len() == 0:
         return ""
 
-    // Skip reserved C internal names (__foo or _Uppercase), keep _lowercase (e.g., _pcre2_*)
-    if name.len() >= 2 and name.byte_at(0) == 95:
-        let second = name.byte_at(1)
-        if second == 95 or (second >= 65 and second <= 90):
-            return ""
+    // The declaration walk already filters actual system declarations through
+    // ci_is_system_decl and their source paths. Do not repeat a spelling-only
+    // filter here: emit-C deliberately owns the reserved __with_* namespace.
 
     if ci_migrate_find_best_var_decl(session, count, name, primary_path) != idx:
         return ""
@@ -1761,7 +1864,7 @@ fn ci_migrate_translate_var(session: i64, idx: i32, count: i32, primary_path: st
             return ""
     rendered
 
-fn ci_migrate_translate_vars(session: i64, count: i32, primary_path: str, project_active: bool, project: &CiProject) -> str:
+fn ci_migrate_translate_vars(session: i64, count: i32, primary_path: &str, project_active: bool, project: &CiProject) -> str:
     var output = StringBuilder.new()
     var i = 0
     while i < count:

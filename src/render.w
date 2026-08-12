@@ -9,6 +9,7 @@ use std.string.StringBuilder
 
 
 extern fn str_from_byte(b: i32) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 fn render_module(pool: AstPool, intern: InternPool) -> str:
     var out = StringBuilder.new()
@@ -61,7 +62,7 @@ fn render_decl(pool: AstPool, intern: InternPool, node: NodeId, indent: i32) -> 
         let packed_kind = pool.get_data2(node)
         let sub_kind = type_decl_sub_kind(packed_kind)
         let is_ephemeral = type_decl_is_ephemeral(packed_kind)
-        var out = prefix
+        var out = with_str_clone_ref(prefix)
 
         if type_decl_is_specified(packed_kind) != 0:
             out = out ++ "@[specified]\n" ++ prefix
@@ -675,7 +676,7 @@ fn render_expr(pool: AstPool, intern: InternPool, node: NodeId, indent: i32) -> 
         let body = pool.get_data0(node)
         let cond = pool.get_data1(node)
         let label = pool.get_data2(node)
-        var out = prefix
+        var out = with_str_clone_ref(prefix)
         if label != 0:
             out = out ++ "'" ++ intern.resolve(label) ++ " "
         out = out ++ "do:\n" ++ render_expr(pool, intern, (body) as NodeId, indent + 2)
@@ -722,7 +723,7 @@ fn render_expr(pool: AstPool, intern: InternPool, node: NodeId, indent: i32) -> 
             if pool.comprehension_binding_is_pattern(node, binding):
                 binding_text = render_pattern(pool, intern, (binding) as NodeId)
             else:
-                binding_text = intern.resolve(binding)
+                binding_text = with_str_clone_ref(intern.resolve(binding))
             let iterable_text = render_expr(pool, intern, (iterable) as NodeId, 0)
             out = f"{out} for {binding_text} in {iterable_text}"
             let filter = pool.get_extra(base + 2)
@@ -747,7 +748,7 @@ fn render_expr(pool: AstPool, intern: InternPool, node: NodeId, indent: i32) -> 
             if pool.comprehension_binding_is_pattern(node, binding):
                 binding_text = render_pattern(pool, intern, (binding) as NodeId)
             else:
-                binding_text = intern.resolve(binding)
+                binding_text = with_str_clone_ref(intern.resolve(binding))
             let iterable_text = render_expr(pool, intern, (iterable) as NodeId, 0)
             out = f"{out} for {binding_text} in {iterable_text}"
             let filter = pool.get_extra(base + 2)
@@ -912,7 +913,7 @@ fn render_pattern(pool: AstPool, intern: InternPool, node: NodeId) -> str:
         return "_"
 
     if kind == NodeKind.NK_PAT_IDENT:
-        return intern.resolve(pool.get_data0(node))
+        return with_str_clone_ref(intern.resolve(pool.get_data0(node)))
 
     if kind == NodeKind.NK_PAT_INT:
         return f"{pool.int_lit_value(node)}"
@@ -930,7 +931,7 @@ fn render_pattern(pool: AstPool, intern: InternPool, node: NodeId) -> str:
         let qualifier = pool.pattern_qualifier(node)
         let extra_start = pool.get_data1(node)
         let binding_count = pool.get_data2(node)
-        var out = if qualifier != 0: intern.resolve(qualifier) ++ "." ++ name else: name
+        var out = if qualifier != 0: intern.resolve(qualifier) ++ "." ++ name else: with_str_clone_ref(name)
         if binding_count > 0:
             out = out ++ "("
             for bi in 0..binding_count:
@@ -1043,7 +1044,7 @@ fn render_type_expr(pool: AstPool, intern: InternPool, node: NodeId) -> str:
     let kind = pool.kind(node)
 
     if kind == NodeKind.NK_TYPE_NAMED:
-        return intern.resolve(pool.get_data0(node))
+        return with_str_clone_ref(intern.resolve(pool.get_data0(node)))
 
     if kind == NodeKind.NK_TYPE_GENERIC:
         let name = intern.resolve(pool.get_data0(node))

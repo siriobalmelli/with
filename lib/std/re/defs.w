@@ -105,11 +105,11 @@ extern fn with_memset(ptr: *i8, c: i32, n: i64) -> *i8
 extern fn with_memcmp(a: *i8, b: *i8, n: i64) -> i32
 
 // PCRE2 string constants (from pcre2_internal.h macros)
-let STRING_MARK: *const u8 = "MARK"
-let STRING_DEFINE: *const u8 = "DEFINE"
-let STRING_VERSION: *const u8 = "VERSION"
-let STRING_WEIRD_STARTWORD: *const u8 = "[:<:]]"
-let STRING_WEIRD_ENDWORD: *const u8 = "[:>:]]"
+let STRING_MARK: *const u8 = c"MARK".ptr
+let STRING_DEFINE: *const u8 = c"DEFINE".ptr
+let STRING_VERSION: *const u8 = c"VERSION".ptr
+let STRING_WEIRD_STARTWORD: *const u8 = c"[:<:]]".ptr
+let STRING_WEIRD_ENDWORD: *const u8 = c"[:>:]]".ptr
 
 type BOOL = c_int
 
@@ -1338,7 +1338,7 @@ let NL_MSGMAX: c_int = 32767
 let NL_NMAX: c_int = 1
 let NL_SETMAX: c_int = 255
 let NL_TEXTMAX: c_int = 2048
-let NOTACHAR: c_int = 0xffffffff
+let NOTACHAR: c_uint = 0xffffffff
 // untranslatable fn-like macro
 fn NOT_FIRSTCU() -> Never {
     comptime_error("untranslatable C macro: NOT_FIRSTCU")
@@ -1651,10 +1651,6 @@ let PCRE2_FIRSTCASELESS: c_uint = 0x00000020
 let PCRE2_FIRSTLINE: c_uint = 0x00000100
 let PCRE2_FIRSTMAPSET: c_uint = 0x00000040
 let PCRE2_FIRSTSET: c_uint = 0x00000010
-// untranslatable fn-like macro
-fn PCRE2_GLUE() -> Never {
-    comptime_error("untranslatable C macro: PCRE2_GLUE")
-}
 let PCRE2_HASACCEPT: c_uint = 0x00800000
 let PCRE2_HASBKC: c_uint = 0x00400000
 let PCRE2_HASBKPORX: c_uint = 0x00100000
@@ -1758,9 +1754,6 @@ let PCRE2_SUBSTITUTE_OVERFLOW_LENGTH: c_uint = 0x00001000
 let PCRE2_SUBSTITUTE_REPLACEMENT_ONLY: c_uint = 0x00020000
 let PCRE2_SUBSTITUTE_UNKNOWN_UNSET: c_uint = 0x00000800
 let PCRE2_SUBSTITUTE_UNSET_EMPTY: c_uint = 0x00000400
-fn PCRE2_SUFFIX[T](a: T) -> T {
-    PCRE2_GLUE(a, PCRE2_CODE_UNIT_WIDTH)
-}
 let PCRE2_UCP: c_uint = 0x00020000
 let PCRE2_UNGREEDY: c_uint = 0x00040000
 // untranslatable fn-like macro
@@ -1791,45 +1784,45 @@ fn PRIV() -> Never {
 }
 let PRIX16 = "hX"
 let PRIX32 = "X"
-let PRIXFAST16: [3]c_char = PRIX16
-let PRIXFAST32: [2]c_char = PRIX32
-let PRIXLEAST16: [3]c_char = PRIX16
-let PRIXLEAST32: [2]c_char = PRIX32
+let PRIXFAST16 = PRIX16
+let PRIXFAST32 = PRIX32
+let PRIXLEAST16 = PRIX16
+let PRIXLEAST32 = PRIX32
 let PRIXPTR = "lX"
 let PRId16 = "hd"
 let PRId32 = "d"
-let PRIdFAST16: [3]c_char = PRId16
-let PRIdFAST32: [2]c_char = PRId32
-let PRIdLEAST16: [3]c_char = PRId16
-let PRIdLEAST32: [2]c_char = PRId32
+let PRIdFAST16 = PRId16
+let PRIdFAST32 = PRId32
+let PRIdLEAST16 = PRId16
+let PRIdLEAST32 = PRId32
 let PRIdPTR = "ld"
 let PRIi16 = "hi"
 let PRIi32 = "i"
-let PRIiFAST16: [3]c_char = PRIi16
-let PRIiFAST32: [2]c_char = PRIi32
-let PRIiLEAST16: [3]c_char = PRIi16
-let PRIiLEAST32: [2]c_char = PRIi32
+let PRIiFAST16 = PRIi16
+let PRIiFAST32 = PRIi32
+let PRIiLEAST16 = PRIi16
+let PRIiLEAST32 = PRIi32
 let PRIiPTR = "li"
 let PRIo16 = "ho"
 let PRIo32 = "o"
-let PRIoFAST16: [3]c_char = PRIo16
-let PRIoFAST32: [2]c_char = PRIo32
-let PRIoLEAST16: [3]c_char = PRIo16
-let PRIoLEAST32: [2]c_char = PRIo32
+let PRIoFAST16 = PRIo16
+let PRIoFAST32 = PRIo32
+let PRIoLEAST16 = PRIo16
+let PRIoLEAST32 = PRIo32
 let PRIoPTR = "lo"
 let PRIu16 = "hu"
 let PRIu32 = "u"
-let PRIuFAST16: [3]c_char = PRIu16
-let PRIuFAST32: [2]c_char = PRIu32
-let PRIuLEAST16: [3]c_char = PRIu16
-let PRIuLEAST32: [2]c_char = PRIu32
+let PRIuFAST16 = PRIu16
+let PRIuFAST32 = PRIu32
+let PRIuLEAST16 = PRIu16
+let PRIuLEAST32 = PRIu32
 let PRIuPTR = "lu"
 let PRIx16 = "hx"
 let PRIx32 = "x"
-let PRIxFAST16: [3]c_char = PRIx16
-let PRIxFAST32: [2]c_char = PRIx32
-let PRIxLEAST16: [3]c_char = PRIx16
-let PRIxLEAST32: [2]c_char = PRIx32
+let PRIxFAST16 = PRIx16
+let PRIxFAST32 = PRIx32
+let PRIxLEAST16 = PRIx16
+let PRIxLEAST32 = PRIx32
 let PRIxPTR = "lx"
 let PTHREAD_DESTRUCTOR_ITERATIONS: c_int = 4
 let PTHREAD_KEYS_MAX: c_int = 512
@@ -1934,38 +1927,38 @@ let SCHAR_MAX: c_int = 127
 let SCHAR_MIN: c_int = ((0 - 127) - 1)
 let SCNd16 = "hd"
 let SCNd32 = "d"
-let SCNdFAST16: [3]c_char = SCNd16
-let SCNdFAST32: [2]c_char = SCNd32
-let SCNdLEAST16: [3]c_char = SCNd16
-let SCNdLEAST32: [2]c_char = SCNd32
+let SCNdFAST16 = SCNd16
+let SCNdFAST32 = SCNd32
+let SCNdLEAST16 = SCNd16
+let SCNdLEAST32 = SCNd32
 let SCNdPTR = "ld"
 let SCNi16 = "hi"
 let SCNi32 = "i"
-let SCNiFAST16: [3]c_char = SCNi16
-let SCNiFAST32: [2]c_char = SCNi32
-let SCNiLEAST16: [3]c_char = SCNi16
-let SCNiLEAST32: [2]c_char = SCNi32
+let SCNiFAST16 = SCNi16
+let SCNiFAST32 = SCNi32
+let SCNiLEAST16 = SCNi16
+let SCNiLEAST32 = SCNi32
 let SCNiPTR = "li"
 let SCNo16 = "ho"
 let SCNo32 = "o"
-let SCNoFAST16: [3]c_char = SCNo16
-let SCNoFAST32: [2]c_char = SCNo32
-let SCNoLEAST16: [3]c_char = SCNo16
-let SCNoLEAST32: [2]c_char = SCNo32
+let SCNoFAST16 = SCNo16
+let SCNoFAST32 = SCNo32
+let SCNoLEAST16 = SCNo16
+let SCNoLEAST32 = SCNo32
 let SCNoPTR = "lo"
 let SCNu16 = "hu"
 let SCNu32 = "u"
-let SCNuFAST16: [3]c_char = SCNu16
-let SCNuFAST32: [2]c_char = SCNu32
-let SCNuLEAST16: [3]c_char = SCNu16
-let SCNuLEAST32: [2]c_char = SCNu32
+let SCNuFAST16 = SCNu16
+let SCNuFAST32 = SCNu32
+let SCNuLEAST16 = SCNu16
+let SCNuLEAST32 = SCNu32
 let SCNuPTR = "lu"
 let SCNx16 = "hx"
 let SCNx32 = "x"
-let SCNxFAST16: [3]c_char = SCNx16
-let SCNxFAST32: [2]c_char = SCNx32
-let SCNxLEAST16: [3]c_char = SCNx16
-let SCNxLEAST32: [2]c_char = SCNx32
+let SCNxFAST16 = SCNx16
+let SCNxFAST32 = SCNx32
+let SCNxLEAST16 = SCNx16
+let SCNxLEAST32 = SCNx32
 let SCNxPTR = "lx"
 let SEEK_CUR: c_int = 1
 let SEEK_DATA: c_int = 4
@@ -2276,7 +2269,7 @@ let UINT8_MAX: c_int = 255
 fn UINTMAX_C[T](v: T) -> u64 {
     (v as u64)
 }
-let UINTMAX_MAX: c_ulong = UINTMAX_C(18446744073709551615)
+let UINTMAX_MAX: c_ulong = 18446744073709551615
 let UINTPTR_MAX: c_ulong = 18446744073709551615
 let UINT_FAST16_MAX: c_int = UINT16_MAX
 let UINT_FAST32_MAX: c_uint = UINT32_MAX
@@ -2360,9 +2353,9 @@ let XCL_CHAR_END: c_int = 0x1
 let XCL_CHAR_LIST_HIGH_16_ADD: c_int = 0x8000
 let XCL_CHAR_LIST_HIGH_16_END: c_int = 0xffff
 let XCL_CHAR_LIST_HIGH_16_START: c_int = 0x8000
-let XCL_CHAR_LIST_HIGH_32_ADD: c_int = 0x80000000
-let XCL_CHAR_LIST_HIGH_32_END: c_int = 0xffffffff
-let XCL_CHAR_LIST_HIGH_32_START: c_int = 0x80000000
+let XCL_CHAR_LIST_HIGH_32_ADD: c_uint = 0x80000000
+let XCL_CHAR_LIST_HIGH_32_END: c_uint = 0xffffffff
+let XCL_CHAR_LIST_HIGH_32_START: c_uint = 0x80000000
 let XCL_CHAR_LIST_LOW_16_ADD: c_int = 0x0
 let XCL_CHAR_LIST_LOW_16_END: c_int = 0x7fff
 let XCL_CHAR_LIST_LOW_16_START: c_int = 0x100
@@ -2525,7 +2518,7 @@ let _pcre2_utt_size_8: c_ulong = 510
 fn ARR_SIZE[T](x: T) -> T {
     sizeof[T]()
 }
-var _pcre2_unicode_version_8: *const i8 = "16.0.0"
+var _pcre2_unicode_version_8: *const i8 = c"16.0.0".ptr as *const i8
 
 let _pcre2_ucd_caseless_sets_8: [118]c_uint = [0xffffffff, 0x0053, 0x0073, 0x017f, 0xffffffff, 0x01c4, 0x01c5, 0x01c6, 0xffffffff, 0x01c7, 0x01c8, 0x01c9, 0xffffffff, 0x01ca, 0x01cb, 0x01cc, 0xffffffff, 0x01f1, 0x01f2, 0x01f3, 0xffffffff, 0x0345, 0x0399, 0x03b9, 0x1fbe, 0xffffffff, 0x00b5, 0x039c, 0x03bc, 0xffffffff, 0x03a3, 0x03c2, 0x03c3, 0xffffffff, 0x0392, 0x03b2, 0x03d0, 0xffffffff, 0x0398, 0x03b8, 0x03d1, 0x03f4, 0xffffffff, 0x03a6, 0x03c6, 0x03d5, 0xffffffff, 0x03a0, 0x03c0, 0x03d6, 0xffffffff, 0x039a, 0x03ba, 0x03f0, 0xffffffff, 0x03a1, 0x03c1, 0x03f1, 0xffffffff, 0x0395, 0x03b5, 0x03f5, 0xffffffff, 0x0412, 0x0432, 0x1c80, 0xffffffff, 0x0414, 0x0434, 0x1c81, 0xffffffff, 0x041e, 0x043e, 0x1c82, 0xffffffff, 0x0421, 0x0441, 0x1c83, 0xffffffff, 0x0422, 0x0442, 0x1c84, 0x1c85, 0xffffffff, 0x042a, 0x044a, 0x1c86, 0xffffffff, 0x0462, 0x0463, 0x1c87, 0xffffffff, 0x1e60, 0x1e61, 0x1e9b, 0xffffffff, 0x03a9, 0x03c9, 0x2126, 0xffffffff, 0x004b, 0x006b, 0x212a, 0xffffffff, 0x00c5, 0x00e5, 0x212b, 0xffffffff, 0x1c88, 0xa64a, 0xa64b, 0xffffffff, 0x0069, 0x0130, 0xffffffff, 0x0049, 0x0131, 0xffffffff]
 
@@ -3159,10 +3152,10 @@ type regoff_t = c_int
 
 type regmatch_t { rm_so: c_int = 0, rm_eo: c_int = 0 }
 
-let PCRE2regcomp: c_int = pcre2_regcomp
-let PCRE2regerror: c_int = pcre2_regerror
-let PCRE2regexec: c_int = pcre2_regexec
-let PCRE2regfree: c_int = pcre2_regfree
+let PCRE2regcomp = pcre2_regcomp
+let PCRE2regerror = pcre2_regerror
+let PCRE2regexec = pcre2_regexec
+let PCRE2regfree = pcre2_regfree
 let REG_DOTALL: c_int = 0x0010
 let REG_EXTENDED: c_int = 0
 let REG_ICASE: c_int = 0x0001
@@ -3177,10 +3170,10 @@ let REG_STARTEND: c_int = 0x0080
 let REG_UCP: c_int = 0x0400
 let REG_UNGREEDY: c_int = 0x0200
 let REG_UTF: c_int = 0x0040
-let regcomp: c_int = pcre2_regcomp
-let regerror: c_int = pcre2_regerror
-let regexec: c_int = pcre2_regexec
-let regfree: c_int = pcre2_regfree
+let regcomp = pcre2_regcomp
+let regerror = pcre2_regerror
+let regexec = pcre2_regexec
+let regfree = pcre2_regfree
 let PR_OK: c_uint = 0
 let PR_SKIP: c_uint = 1
 let PR_ABEND: c_uint = 2
@@ -3304,7 +3297,7 @@ let utt: [510]ucp_type_table = [ucp_type_table { name_offset: 0, type_: 4, value
 
 let utt_size: c_ulong = 510
 
-var unicode_version: *const i8 = "16.0.0"
+var unicode_version: *const i8 = c"16.0.0".ptr as *const i8
 
 let ucd_caseless_sets: [118]c_uint = [0xffffffff, 0x0053, 0x0073, 0x017f, 0xffffffff, 0x01c4, 0x01c5, 0x01c6, 0xffffffff, 0x01c7, 0x01c8, 0x01c9, 0xffffffff, 0x01ca, 0x01cb, 0x01cc, 0xffffffff, 0x01f1, 0x01f2, 0x01f3, 0xffffffff, 0x0345, 0x0399, 0x03b9, 0x1fbe, 0xffffffff, 0x00b5, 0x039c, 0x03bc, 0xffffffff, 0x03a3, 0x03c2, 0x03c3, 0xffffffff, 0x0392, 0x03b2, 0x03d0, 0xffffffff, 0x0398, 0x03b8, 0x03d1, 0x03f4, 0xffffffff, 0x03a6, 0x03c6, 0x03d5, 0xffffffff, 0x03a0, 0x03c0, 0x03d6, 0xffffffff, 0x039a, 0x03ba, 0x03f0, 0xffffffff, 0x03a1, 0x03c1, 0x03f1, 0xffffffff, 0x0395, 0x03b5, 0x03f5, 0xffffffff, 0x0412, 0x0432, 0x1c80, 0xffffffff, 0x0414, 0x0434, 0x1c81, 0xffffffff, 0x041e, 0x043e, 0x1c82, 0xffffffff, 0x0421, 0x0441, 0x1c83, 0xffffffff, 0x0422, 0x0442, 0x1c84, 0x1c85, 0xffffffff, 0x042a, 0x044a, 0x1c86, 0xffffffff, 0x0462, 0x0463, 0x1c87, 0xffffffff, 0x1e60, 0x1e61, 0x1e9b, 0xffffffff, 0x03a9, 0x03c9, 0x2126, 0xffffffff, 0x004b, 0x006b, 0x212a, 0xffffffff, 0x00c5, 0x00e5, 0x212b, 0xffffffff, 0x1c88, 0xa64a, 0xa64b, 0xffffffff, 0x0069, 0x0130, 0xffffffff, 0x0049, 0x0131, 0xffffffff]
 
@@ -3548,7 +3541,7 @@ fn INTERACTIVE() -> Never {
 let ITIMER_PROF: c_int = 2
 let ITIMER_REAL: c_int = 0
 let ITIMER_VIRTUAL: c_int = 1
-let JUNK_OFFSET: c_int = 0xdeadbeef
+let JUNK_OFFSET: c_uint = 0xdeadbeef
 let LC_ALL: c_int = 0
 let LC_COLLATE: c_int = 1
 let LC_COLLATE_MASK: c_int = (1 << 0)
@@ -3635,7 +3628,6 @@ let X_OK: c_int = (1 << 0)
 fn glue() -> Never {
     comptime_error("untranslatable C macro: glue")
 }
-let pcre2_config: c_int = PCRE2_SUFFIX(pcre2_config_)
 fn stringify(x: str) -> str {
     x
 }

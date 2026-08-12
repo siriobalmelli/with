@@ -9,7 +9,8 @@ use CapabilityRegistry
 use render
 use std.collections.HashMap
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_eq(a: str, b: str) -> i32
 
 // ── Pass 1: Declaration collection ───────────────────────────────
@@ -204,7 +205,7 @@ impl Sema:
 
         0
 
-    mut fn resolve_deferred_value_type_slot(slot: i32, type_node: i32, opaque_message: str):
+    mut fn resolve_deferred_value_type_slot(slot: i32, type_node: i32, opaque_message: &str):
         let current: i32 = self.type_extra.get(slot as i64)
         if current != 0 and self.type_has_unresolved_parts(current) == 0:
             return
@@ -359,7 +360,7 @@ impl Sema:
     fn decl_index_source_path(di: i32) -> str:
         if di < 0 or di >= self.decl_source_paths.len() as i32:
             return ""
-        self.decl_source_paths.get(di as i64)
+        with_str_clone_ref(self.decl_source_paths.get(di as i64))
 
     fn decls_share_source_file(a: i32, b: i32) -> i32:
         if a < 0 or b < 0:
@@ -519,7 +520,7 @@ impl Sema:
 // parameters and the return are plain value types for these entries), or -1
 // when the function is not curated. Every curated entry here has its char*
 // parameters in leading position, so a count is sufficient.
-fn ci_overlay_cstr_in_param_count(name: str) -> i32:
+fn ci_overlay_cstr_in_param_count(name: &str) -> i32:
     if name == "atof": return 1
     if name == "atoi": return 1
     if name == "atol": return 1
@@ -545,7 +546,7 @@ fn ci_overlay_cstr_in_param_count(name: str) -> i32:
 // says the *call* is safe; the returned pointer is borrowed (non-owning) and
 // dereferencing it stays `unsafe`. Owning constructors (fopen, strdup) are NOT
 // here — they belong to #357's owning-wrapper mechanism.
-fn ci_overlay_return_is_borrowed_ptr(name: str) -> i32:
+fn ci_overlay_return_is_borrowed_ptr(name: &str) -> i32:
     if name == "getenv": return 1
     if name == "strchr": return 1
     if name == "strpbrk": return 1
@@ -730,7 +731,7 @@ impl Sema:
             self.record_named_type_with_pub(name, tid as i32, decl_is_pub)
             self.record_type_decl_tid(node, tid as i32)
             // Re-register variants with actual enum TypeId (bare + qualified names)
-            let plain_type_name_str = self.pool_resolve(name)
+            let plain_type_name_str: str = with_str_clone_ref(self.pool_resolve(name))
             var vpos = te_start
             for vi in 0..variant_count:
                 let v_name: i32 = self.type_extra.get(vpos as i64)
@@ -808,7 +809,7 @@ impl Sema:
             // Re-register variants with actual enum TypeId and store disc values.
             // Register BOTH bare name (for unqualified pattern matching) and
             // qualified name "TypeName.Variant" (for explicit EnumType.Variant access).
-            let type_name_str = self.pool_resolve(name)
+            let type_name_str: str = with_str_clone_ref(self.pool_resolve(name))
             var vpos = te_start
             for vi in 0..variant_count:
                 let v_name: i32 = self.type_extra.get(vpos as i64)
@@ -1236,7 +1237,7 @@ impl Sema:
         self.generator_fn_next_syms.insert(fn_sym, next_fn_sym)
         self.generator_next_fn_syms.insert(next_fn_sym, fn_sym)
         self.method_symbol_flags.insert(next_fn_sym, 1)
-        self.fn_decl_source_paths.insert(next_fn_sym, self.current_module_path)
+        self.fn_decl_source_paths.insert(next_fn_sym, with_str_clone_ref(self.current_module_path))
 
     fn fn_decl_has_refutable_param_pattern(node: i32) -> i32:
         let meta = self.ast.find_fn_meta(node)
@@ -1255,13 +1256,29 @@ impl Sema:
                 return 1
         0
 
-    mut fn prepare_first_fn_clause(dispatch_sym: i32, node: i32, decl_index: i32):
-        if self.fn_decl_effective_indices.contains(decl_index):
-            self.register_fn_clause_decl(dispatch_sym, node)
-            return
-        let body_sym = self.fn_clause_body_symbol_at(dispatch_sym, decl_index)
+    // Clause body symbols are minted from the clause's ORDINAL within its
+    // group (source order) — stable across collect/check passes. Minting from
+    // decl_index drifted: prelude injection shifts the decl table between
+    // passes, so the same clause minted a fresh symbol per pass and the
+    // index-keyed lookup missed in the shifted space — check_fn then saw the
+    // dispatch symbol and rejected a valid clause group ("refutable parameter
+    // pattern requires another function clause or an else").
+    mut fn fn_clause_body_symbol_for(dispatch_sym: i32, node: i32) -> i32:
+        self.register_fn_clause_decl(dispatch_sym, node)
+        let group = self.fn_clause_group_index(dispatch_sym)
+        var ordinal = 0
+        for i in 0..self.fn_clause_group_clause_count(group):
+            if self.fn_clause_group_clause(group, i) == node:
+                ordinal = i
+                break
+        let base: str = with_str_clone_ref(self.pool_resolve(dispatch_sym))
+        self.pool_intern(base ++ "$clause$" ++ f"{ordinal}")
+
+    mut fn prepare_fn_clause(dispatch_sym: i32, node: i32, decl_index: i32) -> i32:
+        let body_sym = self.fn_clause_body_symbol_for(dispatch_sym, node)
+        if self.fn_clause_body_dispatch.contains(body_sym) and self.fn_decl_semantic_symbol(node, 0) == body_sym:
+            return body_sym
         self.fn_decl_effective_syms.insert(node, body_sym)
-        self.fn_decl_effective_indices.insert(decl_index, body_sym)
         self.fn_decl_nodes.insert(body_sym, node)
         self.fn_decl_source_paths.insert(body_sym, self.decl_source_path_for_index(decl_index))
         self.fn_clause_body_dispatch.insert(body_sym, dispatch_sym)
@@ -1270,16 +1287,6 @@ impl Sema:
             self.copy_sig_alias(body_sym, dispatch_sig)
         if self.no_alloc_fns.contains(dispatch_sym):
             self.no_alloc_fns.insert(body_sym, 1)
-        self.register_fn_clause_decl(dispatch_sym, node)
-
-    mut fn prepare_current_fn_clause(dispatch_sym: i32, node: i32, decl_index: i32) -> i32:
-        let body_sym = self.fn_clause_body_symbol_at(dispatch_sym, decl_index)
-        self.fn_decl_effective_syms.insert(node, body_sym)
-        self.fn_decl_effective_indices.insert(decl_index, body_sym)
-        self.fn_decl_nodes.insert(body_sym, node)
-        self.fn_decl_source_paths.insert(body_sym, self.decl_source_path_for_index(decl_index))
-        self.fn_clause_body_dispatch.insert(body_sym, dispatch_sym)
-        self.register_fn_clause_decl(dispatch_sym, node)
         body_sym
 
     mut fn fn_signature_return_type(flags: i32, declared_ret_type: TypeId) -> TypeId:
@@ -1307,9 +1314,11 @@ impl Sema:
         var dispatch_fn_name = 0
         if method_owner_sym != 0 and self.method_decl_is_extension(node) != 0:
             fn_name = self.extension_method_unique_symbol_at(decl_index, method_base_sym)
-        if fn_name != parsed_fn_name:
-            self.fn_decl_effective_syms.insert(node, fn_name)
-            self.fn_decl_effective_indices.insert(decl_index, fn_name)
+        // Record the authoritative Sema-pool identity for every declaration.
+        // A parsed symbol belongs to the AST's InternPool; returning that raw
+        // integer as a semantic symbol is ambiguous once combined modules use
+        // distinct pools and the same slot names unrelated declarations.
+        self.fn_decl_effective_syms.insert(node, fn_name)
         if method_owner_sym != 0:
             if method_impl_node != 0:
                 self.method_impl_nodes.insert(fn_name, method_impl_node)
@@ -1329,8 +1338,8 @@ impl Sema:
                         if self.fn_decl_has_refutable_param_pattern(existing_node) != 0 or self.fn_decl_has_refutable_param_pattern(node) != 0: 1 else: 0
                     if is_clause_group != 0:
                         dispatch_fn_name = fn_name
-                        self.prepare_first_fn_clause(dispatch_fn_name, existing_node, existing_di)
-                        fn_name = self.prepare_current_fn_clause(dispatch_fn_name, node, current_di)
+                        self.prepare_fn_clause(dispatch_fn_name, existing_node, existing_di)
+                        fn_name = self.prepare_fn_clause(dispatch_fn_name, node, current_di)
                     else:
                         let fn_name_str = self.pool_resolve(fn_name)
                         self.emit_error(f"function '{fn_name_str}' is already defined", node)
@@ -1343,7 +1352,7 @@ impl Sema:
         if meta < 0:
             // No meta available — register with no params
             self.fn_decl_nodes.insert(fn_name, node)
-            self.fn_decl_source_paths.insert(fn_name, self.current_module_path)
+            self.fn_decl_source_paths.insert(fn_name, with_str_clone_ref(self.current_module_path))
             let fn_tid = self.add_type(TypeKind.TY_FN, 0, 0, self.ty_void)
             self.add_sig(fn_name, fn_tid, self.ty_void, 0, 0, 0)
             return
@@ -1420,7 +1429,7 @@ impl Sema:
                 let bi_tp_count: i32 = self.ast.state.impl_type_params.get((bi_tp_meta + 2) as i64)
                 if bi_tp_count > 0:
                     self.register_generic_fn_node(fn_name, node)
-                    self.fn_decl_source_paths.insert(fn_name, self.current_module_path)
+                    self.fn_decl_source_paths.insert(fn_name, with_str_clone_ref(self.current_module_path))
                     let _ = self.register_extension_method_candidate(node, fn_name, parsed_fn_name, -1, decl_index)
                     for pi in 0..param_count:
                         self.validate_type_expr_with_impl_type_params(self.ast.fn_param_type(param_start, pi), self.ast.state.impl_type_params.get((bi_tp_meta + 1) as i64), bi_tp_count, bi_impl)
@@ -1430,7 +1439,7 @@ impl Sema:
                     return
             else if self.impl_target_has_bare_type_params(bi_impl) != 0:
                 self.register_generic_fn_node(fn_name, node)
-                self.fn_decl_source_paths.insert(fn_name, self.current_module_path)
+                self.fn_decl_source_paths.insert(fn_name, with_str_clone_ref(self.current_module_path))
                 let _ = self.register_extension_method_candidate(node, fn_name, parsed_fn_name, -1, decl_index)
                 for pi2 in 0..param_count:
                     self.validate_type_expr_with_impl_type_params(self.ast.fn_param_type(param_start, pi2), 0, 0, bi_impl)
@@ -1458,7 +1467,7 @@ impl Sema:
                         let cf_td: i32 = self.type_decl_nodes.get(cf_owner_sym).unwrap()
                         if self.type_decl_tp_count(cf_td) > 0:
                             self.register_generic_fn_node(fn_name, node)
-                            self.fn_decl_source_paths.insert(fn_name, self.current_module_path)
+                            self.fn_decl_source_paths.insert(fn_name, with_str_clone_ref(self.current_module_path))
                             let _ = self.register_extension_method_candidate(node, fn_name, parsed_fn_name, -1, decl_index)
                             self.named_types.remove(self_sym)
                             return
@@ -1467,7 +1476,7 @@ impl Sema:
         // Generic functions: store for later monomorphization
         if tp_count > 0:
             self.register_generic_fn_node(fn_name, node)
-            self.fn_decl_source_paths.insert(fn_name, self.current_module_path)
+            self.fn_decl_source_paths.insert(fn_name, with_str_clone_ref(self.current_module_path))
             let _ = self.register_extension_method_candidate(node, fn_name, parsed_fn_name, -1, decl_index)
             for pi in 0..param_count:
                 let p_type_node = self.ast.fn_param_type(param_start, pi)
@@ -1480,7 +1489,7 @@ impl Sema:
             return
 
         self.fn_decl_nodes.insert(fn_name, node)
-        self.fn_decl_source_paths.insert(fn_name, self.current_module_path)
+        self.fn_decl_source_paths.insert(fn_name, with_str_clone_ref(self.current_module_path))
 
         // Resolve param types
         let sig_param_start = self.sig_params.len() as i32
@@ -1563,7 +1572,7 @@ impl Sema:
         if is_local != 0:
             self.set_pretty_symbol(name, self.extract_decl_name_after(node, "fn"))
         self.record_decl_visibility(name, node, 1)
-        self.fn_decl_source_paths.insert(name, self.current_module_path)
+        self.fn_decl_source_paths.insert(name, with_str_clone_ref(self.current_module_path))
 
         // Error if this extern fn shadows a regular function from the same file or
         // the prelude. An extern fn silently replaces the existing signature with an
@@ -1650,7 +1659,7 @@ impl Sema:
             self.mutable_global_syms.insert(name, 1)
         self.register_top_level_global_decl(name, tid, is_mut, node, GLOBAL_VALUE_DECL_EXTERN)
 
-fn sema_str_find_char(text: str, needle: i32) -> i32:
+fn sema_str_find_char(text: &str, needle: i32) -> i32:
     for i in 0..text.len() as i32:
         if text[i] == needle:
             return i
@@ -1725,7 +1734,7 @@ impl Sema:
                     best_node = cand
         best_node
 
-fn sema_extension_path_hash(path: str) -> i64:
+fn sema_extension_path_hash(path: &str) -> i64:
     var h: i64 = 17
     for i in 0..path.len() as i32:
         h = (h * 131 + path.byte_at(i as i64) as i64) % 2147483647
@@ -1735,12 +1744,12 @@ impl Sema:
     fn decl_source_path_for_node(node: i32) -> str:
         let di = self.find_decl_index(node)
         if di >= 0 and di < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(di as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(di as i64))
         self.current_module_path
 
     fn decl_source_path_for_index(decl_index: i32) -> str:
         if decl_index >= 0 and decl_index < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(decl_index as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(decl_index as i64))
         self.current_module_path
 
     fn decl_source_file_id_for_index(decl_index: i32) -> i32:
@@ -1749,7 +1758,7 @@ impl Sema:
         0
 
     mut fn extension_method_unique_symbol_at(decl_index: i32, qualified_sym: i32) -> i32:
-        let qualified = self.pool_resolve(qualified_sym)
+        let qualified: str = with_str_clone_ref(self.pool_resolve(qualified_sym))
         if qualified.len() == 0:
             return qualified_sym
         self.pool_intern(qualified ++ "$ext$" ++ f"{sema_extension_path_hash(self.decl_source_path_for_index(decl_index))}")
@@ -1759,11 +1768,10 @@ impl Sema:
             return self.fn_decl_effective_syms.get(node).unwrap()
         fallback
 
+    // Node identity is the stable key — the decl table's index space shifts
+    // between passes (prelude injection), so decl_index must never key a
+    // lookup that outlives one pass.
     fn fn_decl_semantic_symbol_at(node: i32, fallback: i32, decl_index: i32) -> i32:
-        if self.fn_decl_effective_indices.contains(decl_index):
-            return self.fn_decl_effective_indices.get(decl_index).unwrap()
-        if decl_index >= 0:
-            return fallback
         self.fn_decl_semantic_symbol(node, fallback)
 
     fn method_decl_is_extension(node: i32) -> i32:
@@ -1823,7 +1831,7 @@ impl Sema:
         let node = self.type_decl_nodes.get(type_sym).unwrap()
         let di = self.find_decl_index(node)
         if di >= 0 and di < self.decl_source_paths.len() as i32:
-            return self.decl_source_paths.get(di as i64)
+            return with_str_clone_ref(self.decl_source_paths.get(di as i64))
         ""
 
     fn type_decl_source_file_id(type_sym: i32) -> i32:
@@ -1935,8 +1943,8 @@ impl Sema:
             if self.trait_default_method_sig_exists(impl_type_sym, method_sym) != 0:
                 continue
 
-            let type_name = self.pool_resolve(impl_type_sym)
-            let method_name = self.pool_resolve(method_sym)
+            let type_name: str = with_str_clone_ref(self.pool_resolve(impl_type_sym))
+            let method_name: str = with_str_clone_ref(self.pool_resolve(method_sym))
             let fn_sym = self.pool_intern(type_name ++ "." ++ method_name)
             let param_start = self.trait_method_param_starts.get(mt_idx as i64)
             let param_count = self.trait_method_param_counts.get(mt_idx as i64)
@@ -2137,7 +2145,7 @@ impl Sema:
                 if self.select_trait_impl(type_name, bound_trait) == 0:
                     all_ok = 0
             if all_ok != 0:
-                let tn = self.pool_resolve(trait_sym)
+                let tn: str = with_str_clone_ref(self.pool_resolve(trait_sym))
                 self.emit_error_code("overlapping implementations of '" ++ tn ++ "'", node, "E1201")
 
     // Check if a new blanket impl overlaps with any existing direct impl
@@ -2164,7 +2172,7 @@ impl Sema:
                 if self.select_trait_impl(t_sym, bound_trait) == 0:
                     all_ok = 0
             if all_ok != 0:
-                let tn = self.pool_resolve(trait_sym)
+                let tn: str = with_str_clone_ref(self.pool_resolve(trait_sym))
                 self.emit_error_code("overlapping implementations of '" ++ tn ++ "'", node, "E1201")
 
     mut fn warn_large_copy_type(type_name: i32, type_tid: i32, node: i32):
@@ -2301,8 +2309,8 @@ impl Sema:
                                         for bi in 0..ab_count:
                                             let bound_sym = self.trait_assoc_bound_syms.get((ab_start + bi) as i64)
                                             if self.select_trait_impl(impl_at_type_sym, bound_sym) == 0:
-                                                let tname = self.pool_resolve(at_name_sym)
-                                                let bname = self.pool_resolve(bound_sym)
+                                                let tname: str = with_str_clone_ref(self.pool_resolve(at_name_sym))
+                                                let bname: str = with_str_clone_ref(self.pool_resolve(bound_sym))
                                                 self.emit_error("associated type '" ++ tname ++ "' does not satisfy bound '" ++ bname ++ "'", node)
                                                 return
 
@@ -2358,6 +2366,14 @@ impl Sema:
             return
 
         // Record direct impl
+        // D29 scaffolding (#750): E1102 keys on the RESOLVED impl target, not
+        // the bare name. For a shadowed sym, a prior record collides only when
+        // it belongs to the tier this impl attaches to (the decl the gated
+        // lookup resolves from this module) — std's impl and the user's impl
+        // of the same trait for same-named types coexist; a true same-tier
+        // duplicate still errors.
+        let dup_shadowed = self.type_sym_is_shadowed(type_name)
+        let dup_want_std = if dup_shadowed != 0: self.type_tid_std_tier(self.resolve_alias(self.lookup_named_type_visible(type_name) as TypeId) as i32) else: 0
         // When appending to an existing type, relocate all entries to keep them
         // contiguous (the flat impl_extra vec is shared across all types).
         if self.impl_lookup.contains(type_name):
@@ -2365,6 +2381,8 @@ impl Sema:
             let old_start = self.impl_starts.get(idx as i64)
             let old_count = self.impl_counts.get(idx as i64)
             for i in 0..old_count:
+                if dup_shadowed != 0 and self.impl_record_matches_tier(old_start + i, dup_want_std) == 0:
+                    continue
                 if self.impl_extra.get((old_start + i) as i64) == trait_sym:
                     self.emit_error_code("duplicate implementation of trait for type", node, "E1102")
                     return
@@ -2438,9 +2456,9 @@ impl Sema:
                 return decl
         0 as NodeId
 
-    mut fn emit_trait_object_safety_error(trait_sym: i32, method_sym: i32, reason: str, node: i32):
-        let trait_name = self.pool_resolve(trait_sym)
-        let method_name = self.pool_resolve(method_sym)
+    mut fn emit_trait_object_safety_error(trait_sym: i32, method_sym: i32, reason: &str, node: i32):
+        let trait_name: str = with_str_clone_ref(self.pool_resolve(trait_sym))
+        let method_name: str = with_str_clone_ref(self.pool_resolve(method_sym))
         self.emit_error("trait '" ++ trait_name ++ "' is not object-safe: method '" ++ method_name ++ "' " ++ reason, node)
 
     fn type_node_mentions_self(type_node: i32) -> i32:
@@ -2597,12 +2615,12 @@ impl Sema:
             let bound_count = self.ast.get_extra(pos + 1)
             // Validate type param references a known type parameter
             if self.type_param_exists(tp_start, tp_count, wp_name) == 0:
-                let wp_str = self.pool_resolve(wp_name)
+                let wp_str: str = with_str_clone_ref(self.pool_resolve(wp_name))
                 self.emit_error("where clause references unknown type parameter '" ++ wp_str ++ "'", fn_node)
             // Validate each bound references a known trait
             for bi in 0..bound_count:
                 let trait_sym = self.ast.get_extra(pos + 2 + bi)
-                let trait_name = self.pool_resolve(trait_sym)
+                let trait_name: str = with_str_clone_ref(self.pool_resolve(trait_sym))
                 if trait_name == "type":
                     continue
                 if not self.lang_trait_syms.contains(trait_sym) and not self.trait_lookup.contains(trait_sym):
@@ -2711,7 +2729,7 @@ impl Sema:
         for hi in 0..self.ast.compiler_hook_count():
             let hook_node = self.ast.compiler_hook_node(hi)
             let phase_sym = self.ast.compiler_hook_phase_at(hi)
-            let phase_name = self.pool_resolve_symbol(phase_sym)
+            let phase_name: str = with_str_clone_ref(self.pool_resolve_symbol(phase_sym))
             if phase_name != "after_typecheck":
                 self.emit_error("unknown compiler_hook phase '" ++ phase_name ++ "'", hook_node)
             let meta = self.ast.find_fn_meta(hook_node)
@@ -2870,30 +2888,30 @@ impl Sema:
         let name = self.pool_resolve_symbol(sym)
         if sema_str_has_data(name) == 0:
             return 0
-        if with_str_eq(name, "i8") != 0: return self.ty_i8 as i32
-        if with_str_eq(name, "i16") != 0: return self.ty_i16 as i32
-        if with_str_eq(name, "i32") != 0: return self.ty_i32 as i32
-        if with_str_eq(name, "i64") != 0: return self.ty_i64 as i32
-        if with_str_eq(name, "i128") != 0: return self.ty_i128 as i32
-        if with_str_eq(name, "u8") != 0: return self.ty_u8 as i32
-        if with_str_eq(name, "u16") != 0: return self.ty_u16 as i32
-        if with_str_eq(name, "u32") != 0: return self.ty_u32 as i32
-        if with_str_eq(name, "u64") != 0: return self.ty_u64 as i32
-        if with_str_eq(name, "u128") != 0: return self.ty_u128 as i32
-        if with_str_eq(name, "f32") != 0: return self.ty_f32 as i32
-        if with_str_eq(name, "f64") != 0: return self.ty_f64 as i32
-        if with_str_eq(name, "bool") != 0: return self.ty_bool as i32
-        if with_str_eq(name, "Unit") != 0: return self.ty_void as i32
-        if with_str_eq(name, "Never") != 0: return self.ty_never as i32
-        if with_str_eq(name, "str") != 0: return self.ty_str as i32
-        if with_str_eq(name, "usize") != 0: return self.ty_usize as i32
+        if name == "i8": return self.ty_i8 as i32
+        if name == "i16": return self.ty_i16 as i32
+        if name == "i32": return self.ty_i32 as i32
+        if name == "i64": return self.ty_i64 as i32
+        if name == "i128": return self.ty_i128 as i32
+        if name == "u8": return self.ty_u8 as i32
+        if name == "u16": return self.ty_u16 as i32
+        if name == "u32": return self.ty_u32 as i32
+        if name == "u64": return self.ty_u64 as i32
+        if name == "u128": return self.ty_u128 as i32
+        if name == "f32": return self.ty_f32 as i32
+        if name == "f64": return self.ty_f64 as i32
+        if name == "bool": return self.ty_bool as i32
+        if name == "Unit": return self.ty_void as i32
+        if name == "Never": return self.ty_never as i32
+        if name == "str": return self.ty_str as i32
+        if name == "usize": return self.ty_usize as i32
         // #627 (option D, split ruling 2026-07-05): Int/UInt/String/StrView are
         // NOT resolution-first here — they resolve via their register_prim
         // (empty-path, prelude-tier) named-type entries when unshadowed, but a user
         // declaration of the same name shadows them (lookup_named_type_visible
         // returns the visible user type first). CStr is likewise a plain named
         // type. Unit/Never stay compiler-reserved (core types, ~331 uses).
-        if with_str_eq(name, "isize") != 0: return self.ty_isize as i32
+        if name == "isize": return self.ty_isize as i32
         // Sub-byte and non-standard integer widths: u1-u7, i1-i7, u12, u21, u24
         let nlen = name.len()
         if nlen >= 2 and nlen <= 3:

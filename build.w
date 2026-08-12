@@ -12,8 +12,9 @@ use build.release_uat
 use build.package
 use build.sdk
 use std.sysinfo
+fn build_owned_text(s: &str): s ++ ""
 
-fn build_project_dirname(path: str) -> str:
+fn build_project_dirname(path: &str) -> str:
     var last_slash = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -24,42 +25,42 @@ fn build_project_dirname(path: str) -> str:
         return "/"
     path.slice(0, last_slash as i64)
 
-fn with_object_target(name: str, compiler: str, source: str, output: str, opt: str, dep: str) -> Target:
-    var target = target_new(.Action, name, "").output(output)
+fn with_object_target(name: &str, compiler: &str, source: &str, output: &str, opt: &str, dep: &str) -> Target:
+    var target = target_new(.Action, build_owned_text(name), "").output(build_owned_text(output))
     target.action = run_with_compiler_build_action
     target = target.compiler(compiler)
-    target = target.input(source)
+    target = target.input(build_owned_text(source))
     target = target.arg("--emit-obj")
     target = target.arg("--no-prelude")
-    target = target.arg(opt)
+    target = target.arg(build_owned_text(opt))
     target = target.write_scope("out/command/" ++ name)
     target = target.write_scope(build_project_dirname(output))
     target = target.allow_parallel()
     if dep.len() > 0:
-        target = target.dep(dep)
+        target = target.dep(build_owned_text(dep))
     target
 
-fn with_ir_target(name: str, compiler: str, source: str, output: str, dep: str) -> Target:
-    var target = target_new(.Action, name, "").output(output)
+fn with_ir_target(name: &str, compiler: &str, source: &str, output: &str, dep: &str) -> Target:
+    var target = target_new(.Action, build_owned_text(name), "").output(build_owned_text(output))
     target.action = run_with_compiler_ir_action
     target = target.compiler(compiler)
-    target = target.input(source)
+    target = target.input(build_owned_text(source))
     target = target.arg("--no-prelude")
     target = target.write_scope(build_project_dirname(output))
     target = target.write_scope("out/command/" ++ name)
     target = target.allow_parallel()
     if dep.len() > 0:
-        target = target.dep(dep)
+        target = target.dep(build_owned_text(dep))
     target
 
-fn with_ir_target_overflow(name: str, compiler: str, source: str, output: str, dep: str, overflow: str) -> Target:
+fn with_ir_target_overflow(name: &str, compiler: &str, source: &str, output: &str, dep: &str, overflow: &str) -> Target:
     var target = with_ir_target(name, compiler, source, output, dep)
     target = target.arg("overflow=" ++ overflow)
     target
 
 fn run_cross_unsupported_action(ctx: ActionCtx) -> i32:
     let args = ctx.args()
-    let target = if args.len() > 0: args.get(0) else: ""
+    let target = if args.len() > 0: build_owned_text(args.get(0)) else: ""
     if target.len() == 0:
         ctx.diagnostics().error("cross: cross-target compilation is not implemented yet; set CROSS_TARGET=<triple> or use `with build --target <triple>` for the compiler diagnostic")
     else:
@@ -308,8 +309,8 @@ fn run_cross_windows_llvm_link_metadata_action(ctx: ActionCtx) -> i32:
         return 1
     0
 
-fn empty_file_target(name: str, output: str) -> Target:
-    var target = target_new(.Action, name, "").output(output)
+fn empty_file_target(name: &str, output: &str) -> Target:
+    var target = target_new(.Action, build_owned_text(name), "").output(build_owned_text(output))
     target.action = run_write_empty_file_action
     target = target.write_scope(build_project_dirname(output))
     target
@@ -321,7 +322,7 @@ fn target_with_embedded_stdlib_inputs(target: Target, ctx: &BuildCtx) -> Target:
     for i in 0..files.len() as i32:
         let path = files.get(i as i64)
         if path.ends_with(".w") and not path.starts_with("lib/std/re/"):
-            out = out.input(path)
+            out = out.input(build_owned_text(path))
     out
 
 fn target_with_compiler_c_export_audit_inputs(target: Target, ctx: &BuildCtx) -> Target:
@@ -335,7 +336,7 @@ fn target_with_compiler_c_export_audit_inputs(target: Target, ctx: &BuildCtx) ->
         for fi in 0..files.len() as i32:
             let path = files.get(fi as i64)
             if path.ends_with(".w"):
-                out = out.input(path)
+                out = out.input(build_owned_text(path))
     out
 
 fn target_with_compiler_source_inputs(target: Target, ctx: &BuildCtx) -> Target:
@@ -353,10 +354,10 @@ fn target_with_compiler_source_inputs(target: Target, ctx: &BuildCtx) -> Target:
         for fi in 0..files.len() as i32:
             let path = files.get(fi as i64)
             if path.ends_with(".w"):
-                out = out.input(path)
+                out = out.input(build_owned_text(path))
     out
 
-fn build_project_trim_line(text: str) -> str:
+fn build_project_trim_line(text: &str) -> str:
     var end = 0
     while end < text.len() as i32:
         let ch = text.byte_at(end as i64)
@@ -419,19 +420,19 @@ fn host_exe_suffix() -> str:
         return ".exe"
     ""
 
-fn host_bin(path: str) -> str:
+fn host_bin(path: &str) -> str:
     path ++ host_exe_suffix()
 
-fn bootstrap_compiler_bin(name: str) -> str:
+fn bootstrap_compiler_bin(name: &str) -> str:
     host_bin("out/bootstrap/bin/" ++ name)
 
-fn stage_compiler_bin(name: str) -> str:
+fn stage_compiler_bin(name: &str) -> str:
     host_bin("out/stage/bin/" ++ name)
 
-fn stage_compiler_obj(name: str) -> str:
+fn stage_compiler_obj(name: &str) -> str:
     "out/stage/bin/" ++ name
 
-fn release_compiler_bin(name: str) -> str:
+fn release_compiler_bin(name: &str) -> str:
     host_bin("out/release/bin/" ++ name)
 
 fn release_platform_asset_bin() -> str:
@@ -563,7 +564,7 @@ fn llvm_sdk_dir_basename() -> str:
 fn llvm_sdk_asset_for_host() -> str:
     "with-llvm-sdk-" ++ compiler_llvm_version() ++ "-" ++ release_platform_tag() ++ ".tar.gz"
 
-fn release_package_asset_for_platform(platform: str) -> str:
+fn release_package_asset_for_platform(platform: &str) -> str:
     if platform == "darwin-aarch64":
         return "with-darwin-aarch64"
     if platform == "linux_x86_64" or platform == "linux-x86_64":
@@ -572,12 +573,12 @@ fn release_package_asset_for_platform(platform: str) -> str:
         return "with-windows-x86_64.exe"
     "with-unsupported"
 
-fn package_platform_target(name: str, platform: str, ctx: &BuildCtx) -> Target:
+fn package_platform_target(name: &str, platform: &str, ctx: &BuildCtx) -> Target:
     let asset = release_package_asset_for_platform(platform)
-    var target = target_new(.Action, name, "").output("out/release/" ++ name ++ ".passed")
+    var target = target_new(.Action, build_owned_text(name), "").output("out/release/" ++ name ++ ".passed")
     target.action = run_package_platform_release_action
     target = target.arg(asset)
-    target = target.arg(platform)
+    target = target.arg(build_owned_text(platform))
     target = target.arg(release_compiler_bin("with"))
     target = target.arg(compiler_default_llvm_prefix())
     target = target.input("src/version")
@@ -606,18 +607,18 @@ fn package_current_host_target() -> Target:
         return target.dep("package-windows-x86_64")
     target.dep("package-darwin-aarch64")
 
-fn package_llvm_sdk_platform_target(name: str, platform: str, prefix: str, build_cache: str) -> Target:
+fn package_llvm_sdk_platform_target(name: &str, platform: &str, prefix: &str, build_cache: &str) -> Target:
     let asset = sdk_asset_for_platform(platform)
     let sdk_base = "llvm-" ++ compiler_llvm_version() ++ "-" ++ sdk_host_tag_for_platform(platform)
-    var target = target_new(.Action, name, "").output("out/release/" ++ name ++ ".passed")
+    var target = target_new(.Action, build_owned_text(name), "").output("out/release/" ++ name ++ ".passed")
     target.action = run_package_llvm_sdk_action
-    target = target.arg(platform)
-    target = target.arg(prefix)
-    target = target.arg(build_cache)
+    target = target.arg(build_owned_text(platform))
+    target = target.arg(build_owned_text(prefix))
+    target = target.arg(build_owned_text(build_cache))
     target = target.arg(asset)
     target = target.arg(sdk_base)
-    target = target.input(prefix)
-    target = target.input(build_cache)
+    target = target.input(build_owned_text(prefix))
+    target = target.input(build_owned_text(build_cache))
     target = target.input("build/sdk.w")
     target = target.extra_output("out/release/" ++ asset)
     target = target.extra_output("out/release/" ++ asset ++ ".sha256")
@@ -637,22 +638,22 @@ fn package_llvm_sdk_current_host_target() -> Target:
         return target.dep("package-llvm-sdk-windows-x86_64")
     target.dep("package-llvm-sdk-darwin-aarch64")
 
-fn sdk_source_target(name: str, url: str, sha256: str, archive: str, source_root: str, source_dir: str, marker: str) -> Target:
-    var target = target_new(.Action, name, "").output(marker)
+fn sdk_source_target(name: &str, url: &str, sha256: &str, archive: &str, source_root: &str, source_dir: &str, marker: &str) -> Target:
+    var target = target_new(.Action, build_owned_text(name), "").output(build_owned_text(marker))
     target.action = run_sdk_source_tar_gz_action
-    target = target.arg(url)
-    target = target.arg(sha256)
-    target = target.arg(archive)
-    target = target.arg(source_root)
-    target = target.arg(source_dir)
+    target = target.arg(build_owned_text(url))
+    target = target.arg(build_owned_text(sha256))
+    target = target.arg(build_owned_text(archive))
+    target = target.arg(build_owned_text(source_root))
+    target = target.arg(build_owned_text(source_dir))
     target = target.input("build/https_fetch.w")
     target = target.input("build/zlib_gunzip.w")
-    target = target.write_scope(source_root)
+    target = target.write_scope(build_owned_text(source_root))
     target = target.write_scope("out/command/" ++ name)
     target = target.allow_network()
     target.timeout(1800000)
 
-fn sdk_bootstrap_prefix_arg(ctx: &BuildCtx, platform: str) -> str:
+fn sdk_bootstrap_prefix_arg(ctx: &BuildCtx, platform: &str) -> str:
     let explicit = ctx.env_input("SDK_BOOTSTRAP_PREFIX")
     if explicit.len() > 0:
         return explicit
@@ -661,13 +662,13 @@ fn sdk_bootstrap_prefix_arg(ctx: &BuildCtx, platform: str) -> str:
         return llvm_prefix
     sdk_default_prefix_for_platform(platform)
 
-fn sdk_output_prefix_arg(ctx: &BuildCtx, platform: str) -> str:
+fn sdk_output_prefix_arg(ctx: &BuildCtx, platform: &str) -> str:
     let explicit = ctx.env_input("SDK_OUTPUT_PREFIX")
     if explicit.len() > 0:
         return explicit
     sdk_output_prefix_for_platform(platform)
 
-fn sdk_build_root_arg(ctx: &BuildCtx, platform: str) -> str:
+fn sdk_build_root_arg(ctx: &BuildCtx, platform: &str) -> str:
     let explicit = ctx.env_input("SDK_BUILD_ROOT")
     if explicit.len() > 0:
         return explicit
@@ -759,29 +760,29 @@ fn sdk_package_target(ctx: &BuildCtx) -> Target:
     var target = package_llvm_sdk_platform_target("sdk-package", platform, sdk_output_prefix_arg(ctx, platform), sdk_output_llvm_cache_for_platform(platform))
     target.dep("sdk")
 
-fn install_file_target(name: str, source: str, dest: str, mode: str, dep: str) -> Target:
-    var target = target_new(.Install, name, source).output(dest)
-    target = target.input(source)
-    target = target.arg(mode)
+fn install_file_target(name: &str, source: &str, dest: &str, mode: &str, dep: &str) -> Target:
+    var target = target_new(.Install, build_owned_text(name), build_owned_text(source)).output(build_owned_text(dest))
+    target = target.input(build_owned_text(source))
+    target = target.arg(build_owned_text(mode))
     if dep.len() > 0:
-        target = target.dep(dep)
+        target = target.dep(build_owned_text(dep))
     target
 
-fn build_project_join(left: str, right: str) -> str:
+fn build_project_join(left: &str, right: &str) -> str:
     if left.len() == 0:
-        return right
+        return build_owned_text(right)
     if right.len() == 0:
-        return left
+        return build_owned_text(left)
     if left.ends_with("/"):
         return left ++ right
     left ++ "/" ++ right
 
-fn build_project_abs(root: str, path: str) -> str:
+fn build_project_abs(root: &str, path: &str) -> str:
     if path.len() > 0 and path.byte_at(0) == 47:
-        return path
+        return build_owned_text(path)
     build_project_join(root, path)
 
-fn build_trim_trailing_line_endings(text: str) -> str:
+fn build_trim_trailing_line_endings(text: &str) -> str:
     var end = text.len()
     while end > 0:
         let ch = text.byte_at(end - 1)
@@ -790,13 +791,13 @@ fn build_trim_trailing_line_endings(text: str) -> str:
         end = end - 1
     text.slice(0, end)
 
-fn build_replace_once(text: str, needle: str, replacement: str) -> str:
+fn build_replace_once(text: &str, needle: &str, replacement: &str) -> str:
     let idx = text.find(needle)
     if idx < 0:
         return ""
     text.slice(0, idx) ++ replacement ++ text.slice(idx + needle.len(), text.len())
 
-fn issue61_fail(ctx: &ActionCtx, message: str) -> i32:
+fn issue61_fail(ctx: &ActionCtx, message: &str) -> i32:
     ctx.diagnostics().error("issue61-regression: " ++ message)
     1
 
@@ -887,16 +888,16 @@ fn issue61_regression_action(ctx: ActionCtx) -> i32:
 // breaks exactly this property, so this harness catches the CLASS without
 // knowing the instance. Variants are a fixed deterministic list; each is
 // applied to a pristine repo copy and `check src/main.w` must still say ok.
-fn invariance_fail(ctx: &ActionCtx, message: str) -> i32:
+fn invariance_fail(ctx: &ActionCtx, message: &str) -> i32:
     ctx.diagnostics().error("invariance-check: " ++ message)
     1
 
-fn invariance_run_check(ctx: &ActionCtx, compiler_path: str, repo_copy: str, label: str) -> i32:
+fn invariance_run_check(ctx: &ActionCtx, compiler_path: &str, repo_copy: &str, label: &str) -> i32:
     let root = ctx.project_info().project_root()
     let stdout_path = build_project_abs(root, build_project_join(ctx.output(), label ++ ".stdout"))
     let stderr_path = build_project_abs(root, build_project_join(ctx.output(), label ++ ".stderr"))
     var check_args: Vec[str] = Vec.new()
-    check_args |> push(compiler_path)
+    check_args |> push(build_owned_text(compiler_path))
     check_args |> push("check")
     check_args |> push("src/main.w")
     let check = ctx.process_runner().run_capture_cwd(check_args, stdout_path, stderr_path, 240000, build_project_abs(root, repo_copy))
@@ -996,11 +997,11 @@ fn run_debug_alloc_tests_action(ctx: ActionCtx) -> i32:
     let driver_bin = build_project_abs(root, build_project_join(out_dir, "debug_drop"))
 
     var build_args: Vec[str] = Vec.new()
-    build_args.push(compiler)
+    build_args.push(build_owned_text(compiler))
     build_args.push("build")
     build_args.push("tools/debug_drop.w")
     build_args.push("-o")
-    build_args.push(driver_bin)
+    build_args.push(build_owned_text(driver_bin))
     let bout = build_project_abs(root, build_project_join(out_dir, "build.stdout"))
     let berr = build_project_abs(root, build_project_join(out_dir, "build.stderr"))
     let br = ctx.process_runner().run_capture_cwd(build_args, bout, berr, 180000, root)
@@ -1042,10 +1043,10 @@ fn run_drop_audit_action(ctx: ActionCtx) -> i32:
     let candidate = build_project_abs(root, ctx.inputs().get(0))
     let baseline = build_project_abs(root, "src/main")
     var args: Vec[str] = Vec.new()
-    args.push(candidate)
+    args.push(build_owned_text(candidate))
     args.push("run")
     args.push("tools/drop_audit.w")
-    args.push(candidate)
+    args.push(build_owned_text(candidate))
     args.push(baseline)
     // read_text/write_text require a project-relative path (the capability
     // sandbox rejects absolute paths); run_capture_cwd takes the absolute form.
@@ -1079,7 +1080,7 @@ fn run_move_audit_action(ctx: ActionCtx) -> i32:
     let candidate = build_project_abs(root, ctx.inputs().get(0))
     let baseline = build_project_abs(root, "src/main")
     var args: Vec[str] = Vec.new()
-    args.push(candidate)
+    args.push(build_owned_text(candidate))
     args.push("run")
     args.push("tools/move_audit.w")
     args.push(candidate)
@@ -1121,15 +1122,15 @@ fn run_fixpoint_diff_action(ctx: ActionCtx) -> i32:
         return result.rc
     0
 
-fn deep_debug_tool_expect(ctx: &ActionCtx, root: str, compiler: str, source_path: str, out_dir: str, name: str, opt_a: str, opt_b: str, needle: str) -> i32:
+fn deep_debug_tool_expect(ctx: &ActionCtx, root: &str, compiler: &str, source_path: &str, out_dir: &str, name: &str, opt_a: &str, opt_b: &str, needle: &str) -> i32:
     var args: Vec[str] = Vec.new()
-    args.push(compiler)
+    args.push(build_owned_text(compiler))
     args.push("check")
     if opt_a.len() > 0:
-        args.push(opt_a)
+        args.push(build_owned_text(opt_a))
     if opt_b.len() > 0:
-        args.push(opt_b)
-    args.push(source_path)
+        args.push(build_owned_text(opt_b))
+    args.push(build_owned_text(source_path))
 
     let stdout_rel = build_project_join(out_dir, name ++ ".stdout")
     let stderr_rel = build_project_join(out_dir, name ++ ".stderr")
@@ -1144,12 +1145,12 @@ fn deep_debug_tool_expect(ctx: &ActionCtx, root: str, compiler: str, source_path
         return 1
     0
 
-fn deep_debug_analyze_expect(ctx: &ActionCtx, root: str, compiler: str, source_path: str, out_dir: str, name: str, request: str, needle: str) -> i32:
+fn deep_debug_analyze_expect(ctx: &ActionCtx, root: &str, compiler: &str, source_path: &str, out_dir: &str, name: &str, request: &str, needle: &str) -> i32:
     let args: Vec[str] = Vec.new()
-    args.push(compiler)
+    args.push(build_owned_text(compiler))
     args.push("analyze")
-    args.push(source_path)
-    args.push(request)
+    args.push(build_owned_text(source_path))
+    args.push(build_owned_text(request))
     let stdout_rel = build_project_join(out_dir, name ++ ".stdout")
     let stderr_rel = build_project_join(out_dir, name ++ ".stderr")
     let stdout_path = build_project_abs(root, stdout_rel)
@@ -1187,7 +1188,7 @@ fn run_deep_debug_tool_tests_action(ctx: ActionCtx) -> i32:
         ctx.diagnostics().error("deep-debug-tool-tests: could not write reducer fixture")
         return 1
     var reduce_args: Vec[str] = Vec.new()
-    reduce_args.push(compiler)
+    reduce_args.push(build_owned_text(compiler))
     reduce_args.push("reduce")
     reduce_args.push(build_project_abs(root, reduce_input))
     reduce_args.push("--out")
@@ -1195,7 +1196,7 @@ fn run_deep_debug_tool_tests_action(ctx: ActionCtx) -> i32:
     reduce_args.push("--contains")
     reduce_args.push("undefined variable")
     reduce_args.push("--")
-    reduce_args.push(compiler)
+    reduce_args.push(build_owned_text(compiler))
     reduce_args.push("check")
     reduce_args.push("{file}")
     let reduce_stdout = build_project_abs(root, build_project_join(out_dir, "reduce.stdout"))
@@ -1216,7 +1217,7 @@ fn run_deep_debug_tool_tests_action(ctx: ActionCtx) -> i32:
         ctx.diagnostics().error("deep-debug-tool-tests: could not write diff fixtures")
         return 1
     var diff_args: Vec[str] = Vec.new()
-    diff_args.push(compiler)
+    diff_args.push(build_owned_text(compiler))
     diff_args.push("fixpoint-diff")
     diff_args.push(build_project_abs(root, left))
     diff_args.push(build_project_abs(root, right))
@@ -1395,7 +1396,7 @@ pub fn build(ctx: BuildCtx) -> Build:
 
     var compat_runtime = target_new(.Action, "compat-runtime-source", "").output("out/gen/compat_runtime.w")
     compat_runtime = compat_runtime.extra_output("out/gen/compiler/EmbeddedStdlibData.w")
-    compat_runtime = compat_runtime.input(host_runtime.compat_source)
+    compat_runtime = compat_runtime.input(build_owned_text(host_runtime.compat_source))
     compat_runtime = target_with_embedded_stdlib_inputs(move compat_runtime, ctx)
     compat_runtime.action = generate_compat_runtime_action
     out = out.add_target(compat_runtime)
@@ -1450,8 +1451,8 @@ pub fn build(ctx: BuildCtx) -> Build:
     bootstrap_llvm_link_metadata = bootstrap_llvm_link_metadata.dep("bootstrap-clang-bridge-object")
     out = out.add_target(bootstrap_llvm_link_metadata)
 
-    out = out.add_target(with_object_target("bootstrap-rt-core-object", "seed", "rt/rt_core.w", "out/bootstrap-lib/rt_core.o", "-O2", ""))
-    out = out.add_target(with_object_target("bootstrap-rt-platform-object", "seed", host_runtime.platform_source, host_runtime.bootstrap_platform_object, "-O2", ""))
+    out = out.add_target(with_object_target("bootstrap-rt-core-object", "seed", "rt/rt_core.w", "out/bootstrap-lib/rt_core.o", "-O1", ""))
+    out = out.add_target(with_object_target("bootstrap-rt-platform-object", "seed", host_runtime.platform_source, host_runtime.bootstrap_platform_object, "-O1", ""))
     out = out.add_target(empty_file_target("bootstrap-empty-opposite-runtime-blob", host_runtime.opposite_bootstrap_platform_blob))
     out = out.add_target(empty_file_target("bootstrap-empty-second-opposite-runtime-blob", host_runtime.second_opposite_bootstrap_platform_blob))
     out = out.add_target(with_object_target("bootstrap-cimport-stubs-object", "seed", "rt/cimport_stubs.w", "out/bootstrap-lib/cimport_stubs.o", "-O1", ""))
@@ -1465,7 +1466,7 @@ pub fn build(ctx: BuildCtx) -> Build:
     out = out.add_target(with_object_target("bootstrap-channel-runtime-object", "seed", "rt/channel_runtime.w", "out/bootstrap-lib/channel_runtime.o", "-O1", ""))
     out = out.add_target(with_object_target("bootstrap-fiber-runtime-object", "seed", "rt/fiber_runtime.w", "out/bootstrap-lib/fiber_runtime.o", "-O1", ""))
     out = out.add_target(with_object_target("bootstrap-fiber-core-object", "seed", host_runtime.fiber_core_source, "out/bootstrap-lib/fiber.o", "-O1", ""))
-    var bootstrap_fiber_asm = target_new(.CompileAsmObject, "bootstrap-fiber-asm-object", host_runtime.fiber_asm_source).output("out/bootstrap-lib/fiber_asm.o")
+    var bootstrap_fiber_asm = target_new(.CompileAsmObject, "bootstrap-fiber-asm-object", build_owned_text(host_runtime.fiber_asm_source)).output("out/bootstrap-lib/fiber_asm.o")
     out = out.add_target(bootstrap_fiber_asm)
 
     var bootstrap_embedded_objects = target_new(.EmbedObjectFiles, "bootstrap-embedded-objects-asm", "").output("out/bootstrap-lib/embedded_objects.s")
@@ -1490,11 +1491,11 @@ pub fn build(ctx: BuildCtx) -> Build:
     bootstrap_embedded_objects = bootstrap_embedded_objects.input("out/bootstrap-lib/rt_core.o")
     bootstrap_embedded_objects = bootstrap_embedded_objects.arg("rt_core_o")
     bootstrap_embedded_objects = bootstrap_embedded_objects.input(host_runtime.bootstrap_platform_object)
-    bootstrap_embedded_objects = bootstrap_embedded_objects.arg(host_runtime.platform_symbol)
+    bootstrap_embedded_objects = bootstrap_embedded_objects.arg(build_owned_text(host_runtime.platform_symbol))
     bootstrap_embedded_objects = bootstrap_embedded_objects.input(host_runtime.opposite_bootstrap_platform_blob)
-    bootstrap_embedded_objects = bootstrap_embedded_objects.arg(host_runtime.opposite_platform_symbol)
+    bootstrap_embedded_objects = bootstrap_embedded_objects.arg(build_owned_text(host_runtime.opposite_platform_symbol))
     bootstrap_embedded_objects = bootstrap_embedded_objects.input(host_runtime.second_opposite_bootstrap_platform_blob)
-    bootstrap_embedded_objects = bootstrap_embedded_objects.arg(host_runtime.second_opposite_platform_symbol)
+    bootstrap_embedded_objects = bootstrap_embedded_objects.arg(build_owned_text(host_runtime.second_opposite_platform_symbol))
     // Every consumed object's producer, declared (#680 edge audit).
     bootstrap_embedded_objects = bootstrap_embedded_objects.dep("bootstrap-cimport-stubs-object")
     bootstrap_embedded_objects = bootstrap_embedded_objects.dep("bootstrap-compat-runtime-object")
@@ -1538,7 +1539,7 @@ pub fn build(ctx: BuildCtx) -> Build:
     prepare_bootstrap_link_root = prepare_bootstrap_link_root.input("src/compiler/ClangBridge.w")
     prepare_bootstrap_link_root = prepare_bootstrap_link_root.input("rt/cimport_stubs.w")
     prepare_bootstrap_link_root = prepare_bootstrap_link_root.input("rt/rt_core.w")
-    prepare_bootstrap_link_root = prepare_bootstrap_link_root.input(host_runtime.platform_source)
+    prepare_bootstrap_link_root = prepare_bootstrap_link_root.input(build_owned_text(host_runtime.platform_source))
     prepare_bootstrap_link_root = prepare_bootstrap_link_root.input(host_runtime.compat_source)
     prepare_bootstrap_link_root = prepare_bootstrap_link_root.write_scope("out/lib")
     prepare_bootstrap_link_root = prepare_bootstrap_link_root.write_scope("out/bootstrap-lib")
@@ -1679,6 +1680,8 @@ pub fn build(ctx: BuildCtx) -> Build:
     fixpoint_evidence = fixpoint_evidence.write_scope("out/.build-state")
     fixpoint_evidence = fixpoint_evidence.write_scope("out/command/fixpoint-evidence")
     fixpoint_evidence = fixpoint_evidence.dep("fixpoint-compare")
+    fixpoint_evidence = fixpoint_evidence.dep("stage2-fixpoint-object")
+    fixpoint_evidence = fixpoint_evidence.dep("stage3-fixpoint-object")
     fixpoint_evidence = fixpoint_evidence.dep("with-sha256")
     fixpoint_evidence = fixpoint_evidence.dep("build")
     out = out.add_target(fixpoint_evidence)
@@ -1702,25 +1705,32 @@ pub fn build(ctx: BuildCtx) -> Build:
     verified = verified.dep("fixpoint")
     out = out.add_target(verified)
 
-    out = out.add_target(with_object_target("rt-core-object", stage_compiler_bin("with-stage2"), "rt/rt_core.w", "out/lib/rt_core.o", "-O2", "stage2"))
-    out = out.add_target(with_object_target("rt-platform-object", stage_compiler_bin("with-stage2"), host_runtime.platform_source, host_runtime.platform_object, "-O2", "stage2"))
+    // #747 INTERIM: out/lib rt objects are seed-built (mirroring
+    // out/bootstrap-lib) until the extern bit-copy doctrine covers the
+    // DEFINITION side of the with_* ABI. The flipped compiler emits
+    // callee-side drops for keep-ABI consuming-str intrinsics
+    // (with_str_eq & co.), violating the caller-owns contract codegen
+    // emits against — a flip-built rt_core.o frees every str operand it
+    // is shown (issue: flip-built rt corrupts linked binaries).
+    out = out.add_target(with_object_target("rt-core-object", "seed", "rt/rt_core.w", "out/lib/rt_core.o", "-O1", ""))
+    out = out.add_target(with_object_target("rt-platform-object", "seed", host_runtime.platform_source, host_runtime.platform_object, "-O1", ""))
     out = out.add_target(empty_file_target("empty-opposite-runtime-blob", host_runtime.opposite_platform_blob))
     out = out.add_target(empty_file_target("empty-second-opposite-runtime-blob", host_runtime.second_opposite_platform_blob))
-    out = out.add_target(with_object_target("cimport-stubs-object", stage_compiler_bin("with-stage2"), "rt/cimport_stubs.w", "out/lib/cimport_stubs.o", "-O1", "stage2"))
-    var compat_runtime_obj = with_object_target("compat-runtime-object", stage_compiler_bin("with-stage2"), "out/gen/compat_runtime.w", "out/lib/compat_runtime.o", "-O1", "stage2")
+    out = out.add_target(with_object_target("cimport-stubs-object", "seed", "rt/cimport_stubs.w", "out/lib/cimport_stubs.o", "-O1", ""))
+    var compat_runtime_obj = with_object_target("compat-runtime-object", "seed", "out/gen/compat_runtime.w", "out/lib/compat_runtime.o", "-O1", "")
     compat_runtime_obj = compat_runtime_obj.dep("compat-runtime-source")
     out = out.add_target(compat_runtime_obj)
-    out = out.add_target(with_object_target("panic-runtime-object", stage_compiler_bin("with-stage2"), "rt/panic_runtime.w", "out/lib/panic_runtime.o", "-O1", "stage2"))
-    out = out.add_target(with_ir_target_overflow("regex-runtime-ir", stage_compiler_bin("with-stage2"), "rt/regex_runtime.w", "out/tmp/regex_runtime.ll", "stage2", "wrap"))
+    out = out.add_target(with_object_target("panic-runtime-object", "seed", "rt/panic_runtime.w", "out/lib/panic_runtime.o", "-O1", ""))
+    out = out.add_target(with_ir_target_overflow("regex-runtime-ir", "seed", "rt/regex_runtime.w", "out/tmp/regex_runtime.ll", "", "wrap"))
 
     var regex_runtime = target_new(.CompileLlvmIrObject, "regex-runtime-object", "out/tmp/regex_runtime.ll").output("out/lib/regex_runtime.o")
     regex_runtime = regex_runtime.dep("regex-runtime-ir")
     out = out.add_target(regex_runtime)
 
-    out = out.add_target(with_object_target("fiber-stubs-object", stage_compiler_bin("with-stage2"), "rt/fiber_stubs.w", "out/lib/fiber_stubs.o", "-O1", "stage2"))
-    out = out.add_target(with_object_target("channel-runtime-object", stage_compiler_bin("with-stage2"), "rt/channel_runtime.w", "out/lib/channel_runtime.o", "-O1", "stage2"))
-    out = out.add_target(with_object_target("fiber-runtime-object", stage_compiler_bin("with-stage2"), "rt/fiber_runtime.w", "out/lib/fiber_runtime.o", "-O1", "stage2"))
-    out = out.add_target(with_object_target("fiber-core-object", stage_compiler_bin("with-stage2"), host_runtime.fiber_core_source, "out/lib/fiber.o", "-O1", "stage2"))
+    out = out.add_target(with_object_target("fiber-stubs-object", "seed", "rt/fiber_stubs.w", "out/lib/fiber_stubs.o", "-O1", ""))
+    out = out.add_target(with_object_target("channel-runtime-object", "seed", "rt/channel_runtime.w", "out/lib/channel_runtime.o", "-O1", ""))
+    out = out.add_target(with_object_target("fiber-runtime-object", "seed", "rt/fiber_runtime.w", "out/lib/fiber_runtime.o", "-O1", ""))
+    out = out.add_target(with_object_target("fiber-core-object", "seed", host_runtime.fiber_core_source, "out/lib/fiber.o", "-O1", ""))
 
     var fiber_asm = target_new(.CompileAsmObject, "fiber-asm-object", host_runtime.fiber_asm_source).output("out/lib/fiber_asm.o")
     out = out.add_target(fiber_asm)
@@ -1746,7 +1756,7 @@ pub fn build(ctx: BuildCtx) -> Build:
     embedded_objects = embedded_objects.arg("fiber_asm_o")
     embedded_objects = embedded_objects.input("out/lib/rt_core.o")
     embedded_objects = embedded_objects.arg("rt_core_o")
-    embedded_objects = embedded_objects.input(host_runtime.platform_object)
+    embedded_objects = embedded_objects.input(build_owned_text(host_runtime.platform_object))
     embedded_objects = embedded_objects.arg(host_runtime.platform_symbol)
     embedded_objects = embedded_objects.input(host_runtime.opposite_platform_blob)
     embedded_objects = embedded_objects.arg(host_runtime.opposite_platform_symbol)
@@ -2137,7 +2147,7 @@ pub fn build(ctx: BuildCtx) -> Build:
         var inv = target_new(.Action, "invariance-" ++ inv_label, "").output("out/test-graph/invariance-" ++ inv_label)
         inv.action = invariance_variant_action
         inv = inv.input(release_compiler_bin("with"))
-        inv = inv.arg(inv_label)
+        inv = inv.arg(build_owned_text(inv_label))
         inv = inv.allow_parallel()
         inv = inv.dep("build")
         out = out.add_target(inv)

@@ -1,8 +1,9 @@
 module build.runtime
 
 use std.build
+fn runtime_owned_text(s: &str): s ++ ""
 
-fn br_fail(ctx: &ActionCtx, message: str) -> i32:
+fn br_fail(ctx: &ActionCtx, message: &str) -> i32:
     ctx.diagnostics().error("compat-runtime-source: " ++ message)
     1
 
@@ -55,16 +56,16 @@ pub fn run_prepare_bootstrap_link_root_action(ctx: ActionCtx) -> i32:
         return 1
     0
 
-fn br_join(base: str, child: str) -> str:
+fn br_join(base: &str, child: &str) -> str:
     if child.len() == 0:
-        return base
+        return runtime_owned_text(base)
     if child.byte_at(0) == 47:
-        return child
+        return runtime_owned_text(child)
     if base.len() == 0 or base.ends_with("/"):
         return base ++ child
     base ++ "/" ++ child
 
-fn br_dirname(path: str) -> str:
+fn br_dirname(path: &str) -> str:
     var last = -1
     for i in 0..path.len() as i32:
         if path.byte_at(i as i64) == 47:
@@ -73,7 +74,7 @@ fn br_dirname(path: str) -> str:
         return "."
     path.slice(0, last as i64)
 
-fn br_split_nonempty_lines(text: str) -> Vec[str]:
+fn br_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     var start = 0
     for i in 0..text.len() as i32:
@@ -85,7 +86,7 @@ fn br_split_nonempty_lines(text: str) -> Vec[str]:
         lines.push(text.slice(start as i64, text.len()))
     lines
 
-fn br_normalize_path_separators(path: str) -> str:
+fn br_normalize_path_separators(path: &str) -> str:
     var out = ""
     for i in 0..path.len() as i32:
         let ch = path.byte_at(i as i64)
@@ -95,7 +96,7 @@ fn br_normalize_path_separators(path: str) -> str:
             out = out ++ path.slice(i as i64, (i + 1) as i64)
     out
 
-fn br_str_compare(a: str, b: str) -> i32:
+fn br_str_compare(a: &str, b: &str) -> i32:
     let n = if a.len() < b.len(): a.len() else: b.len()
     var i = 0
     while i < n as i32:
@@ -119,11 +120,11 @@ fn br_sorted_paths(files: &Vec[str]) -> Vec[str]:
         for j in 0..sorted.len() as i32:
             let existing = sorted.get(j as i64)
             if not inserted and br_str_compare(path, existing) < 0:
-                out.push(path)
+                out.push(runtime_owned_text(path))
                 inserted = true
-            out.push(existing)
+            out.push(runtime_owned_text(existing))
         if not inserted:
-            out.push(path)
+            out.push(runtime_owned_text(path))
         sorted = out
     sorted
 
@@ -136,7 +137,7 @@ fn br_collect_stdlib_files(ctx: &ActionCtx) -> Vec[str]:
             files.push(path)
     files
 
-fn br_contains_delimiter(text: str, hashes: str) -> bool:
+fn br_contains_delimiter(text: &str, hashes: &str) -> bool:
     let needle = "\"" ++ hashes
     if text.len() < needle.len():
         return false
@@ -154,20 +155,20 @@ fn br_contains_delimiter(text: str, hashes: str) -> bool:
         i = i + 1
     false
 
-fn br_raw_string_literal(text: str) -> str:
+fn br_raw_string_literal(text: &str) -> str:
     var hashes = ""
     while br_contains_delimiter(text, hashes):
         hashes = hashes ++ "#"
     "r" ++ hashes ++ "\"" ++ text ++ "\"" ++ hashes
 
-fn br_normalize_embedded_source(text: str) -> str:
+fn br_normalize_embedded_source(text: &str) -> str:
     var has_cr = false
     for ci in 0..text.len() as i32:
         if text.byte_at(ci as i64) == 13:
             has_cr = true
             break
     if not has_cr:
-        return text
+        return runtime_owned_text(text)
     var out = ""
     var start = 0
     var i = 0
@@ -185,10 +186,10 @@ fn br_normalize_embedded_source(text: str) -> str:
         out = out ++ text.slice(start as i64, text.len())
     out
 
-fn br_embedded_rel_path(path: str) -> str:
+fn br_embedded_rel_path(path: &str) -> str:
     if path.starts_with("lib/"):
         return path.slice(4, path.len())
-    path
+    runtime_owned_text(path)
 
 fn br_generate_embedded_stdlib(ctx: &ActionCtx, files: &Vec[str]) -> str:
     let fs = ctx.fs()
@@ -211,7 +212,7 @@ fn br_generate_embedded_stdlib(ctx: &ActionCtx, files: &Vec[str]) -> str:
             listing = listing ++ "\n"
         listing = listing ++ rel
     out = out ++ "let EMBEDDED_STD_MODULE_LIST: str = " ++ br_raw_string_literal(listing) ++ "\n\n"
-    out = out ++ "pub fn embedded_std_source_data(path: str) -> str:\n"
+    out = out ++ "pub fn embedded_std_source_data(path: &str) -> str:\n"
     for i in 0..files.len() as i32:
         let path = files.get(i as i64)
         let rel = br_embedded_rel_path(path)

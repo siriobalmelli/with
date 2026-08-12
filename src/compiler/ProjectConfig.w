@@ -2,6 +2,8 @@ use Resolve
 use compiler.Runtime
 use Overflow
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 type ProjectConfig {
     root_dir: str,
     manifest_path: str,
@@ -69,7 +71,7 @@ fn project_config_default -> ProjectConfig:
         lint_partial_statement_match: false,
     }
 
-fn project_config_clone_str(s: str) -> str:
+fn project_config_clone_str(s: &str) -> str:
     if s.len() == 0:
         return ""
     runtime_str_clone(s)
@@ -114,11 +116,11 @@ pub fn project_config_clone(cfg: &ProjectConfig) -> ProjectConfig:
         lint_partial_statement_match: cfg.lint_partial_statement_match,
     }
 
-fn project_config_file_exists(path: str) -> bool:
+fn project_config_file_exists(path: &str) -> bool:
     runtime_read_file(path).len() > 0
 
-fn project_config_find_root(start_dir: str) -> str:
-    var cur = if start_dir.len() > 0: start_dir else: "."
+fn project_config_find_root(start_dir: &str) -> str:
+    var cur = if start_dir.len() > 0: with_str_clone_ref(start_dir) else: "."
     while true:
         let manifest = resolve_join(cur, "with.toml")
         if project_config_file_exists(manifest):
@@ -129,7 +131,7 @@ fn project_config_find_root(start_dir: str) -> str:
         cur = parent
     ""
 
-fn project_config_load_for_source(source_path_raw: str) -> ProjectConfig:
+fn project_config_load_for_source(source_path_raw: &str) -> ProjectConfig:
     let source_path = project_config_absolutize_path(source_path_raw)
     let root = project_config_find_root(resolve_dirname(source_path))
     if root.len() == 0:
@@ -188,13 +190,13 @@ fn project_config_load_for_source(source_path_raw: str) -> ProjectConfig:
 
     cfg
 
-fn project_config_apply_manifest_entry(cfg: ProjectConfig, section: str, key: str, value: str) -> ProjectConfig:
+fn project_config_apply_manifest_entry(cfg: ProjectConfig, section: &str, key: &str, value: &str) -> ProjectConfig:
     let manual_c_dep = project_config_manual_c_dep_name(section)
     if manual_c_dep.len() > 0:
         return project_config_apply_manual_c_dep_entry(move cfg, manual_c_dep, key, value)
     project_config_apply_entry(move cfg, section, key, value)
 
-fn project_config_apply_entry(cfg: ProjectConfig, section: str, key: str, value: str) -> ProjectConfig:
+fn project_config_apply_entry(cfg: ProjectConfig, section: &str, key: &str, value: &str) -> ProjectConfig:
     var out = cfg
     if (section == "project" or section == "package") and key == "name":
         out.package_name = project_config_strip_quotes(value)
@@ -287,15 +289,15 @@ fn project_config_apply_entry(cfg: ProjectConfig, section: str, key: str, value:
     else if section == "features" and key == "default":
         out.feature_default = project_config_parse_string_array(value)
     else if section == "features":
-        out.feature_names.push(key)
+        out.feature_names.push(with_str_clone_ref(key))
         out.feature_values.push(project_config_trim(value))
     else if section == "target" and key == "default":
         out.target_default = project_config_strip_quotes(project_config_trim(value))
     else if section == "deps":
         let constraint = project_config_strip_quotes(project_config_trim(value))
         if key.len() > 0 and constraint.len() > 0:
-            out.dep_names.push(key)
-            out.dep_constraints.push(constraint)
+            out.dep_names.push(with_str_clone_ref(key))
+            out.dep_constraints.push(with_str_clone_ref(constraint))
             if key.starts_with("c."):
                 // C package dependency: c.sqlite3 = "3.45"
                 let pkg_name = key.slice(2, key.len())
@@ -305,20 +307,20 @@ fn project_config_apply_entry(cfg: ProjectConfig, section: str, key: str, value:
                             out.manifest_error = "dependency c." ++ pkg_name ++ " is declared both as a Conan dependency and a manual [deps.c." ++ pkg_name ++ "] table"
                     else:
                         if not project_config_vec_contains(out.c_dep_metadata_names, pkg_name):
-                            out.c_dep_metadata_names.push(pkg_name)
+                            out.c_dep_metadata_names.push(with_str_clone_ref(pkg_name))
                         out = project_config_load_dep_metadata(move out, pkg_name, constraint)
             else if out.manifest_error.len() == 0:
                 out.manifest_error = "With package dependency '" ++ key ++ "' is declared in with.toml but the With package registry is not available yet; remove it or use a C package (c.<name>)"
     out
 
-fn project_config_apply_manual_c_dep_entry(cfg: ProjectConfig, dep_name: str, key: str, value: str) -> ProjectConfig:
+fn project_config_apply_manual_c_dep_entry(cfg: ProjectConfig, dep_name: &str, key: &str, value: &str) -> ProjectConfig:
     var out = cfg
     if project_config_vec_contains(out.c_dep_metadata_names, dep_name):
         if out.manifest_error.len() == 0:
             out.manifest_error = "dependency c." ++ dep_name ++ " is declared both as a Conan dependency and a manual [deps.c." ++ dep_name ++ "] table"
     if not project_config_vec_contains(out.manual_c_dep_names, dep_name):
         // Manual C deps are local manifest inputs, not fetched artifacts.
-        out.manual_c_dep_names.push(dep_name)
+        out.manual_c_dep_names.push(with_str_clone_ref(dep_name))
     if key == "include":
         if not project_config_is_quoted_string_value(value):
             if out.manifest_error.len() == 0:
@@ -338,7 +340,7 @@ fn project_config_apply_manual_c_dep_entry(cfg: ProjectConfig, dep_name: str, ke
         else:
             let libs = project_config_parse_string_array(value)
             for li in 0..libs.len() as i32:
-                out.dep_link_libs.push(libs.get(li as i64))
+                out.dep_link_libs.push(with_str_clone_ref(libs.get(li as i64)))
     else if key == "defines":
         if not project_config_is_string_array_value(value):
             if out.manifest_error.len() == 0:
@@ -346,18 +348,18 @@ fn project_config_apply_manual_c_dep_entry(cfg: ProjectConfig, dep_name: str, ke
         else:
             let defines = project_config_parse_string_array(value)
             for di in 0..defines.len() as i32:
-                out.c_import_defines.push(defines.get(di as i64))
+                out.c_import_defines.push(with_str_clone_ref(defines.get(di as i64)))
     else if out.manifest_error.len() == 0:
         out.manifest_error = "unknown key '" ++ key ++ "' in [deps.c." ++ dep_name ++ "]; expected include, lib, link, or defines"
     out
 
-fn project_config_strip_quotes(value: str) -> str:
+fn project_config_strip_quotes(value: &str) -> str:
     let len = value.len() as i32
     if len >= 2 and value.byte_at(0) == 34 and value.byte_at((len - 1) as i64) == 34:
         return value.slice(1, (len - 1) as i64)
-    value
+    with_str_clone_ref(value)
 
-fn project_config_parse_bool(value: str) -> i32:
+fn project_config_parse_bool(value: &str) -> i32:
     let text = project_config_strip_quotes(project_config_trim(value))
     if text == "true":
         return 1
@@ -365,7 +367,7 @@ fn project_config_parse_bool(value: str) -> i32:
         return 0
     -1
 
-fn project_config_parse_positive_i64(value: str) -> i64:
+fn project_config_parse_positive_i64(value: &str) -> i64:
     let text = project_config_strip_quotes(project_config_trim(value))
     if text.len() == 0:
         return -1
@@ -379,7 +381,7 @@ fn project_config_parse_positive_i64(value: str) -> i64:
             return -1
     out
 
-fn project_config_parse_nonnegative_i64(value: str) -> i64:
+fn project_config_parse_nonnegative_i64(value: &str) -> i64:
     let text = project_config_strip_quotes(project_config_trim(value))
     if text.len() == 0:
         return -1
@@ -391,24 +393,24 @@ fn project_config_parse_nonnegative_i64(value: str) -> i64:
         out = out * 10 + (ch - 48) as i64
     out
 
-fn project_config_vec_contains(values: &Vec[str], needle: str) -> bool:
+fn project_config_vec_contains(values: &Vec[str], needle: &str) -> bool:
     for i in 0..values.len() as i32:
         if values.get(i as i64) == needle:
             return true
     false
 
-fn project_config_manual_c_dep_name(section: str) -> str:
+fn project_config_manual_c_dep_name(section: &str) -> str:
     if not section.starts_with("deps.c."):
         return ""
     if section.len() <= 7:
         return ""
     section.slice(7, section.len())
 
-fn project_config_is_quoted_string_value(value: str) -> bool:
+fn project_config_is_quoted_string_value(value: &str) -> bool:
     let text = project_config_trim(value)
     text.len() >= 2 and text.byte_at(0) == 34 and text.byte_at(text.len() as i64 - 1) == 34
 
-fn project_config_load_dep_metadata(cfg: ProjectConfig, name: str, version: str) -> ProjectConfig:
+fn project_config_load_dep_metadata(cfg: ProjectConfig, name: &str, version: &str) -> ProjectConfig:
     var out = cfg
     // Read metadata.json from .with/deps/c/<name>/<version>/
     let dep_dir = out.root_dir ++ "/.with/deps/c/" ++ name ++ "/" ++ version
@@ -425,17 +427,17 @@ fn project_config_load_dep_metadata(cfg: ProjectConfig, name: str, version: str)
         out.c_import_include_paths.push(dep_dir ++ "/" ++ inc)
     let defines = project_config_json_str_array(meta, "defines")
     for i in 0..defines.len() as i32:
-        out.c_import_defines.push(defines.get(i as i64))
+        out.c_import_defines.push(with_str_clone_ref(defines.get(i as i64)))
     let lib_paths = project_config_json_str_array(meta, "lib_paths")
     for i in 0..lib_paths.len() as i32:
         let lp = lib_paths.get(i as i64)
         out.link_search_paths.push(dep_dir ++ "/" ++ lp)
     let libs = project_config_json_str_array(meta, "libs")
     for i in 0..libs.len() as i32:
-        out.dep_link_libs.push(libs.get(i as i64))
+        out.dep_link_libs.push(with_str_clone_ref(libs.get(i as i64)))
     let link_args = project_config_json_str_array(meta, "link_args")
     for i in 0..link_args.len() as i32:
-        out.dep_link_args.push(link_args.get(i as i64))
+        out.dep_link_args.push(with_str_clone_ref(link_args.get(i as i64)))
     let requires = project_config_json_str_array(meta, "requires")
     for i in 0..requires.len() as i32:
         let req = requires.get(i as i64)
@@ -446,7 +448,7 @@ fn project_config_load_dep_metadata(cfg: ProjectConfig, name: str, version: str)
             out = project_config_load_dep_metadata(move out, req_name, req_version)
     out
 
-fn project_config_json_str_array(json: str, key: str) -> Vec[str]:
+fn project_config_json_str_array(json: &str, key: &str) -> Vec[str]:
     // Simple JSON array extractor: find "key": [...] and extract string values.
     var result: Vec[str] = Vec.new()
     let needle = "\"" ++ key ++ "\""
@@ -483,7 +485,7 @@ fn project_config_json_str_array(json: str, key: str) -> Vec[str]:
         pos = pos + 1
     result
 
-fn project_config_wants_key(section: str, key: str) -> bool:
+fn project_config_wants_key(section: &str, key: &str) -> bool:
     let manual_c_dep = project_config_manual_c_dep_name(section)
     if (section == "project" or section == "package") and (key == "name" or key == "version"):
         return true
@@ -515,7 +517,7 @@ fn project_config_wants_key(section: str, key: str) -> bool:
         return true
     false
 
-fn project_config_forbidden_entry(section: str, key: str) -> str:
+fn project_config_forbidden_entry(section: &str, key: &str) -> str:
     if section == "build" and (key == "overflow" or key == "strict_effects"):
         return ""
     if section == "lint" and key == "partial_statement_match":
@@ -542,7 +544,7 @@ fn project_config_forbidden_entry(section: str, key: str) -> str:
         return "build targets and pipelines belong in build.w, not with.toml: " ++ key
     ""
 
-fn project_config_value_complete(value: str) -> bool:
+fn project_config_value_complete(value: &str) -> bool:
     // Array values need closing bracket
     if project_config_find_char(value, 91) >= 0:
         return project_config_find_char(value, 93) >= 0
@@ -552,14 +554,14 @@ fn project_config_value_complete(value: str) -> bool:
     // Bare values are complete
     true
 
-fn project_config_parse_path_array(value: str, root_dir: str) -> Vec[str]:
+fn project_config_parse_path_array(value: &str, root_dir: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     let entries = project_config_parse_string_array(value)
     for i in 0..entries.len() as i32:
         out.push(project_config_resolve_path(root_dir, entries.get(i as i64)))
     out
 
-fn project_config_parse_string_array(value: str) -> Vec[str]:
+fn project_config_parse_string_array(value: &str) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     var i = 0
     let total = value.len() as i32
@@ -592,7 +594,7 @@ fn project_config_parse_string_array(value: str) -> Vec[str]:
         i = i + 1
     out
 
-fn project_config_is_string_array_value(value: str) -> bool:
+fn project_config_is_string_array_value(value: &str) -> bool:
     let text = project_config_trim(value)
     if text.len() < 2:
         return false
@@ -634,18 +636,18 @@ fn project_config_is_string_array_value(value: str) -> bool:
             return false
     not expect_value or project_config_trim(text.slice(1, text.len() - 1)).len() == 0
 
-fn project_config_resolve_c_import_header(cfg: &ProjectConfig, decl_dir: str, header_spec_raw: str) -> str:
+fn project_config_resolve_c_import_header(cfg: &ProjectConfig, decl_dir: &str, header_spec_raw: &str) -> str:
     let header_spec = project_config_trim(header_spec_raw)
     if header_spec.len() == 0:
-        return header_spec_raw
+        return with_str_clone_ref(header_spec_raw)
     if project_config_str_contains(header_spec, "\n"):
-        return header_spec_raw
+        return with_str_clone_ref(header_spec_raw)
     if project_config_str_contains(header_spec, ";"):
-        return header_spec_raw
+        return with_str_clone_ref(header_spec_raw)
     if header_spec.byte_at(0) == 35:
-        return header_spec_raw
+        return with_str_clone_ref(header_spec_raw)
 
-    var header_name = header_spec
+    var header_name = with_str_clone_ref(header_spec)
     var preserve_angle = 0
     var preserve_quote = 0
     if header_spec.len() >= 2 and header_spec.byte_at(0) == 60 and header_spec.byte_at(header_spec.len() as i64 - 1) == 62:
@@ -664,14 +666,14 @@ fn project_config_resolve_c_import_header(cfg: &ProjectConfig, decl_dir: str, he
         return "\"" ++ header_name ++ "\""
     if preserve_angle != 0:
         return "<" ++ header_name ++ ">"
-    header_spec_raw
+    with_str_clone_ref(header_spec_raw)
 
-fn project_config_resolve_header_path(cfg: &ProjectConfig, decl_dir: str, header_name: str) -> str:
+fn project_config_resolve_header_path(cfg: &ProjectConfig, decl_dir: &str, header_name: &str) -> str:
     if header_name.len() == 0:
         return ""
     if project_config_is_absolute_path(header_name):
         if project_config_file_exists(header_name):
-            return header_name
+            return with_str_clone_ref(header_name)
         return ""
 
     let base_dir = if decl_dir.len() > 0:
@@ -689,20 +691,20 @@ fn project_config_resolve_header_path(cfg: &ProjectConfig, decl_dir: str, header
             return candidate
     ""
 
-fn project_config_resolve_path(root_dir: str, path: str) -> str:
+fn project_config_resolve_path(root_dir: &str, path: &str) -> str:
     if path.len() == 0:
-        return path
+        return with_str_clone_ref(path)
     if project_config_is_absolute_path(path):
-        return path
+        return with_str_clone_ref(path)
     if root_dir.len() == 0:
         return project_config_absolutize_path(path)
     resolve_join(root_dir, path)
 
-fn project_config_is_absolute_path(path: str) -> bool:
+fn project_config_is_absolute_path(path: &str) -> bool:
     path.len() > 0 and path.byte_at(0) == 47
 
-fn project_config_normalize_absolute_path(path: str) -> str:
-    var out = path
+fn project_config_normalize_absolute_path(path: &str) -> str:
+    var out = with_str_clone_ref(path)
     while out.len() > 1 and out.ends_with("/"):
         out = out.slice(0, out.len() - 1)
     while out == "/." or out.ends_with("/."):
@@ -713,17 +715,17 @@ fn project_config_normalize_absolute_path(path: str) -> str:
             out = out.slice(0, out.len() - 1)
     out
 
-fn project_config_absolutize_path(path: str) -> str:
+fn project_config_absolutize_path(path: &str) -> str:
     if path.len() == 0:
-        return path
+        return with_str_clone_ref(path)
     if project_config_is_absolute_path(path):
         return project_config_normalize_absolute_path(path)
     let cwd = runtime_getenv("PWD")
     if cwd.len() == 0:
-        return path
+        return with_str_clone_ref(path)
     project_config_normalize_absolute_path(resolve_join(cwd, path))
 
-fn project_config_find_char(text: str, ch: i32) -> i32:
+fn project_config_find_char(text: &str, ch: i32) -> i32:
     var i = 0
     while i < text.len() as i32:
         if text.byte_at(i as i64) == ch:
@@ -731,7 +733,7 @@ fn project_config_find_char(text: str, ch: i32) -> i32:
         i = i + 1
     -1
 
-fn project_config_strip_comment(line: str) -> str:
+fn project_config_strip_comment(line: &str) -> str:
     var in_string = 0
     var escaped = 0
     var i = 0
@@ -749,9 +751,9 @@ fn project_config_strip_comment(line: str) -> str:
         else if ch == 35 and in_string == 0:
             return line.slice(0, i as i64)
         i = i + 1
-    line
+    with_str_clone_ref(line)
 
-fn project_config_trim(text: str) -> str:
+fn project_config_trim(text: &str) -> str:
     var start = 0
     var end = text.len() as i32
     while start < end and project_config_is_space(text.byte_at(start as i64)):
@@ -763,7 +765,7 @@ fn project_config_trim(text: str) -> str:
 fn project_config_is_space(ch: i32) -> bool:
     ch == 32 or ch == 9 or ch == 10 or ch == 13
 
-fn project_config_str_contains(text: str, needle: str) -> bool:
+fn project_config_str_contains(text: &str, needle: &str) -> bool:
     if needle.len() == 0:
         return true
     if needle.len() > text.len():

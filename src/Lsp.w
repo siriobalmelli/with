@@ -20,12 +20,13 @@ use std.builtins.int_to_string
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_read_line_stdin() -> str
+extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_read_bytes_stdin(count: i32) -> str
-extern fn with_write_stdout(s: str) -> Unit
+extern fn with_write_stdout(s: &str) -> Unit
 extern fn with_flush_stdout() -> Unit
-extern fn with_fs_read_file(path: str) -> str
+extern fn with_fs_read_file(path: &str) -> str
 
 // ── JSON-RPC framing ─────────────────────────────────────────
 
@@ -41,13 +42,13 @@ fn lsp_read_message() -> str:
         return ""
     with_read_bytes_stdin(content_length)
 
-fn lsp_write_response(json: str):
+fn lsp_write_response(json: &str):
     let len_str = int_to_string(json.len() as i32)
     with_write_stdout("Content-Length: " ++ len_str ++ "\r\n\r\n")
     with_write_stdout(json)
     with_flush_stdout()
 
-fn lsp_parse_int(s: str) -> i32:
+fn lsp_parse_int(s: &str) -> i32:
     var result = 0
     var started = false
     for i in 0..s.len() as i32:
@@ -100,7 +101,7 @@ unsafe fn jsmn_fill_token(tokens: *mut JsonToken, idx: i32, tok_type: i32, start
     tok.end = end
     tok.size = 0
 
-unsafe fn jsmn_parse_primitive(parser: *mut JsonParser, js: str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+unsafe fn jsmn_parse_primitive(parser: *mut JsonParser, js: &str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     let start = parser.pos
     while parser.pos < len:
         let c = js.byte_at(parser.pos as i64) as i32
@@ -121,7 +122,7 @@ unsafe fn jsmn_parse_primitive(parser: *mut JsonParser, js: str, len: i32, token
     parser.pos = parser.pos - 1
     0
 
-unsafe fn jsmn_parse_string(parser: *mut JsonParser, js: str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+unsafe fn jsmn_parse_string(parser: *mut JsonParser, js: &str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     let start = parser.pos
     parser.pos = parser.pos + 1
     while parser.pos < len:
@@ -161,7 +162,7 @@ unsafe fn jsmn_parse_string(parser: *mut JsonParser, js: str, len: i32, tokens: 
     parser.pos = start
     -3
 
-unsafe fn jsmn_parse(parser: *mut JsonParser, js: str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+unsafe fn jsmn_parse(parser: *mut JsonParser, js: &str, len: i32, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     var count = parser.toknext
     while parser.pos < len:
         let c = js.byte_at(parser.pos as i64) as i32
@@ -238,11 +239,11 @@ unsafe fn jsmn_parse(parser: *mut JsonParser, js: str, len: i32, tokens: *mut Js
 
 // ── JSON token accessors ────────────────────────────────────
 
-fn lsp_json_parse(js: str, tokens: *mut JsonToken, num_tokens: i32) -> i32:
+fn lsp_json_parse(js: &str, tokens: *mut JsonToken, num_tokens: i32) -> i32:
     var parser = JsonParser { pos: 0, toknext: 0, toksuper: -1 }
     unsafe { jsmn_parse(&raw mut parser as *mut JsonParser, js, js.len() as i32, tokens, num_tokens) }
 
-fn json_tok_str(js: str, tokens: *mut JsonToken, idx: i32) -> str:
+fn json_tok_str(js: &str, tokens: *mut JsonToken, idx: i32) -> str:
     if idx < 0:
         return ""
     var start: i32 = 0
@@ -252,7 +253,7 @@ fn json_tok_str(js: str, tokens: *mut JsonToken, idx: i32) -> str:
         end = (*(tokens + idx as u64)).end
     json_unescape(js.slice(start as i64, end as i64))
 
-fn json_tok_int(js: str, tokens: *mut JsonToken, idx: i32) -> i32:
+fn json_tok_int(js: &str, tokens: *mut JsonToken, idx: i32) -> i32:
     if idx < 0:
         return -1
     var start: i32 = 0
@@ -262,7 +263,7 @@ fn json_tok_int(js: str, tokens: *mut JsonToken, idx: i32) -> i32:
         end = (*(tokens + idx as u64)).end
     lsp_parse_int(js.slice(start as i64, end as i64))
 
-fn json_find(js: str, tokens: *mut JsonToken, parent: i32, key: str) -> i32:
+fn json_find(js: &str, tokens: *mut JsonToken, parent: i32, key: &str) -> i32:
     if parent < 0:
         return -1
     var tok_type: i32 = 0
@@ -310,9 +311,9 @@ fn json_skip(tokens: *mut JsonToken, idx: i32) -> i32:
         return next
     idx + 1
 
-fn json_unescape(s: str) -> str:
+fn json_unescape(s: &str) -> str:
     if not s.contains("\\"):
-        return s
+        return with_str_clone_ref(s)
     var out = ""
     var i = 0
     while i < s.len() as i32:
@@ -337,7 +338,7 @@ fn json_unescape(s: str) -> str:
             i = i + 1
     out
 
-fn json_escape(s: str) -> str:
+fn json_escape(s: &str) -> str:
     var out = ""
     for i in 0..s.len() as i32:
         let ch = s.byte_at(i as i64)
@@ -355,7 +356,7 @@ fn json_escape(s: str) -> str:
             out = out ++ s.slice(i as i64, (i + 1) as i64)
     out
 
-fn lsp_find_substr(haystack: str, needle: str) -> i32:
+fn lsp_find_substr(haystack: &str, needle: &str) -> i32:
     let h_len = haystack.len() as i32
     let n_len = needle.len() as i32
     if n_len == 0 or n_len > h_len:
@@ -384,19 +385,19 @@ fn jarr_start() -> str:
 fn jarr_end() -> str:
     "]"
 
-fn jkv_str(key: str, val: str) -> str:
+fn jkv_str(key: &str, val: &str) -> str:
     "\"" ++ key ++ "\":\"" ++ json_escape(val) ++ "\""
 
-fn jkv_int(key: str, val: i32) -> str:
+fn jkv_int(key: &str, val: i32) -> str:
     "\"" ++ key ++ "\":" ++ int_to_string(val)
 
-fn jkv_raw(key: str, val: str) -> str:
+fn jkv_raw(key: &str, val: &str) -> str:
     "\"" ++ key ++ "\":" ++ val
 
-fn jkv_null(key: str) -> str:
+fn jkv_null(key: &str) -> str:
     "\"" ++ key ++ "\":null"
 
-fn jkv_bool(key: str, val: bool) -> str:
+fn jkv_bool(key: &str, val: bool) -> str:
     "\"" ++ key ++ "\":" ++ (if val: "true" else: "false")
 
 fn jpos(line: i32, col: i32) -> str:
@@ -405,16 +406,16 @@ fn jpos(line: i32, col: i32) -> str:
 fn jrange(sl: i32, sc: i32, el: i32, ec: i32) -> str:
     jobj_start() ++ jkv_raw("start", jpos(sl, sc)) ++ "," ++ jkv_raw("end", jpos(el, ec)) ++ jobj_end()
 
-fn jrpc_result(id: i32, result: str) -> str:
+fn jrpc_result(id: i32, result: &str) -> str:
     jobj_start() ++ jkv_str("jsonrpc", "2.0") ++ "," ++ jkv_int("id", id) ++ "," ++ jkv_raw("result", result) ++ jobj_end()
 
 fn jrpc_result_null(id: i32) -> str:
     jobj_start() ++ jkv_str("jsonrpc", "2.0") ++ "," ++ jkv_int("id", id) ++ "," ++ jkv_null("result") ++ jobj_end()
 
-fn jrpc_notification(method: str, params: str) -> str:
+fn jrpc_notification(method: &str, params: &str) -> str:
     jobj_start() ++ jkv_str("jsonrpc", "2.0") ++ "," ++ jkv_str("method", method) ++ "," ++ jkv_raw("params", params) ++ jobj_end()
 
-fn jrpc_error(id: i32, code: i32, message: str) -> str:
+fn jrpc_error(id: i32, code: i32, message: &str) -> str:
     let err = jobj_start() ++ jkv_int("code", code) ++ "," ++ jkv_str("message", message) ++ jobj_end()
     jobj_start() ++ jkv_str("jsonrpc", "2.0") ++ "," ++ jkv_int("id", id) ++ "," ++ jkv_raw("error", err) ++ jobj_end()
 
@@ -444,9 +445,9 @@ type LspDocument {
     cache_valid: bool,
 }
 
-fn LspDocument.new(uri: str, path: str, text: str, version: i32) -> LspDocument:
+fn LspDocument.new(uri: &str, path: &str, text: &str, version: i32) -> LspDocument:
     LspDocument {
-        uri, path, text, version,
+        uri: with_str_clone_ref(uri), path: with_str_clone_ref(path), text: with_str_clone_ref(text), version,
         fast_pool: AstPool.new(),
         fast_intern: InternPool.init(),
         fast_text_len: 0,
@@ -532,11 +533,11 @@ impl LspDocument:
                             let msym = sema.trait_method_names.get((mstart + mi) as i64)
                             let mname = sema.pool_resolve(msym)
                             if mname.len() > 0:
-                                methods.push(mname)
+                                methods.push(with_str_clone_ref(mname))
                             mi = mi + 1
                 ti = ti + 1
             if methods.len() > 0:
-                self.cached_trait_methods.insert(type_name, move methods)
+                self.cached_trait_methods.insert(with_str_clone_ref(type_name), move methods)
         self.cached_text_len = self.text.len() as i32
         self.cache_valid = true
 
@@ -550,7 +551,7 @@ impl LspDocument:
         ""
 
     // Get trait methods for a type via cached sema data.
-    fn trait_methods_for_type(type_name: str) -> Vec[str]:
+    fn trait_methods_for_type(type_name: &str) -> Vec[str]:
         if not self.cache_valid:
             return Vec.new()
         let opt = self.cached_trait_methods.get(type_name)
@@ -575,7 +576,7 @@ fn LspState.new() -> LspState:
     LspState { initialized: false, documents: Vec.new() }
 
 impl LspState:
-    fn find_doc(uri: str) -> i32:
+    fn find_doc(uri: &str) -> i32:
         for i in 0..self.documents.len() as i32:
             if (&self.documents[i as i64]).uri == uri:
                 return i
@@ -611,7 +612,7 @@ impl LspState:
         with self.documents.slot(analyzed_slot_idx) as mut slot:
             slot.set(move reanalyzed)
 
-    fn get_parsed(uri: str, text: str) -> LspParseResult:
+    fn get_parsed(uri: &str, text: &str) -> LspParseResult:
         // Always a fresh caller-owned parse. Returning the cached fast_pool /
         // fast_intern handed out handle copies of the document's pools; every
         // caller dropped its result and freed the cache's buffers, and the
@@ -619,7 +620,7 @@ impl LspState:
         // parse is ~1ms; share the cache via views if it ever matters.
         lsp_parse_file(text)
 
-    mut fn set_doc(uri: str, text: str, version: i32):
+    mut fn set_doc(uri: &str, text: &str, version: i32):
         let idx = self.find_doc(uri)
         if idx < 0:
             self.documents.push(LspDocument.new(uri, uri_to_path(uri), text, version))
@@ -630,14 +631,14 @@ impl LspState:
         with self.documents.slot(idx) as mut slot:
             slot.set(LspDocument.new(uri, uri_to_path(uri), text, version))
 
-fn uri_to_path(uri: str) -> str:
+fn uri_to_path(uri: &str) -> str:
     if uri.starts_with("file://"):
         return uri.slice(7, uri.len())
-    uri
+    with_str_clone_ref(uri)
 
 // ── Line/column utilities ────────────────────────────────────
 
-fn lsp_offset_to_line(text: str, offset: i32) -> i32:
+fn lsp_offset_to_line(text: &str, offset: i32) -> i32:
     var line = 0
     var i = 0
     while i < offset and i < text.len() as i32:
@@ -646,7 +647,7 @@ fn lsp_offset_to_line(text: str, offset: i32) -> i32:
         i = i + 1
     line
 
-fn lsp_offset_to_col(text: str, offset: i32) -> i32:
+fn lsp_offset_to_col(text: &str, offset: i32) -> i32:
     var col = 0
     var i = 0
     while i < offset and i < text.len() as i32:
@@ -657,7 +658,7 @@ fn lsp_offset_to_col(text: str, offset: i32) -> i32:
         i = i + 1
     col
 
-fn lsp_line_col_to_offset(text: str, line: i32, col: i32) -> i32:
+fn lsp_line_col_to_offset(text: &str, line: i32, col: i32) -> i32:
     var cur_line = 0
     var cur_col = 0
     for i in 0..text.len() as i32:
@@ -672,7 +673,7 @@ fn lsp_line_col_to_offset(text: str, line: i32, col: i32) -> i32:
 
 // ── Diagnostics ──────────────────────────────────────────────
 
-fn LspState.publish_diagnostics(mut self: LspState, uri: str, text: str):
+fn LspState.publish_diagnostics(mut self: LspState, uri: &str, text: &str):
     let idx = self.find_doc(uri)
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
@@ -713,7 +714,7 @@ fn LspState.publish_diagnostics(mut self: LspState, uri: str, text: str):
 
 // ── Go to definition ─────────────────────────────────────────
 
-fn LspState.definition(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.definition(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     var lexer = Lexer.init(text, 0)
@@ -748,8 +749,8 @@ fn LspState.definition(mut self: LspState, id: i32, uri: str, text: str, line: i
                 let name = slow_intern.resolve(slow_pool.get_data0(decl))
                 if name == token_text:
                     let ds = slow_pool.get_start(decl)
-                    var def_uri = uri
-                    var def_text = text
+                    var def_uri = with_str_clone_ref(uri)
+                    var def_text = with_str_clone_ref(text)
                     if di < slow_paths.len() as i32:
                         let decl_path = slow_paths.get(di as i64)
                         if decl_path.len() > 0 and decl_path != uri_to_path(uri):
@@ -785,7 +786,7 @@ fn LspState.definition(mut self: LspState, id: i32, uri: str, text: str, line: i
 // ── Hover ────────────────────────────────────────────────────
 
 // Extract /// doc comment lines above a declaration at the given byte offset.
-fn lsp_extract_doc_comment(text: str, decl_start: i32) -> str:
+fn lsp_extract_doc_comment(text: &str, decl_start: i32) -> str:
     // Walk backward from decl_start to find preceding /// comment lines.
     var pos = decl_start - 1
     // Skip whitespace/newlines before the declaration
@@ -818,7 +819,7 @@ fn lsp_extract_doc_comment(text: str, decl_start: i32) -> str:
         i = i - 1
     result
 
-fn LspState.hover(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.hover(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     var lexer = Lexer.init(text, 0)
@@ -887,7 +888,7 @@ fn LspState.hover(mut self: LspState, id: i32, uri: str, text: str, line: i32, c
 
 // ── Dot completion ───────────────────────────────────────────
 
-fn LspState.dot_completion(mut self: LspState, id: i32, uri: str, text: str, offset: i32, dot_pos: i32):
+fn LspState.dot_completion(mut self: LspState, id: i32, uri: &str, text: &str, offset: i32, dot_pos: i32):
     // Find the receiver identifier before the dot
     var recv_end = dot_pos
     var recv_start = recv_end - 1
@@ -1030,7 +1031,7 @@ fn LspState.dot_completion(mut self: LspState, id: i32, uri: str, text: str, off
 fn lsp_is_ident_char(ch: i32) -> bool:
     (ch >= 97 and ch <= 122) or (ch >= 65 and ch <= 90) or (ch >= 48 and ch <= 57) or ch == 95
 
-fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: str, offset: i32) -> str:
+fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: &str, offset: i32) -> str:
     // Find the enclosing function, then look for:
     // 1. Parameter with type annotation: fn foo(x: MyType) → "MyType"
     // 2. Let binding with type annotation: let x: MyType = ... → "MyType"
@@ -1074,7 +1075,7 @@ fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: str, o
                     if vk == NodeKind.NK_STRUCT_LIT:
                         let struct_sym = pool.get_data0(value as NodeId)
                         if struct_sym != 0:
-                            return intern.resolve(struct_sym)
+                            return with_str_clone_ref(intern.resolve(struct_sym))
                     if vk == NodeKind.NK_STRING_LIT or vk == NodeKind.NK_FSTRING:
                         return "str"
                     if vk == NodeKind.NK_CALL:
@@ -1085,7 +1086,7 @@ fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: str, o
                             if ck == NodeKind.NK_FIELD_ACCESS:
                                 let base = pool.get_data0(callee as NodeId)
                                 if base != 0 and pool.kind(base as NodeId) == NodeKind.NK_IDENT:
-                                    return intern.resolve(pool.get_data0(base as NodeId))
+                                    return with_str_clone_ref(intern.resolve(pool.get_data0(base as NodeId)))
                             // fn_name() — look up function return type
                             if ck == NodeKind.NK_IDENT:
                                 let call_name = intern.resolve(pool.get_data0(callee as NodeId))
@@ -1094,7 +1095,7 @@ fn lsp_resolve_receiver_type(pool: AstPool, intern: InternPool, receiver: str, o
                                     return ret_type
     ""
 
-fn lsp_fn_return_type(pool: AstPool, intern: InternPool, fn_name: str) -> str:
+fn lsp_fn_return_type(pool: AstPool, intern: InternPool, fn_name: &str) -> str:
     for di in 0..pool.decl_count():
         let decl = pool.get_decl(di)
         if pool.kind(decl) != NodeKind.NK_FN_DECL:
@@ -1112,7 +1113,7 @@ fn lsp_fn_return_type(pool: AstPool, intern: InternPool, fn_name: str) -> str:
 fn lsp_type_node_to_name(pool: AstPool, intern: InternPool, type_node: i32) -> str:
     let tk = pool.kind(type_node as NodeId)
     if tk == NodeKind.NK_TYPE_NAMED:
-        return intern.resolve(pool.get_data0(type_node as NodeId))
+        return with_str_clone_ref(intern.resolve(pool.get_data0(type_node as NodeId)))
     if tk == NodeKind.NK_TYPE_REF:
         let inner = pool.get_data0(type_node as NodeId)
         if inner > 0:
@@ -1120,14 +1121,14 @@ fn lsp_type_node_to_name(pool: AstPool, intern: InternPool, type_node: i32) -> s
     if tk == NodeKind.NK_TYPE_GENERIC or tk == NodeKind.NK_INDEX:
         let base = pool.get_data0(type_node as NodeId)
         if base > 0 and pool.kind(base as NodeId) == NodeKind.NK_IDENT:
-            return intern.resolve(pool.get_data0(base as NodeId))
+            return with_str_clone_ref(intern.resolve(pool.get_data0(base as NodeId)))
     ""
 
 // (helpers removed — items built inline due to pass-by-value)
 
 // ── Completion ───────────────────────────────────────────────
 
-fn LspState.completion(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.completion(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Find the line text up to cursor to detect context
@@ -1198,13 +1199,13 @@ fn LspState.completion(mut self: LspState, id: i32, uri: str, text: str, line: i
     if enclosing_fn as i32 != 0:
         let params = lsp_collect_fn_params(parse_pool, parse_intern, enclosing_fn)
         for pi in 0..params.len() as i32:
-            scope_names.push(params.get(pi as i64))
+            scope_names.push(with_str_clone_ref(params.get(pi as i64)))
         // Walk body recursively to collect bindings visible at cursor.
         let body = parse_pool.get_data1(enclosing_fn)
         if body != 0:
             let bindings = lsp_collect_bindings_rec(parse_pool, parse_intern, body, offset)
             for bi in 0..bindings.len() as i32:
-                scope_names.push(bindings.get(bi as i64))
+                scope_names.push(with_str_clone_ref(bindings.get(bi as i64)))
     for si in 0..scope_names.len() as i32:
         let sname = scope_names.get(si as i64)
         if not first:
@@ -1228,16 +1229,16 @@ fn LspState.completion(mut self: LspState, id: i32, uri: str, text: str, line: i
         var label = ""
         var ck = 0
         if kind == NodeKind.NK_FN_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             ck = 3
         else if kind == NodeKind.NK_TYPE_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             ck = 22
         else if kind == NodeKind.NK_TRAIT_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             ck = 8
         else if kind == NodeKind.NK_LET_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             ck = 6
         if label.len() > 0:
             if not first:
@@ -1256,8 +1257,8 @@ fn LspState.completion(mut self: LspState, id: i32, uri: str, text: str, line: i
     items = items ++ jarr_end()
     lsp_write_response(jrpc_result(id, jobj_start() ++ jkv_raw("items", items) ++ jobj_end()))
 
-fn lsp_append_csv_items(items: str, csv: str, kind: i32, first: bool) -> str:
-    var result = items
+fn lsp_append_csv_items(items: &str, csv: &str, kind: i32, first: bool) -> str:
+    var result = with_str_clone_ref(items)
     var f = first
     var start = 0
     for i in 0..csv.len() as i32:
@@ -1278,7 +1279,7 @@ type LspParseResult {
     intern: InternPool,
 }
 
-fn lsp_parse_file(text: str) -> LspParseResult:
+fn lsp_parse_file(text: &str) -> LspParseResult:
     var lexer = Lexer.init(text, 0)
     let tokens = lexer.tokenize()
     var intern = InternPool.init()
@@ -1326,7 +1327,7 @@ fn lsp_collect_fn_params(pool: AstPool, intern: InternPool, fn_node: NodeId) -> 
         if psym != 0:
             let pname = intern.resolve(psym)
             if pname != "self" and pname.len() > 0:
-                names.push(pname)
+                names.push(with_str_clone_ref(pname))
     names
 
 fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset: i32) -> Vec[str]:
@@ -1345,7 +1346,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
                 let name = intern.resolve(sym)
                 if name.len() > 0:
                     let result: Vec[str] = Vec.new()
-                    result.push(name)
+                    result.push(with_str_clone_ref(name))
                     return result
         return empty
 
@@ -1362,12 +1363,12 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
             if sym != 0:
                 let name = intern.resolve(sym)
                 if name.len() > 0 and name != "_":
-                    result.push(name)
+                    result.push(with_str_clone_ref(name))
         let for_body = pool.get_data2(nid)
         if for_body != 0:
             let inner = lsp_collect_bindings_rec(pool, intern, for_body, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         return result
 
     if kind == NodeKind.NK_BLOCK:
@@ -1379,11 +1380,11 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
             let stmt = pool.get_extra(extra_start + i)
             let inner = lsp_collect_bindings_rec(pool, intern, stmt, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         if tail != 0:
             let inner = lsp_collect_bindings_rec(pool, intern, tail, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         return result
 
     if kind == NodeKind.NK_IF_EXPR:
@@ -1393,11 +1394,11 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
         if then_body != 0 and offset >= pool.get_start(then_body as NodeId) and offset <= pool.get_end(then_body as NodeId):
             let inner = lsp_collect_bindings_rec(pool, intern, then_body, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         if else_body != 0 and offset >= pool.get_start(else_body as NodeId) and offset <= pool.get_end(else_body as NodeId):
             let inner = lsp_collect_bindings_rec(pool, intern, else_body, offset)
             for ii in 0..inner.len() as i32:
-                result.push(inner.get(ii as i64))
+                result.push(with_str_clone_ref(inner.get(ii as i64)))
         return result
 
     if kind == NodeKind.NK_WHILE:
@@ -1431,7 +1432,7 @@ fn lsp_collect_bindings_rec(pool: AstPool, intern: InternPool, node: i32, offset
 
     empty
 
-fn lsp_list_embedded_modules(prefix: str) -> Vec[str]:
+fn lsp_list_embedded_modules(prefix: &str) -> Vec[str]:
     // Query the embedded stdlib listing and filter by prefix.
     // Returns module names without prefix or .w extension.
     // e.g. prefix="std/" returns ["collections", "fmt", "fs", ...]
@@ -1492,7 +1493,7 @@ fn lsp_keywords() -> Vec[str]:
 
 // ── Signature help ───────────────────────────────────────────
 
-fn LspState.signature_help(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.signature_help(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Walk tokens backward from cursor to find the opening ( and function name.
@@ -1561,16 +1562,16 @@ fn LspState.signature_help(mut self: LspState, id: i32, uri: str, text: str, lin
             if ptype_node > 0:
                 let ptk = parsed.pool.kind(ptype_node as NodeId)
                 if ptk == NodeKind.NK_TYPE_NAMED:
-                    ptype_str = parsed.intern.resolve(parsed.pool.get_data0(ptype_node as NodeId))
+                    ptype_str = with_str_clone_ref(parsed.intern.resolve(parsed.pool.get_data0(ptype_node as NodeId)))
                 else if ptk == NodeKind.NK_TYPE_REF:
                     let inner = parsed.pool.get_data0(ptype_node as NodeId)
                     if inner > 0 and parsed.pool.kind(inner as NodeId) == NodeKind.NK_TYPE_NAMED:
                         ptype_str = "&" ++ parsed.intern.resolve(parsed.pool.get_data0(inner as NodeId))
-            let param_text = if ptype_str.len() > 0: pname ++ ": " ++ ptype_str else: pname
-            param_labels.push(param_text)
+            let param_text = if ptype_str.len() > 0: pname ++ ": " ++ ptype_str else: with_str_clone_ref(pname)
             if pi > 0:
                 label = label ++ ", "
             label = label ++ param_text
+            param_labels.push(param_text)
         label = label ++ ")"
         sig_label = label
         break
@@ -1593,7 +1594,7 @@ fn LspState.signature_help(mut self: LspState, id: i32, uri: str, text: str, lin
 
 // ── Find references ──────────────────────────────────────────
 
-fn LspState.find_references(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32):
+fn LspState.find_references(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Find the identifier at cursor
@@ -1707,7 +1708,7 @@ fn LspState.find_references(mut self: LspState, id: i32, uri: str, text: str, li
 
 // ── Document symbols ─────────────────────────────────────────
 
-fn LspState.document_symbols(mut self: LspState, id: i32, uri: str, text: str):
+fn LspState.document_symbols(mut self: LspState, id: i32, uri: &str, text: &str):
     let idx = self.find_doc(uri)
     if idx >= 0:
         self.ensure_doc_analyzed(idx)
@@ -1728,19 +1729,19 @@ fn LspState.document_symbols(mut self: LspState, id: i32, uri: str, text: str):
         var label = ""
         var sk = 0
         if kind == NodeKind.NK_FN_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 12
         else if kind == NodeKind.NK_TYPE_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 23
         else if kind == NodeKind.NK_TRAIT_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 11
         else if kind == NodeKind.NK_LET_DECL:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 13
         else if kind == NodeKind.NK_EXTERN_FN:
-            label = intern.resolve(pool.get_data0(decl))
+            label = with_str_clone_ref(intern.resolve(pool.get_data0(decl)))
             sk = 12
         if label.len() > 0:
             let ds = pool.get_start(decl)
@@ -1759,7 +1760,7 @@ fn LspState.document_symbols(mut self: LspState, id: i32, uri: str, text: str):
 
 // ── Rename symbol ───────────────────────────────────────────
 
-fn lsp_is_valid_ident(name: str) -> bool:
+fn lsp_is_valid_ident(name: &str) -> bool:
     if name.len() == 0:
         return false
     let first_ch = name.byte_at(0)
@@ -1771,7 +1772,7 @@ fn lsp_is_valid_ident(name: str) -> bool:
             return false
     true
 
-fn LspState.rename(mut self: LspState, id: i32, uri: str, text: str, line: i32, col: i32, new_name: str):
+fn LspState.rename(mut self: LspState, id: i32, uri: &str, text: &str, line: i32, col: i32, new_name: &str):
     let offset = lsp_line_col_to_offset(text, line, col)
 
     // Find the identifier at cursor
@@ -1871,11 +1872,11 @@ fn LspState.rename(mut self: LspState, id: i32, uri: str, text: str, line: i32, 
 
 // ── Main loop ────────────────────────────────────────────────
 
-fn lsp_extract_uri(msg: str, tokens: *mut JsonToken, params_idx: i32) -> str:
+fn lsp_extract_uri(msg: &str, tokens: *mut JsonToken, params_idx: i32) -> str:
     let td = json_find(msg, tokens, params_idx, "textDocument")
     json_tok_str(msg, tokens, json_find(msg, tokens, td, "uri"))
 
-fn lsp_extract_position(msg: str, tokens: *mut JsonToken, params_idx: i32, line_out: *mut i32, char_out: *mut i32):
+fn lsp_extract_position(msg: &str, tokens: *mut JsonToken, params_idx: i32, line_out: *mut i32, char_out: *mut i32):
     let pos = json_find(msg, tokens, params_idx, "position")
     unsafe:
         *(line_out + 0u64) = json_tok_int(msg, tokens, json_find(msg, tokens, pos, "line"))
@@ -1951,7 +1952,9 @@ fn run_lsp() -> i32:
             if idx >= 0:
                 // Re-analyze on save (slow tier refreshes cross-file data)
                 state.ensure_doc_analyzed(idx)
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.publish_diagnostics(uri, doc_text)
 
         else if method == "textDocument/hover":
@@ -1961,7 +1964,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.hover(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
@@ -1973,7 +1978,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.definition(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
@@ -1982,7 +1989,9 @@ fn run_lsp() -> i32:
             let uri = lsp_extract_uri(msg, tokens, params_idx)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 let formatted = format_source(doc_text)
                 if formatted != doc_text:
                     let el = lsp_offset_to_line(doc_text, doc_text.len() as i32)
@@ -2000,7 +2009,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.completion(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result(id, jobj_start() ++ jkv_raw("items", "[]") ++ jobj_end()))
@@ -2012,7 +2023,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.signature_help(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result_null(id))
@@ -2024,7 +2037,9 @@ fn run_lsp() -> i32:
             lsp_extract_position(msg, tokens, params_idx, &raw mut line as *mut i32, &raw mut character as *mut i32)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.find_references(id, uri, doc_text, line, character)
             else:
                 lsp_write_response(jrpc_result(id, "[]"))
@@ -2033,7 +2048,9 @@ fn run_lsp() -> i32:
             let uri = lsp_extract_uri(msg, tokens, params_idx)
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.document_symbols(id, uri, doc_text)
             else:
                 lsp_write_response(jrpc_result(id, "[]"))
@@ -2046,7 +2063,9 @@ fn run_lsp() -> i32:
             let new_name = json_tok_str(msg, tokens, json_find(msg, tokens, params_idx, "newName"))
             let idx = state.find_doc(uri)
             if idx >= 0:
-                let doc_text = (&state.documents[idx as i64]).text
+                // #747: owned snapshot — the handler mutates `state` while it runs,
+                // which would invalidate a live view of the stored document text.
+                let doc_text = with_str_clone_ref((&state.documents[idx as i64]).text)
                 state.rename(id, uri, doc_text, line, character, new_name)
             else:
                 lsp_write_response(jrpc_result_null(id))

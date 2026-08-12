@@ -65,6 +65,8 @@ pub extern fn exit(code: i32) -> Never
 pub extern fn clock() -> u64
 pub extern fn time(tloc: *mut i64) -> i64
 pub extern fn isatty(fd: i32) -> i32
+pub extern fn mkstemp(template_path: *mut i8) -> i32
+pub extern fn realpath(path: *const i8, resolved_path: *mut i8) -> *mut i8
 extern fn with_libc_open(path: *const i8, flags: i32, mode: i32) -> i32
 extern fn with_libc_read(fd: i32, buf: *mut u8, count: u64) -> i64
 extern fn with_libc_write(fd: i32, buf: *const u8, count: u64) -> i64

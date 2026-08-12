@@ -47,7 +47,7 @@ impl Arena:
         })
         id
 
-    pub mut fn alloc_str(value: str) -> ArenaId:
+    pub mut fn alloc_str(value: &str) -> ArenaId:
         let id = arena_id_from_raw(self.slots.len() as i32)
         self.slots.push(ArenaSlot {
             kind: ARENA_SLOT_STR(),

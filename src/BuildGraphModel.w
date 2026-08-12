@@ -1,3 +1,4 @@
+extern fn with_str_clone_ref(s: &str) -> str
 // BuildGraphModel -- parsed build.w graph data and serialization.
 
 pub type BuildGraphTarget {
@@ -60,15 +61,15 @@ pub fn empty_build_graph -> BuildGraph:
         generated_sources: Vec.new(),
     }
 
-fn build_graph_generated_source_new(path: str, contents: str) -> BuildGraphGeneratedSource:
-    BuildGraphGeneratedSource { path, contents }
+fn build_graph_generated_source_new(path: &str, contents: &str) -> BuildGraphGeneratedSource:
+    BuildGraphGeneratedSource { path: with_str_clone_ref(path), contents: with_str_clone_ref(contents) }
 
-fn build_graph_target_new(kind: i32, name: str, entry: str, target_kind: i32, optimize_mode: i32, output: str) -> BuildGraphTarget:
+fn build_graph_target_new(kind: i32, name: &str, entry: &str, target_kind: i32, optimize_mode: i32, output: &str) -> BuildGraphTarget:
     BuildGraphTarget {
         kind,
-        name,
-        entry,
-        output,
+        name: with_str_clone_ref(name),
+        entry: with_str_clone_ref(entry),
+        output: with_str_clone_ref(output),
         target_kind,
         optimize_mode,
         system_libs: Vec.new(),
@@ -91,7 +92,7 @@ fn build_graph_target_new(kind: i32, name: str, entry: str, target_kind: i32, op
 pub fn empty_build_graph_target -> BuildGraphTarget:
     build_graph_target_new(-1, "", "", 0, 0, "")
 
-fn build_graph_split_nonempty_lines(text: str) -> Vec[str]:
+fn build_graph_split_nonempty_lines(text: &str) -> Vec[str]:
     let lines: Vec[str] = Vec.new()
     let text_len = text.len() as i32
     var start = 0
@@ -110,7 +111,7 @@ fn build_graph_split_nonempty_lines(text: str) -> Vec[str]:
         i = i + 1
     lines
 
-fn build_graph_split_fields(line: str) -> Vec[str]:
+fn build_graph_split_fields(line: &str) -> Vec[str]:
     let fields: Vec[str] = Vec.new()
     var cur = ""
     var escaped = false
@@ -136,7 +137,7 @@ fn build_graph_split_fields(line: str) -> Vec[str]:
     fields.push(cur)
     fields
 
-fn build_graph_escape(value: str) -> str:
+fn build_graph_escape(value: &str) -> str:
     var out = ""
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -197,7 +198,7 @@ pub fn build_graph_emit(graph: &BuildGraph) -> str:
             out = out ++ "parallel\t" ++ f"{ti}\t1\n"
     out
 
-fn build_graph_parse_i32(text: str) -> i32:
+fn build_graph_parse_i32(text: &str) -> i32:
     var sign = 1
     var i = 0
     if text.len() > 0 and text.byte_at(0) == 45:
@@ -212,9 +213,9 @@ fn build_graph_parse_i32(text: str) -> i32:
         i = i + 1
     value * sign
 
-pub fn parse_build_graph(text: str) -> BuildGraph:
+pub fn parse_build_graph(text: &str) -> BuildGraph:
     var graph = empty_build_graph()
-    graph.raw_text = text
+    graph.raw_text = with_str_clone_ref(text)
     if text.len() == 0:
         graph.error_msg = "build.w produced an empty build graph"
         return graph
@@ -241,13 +242,13 @@ pub fn parse_build_graph(text: str) -> BuildGraph:
             if fields.len() != 3:
                 graph.error_msg = "invalid package line in build graph"
                 return graph
-            graph.package_name = fields.get(1)
-            graph.package_version = fields.get(2)
+            graph.package_name = with_str_clone_ref(fields.get(1))
+            graph.package_version = with_str_clone_ref(fields.get(2))
         else if tag == "default_target":
             if fields.len() != 2:
                 graph.error_msg = "invalid default_target line in build graph"
                 return graph
-            graph.default_target = fields.get(1)
+            graph.default_target = with_str_clone_ref(fields.get(1))
         else if tag == "generated_source":
             if fields.len() != 3:
                 graph.error_msg = "invalid generated_source line in build graph"
@@ -259,7 +260,7 @@ pub fn parse_build_graph(text: str) -> BuildGraph:
                 return graph
             if has_current:
                 graph.targets.push(move current)
-            let output = if graph_version == 2: fields.get(6) else: ""
+            let output = if graph_version == 2: with_str_clone_ref(fields.get(6)) else: ""
             current = build_graph_target_new(
                 build_graph_parse_i32(fields.get(1)),
                 fields.get(2),
@@ -273,42 +274,42 @@ pub fn parse_build_graph(text: str) -> BuildGraph:
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid system_lib line in build graph"
                 return graph
-            current.system_libs.push(fields.get(2))
+            current.system_libs.push(with_str_clone_ref(fields.get(2)))
         else if tag == "include_path":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid include_path line in build graph"
                 return graph
-            current.include_paths.push(fields.get(2))
+            current.include_paths.push(with_str_clone_ref(fields.get(2)))
         else if tag == "define":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid define line in build graph"
                 return graph
-            current.defines.push(fields.get(2))
+            current.defines.push(with_str_clone_ref(fields.get(2)))
         else if tag == "input":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid input line in build graph"
                 return graph
-            current.inputs.push(fields.get(2))
+            current.inputs.push(with_str_clone_ref(fields.get(2)))
         else if tag == "extra_output":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid extra_output line in build graph"
                 return graph
-            current.extra_outputs.push(fields.get(2))
+            current.extra_outputs.push(with_str_clone_ref(fields.get(2)))
         else if tag == "write_scope":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid write_scope line in build graph"
                 return graph
-            current.write_scopes.push(fields.get(2))
+            current.write_scopes.push(with_str_clone_ref(fields.get(2)))
         else if tag == "dep":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid dep line in build graph"
                 return graph
-            current.deps.push(fields.get(2))
+            current.deps.push(with_str_clone_ref(fields.get(2)))
         else if tag == "arg":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid arg line in build graph"
                 return graph
-            current.args.push(fields.get(2))
+            current.args.push(with_str_clone_ref(fields.get(2)))
         else if tag == "timeout_ms":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid timeout_ms line in build graph"
@@ -318,12 +319,12 @@ pub fn parse_build_graph(text: str) -> BuildGraph:
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid cwd line in build graph"
                 return graph
-            current.cwd = fields.get(2)
+            current.cwd = with_str_clone_ref(fields.get(2))
         else if tag == "env":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid env line in build graph"
                 return graph
-            current.env.push(fields.get(2))
+            current.env.push(with_str_clone_ref(fields.get(2)))
         else if tag == "network":
             if fields.len() != 3 or not has_current:
                 graph.error_msg = "invalid network line in build graph"
@@ -341,7 +342,7 @@ pub fn parse_build_graph(text: str) -> BuildGraph:
 pub fn bg_clone_str_vec(values: &Vec[str]) -> Vec[str]:
     let out: Vec[str] = Vec.new()
     for i in 0..values.len() as i32:
-        out.push(values.get(i as i64))
+        out.push(with_str_clone_ref(values.get(i as i64)))
     out
 
 // A stored element copy must own its buffers: BuildGraphTarget carries nine
@@ -350,9 +351,9 @@ pub fn bg_clone_str_vec(values: &Vec[str]) -> Vec[str]:
 fn build_graph_target_deep_copy(t: &BuildGraphTarget) -> BuildGraphTarget:
     BuildGraphTarget {
         kind: t.kind,
-        name: t.name,
-        entry: t.entry,
-        output: t.output,
+        name: with_str_clone_ref(t.name),
+        entry: with_str_clone_ref(t.entry),
+        output: with_str_clone_ref(t.output),
         target_kind: t.target_kind,
         optimize_mode: t.optimize_mode,
         system_libs: bg_clone_str_vec(&t.system_libs),
@@ -365,24 +366,24 @@ fn build_graph_target_deep_copy(t: &BuildGraphTarget) -> BuildGraphTarget:
         args: bg_clone_str_vec(&t.args),
         action_fn: t.action_fn,
         timeout_ms: t.timeout_ms,
-        cwd: t.cwd,
+        cwd: with_str_clone_ref(t.cwd),
         env: bg_clone_str_vec(&t.env),
         network: t.network,
         parallel: t.parallel,
         action_source_paths: bg_clone_str_vec(&t.action_source_paths),
     }
 
-pub fn build_graph_filter_target(graph: &BuildGraph, target_name: str) -> BuildGraph:
+pub fn build_graph_filter_target(graph: &BuildGraph, target_name: &str) -> BuildGraph:
     var out = empty_build_graph()
     out.ok = graph.ok
-    out.error_msg = graph.error_msg
-    out.raw_text = graph.raw_text
-    out.package_name = graph.package_name
-    out.package_version = graph.package_version
-    out.default_target = graph.default_target
+    out.error_msg = with_str_clone_ref(graph.error_msg)
+    out.raw_text = with_str_clone_ref(graph.raw_text)
+    out.package_name = with_str_clone_ref(graph.package_name)
+    out.package_version = with_str_clone_ref(graph.package_version)
+    out.default_target = with_str_clone_ref(graph.default_target)
     for gi in 0..graph.generated_sources.len() as i32:
         let bgm_gen = &graph.generated_sources[gi as i64]
-        out.generated_sources.push(BuildGraphGeneratedSource { path: bgm_gen.path, contents: bgm_gen.contents })
+        out.generated_sources.push(BuildGraphGeneratedSource { path: with_str_clone_ref(bgm_gen.path), contents: with_str_clone_ref(bgm_gen.contents) })
     if target_name.len() == 0:
         for ti_all in 0..graph.targets.len() as i32:
             out.targets.push(build_graph_target_deep_copy(&graph.targets[ti_all as i64]))
@@ -398,17 +399,17 @@ pub fn build_graph_filter_target(graph: &BuildGraph, target_name: str) -> BuildG
         out.raw_text = build_graph_emit(out)
     out
 
-pub fn build_graph_filter_single_target(graph: &BuildGraph, target_name: str) -> BuildGraph:
+pub fn build_graph_filter_single_target(graph: &BuildGraph, target_name: &str) -> BuildGraph:
     var out = empty_build_graph()
     out.ok = graph.ok
-    out.error_msg = graph.error_msg
-    out.raw_text = graph.raw_text
-    out.package_name = graph.package_name
-    out.package_version = graph.package_version
-    out.default_target = graph.default_target
+    out.error_msg = with_str_clone_ref(graph.error_msg)
+    out.raw_text = with_str_clone_ref(graph.raw_text)
+    out.package_name = with_str_clone_ref(graph.package_name)
+    out.package_version = with_str_clone_ref(graph.package_version)
+    out.default_target = with_str_clone_ref(graph.default_target)
     for gi in 0..graph.generated_sources.len() as i32:
         let bgm_gen = &graph.generated_sources[gi as i64]
-        out.generated_sources.push(BuildGraphGeneratedSource { path: bgm_gen.path, contents: bgm_gen.contents })
+        out.generated_sources.push(BuildGraphGeneratedSource { path: with_str_clone_ref(bgm_gen.path), contents: with_str_clone_ref(bgm_gen.contents) })
     if target_name.len() == 0:
         out.ok = false
         out.error_msg = "--no-deps requires an explicit build.w target"
@@ -431,19 +432,19 @@ fn build_graph_selected_targets_new -> BuildGraphSelectedTargets:
         visiting_names: Vec.new(),
     }
 
-fn build_graph_name_vec_contains(names: &Vec[str], name: str) -> bool:
+fn build_graph_name_vec_contains(names: &Vec[str], name: &str) -> bool:
     for i in 0..names.len() as i32:
         if names.get(i as i64) == name:
             return true
     false
 
-fn build_graph_find_target_index(graph: &BuildGraph, name: str) -> i32:
+fn build_graph_find_target_index(graph: &BuildGraph, name: &str) -> i32:
     for i in 0..graph.targets.len() as i32:
         if graph.targets.get(i as i64).name == name:
             return i
     -1
 
-fn build_graph_find_output_producer_index(graph: &BuildGraph, path: str, consumer_name: str) -> i32:
+fn build_graph_find_output_producer_index(graph: &BuildGraph, path: &str, consumer_name: &str) -> i32:
     if path.len() == 0:
         return -1
     for i in 0..graph.targets.len() as i32:
@@ -452,7 +453,7 @@ fn build_graph_find_output_producer_index(graph: &BuildGraph, path: str, consume
             return i
     -1
 
-fn build_graph_selected_targets_add(selected: BuildGraphSelectedTargets, graph: &BuildGraph, name: str) -> BuildGraphSelectedTargets:
+fn build_graph_selected_targets_add(selected: BuildGraphSelectedTargets, graph: &BuildGraph, name: &str) -> BuildGraphSelectedTargets:
     var out = selected
     if not out.ok:
         return out
@@ -468,7 +469,7 @@ fn build_graph_selected_targets_add(selected: BuildGraphSelectedTargets, graph: 
         out.error_msg = "build.w did not declare target '" ++ name ++ "'"
         return out
     let target = &graph.targets[index as i64]
-    out.visiting_names.push(name)
+    out.visiting_names.push(with_str_clone_ref(name))
     for di in 0..target.deps.len() as i32:
         out = build_graph_selected_targets_add(move out, graph, target.deps.get(di as i64))
         if not out.ok:
@@ -484,10 +485,10 @@ fn build_graph_selected_targets_add(selected: BuildGraphSelectedTargets, graph: 
             out = build_graph_selected_targets_add(move out, graph, graph.targets.get(input_producer as i64).name)
             if not out.ok:
                 return out
-    out.selected_names.push(name)
+    out.selected_names.push(with_str_clone_ref(name))
     out.targets.push(build_graph_target_deep_copy(target))
     out
 
-fn build_graph_select_target_closure(graph: &BuildGraph, target_name: str) -> BuildGraphSelectedTargets:
+fn build_graph_select_target_closure(graph: &BuildGraph, target_name: &str) -> BuildGraphSelectedTargets:
     var selected = build_graph_selected_targets_new()
     build_graph_selected_targets_add(move selected, graph, target_name)

@@ -18,7 +18,7 @@ extern fn with_runtime_current_set_cancel_requested() -> Unit
 extern fn with_runtime_current_set_cancelled_return() -> Unit
 extern fn with_runtime_completed_cancelled_return(fiber_id: i32) -> i32
 extern fn with_free(ptr: *mut u8) -> Unit
-extern fn with_ewrite(s: str) -> Unit
+extern fn with_ewrite(s: &str) -> Unit
 extern fn with_i64_to_str(n: i64) -> str
 extern fn _exit(code: i32) -> Unit
 extern fn abort() -> Unit

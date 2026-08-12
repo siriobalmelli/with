@@ -1,4 +1,4 @@
-extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 use Ast
 use Sema
 use Codegen
@@ -17,7 +17,7 @@ fn backend_debug_pool_flow_enabled() -> i32:
     1
 
 impl Zcu:
-    mut fn compile_to_object_backend(pool: AstPool, opt_level: i32, output_path: str, debug_info: bool, module_object_mode: bool) -> i32:
+    mut fn compile_to_object_backend(pool: AstPool, opt_level: i32, output_path: &str, debug_info: bool, module_object_mode: bool) -> i32:
         if self.last_mir_module.body_count() == 0:
             runtime_eprint("error: missing MIR input for LLVM backend")
             return 1
@@ -46,10 +46,10 @@ impl Zcu:
         if sema_pool.state.symbol_texts.len() as i32 > 1:
             backend_intern = sema_pool
         var cg = Codegen.init_with_opt_and_intern("with_module", opt_level, move backend_intern, move self.last_sema)
-        cg.source_file = with_str_clone(self.current_source_path)
+        cg.source_file = with_str_clone_ref(self.current_source_path)
         cg.source_text = self.current_source_text
         cg.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
-        cg.current_decl_source_file = with_str_clone(self.current_source_path)
+        cg.current_decl_source_file = with_str_clone_ref(self.current_source_path)
         cg.module_object_mode = if module_object_mode: 1 else: 0
         if not debug_info:
             cg.debug_info = 0
@@ -103,7 +103,7 @@ impl Zcu:
     // applies the shared global-ownership surgery, writes the unit's small
     // bitcode, and disposes everything before the next round. Threads then
     // optimize+emit the small bitcodes concurrently.
-    mut fn compile_units_generated(pool: AstPool, opt_level: i32, output_path: str, debug_info: bool, unit_count: i32) -> i32:
+    mut fn compile_units_generated(pool: AstPool, opt_level: i32, output_path: &str, debug_info: bool, unit_count: i32) -> i32:
         let do_profile = runtime_getenv("WITH_PROFILE").len() > 0
         var backend_mir = self.last_mir_module
         let mir_ptr = &raw const backend_mir as i64
@@ -130,10 +130,10 @@ impl Zcu:
             if round_sema_pool.state.symbol_texts.len() as i32 > 1:
                 backend_intern = round_sema_pool
             var cg = Codegen.init_with_opt_and_intern(f"with_module_u{k}", opt_level, move backend_intern, move self.last_sema)
-            cg.source_file = with_str_clone(self.current_source_path)
+            cg.source_file = with_str_clone_ref(self.current_source_path)
             cg.source_text = self.current_source_text
             cg.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
-            cg.current_decl_source_file = with_str_clone(self.current_source_path)
+            cg.current_decl_source_file = with_str_clone_ref(self.current_source_path)
             cg.module_object_mode = 0
             if not debug_info:
                 cg.debug_info = 0
@@ -190,10 +190,10 @@ impl Zcu:
         if sema_pool.state.symbol_texts.len() as i32 > 1:
             backend_intern = sema_pool
         var cg = Codegen.init_with_opt_and_intern("with_module", opt_level, move backend_intern, move self.last_sema)
-        cg.source_file = with_str_clone(self.current_source_path)
+        cg.source_file = with_str_clone_ref(self.current_source_path)
         cg.source_text = self.current_source_text
         cg.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
-        cg.current_decl_source_file = with_str_clone(self.current_source_path)
+        cg.current_decl_source_file = with_str_clone_ref(self.current_source_path)
         if self.pool.state.symbol_texts.len() as i32 <= 4 or sema_pool.state.symbol_texts.len() as i32 <= 4 or backend_debug_pool_flow_enabled() != 0:
             runtime_eprint(f"[backend] zcu.pool symbols={self.pool.state.symbol_texts.len() as i32}")
             runtime_eprint(f"[backend] frontend.pool symbols={self.frontend_pool.state.symbol_texts.len() as i32}")
@@ -215,7 +215,7 @@ impl Zcu:
     // Run the real LLVM backend with analysis instrumentation enabled, but do not
     // print IR or emit an object. The returned facts come from the same marshalling
     // and callee-binding branches used for production codegen.
-    mut fn analyze_codegen_backend(pool: AstPool, opt_level: i32, query: str) -> AnalysisBackendResult:
+    mut fn analyze_codegen_backend(pool: AstPool, opt_level: i32, query: &str) -> AnalysisBackendResult:
         if self.last_mir_module.body_count() == 0:
             let report = AnalysisReport.init()
             report.fail("missing MIR input for codegen analysis")
@@ -233,10 +233,10 @@ impl Zcu:
         let use_sema_pool = self.last_sema.pool.state.symbol_texts.len() as i32 > 1
         let backend_intern = if use_sema_pool: move self.last_sema.pool else: move self.pool
         var cg = Codegen.init_with_opt_and_intern("with_analysis", opt_level, move backend_intern, move self.last_sema)
-        cg.source_file = with_str_clone(self.current_source_path)
+        cg.source_file = with_str_clone_ref(self.current_source_path)
         cg.source_text = self.current_source_text
         cg.decl_source_paths = sema_clone_str_vec(&self.decl_source_paths)
-        cg.current_decl_source_file = with_str_clone(self.current_source_path)
+        cg.current_decl_source_file = with_str_clone_ref(self.current_source_path)
         cg.enable_analysis(query)
         var backend_mir = self.last_mir_module
         let backend_pool = if use_sema_ast: move cg.sema.ast else: move pool

@@ -9,8 +9,8 @@
 //   with run tools/drive_param_borrow_fixpoint.w <stage1> <listfile> <denylist> <scratch>
 use std.process
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
 extern fn with_str_clone(s: str) -> str
 
 fn sh(cmd: str) -> i32:

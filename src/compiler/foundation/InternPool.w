@@ -24,10 +24,10 @@ fn FndInternStringArena.new() -> FndInternStringArena:
     arena.pages.push(first)
     arena
 
-fn FndInternStringArena.store(mut self: FndInternStringArena, s: str) -> str:
+fn FndInternStringArena.store(mut self: FndInternStringArena, s: &str) -> str:
     if s.len() == 0:
         return ""
-    let src = unsafe *(&s as *const *const u8)
+    let src = unsafe **(&s as *const *const *const u8)
     let len = s.len()
     let need = len + 1
     if self.offset + need > FND_INTERN_PAGE_SIZE:
@@ -63,7 +63,7 @@ fn foundation_new_map_str_i32 -> HashMap[str, i32]:
     let map: HashMap[str, i32] = HashMap.new()
     map
 
-fn foundation_intern_text_eq(a: str, b: str) -> bool:
+fn foundation_intern_text_eq(a: &str, b: &str) -> bool:
     if a.len() != b.len():
         return false
     var i = 0
@@ -89,7 +89,7 @@ pub fn InternPool.init -> InternPool:
     ptr.value_keys.push(value_key_invalid())
     InternPool { state: ptr }
 
-pub fn InternPool.intern_str(self: &Self, s: str) -> Symbol:
+pub fn InternPool.intern_str(self: &Self, s: &str) -> Symbol:
     let st = self.state
     let existing = st.symbol_map.get(s)
     if existing.is_some():

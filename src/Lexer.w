@@ -7,6 +7,8 @@
 use Token
 use Span
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 // Named character constants for readability.
 enum CharCode: i32:
     Newline = 10
@@ -77,8 +79,8 @@ pub type Lexer {
     last_sig_tag: i32,
 }
 
-fn Lexer.init(source: str, file_id: i32) -> Lexer:
-    Lexer { source, pos: 0, file_id, token_start: 0, emit_comments: 0, last_sig_tag: -1 }
+fn Lexer.init(source: &str, file_id: i32) -> Lexer:
+    Lexer { source: with_str_clone_ref(source), pos: 0, file_id, token_start: 0, emit_comments: 0, last_sig_tag: -1 }
 
 // Tokenize the entire source, returning a token list ending with EOF.
 impl Lexer:
@@ -523,7 +525,7 @@ impl Lexer:
             return TokenKind.TK_FLOAT_LIT
         TokenKind.TK_INT_LIT
 
-fn numeric_suffix_len(src: str, pos: i32, slen: i32) -> i32:
+fn numeric_suffix_len(src: &str, pos: i32, slen: i32) -> i32:
     if pos >= slen:
         return 0
     let ch = src.byte_at(pos as i64)
@@ -559,7 +561,7 @@ fn numeric_suffix_len(src: str, pos: i32, slen: i32) -> i32:
         return 2
     0
 
-fn suffix_accept(src: str, pos: i32, slen: i32, suffix: str, suf_len: i32) -> bool:
+fn suffix_accept(src: &str, pos: i32, slen: i32, suffix: &str, suf_len: i32) -> bool:
     if pos + suf_len > slen:
         return false
     for i in 0..suf_len:
@@ -845,7 +847,7 @@ fn lexer_slash_starts_regex(prev_tag: i32) -> i32:
     0
 
 // Compute the 0-based column of a byte offset by scanning backward.
-fn column_of(source: str, pos: i32) -> i32:
+fn column_of(source: &str, pos: i32) -> i32:
     var p = pos
     while p > 0:
         p = p - 1

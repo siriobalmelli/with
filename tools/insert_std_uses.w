@@ -11,8 +11,8 @@
 // depends on compiling the entry it is repairing.)
 use std.process
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
 
 fn source_path(path: str) -> str:
     let embedded = "<embedded-std>/"

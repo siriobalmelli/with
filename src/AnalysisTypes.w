@@ -1,3 +1,4 @@
+extern fn with_str_clone_ref(s: &str) -> str
 // Shared compiler-analysis records. Sema, MIR, diagnostics, and codegen all
 // emit this one schema so analysis commands join live compiler state instead
 // of parsing human-oriented dumps.
@@ -195,15 +196,15 @@ impl AnalysisFact:
             end: self.end,
             line: self.line,
             column: self.column,
-            path: copy self.path,
-            name: copy self.name,
-            detail: copy self.detail,
+            path: with_str_clone_ref(self.path),
+            name: with_str_clone_ref(self.name),
+            detail: with_str_clone_ref(self.detail),
         }
 
 impl AnalysisReport:
     fn add(fact: AnalysisFact): self.facts.push(move fact)
-    fn fail(message: str): self.violations.push(message)
-    fn note(message: str): self.notes.push(message)
+    fn fail(message: &str): self.violations.push(with_str_clone_ref(message))
+    fn note(message: &str): self.notes.push(with_str_clone_ref(message))
     fn ok(): self.violations.len() == 0
 
     fn merge(other: &AnalysisReport):
@@ -211,9 +212,9 @@ impl AnalysisReport:
             let fact = other.facts.get(i as i64)
             self.facts.push(fact.owned_copy())
         for i in 0..other.violations.len() as i32:
-            self.violations.push(copy other.violations.get(i as i64))
+            self.violations.push(with_str_clone_ref(copy other.violations.get(i as i64)))
         for i in 0..other.notes.len() as i32:
-            self.notes.push(copy other.notes.get(i as i64))
+            self.notes.push(with_str_clone_ref(copy other.notes.get(i as i64)))
 
 fn analysis_stage_name(stage: AnalysisStage) -> str:
     if stage == AnalysisStage.Ast: return "ast"
@@ -252,9 +253,9 @@ fn analysis_kind_name(kind: AnalysisFactKind) -> str:
     if kind == AnalysisFactKind.MethodResolution: return "method-resolution"
     "unknown"
 
-fn analysis_slice(text: str, start: i32, end: i32): text.slice(start as i64, end as i64)
+fn analysis_slice(text: &str, start: i32, end: i32): text.slice(start as i64, end as i64)
 
-fn analysis_find_from(text: str, needle: str, start: i32) -> i32:
+fn analysis_find_from(text: &str, needle: &str, start: i32) -> i32:
     let n = text.len() as i32
     let m = needle.len() as i32
     if m == 0:
@@ -269,7 +270,7 @@ fn analysis_find_from(text: str, needle: str, start: i32) -> i32:
         i = i + 1
     -1
 
-fn analysis_parse_i32(text: str) -> i32:
+fn analysis_parse_i32(text: &str) -> i32:
     if text.len() == 0: return 0
     var sign = 1
     var i = 0
@@ -284,7 +285,7 @@ fn analysis_parse_i32(text: str) -> i32:
         i = i + 1
     value * sign
 
-fn analysis_escape(text: str) -> str:
+fn analysis_escape(text: &str) -> str:
     let parts: Vec[str] = Vec.new()
     var start = 0
     for i in 0..text.len() as i32:
@@ -303,7 +304,7 @@ fn analysis_escape(text: str) -> str:
         parts.push(analysis_slice(text, start, text.len() as i32))
     parts.join("")
 
-fn analysis_fact_field(fact: &AnalysisFact, field: str) -> str:
+fn analysis_fact_field(fact: &AnalysisFact, field: &str) -> str:
     if field == "stage": return analysis_stage_name(fact.stage)
     if field == "kind": return analysis_kind_name(fact.kind)
     if field == "id": return f"{fact.id}"
@@ -326,7 +327,7 @@ fn analysis_fact_field(fact: &AnalysisFact, field: str) -> str:
     if field == "detail": return fact.detail
     ""
 
-fn analysis_term_matches(fact: &AnalysisFact, term: str) -> bool:
+fn analysis_term_matches(fact: &AnalysisFact, term: &str) -> bool:
     var op = analysis_find_from(term, "&=", 0)
     var op_len = 2
     var mode = 3
@@ -353,7 +354,7 @@ fn analysis_term_matches(fact: &AnalysisFact, term: str) -> bool:
         return analysis_parse_i32(actual) & mask == mask
     actual == wanted
 
-fn analysis_fact_matches(fact: &AnalysisFact, query: str) -> bool:
+fn analysis_fact_matches(fact: &AnalysisFact, query: &str) -> bool:
     if query.len() == 0 or query == "all":
         return true
     var start = 0
@@ -378,7 +379,7 @@ impl AnalysisFact:
             analysis_escape(self.path) ++ "\t" ++ analysis_escape(self.name) ++ "\t" ++ analysis_escape(self.detail)
 
 impl AnalysisReport:
-    fn render_facts(query: str) -> str:
+    fn render_facts(query: &str) -> str:
         let lines: Vec[str] = Vec.new()
         lines.push("analysis-facts\tv2\tstage\tkind\tid\tparent\tnode\tbody\tsymbol\towner\tindex\ttype\teffects\tflags\tsource-file\tstart\tend\tline\tcolumn\tpath\tname\tdetail\n")
         for i in 0..self.facts.len() as i32:
@@ -388,7 +389,7 @@ impl AnalysisReport:
                 lines.push("\n")
         lines.join("")
 
-    fn count_matching(query: str) -> i32:
+    fn count_matching(query: &str) -> i32:
         var count = 0
         for i in 0..self.facts.len() as i32:
             let fact = self.facts.get(i as i64)
@@ -396,7 +397,7 @@ impl AnalysisReport:
                 count = count + 1
         count
 
-    fn render_summary(query: str) -> str:
+    fn render_summary(query: &str) -> str:
         let lines: Vec[str] = Vec.new()
         lines.push("analysis-summary\tv1\n")
         let stages = [AnalysisStage.Ast, AnalysisStage.Sema, AnalysisStage.Mir, AnalysisStage.Abi, AnalysisStage.Codegen, AnalysisStage.Diagnostic, AnalysisStage.Source]
@@ -439,7 +440,7 @@ impl AnalysisReport:
                 lines.push(f"\t{count}\n")
         lines.join("")
 
-    fn render_matrix(query: str) -> str:
+    fn render_matrix(query: &str) -> str:
         let lines: Vec[str] = Vec.new()
         lines.push("analysis-matrix\tv2\tstage\tkind\tname\towner\tindex\ttype\teffects\tflags\tsource-file\tstart\tend\tdetail\n")
         for i in 0..self.facts.len() as i32:
@@ -457,17 +458,17 @@ impl AnalysisReport:
             lines.push("\n")
         lines.join("")
 
-    fn render_verdict(label: str) -> str:
+    fn render_verdict(label: &str) -> str:
         let lines: Vec[str] = Vec.new()
         for i in 0..self.notes.len() as i32:
             lines.push("note: ")
-            lines.push(self.notes.get(i as i64))
+            lines.push(with_str_clone_ref(self.notes.get(i as i64)))
             lines.push("\n")
         for i in 0..self.violations.len() as i32:
             lines.push("violation: ")
-            lines.push(self.violations.get(i as i64))
+            lines.push(with_str_clone_ref(self.violations.get(i as i64)))
             lines.push("\n")
-        lines.push(label)
+        lines.push(with_str_clone_ref(label))
         lines.push(f": facts={self.facts.len() as i32} violations={self.violations.len() as i32}")
         lines.push(if self.ok(): " ok\n" else: " FAILED\n")
         lines.join("")

@@ -15,8 +15,10 @@ fn ages(v: Vec[U]) -> Vec[i32]:
 
 // annotated let
 fn first_name(v: Vec[U]) -> str:
-    let names: Vec[str] = v.map(it.name)
-    names.get(0)
+    var names: Vec[str] = v.map(it.name)
+    // D27: element access observes, remove transfers — the returned str
+    // must be owned (the local Vec dies here; a view would dangle).
+    names.remove(0)
 
 // chained off a type-changing map
 fn total_age(v: Vec[U]) -> i32:

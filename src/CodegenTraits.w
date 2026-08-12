@@ -9,7 +9,8 @@ use Overflow
 use AnalysisTypes
 use compiler.TrackedInputs
 
-extern fn with_eprint(s: str) -> Unit
+extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_eprint(s: &str) -> Unit
 
 // ── Collect trait info ────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ impl Codegen:
         self.trait_idx_syms.push(name_sym)
         self.trait_decl_nodes.insert(name_sym, trait_node)
 
-    fn audit_trait_method_row(trait_name: str, trait_node: i32, trait_idx: i32, method_start: i32, method_idx: i32):
+    fn audit_trait_method_row(trait_name: &str, trait_node: i32, trait_idx: i32, method_start: i32, method_idx: i32):
         let row = method_start + method_idx
         let ast_name = self.pool.trait_method_field(trait_node, method_idx, TRAIT_METHOD_NAME)
         let ast_flags = self.pool.trait_method_field(trait_node, method_idx, TRAIT_METHOD_FLAGS)
@@ -183,7 +184,7 @@ impl Codegen:
             fact.symbol = trait_sym
             fact.index = collected_start
             fact.flags = 256
-            fact.name = trait_name
+            fact.name = with_str_clone_ref(trait_name)
             fact.detail = f"trait-table methods={collected_count} ast-methods={ast_method_count} vtable-slots={vtable_slots}"
             self.analysis_add(move fact)
             canonical_method_start = canonical_method_start + ast_method_count
@@ -956,10 +957,10 @@ impl Codegen:
         self.vtable_globals.insert(key, vg)
 
     fn trait_vtable_global_name(impl_type_sym: i32, trait_sym: i32) -> str:
-        var type_name = self.intern.resolve(impl_type_sym)
+        var type_name: str = with_str_clone_ref(self.intern.resolve(impl_type_sym))
         if type_name.len() == 0:
             type_name = self.sema_symbol_text(impl_type_sym)
-        var trait_name = self.intern.resolve(trait_sym)
+        var trait_name: str = with_str_clone_ref(self.intern.resolve(trait_sym))
         if trait_name.len() == 0:
             trait_name = self.sema_symbol_text(trait_sym)
         if type_name.len() == 0 or trait_name.len() == 0:
@@ -1052,7 +1053,7 @@ impl Codegen:
         let method_start = self.trait_method_starts.get(trait_idx as i64)
         let method_count = self.trait_method_counts.get(trait_idx as i64)
         let vtable_ty = self.trait_vtable_types.get(trait_idx as i64)
-        let type_name = self.intern.resolve(impl_type_sym)
+        let type_name: str = with_str_clone_ref(self.intern.resolve(impl_type_sym))
         let entries: Vec[i64] = Vec.new()
         var used_row = 0
         for mi in 0..method_count:
@@ -1064,7 +1065,7 @@ impl Codegen:
             let consumes_self =
                 if param_count > 0 and fn_param_is_move_self(self.pool.fn_param_flags(param_start, 0)) != 0: 1
                 else: 0
-            let method_text = self.intern.resolve(method_sym)
+            let method_text: str = with_str_clone_ref(self.intern.resolve(method_sym))
             let row = self.sema.dyn_impl_method_row(concrete_sema_ty, trait_text, method_text)
             var fv: i64 = 0
             var ft: i64 = 0
@@ -1125,10 +1126,10 @@ fn const_string_eval_fail -> ConstStringEval:
         text: "",
     }
 
-fn const_string_eval_ok(text: str) -> ConstStringEval:
+fn const_string_eval_ok(text: &str) -> ConstStringEval:
     ConstStringEval {
         ok: true,
-        text,
+        text: with_str_clone_ref(text),
     }
 
 impl Codegen:
@@ -1150,10 +1151,10 @@ impl Codegen:
         if decl_index >= 0 and decl_index < self.decl_source_paths.len() as i32:
             let path = self.decl_source_paths.get(decl_index as i64)
             if path.len() > 0:
-                return path
+                return with_str_clone_ref(path)
         if self.current_decl_source_file.len() > 0 and self.current_decl_source_file != "<unknown>":
-            return self.current_decl_source_file
-        self.source_file
+            return with_str_clone_ref(self.current_decl_source_file)
+        with_str_clone_ref(self.source_file)
 
     mut fn sync_decl_context(decl_index: i32):
         self.current_decl_source_file = self.decl_source_path(decl_index)
@@ -1164,8 +1165,11 @@ impl Codegen:
         // alias like Mir.BlockId in MirLower's structs resolved for the
         // compiler root but not for tool-mode roots (#705). Same save/set
         // pattern as ComptimeEval.eval_decl and MirLower's module switch.
+        // #747 instance G: sema retains its own copy — a plain field read here
+        // is a move under the flip, and the reset-on-move blank made every decl
+        // look like the root module (whole-program --emit-obj objects).
         if self.current_decl_source_file.len() > 0:
-            self.sema.current_module_path = self.current_decl_source_file
+            self.sema.current_module_path = with_str_clone_ref(self.current_decl_source_file)
 
     fn find_module_fn_decl_index(sym: i32) -> i32:
         for di in 0..self.pool.decl_count():
@@ -1214,17 +1218,17 @@ impl Codegen:
                 return di
         -1
 
-    mut fn record_tracked_input(path: str):
+    mut fn record_tracked_input(path: &str):
         var paths = self.tracked_input_paths
         self.tracked_input_paths = tracked_input_insert_unique(move paths, path)
 
-    mut fn read_tracked_embed_file(source_path: str, raw_path: str) -> TrackedReadResult:
+    mut fn read_tracked_embed_file(source_path: &str, raw_path: &str) -> TrackedReadResult:
         let result = tracked_embed_read(source_path, raw_path, self.tracked_input_root)
         if result.ok:
             self.record_tracked_input(result.resolved_path)
         result
 
-    mut fn try_eval_const_string(node: i32, source_path: str, depth: i32) -> ConstStringEval:
+    mut fn try_eval_const_string(node: i32, source_path: &str, depth: i32) -> ConstStringEval:
         if node == 0 or depth > 32:
             return const_string_eval_fail()
 
@@ -1789,7 +1793,7 @@ impl Codegen:
             return wl_const_bitcast(value, expected_ty)
         0
 
-    fn const_c_string_pointer(text: str, ptr_ty: i64) -> i64:
+    fn const_c_string_pointer(text: &str, ptr_ty: i64) -> i64:
         if ptr_ty == 0:
             return 0
         let name = f"__with_cstr_{codegen_hash_name_component(with_str_hash(text))}_{text.len()}"
@@ -2134,7 +2138,7 @@ impl Codegen:
             let str_idx = self.pool.get_data0(float_node)
             if str_idx < 0 or str_idx >= self.pool.state.strings.len() as i32:
                 return 0
-            var fval = with_parse_float(self.pool.get_string(str_idx))
+            var fval = with_parse_float(with_str_clone_ref(self.pool.get_string(str_idx)))
             if float_negate:
                 fval = -fval
             let llvm_ty = self.sema_type_to_llvm(resolved)
@@ -2200,7 +2204,7 @@ impl Codegen:
         var const_binding_ty = if resolved_binding_ty != 0: resolved_binding_ty else: inferred_value_ty
         if const_binding_ty == 0 and self.pool.kind(value_node) == NodeKind.NK_STRUCT_LIT:
             let lit_sym = self.pool.get_data0(value_node)
-            let lit_name = if lit_sym != 0: self.intern.resolve(lit_sym) else: ""
+            let lit_name = if lit_sym != 0: with_str_clone_ref(self.intern.resolve(lit_sym)) else: ""
             let sema_lit_sym = if lit_name.len() > 0: self.sema.pool_lookup_symbol(lit_name) else: 0
             if sema_lit_sym != 0 and self.sema.named_types.contains(sema_lit_sym):
                 const_binding_ty = self.sema.resolve_alias(self.sema.named_types.get(sema_lit_sym).unwrap() as TypeId)
@@ -2306,7 +2310,7 @@ impl Codegen:
             if str_idx >= 0 and str_idx < self.pool.state.strings.len() as i32:
                 let float_text = self.pool.get_string(str_idx)
                 if float_text.len() > 0:
-                    fval = with_parse_float(float_text)
+                    fval = with_parse_float(with_str_clone_ref(float_text))
             if float_negate:
                 fval = -fval
             var global_ty = wl_f64_type(self.context)

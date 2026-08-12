@@ -1,4 +1,4 @@
-pub fn edge_score(name: str) -> i32:
+pub fn edge_score(name: &str) -> i32:
     let lower = name.trim().to_lower()
     var total = 0
     if lower.starts_with("a"):

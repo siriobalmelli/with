@@ -105,6 +105,6 @@ fn _pcre2_jit_get_size_8(__param_executable_jit: *mut c_void) -> c_ulong {
 }
 
 fn _pcre2_jit_get_target_8() -> *const i8 {
-    return (&(unsafe "JIT is not supported"[0]) as *mut c_char)
+    return ("JIT is not supported" as *const c_char)
 
 }

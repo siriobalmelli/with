@@ -6,6 +6,8 @@ use BuildGraphRuntime
 use BuildGraphSupport
 use BuildGraphCache
 
+extern fn with_str_clone_ref(s: &str) -> str
+
 type BuildGraphExternalTestJob {
     test_path: str,
     stdout_path: str,
@@ -13,7 +15,7 @@ type BuildGraphExternalTestJob {
     pid: i32,
 }
 
-pub fn build_graph_test_target_files(root: str, entry: str) -> Vec[str]:
+pub fn build_graph_test_target_files(root: &str, entry: &str) -> Vec[str]:
     let files: Vec[str] = Vec.new()
     if not build_graph_path_has_glob(entry):
         files.push(resolve_join(root, entry))
@@ -21,7 +23,7 @@ pub fn build_graph_test_target_files(root: str, entry: str) -> Vec[str]:
 
     let entry_dir = build_graph_dirname(entry)
     let pattern = build_graph_path_basename(entry)
-    let search_dir = if entry_dir == ".": root else: build_graph_resolve_project_path(root, entry_dir)
+    let search_dir = if entry_dir == ".": with_str_clone_ref(root) else: build_graph_resolve_project_path(root, entry_dir)
     let candidates = collect_test_files(search_dir)
     for ci in 0..candidates.len() as i32:
         let candidate = candidates.get(ci as i64)
@@ -30,31 +32,31 @@ pub fn build_graph_test_target_files(root: str, entry: str) -> Vec[str]:
             continue
         let base = build_graph_path_basename(candidate)
         if build_graph_single_star_pattern_matches(pattern, base):
-            files.push(candidate)
+            files.push(with_str_clone_ref(candidate))
     files
 
-fn build_graph_test_compiler_arg(arg: str) -> str:
+fn build_graph_test_compiler_arg(arg: &str) -> str:
     let prefix = "compiler="
     if arg.starts_with(prefix):
         return arg.slice(prefix.len(), arg.len())
     ""
 
-pub fn build_graph_test_compiler(root: str, target: &BuildGraphTarget) -> str:
+pub fn build_graph_test_compiler(root: &str, target: &BuildGraphTarget) -> str:
     for ai in 0..target.args.len() as i32:
         let value = build_graph_test_compiler_arg(target.args.get(ai as i64))
         if value.len() > 0:
             return build_graph_resolve_project_path(root, value)
     ""
 
-fn build_graph_append_test_args(argv: str, target: &BuildGraphTarget) -> str:
-    var out = argv
+fn build_graph_append_test_args(argv: &str, target: &BuildGraphTarget) -> str:
+    var out = with_str_clone_ref(argv)
     for ai in 0..target.args.len() as i32:
         let arg = target.args.get(ai as i64)
         if build_graph_test_compiler_arg(arg).len() == 0:
             out = build_graph_argv_append(out, arg)
     out
 
-fn build_graph_test_parse_jobs(value: str) -> i32:
+fn build_graph_test_parse_jobs(value: &str) -> i32:
     var out = 0
     for i in 0..value.len() as i32:
         let ch = value.byte_at(i as i64)
@@ -79,7 +81,7 @@ fn build_graph_test_jobs -> i32:
         return 32
     parsed
 
-fn build_graph_external_test_argv(root: str, target: &BuildGraphTarget, compiler_path: str, test_path: str) -> str:
+fn build_graph_external_test_argv(root: &str, target: &BuildGraphTarget, compiler_path: &str, test_path: &str) -> str:
     var argv = ""
     argv = build_graph_argv_append(argv, compiler_path)
     argv = build_graph_argv_append(argv, "test")
@@ -88,10 +90,10 @@ fn build_graph_external_test_argv(root: str, target: &BuildGraphTarget, compiler
     argv = build_graph_argv_append(argv, build_graph_path_for_child_process(root, test_path))
     argv
 
-fn build_graph_external_test_job_new(test_path: str, stdout_path: str, stderr_path: str, pid: i32) -> BuildGraphExternalTestJob:
-    BuildGraphExternalTestJob { test_path, stdout_path, stderr_path, pid }
+fn build_graph_external_test_job_new(test_path: &str, stdout_path: &str, stderr_path: &str, pid: i32) -> BuildGraphExternalTestJob:
+    BuildGraphExternalTestJob { test_path: with_str_clone_ref(test_path), stdout_path: with_str_clone_ref(stdout_path), stderr_path: with_str_clone_ref(stderr_path), pid }
 
-pub fn build_graph_run_external_test_file(root: str, target: &BuildGraphTarget, compiler_path: str, test_path: str) -> i32:
+pub fn build_graph_run_external_test_file(root: &str, target: &BuildGraphTarget, compiler_path: &str, test_path: &str) -> i32:
     let capture_dir = resolve_join(resolve_join(root, "out/test-graph"), target.name)
     if build_graph_rt_mkdir_p(capture_dir) != 0:
         build_graph_rt_eprint("error: could not create test output directory for target '" ++ target.name ++ "': " ++ capture_dir)
@@ -123,7 +125,7 @@ fn build_graph_wait_external_test_job(target: &BuildGraphTarget, job: &BuildGrap
     let _remove_stderr = build_graph_rt_remove_file(job.stderr_path)
     0
 
-pub fn build_graph_run_external_test_files(root: str, target: &BuildGraphTarget, compiler_path: str, test_files: &Vec[str]) -> i32:
+pub fn build_graph_run_external_test_files(root: &str, target: &BuildGraphTarget, compiler_path: &str, test_files: &Vec[str]) -> i32:
     let capture_dir = resolve_join(resolve_join(root, "out/test-graph"), target.name)
     if build_graph_rt_mkdir_p(capture_dir) != 0:
         build_graph_rt_eprint("error: could not create test output directory for target '" ++ target.name ++ "': " ++ capture_dir)
@@ -150,7 +152,7 @@ pub fn build_graph_run_external_test_files(root: str, target: &BuildGraphTarget,
             pass_keys.push(key)
             pass_paths.push(build_cache_project_relative_path(root, test_path))
         else:
-            run_files.push(test_path)
+            run_files.push(with_str_clone_ref(test_path))
             run_keys.push(key)
 
     // Run every non-cached file; report every failure; never abort the
@@ -178,16 +180,16 @@ pub fn build_graph_run_external_test_files(root: str, target: &BuildGraphTarget,
                 build_graph_rt_eprint("error: build.w test target '" ++ target.name ++ "' could not spawn '" ++ test_path ++ "'")
                 return 1
             active.push(build_graph_external_test_job_new(test_path, stdout_path, stderr_path, pid))
-            active_keys.push(run_keys.get(next as i64))
+            active_keys.push(with_str_clone_ref(run_keys.get(next as i64)))
             next = next + 1
             continue
         let job_path = active.get(oldest as i64).test_path
         let rc = build_graph_wait_external_test_job(target, active.get(oldest as i64))
         if rc == 0:
-            pass_keys.push(active_keys.get(oldest as i64))
+            pass_keys.push(with_str_clone_ref(active_keys.get(oldest as i64)))
             pass_paths.push(build_cache_project_relative_path(root, job_path))
         else:
-            failed_paths.push(job_path)
+            failed_paths.push(with_str_clone_ref(job_path))
             if first_failure == 0:
                 first_failure = rc
         oldest = oldest + 1

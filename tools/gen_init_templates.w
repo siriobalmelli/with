@@ -3,8 +3,8 @@
 // The cli-selfhost-project-tests lane compares `with init` output against
 // the doc byte-for-byte, so the embedded template must match exactly.
 
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
 use std.process
 
 fn esc(chunk: str) -> str:

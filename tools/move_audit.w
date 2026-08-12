@@ -41,28 +41,28 @@
 
 use std.process
 
-extern fn with_exec_argv_capture(argv: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32
-extern fn with_fs_read_file(path: str) -> str
-extern fn with_fs_write_file(path: str, data: str) -> i32
-extern fn with_fs_mkdir_p(path: str) -> i32
+extern fn with_exec_argv_capture(argv: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32
+extern fn with_fs_read_file(path: &str) -> str
+extern fn with_fs_write_file(path: &str, data: &str) -> i32
+extern fn with_fs_mkdir_p(path: &str) -> i32
 
-fn exec_capture(argv: str, outp: str, errp: str, timeout: i32) -> i32:
+fn exec_capture(argv: &str, outp: &str, errp: &str, timeout: i32) -> i32:
     unsafe:
         with_exec_argv_capture(argv, outp, errp, timeout)
 
-fn read_file(path: str) -> str:
+fn read_file(path: &str) -> str:
     unsafe:
         with_fs_read_file(path)
 
-fn write_file(path: str, data: str) -> i32:
+fn write_file(path: &str, data: &str) -> i32:
     unsafe:
         with_fs_write_file(path, data)
 
-fn mkdirs(path: str) -> i32:
+fn mkdirs(path: &str) -> i32:
     unsafe:
         with_fs_mkdir_p(path)
 
-fn argv3(a: str, b: str, c: str) -> str:
+fn argv3(a: &str, b: &str, c: &str) -> str:
     a ++ "\0" ++ b ++ "\0" ++ c ++ "\0"
 
 // ── Shapes ────────────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ fn argv3(a: str, b: str, c: str) -> str:
 // and the make-expression. `consume(move x)` invalidates `x` for the `drop`
 // shape; for `vec` it is a non-destructive copy today.
 
-fn shape_prelude(shape: str) -> str:
+fn shape_prelude(shape: &str) -> str:
     if shape == "drop":
         return "type D { id: i32 }\n" ++
             "impl Drop for D:\n    fn drop(move self: Self): ()\n" ++
@@ -81,7 +81,7 @@ fn shape_prelude(shape: str) -> str:
             "fn mk() -> Vec[i32]:\n    var v: Vec[i32] = Vec.new()\n    v.push(1)\n    v\n"
     ""
 
-fn shape_ty(shape: str) -> str:
+fn shape_ty(shape: &str) -> str:
     if shape == "vec": return "Vec[i32]"
     "D"
 
@@ -231,7 +231,7 @@ fn build_cells() -> Vec[Cell]:
 
 // ── Runner ─────────────────────────────────────────────────────────────────
 
-fn find_sub(s: str, sub: str) -> i64:
+fn find_sub(s: &str, sub: &str) -> i64:
     let n = s.len()
     let m = sub.len()
     if m == 0:
@@ -243,7 +243,7 @@ fn find_sub(s: str, sub: str) -> i64:
         i = i + 1
     0 - 1
 
-fn classify(with_bin: str, dir: str, idx: i32, source: str) -> str:
+fn classify(with_bin: &str, dir: &str, idx: i32, source: &str) -> str:
     let path = dir ++ f"/cell_{idx}.w"
     let _ = write_file(path, source)
     let outp = dir ++ f"/cell_{idx}.out"
@@ -263,7 +263,8 @@ fn main:
         eprint("usage: with run tools/move_audit.w <candidate-with> [baseline-with]")
         exit_code(2)
     let candidate = argv.get(1)
-    let baseline = if argv.len() as i32 >= 3: argv.get(2) else: ""
+    // BOOTSTRAP INTERIM: materialize the argv view out of the ""-join (#762).
+    let baseline = if argv.len() as i32 >= 3: argv.get(2) ++ "" else: ""
     let dir = "/tmp/move-audit-cells"
     let _ = mkdirs(dir)
     let cells = build_cells()
