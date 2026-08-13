@@ -3211,6 +3211,15 @@ fn mir_validate_use_assign_compatible(mir_mod: &MirModule, expected: i32, actual
     if expected_kind == TypeKind.TY_ENUM and actual_kind == TypeKind.TY_INT:
         let expected_repr = mir_validate_enum_repr_type(mir_mod, expected)
         return expected_repr > 0 and mir_validate_type_compatible_fast(mir_mod, expected_repr, actual) != 0
+    // §10.6/§10.8: a shared ref to a CONCRETE type may assign into a
+    // ref-to-dyn destination — the RK_REF/use of `&x` in ref-to-dyn position
+    // is the fat-pointer build (codegen keys on the DESTINATION type; sema
+    // vetted the impl). The validator undermodeled the documented coercion
+    // and rejected `accept(&eng)` for `fn accept(g: &dyn Greet)`.
+    if expected_kind == TypeKind.TY_REF and actual_kind == TypeKind.TY_REF:
+        let expected_pointee = mir_mod.mir_resolve_alias(mir_mod.mir_get_type_d0(mir_mod.mir_resolve_alias(expected)))
+        if mir_mod.mir_get_type_kind(expected_pointee) == TypeKind.TY_TRAIT_OBJ:
+            return true
     let expected_numeric = expected_kind == TypeKind.TY_INT or expected_kind == TypeKind.TY_FLOAT
     let actual_numeric = actual_kind == TypeKind.TY_INT or actual_kind == TypeKind.TY_FLOAT
     expected_numeric and actual_numeric
