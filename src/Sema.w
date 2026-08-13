@@ -6773,7 +6773,16 @@ impl Sema:
         if exp_k == TypeKind.TY_PTR and act_k == TypeKind.TY_REF:
             return self.pointer_pointees_compatible_frozen(exp_r, act_r)
         if exp_k == TypeKind.TY_REF and act_k == TypeKind.TY_REF:
-            return self.pointer_pointees_compatible_frozen(exp_r, act_r)
+            if self.pointer_pointees_compatible_frozen(exp_r, act_r) != 0:
+                return 1
+            // §10.6 ref-to-dyn coercion — mirrors the mut types_compatible arm.
+            // bf6f09e2 created this frozen twin but never wired it in; the gap
+            // made MirLower's autoderef probe (which gates on frozen compat)
+            // treat an already-coercible `&Concrete` arg to a `&dyn Trait`
+            // param as incompatible and eagerly spill it through the
+            // lower_expr_place fallback, leaving an abandoned invalid
+            // fat-&dyn -> thin-&Concrete RK_USE in the body.
+            return self.ref_to_dyn_pointee_coercible_frozen(exp_r, act_r)
         if exp_k == TypeKind.TY_REF and act_k == TypeKind.TY_PTR:
             return self.pointer_pointees_compatible_frozen(exp_r, act_r)
         if exp_k == TypeKind.TY_FN and act_k == TypeKind.TY_FN:

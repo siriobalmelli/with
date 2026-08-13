@@ -504,6 +504,10 @@ type MirModule {
     sema_bitpacked_types: HashMap[i32, i32],
     sema_disc_repr_types: HashMap[i32, i32],
     sema_distinct_type_names: HashMap[i32, i32],
+    // std Box's name sym when the std-box module verdict holds (else 0) —
+    // lets the typed validator mirror sema's Box[Concrete] -> Box[dyn Trait]
+    // coercion arm exactly instead of approximating it.
+    sema_box_sym: i32,
 }
 
 // ── MirModule helpers ────────────────────────────────────────────
@@ -521,6 +525,7 @@ fn MirModule.init -> MirModule:
         sema_bitpacked_types: HashMap.new(),
         sema_disc_repr_types: HashMap.new(),
         sema_distinct_type_names: HashMap.new(),
+        sema_box_sym: 0,
     }
 
 impl MirModule:
@@ -549,6 +554,8 @@ impl MirModule:
         for i in 0..distinct_type_syms.len() as i32:
             let sym = distinct_type_syms.get(i as i64)
             self.sema_distinct_type_names.insert(sym, sema.distinct_type_names.get(sym).unwrap())
+        if sema.type_symbol_is_std_box(sema.syms.box) != 0:
+            self.sema_box_sym = sema.syms.box
 
     fn mir_is_bitpacked(tid: i32) -> bool:
         self.sema_bitpacked_types.contains(tid)
@@ -3220,6 +3227,18 @@ fn mir_validate_use_assign_compatible(mir_mod: &MirModule, expected: i32, actual
         let expected_pointee = mir_mod.mir_resolve_alias(mir_mod.mir_get_type_d0(mir_mod.mir_resolve_alias(expected)))
         if mir_mod.mir_get_type_kind(expected_pointee) == TypeKind.TY_TRAIT_OBJ:
             return true
+    // §3.9: Box[Concrete] use into a Box[dyn Trait] destination — the vetted
+    // box-dyn coercion (sema's std-box arm in types_compatible; codegen keys
+    // the fat build on the destination type). Mirror sema's rule: std-Box
+    // base on both sides, one argument, destination argument a trait object.
+    if expected_kind == TypeKind.TY_GENERIC_INST and actual_kind == TypeKind.TY_GENERIC_INST and mir_mod.sema_box_sym != 0:
+        let box_exp_r = mir_mod.mir_resolve_alias(expected)
+        let box_act_r = mir_mod.mir_resolve_alias(actual)
+        if mir_mod.mir_get_type_d0(box_exp_r) == mir_mod.sema_box_sym and mir_mod.mir_get_type_d0(box_act_r) == mir_mod.sema_box_sym:
+            if mir_validate_get_generic_inst_arg_count(mir_mod, box_exp_r) == 1 and mir_validate_get_generic_inst_arg_count(mir_mod, box_act_r) == 1:
+                let box_exp_arg = mir_mod.mir_resolve_alias(mir_validate_get_generic_inst_arg(mir_mod, box_exp_r, 0))
+                if mir_mod.mir_get_type_kind(box_exp_arg) == TypeKind.TY_TRAIT_OBJ:
+                    return true
     let expected_numeric = expected_kind == TypeKind.TY_INT or expected_kind == TypeKind.TY_FLOAT
     let actual_numeric = actual_kind == TypeKind.TY_INT or actual_kind == TypeKind.TY_FLOAT
     expected_numeric and actual_numeric
