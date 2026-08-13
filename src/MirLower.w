@@ -2983,6 +2983,10 @@ impl MirBuilder:
         self.terminate(TermKind.TK_CALL, fn_op, args_id, result_place, next_bb)
         self.switch_to(next_bb)
         self.body.set_call_intrinsic(args_id, MirIntrinsic.FMT_TO_STR)
+        // #771 residue: the formatted value is a fresh OWNED str with no later
+        // owner — register it so the statement flush drops it (an interpolated
+        // non-str leaked one block per f-string segment).
+        self.register_stmt_temp(result_local, self.sema.ty_str)
         self.body.new_operand(OperandKind.OK_COPY, result_place)
 
     mut fn lower_fmt_debug_str(operand: i32, node: i32) -> i32:
@@ -2997,6 +3001,10 @@ impl MirBuilder:
         self.terminate(TermKind.TK_CALL, fn_op, args_id, result_place, next_bb)
         self.switch_to(next_bb)
         self.body.set_call_intrinsic(args_id, MirIntrinsic.FMT_DEBUG_STR)
+        // #771 residue: the formatted value is a fresh OWNED str with no later
+        // owner — register it so the statement flush drops it (an interpolated
+        // non-str leaked one block per f-string segment).
+        self.register_stmt_temp(result_local, self.sema.ty_str)
         self.body.new_operand(OperandKind.OK_COPY, result_place)
 
     mut fn lower_fmt_debug(operand: i32, sema_ty: i32, node: i32) -> i32:
@@ -3014,6 +3022,10 @@ impl MirBuilder:
         self.terminate(TermKind.TK_CALL, fn_op, args_id, result_place, next_bb)
         self.switch_to(next_bb)
         self.body.set_call_intrinsic(args_id, MirIntrinsic.FMT_DEBUG)
+        // #771 residue: the formatted value is a fresh OWNED str with no later
+        // owner — register it so the statement flush drops it (an interpolated
+        // non-str leaked one block per f-string segment).
+        self.register_stmt_temp(result_local, self.sema.ty_str)
         self.body.new_operand(OperandKind.OK_COPY, result_place)
 
     mut fn lower_fmt_with_spec(operand: i32, flags: i32, width: i32, precision: i32, sema_ty: i32, node: i32) -> i32:
@@ -3037,6 +3049,10 @@ impl MirBuilder:
         self.terminate(TermKind.TK_CALL, fn_op, args_id, result_place, next_bb)
         self.switch_to(next_bb)
         self.body.set_call_intrinsic(args_id, MirIntrinsic.FMT_SPEC)
+        // #771 residue: the formatted value is a fresh OWNED str with no later
+        // owner — register it so the statement flush drops it (an interpolated
+        // non-str leaked one block per f-string segment).
+        self.register_stmt_temp(result_local, self.sema.ty_str)
         self.body.new_operand(OperandKind.OK_COPY, result_place)
 
     mut fn lower_fstring(node: i32) -> i32:
