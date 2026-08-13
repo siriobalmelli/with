@@ -2,6 +2,9 @@
 
 ## START HERE
 
+**2026-08-13 (latest):** #770 FIXED (f5c56ff2 — tp-field tid=0 defeated the is_copy clone gate; lldb-proven) + dyn-coercion class fixed (dd685039+cf3047d9 — dead frozen compat arm wired, Box-dyn validator arm). Behavior 943/943, compile-errors 733/733 under stage1. RESEED BLOCKED by 13 pre-existing spec reds in 4 classes, surfaced because :test never reached the spec target since the flip — filed #772 (validator/void use-assigns), #773 (BTreeMap str K-inference, 5 files), #774 (runtime asserts: \u00a72.4 drop_field_moves — possible drop bug — and \u00a79.9 in operator), #775 (FFI literal-fit). Burn those four down, then :test green \u2192 test-green/last-green/update-seed/install-user. Seed still pre-flip (c019e9c0).
+
+
 **2026-08-13:** #771 FIXED+blessed (loop-body temp frames + formatter registration; da 65 PASS; offsetof+tiny/stdint repros healed). Release lane 12 red: instance-2 = GARBAGE stack header passed as the deps files &str arg (uninitialized argument temp, #771 family) — dig state + next probe on #761.
 
 
