@@ -94,7 +94,8 @@ fn frontend_resolve_executable_path(argv0: &str) -> str:
 
 fn frontend_cimport_compiler_fingerprint_line() -> str:
     if frontend_cimport_compiler_fingerprint_ready != 0:
-        return frontend_cimport_compiler_fingerprint
+        // #761 instance 2: independent copy, never the global's own header.
+        return frontend_cimport_compiler_fingerprint ++ ""
     frontend_cimport_compiler_fingerprint_ready = 1
     let compiler_path = frontend_resolve_executable_path(runtime_arg_at(0))
     if compiler_path.len() == 0:
@@ -103,7 +104,7 @@ fn frontend_cimport_compiler_fingerprint_line() -> str:
     if compiler_image.len() == 0:
         return ""
     frontend_cimport_compiler_fingerprint = frontend_owned_text(f"\n#compiler-hash:{runtime_str_hash(compiler_image)}")
-    frontend_cimport_compiler_fingerprint
+    frontend_cimport_compiler_fingerprint ++ ""
 
 fn c_import_absolute_quoted_path(header_spec: &str) -> str:
     let decoded = c_import_trim(c_import_decode_escapes(header_spec))

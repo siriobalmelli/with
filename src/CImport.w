@@ -307,14 +307,18 @@ fn c_import_last_error_clear():
     return
 
 fn c_import_last_error() -> str:
-    g_cimport_last_error
+    // #761 instance 2: return an independent copy — a by-value return of the
+    // global bit-copied its header, and the caller's statement-temp drop then
+    // freed the global's buffer (g_cimport_included_files' large block was
+    // munmapped; the cache-store reader faulted on the dangling header).
+    g_cimport_last_error ++ ""
 
 fn c_import_untranslated_macros_clear():
     g_cimport_untranslated_macros = ""
     return
 
 fn c_import_untranslated_macros() -> str:
-    g_cimport_untranslated_macros
+    g_cimport_untranslated_macros ++ ""
 
 fn c_import_omitted_symbols_clear():
     g_cimport_omitted_symbol_names = Vec.new()
@@ -342,7 +346,7 @@ fn c_import_included_files_clear():
 /// libclang parse read. Consumed by the frontend cache to build and validate
 /// the dependency manifest stored beside each cached translation (#553).
 fn c_import_included_files() -> str:
-    g_cimport_included_files
+    g_cimport_included_files ++ ""
 
 fn ci_record_raw_function_name(name: &str):
     if name.len() == 0:
