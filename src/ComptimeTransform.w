@@ -1676,8 +1676,14 @@ impl Sema:
             // str clones, primitives copy (traits.w), and a type-param field
             // dispatches per instantiation. Copy CONCRETE fields stay bare
             // (contextual Copy already satisfies the field demand).
+            // #770: a type-param field's tid is 0 at transform time (tp names
+            // resolve to 0 during type collection) and is_copy(0) == 1, so the
+            // tid gate alone silently skips tp fields — check the field's type
+            // NODE against the decl's tp list; the impl's Clone bound (below)
+            // guarantees dispatch at every instantiation.
             let elem_tid: i32 = self.type_extra.get((te_start + fi * 3 + 1) as i64)
-            if self.is_copy(elem_tid as TypeId) == 0:
+            let field_tp_sym = ct_type_param_sym_for_type_node(out, out.get_extra(type_extra_start + 1 + fi * 3 + 1), tp_start, tp_count)
+            if field_tp_sym != 0 or self.is_copy(elem_tid as TypeId) == 0:
                 let clone_callee = out.ct_build_field_access(decl, get_call, intern.intern("clone"))
                 let clone_args: Vec[i32] = Vec.new()
                 get_call = out.ct_build_call(decl, clone_callee, clone_args)

@@ -15,6 +15,14 @@ type Boxed[T] {
     label: str,
 }
 
+// #770 pin: two type params + a non-Copy instantiation exercise the
+// generated impl's multi-tp bound records (ct_copy_type_params_with_bound).
+@[derive(Serialize, Deserialize)]
+type Entry[K, V] {
+    key: K,
+    value: V,
+}
+
 fn main:
     let user_doc = JsonDocument.parse("{\"name\":\"Ada\",\"age\":37,\"admin\":true}")
     let user = User.deserialize(user_doc.root())
@@ -35,5 +43,12 @@ fn main:
 
     let roundtrip = boxed.serialize(JsonWriter.new()).finish()
     assert(roundtrip == "{\"value\":42,\"label\":\"answer\"}")
+
+    let entry_doc = JsonDocument.parse("{\"key\":\"a\",\"value\":1}")
+    let entry = Entry[str, i32].deserialize(entry_doc.root())
+    assert(entry.key == "a")
+    assert(entry.value == 1)
+    let entry_json = entry.serialize(JsonWriter.new()).finish()
+    assert(entry_json == "{\"key\":\"a\",\"value\":1}")
 
     print("ok")
