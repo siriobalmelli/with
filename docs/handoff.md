@@ -2,6 +2,9 @@
 
 ## START HERE
 
+**2026-08-13:** #771 FIXED+blessed (loop-body temp frames + formatter registration; da 65 PASS; offsetof+tiny/stdint repros healed). Release lane 12 red: instance-2 = GARBAGE stack header passed as the deps files &str arg (uninitialized argument temp, #771 family) — dig state + next probe on #761.
+
+
 **Latest (2026-08-11 late):** _ref boundary migration LANDED (8163b3fa —
 battery green ×5; ++/fmt/to_cstr now observe; 04h class dead structurally)
 plus tracked-capture moves (ee33341d). Release-lane c_import SEGV
