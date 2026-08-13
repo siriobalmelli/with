@@ -6123,7 +6123,12 @@ impl MirBuilder:
         let pending_reset_field_start = self.pending_reset_field_places.len() as i32
         let pending_move_temp_start = self.pending_move_temp_locals.len() as i32
         self.field_move_in_branch = self.field_move_in_branch + 1
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         // Reset-on-move (spec §2.5.1): flush body-local resets before the back-edge,
         // so a move in the loop body's tail is reset inside the body (same as lower_if).
         self.flush_pending_resets_since(pending_reset_start, pending_reset_field_start, pending_move_temp_start)
@@ -6182,7 +6187,12 @@ impl MirBuilder:
         let pending_reset_field_start = self.pending_reset_field_places.len() as i32
         let pending_move_temp_start = self.pending_move_temp_locals.len() as i32
         self.field_move_in_branch = self.field_move_in_branch + 1
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.flush_pending_resets_since(pending_reset_start, pending_reset_field_start, pending_move_temp_start)
         self.field_move_in_branch = self.field_move_in_branch - 1
         self.terminate(TermKind.TK_GOTO, cond_bb, 0, 0, 0)
@@ -6202,7 +6212,12 @@ impl MirBuilder:
         self.push_control_target(self.ast.get_data2(node), ControlTargetKind.CT_LOOP, cond_bb, exit_bb, -1)
 
         self.switch_to(body_bb)
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.terminate(TermKind.TK_GOTO, cond_bb, 0, 0, 0)
 
         self.switch_to(cond_bb)
@@ -6387,7 +6402,12 @@ impl MirBuilder:
 
         self.bind_for_element_or_skip(for_node, pat_or_sym, item_place, elem_ty, body_expr, header_bb)
 
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.terminate(TermKind.TK_GOTO, header_bb, 0, 0, 0)
 
         self.pop_control_target()
@@ -6958,7 +6978,12 @@ impl MirBuilder:
         // Body
         self.switch_to(body_bb)
         self.bind_for_element_or_skip(for_node, pat_or_sym, counter_place, elem_ty, body_expr, inc_bb)
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.terminate(TermKind.TK_GOTO, inc_bb, 0, 0, 0)
 
         // Increment
@@ -7032,7 +7057,12 @@ impl MirBuilder:
         // is a BARE statement — without this barrier its Drop locals register in the
         // enclosing function scope and fire once at exit instead of per iteration.
         self.push_scope()
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.pop_scope_with_goto(inc_bb)
 
         // Increment: counter = counter + 1, goto header
@@ -7105,7 +7135,12 @@ impl MirBuilder:
         self.assign_operand_to_place(elem_place, elem_op, self.ast.get_start(body_expr))
         self.bind_for_element_or_skip(for_node, pat_or_sym, elem_place, elem_ty, body_expr, inc_bb)
 
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.terminate(TermKind.TK_GOTO, inc_bb, 0, 0, 0)
 
         // Increment: counter += 1
@@ -7198,7 +7233,12 @@ impl MirBuilder:
         // Bind loop variable
         self.bind_for_element_or_skip(for_node, pat_or_sym, elem_place, elem_ty, body_expr, inc_bb)
 
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.terminate(TermKind.TK_GOTO, inc_bb, 0, 0, 0)
 
         // Increment: counter += 1
@@ -7288,7 +7328,12 @@ impl MirBuilder:
 
         self.bind_for_element_or_skip(for_node, pat_or_sym, elem_place, elem_ty, body_expr, inc_bb)
 
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.terminate(TermKind.TK_GOTO, inc_bb, 0, 0, 0)
 
         self.switch_to(inc_bb)
@@ -7356,7 +7401,12 @@ impl MirBuilder:
         self.terminate(TermKind.TK_CALL, slot_unit, slot_args_id, slot_place, slot_after_bb)
         self.switch_to(slot_after_bb)
         self.bind_for_element_or_skip(for_node, pat_or_sym, slot_place, slot_ty, body_expr, inc_bb)
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.terminate(TermKind.TK_GOTO, inc_bb, 0, 0, 0)
         self.switch_to(inc_bb)
         let cur_op2 = self.body.new_operand(OperandKind.OK_COPY, counter_place)
@@ -7412,7 +7462,12 @@ impl MirBuilder:
         let downcast_place = self.body.new_downcast_place(opt_place, some_index, opt_ty)
         let payload_place = self.body.new_field_place(downcast_place, 0, elem_ty)
         self.bind_for_element_or_skip(for_node, pat_or_sym, payload_place, elem_ty, body_expr, header_bb)
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.terminate(TermKind.TK_GOTO, header_bb, 0, 0, 0)
         self.pop_control_target()
         self.switch_to(exit_bb)
@@ -7493,7 +7548,12 @@ impl MirBuilder:
         self.terminate(TermKind.TK_CALL, ref_unit, ref_args_id, ref_place, ref_after_bb)
         self.switch_to(ref_after_bb)
         self.bind_for_element_or_skip(for_node, pat_or_sym, ref_place, ref_elem_ty, body_expr, inc_bb)
+        // #771 (the #729 loop shape): stmt temps created INSIDE the body must
+        // drop inside the body, not at the loop exit — the zero-iteration path
+        // reaches the exit without initializing them (freed stack garbage).
+        let loop_body_temp_frame = self.push_stmt_temp_frame()
         let _ = self.lower_expr_discard(body_expr)
+        self.finish_stmt_temp_frame(loop_body_temp_frame)
         self.terminate(TermKind.TK_GOTO, inc_bb, 0, 0, 0)
         self.switch_to(inc_bb)
         let cur_op2 = self.body.new_operand(OperandKind.OK_COPY, counter_place)
