@@ -7886,6 +7886,12 @@ impl Sema:
 
             let name = self.ast.get_data0(decl)
             let flags = self.ast.get_data2(decl)
+            if with_getenv_str("WITH_TRACE_TLL").len() > 0:
+                let t_ae = self.top_level_let_type_ann_extra(flags)
+                let t_an = if t_ae >= 0: self.ast.get_extra(t_ae) else: 0
+                let t_ak = if t_an != 0: self.ast.kind(t_an) as i32 else: -1
+                let t_asym = if t_an != 0 and t_ak == NodeKind.NK_TYPE_NAMED as i32: self.pool_resolve(self.ast.get_data0(t_an)) ++ "" else: "?".to_owned()
+                with_eprint(f"[tll] di={di} decl={decl} name='{self.pool_resolve(name)}' value={value} vkind={self.ast.kind(value) as i32} ann_extra={t_ae} ann_node={t_an} ann_kind={t_ak} ann_name='{t_asym}' resolved={self.resolve_type_expr(t_an) as i32}")
             let is_comptime_value = if self.ast.kind(value) == NodeKind.NK_COMPTIME: 1 else: 0
             // #643: every top-level initializer must be checked, including a
             // plain annotated `let`/`var`. Skipping an initializer merely

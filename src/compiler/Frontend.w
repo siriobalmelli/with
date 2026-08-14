@@ -447,8 +447,9 @@ impl Zcu:
         out
 
     fn c_import_cache_key_frontend(pool: AstPool, decl: i32, header_spec: &str) -> str:
-        // v15: >i64::MAX C literals render with their implied u64 suffix.
-        var key = header_spec ++ "\n#format:cimport-v15\n#links:"
+        // v16: evaluated macro constants annotate by value range (#775); v15
+        // suffixed >i64::MAX literals.
+        var key = header_spec ++ "\n#format:cimport-v16\n#links:"
         let link_start = pool.get_data1(decl)
         let packed_counts = pool.get_data2(decl)
         let link_count = c_import_link_count(packed_counts)

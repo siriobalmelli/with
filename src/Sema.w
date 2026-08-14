@@ -3994,7 +3994,12 @@ impl Sema:
             if not self.int_literal_bit_pattern_fits_type(node, expected):
                 self.emit_error("integer literal bit pattern does not fit expected type", node)
         else if not self.int_literal_fits_type(node, expected):
-            self.emit_error("integer literal does not fit expected type", node)
+            // Enriched like the default-type arm (#767 payoff pattern): name
+            // the literal and the resolved expectation — id-confusion and
+            // stale-sidecar failures self-identify.
+            let nf_digits = self.ast.int_literal_digits(node as NodeId)
+            let nf_res = self.resolve_alias(expected as TypeId)
+            self.emit_error(f"integer literal does not fit expected type (digits='{nf_digits}' raw={self.ast.int_lit_value(node as NodeId)} expected={expected} resolved_kind={self.get_type_kind(nf_res) as i32} d0={self.get_type_d0(nf_res)} d1={self.get_type_d1(nf_res)})", node)
         expected
 
     fn shift_count_literal_type(node: i32) -> i32:

@@ -2476,7 +2476,7 @@ fn ci_translate_var(session: i64, idx: i32, known_structs: &str) -> str:
     if is_const != 0:
         let init_val = ci_try_eval_var_init_for_type(session, idx, actual_type)
         if init_val.len() > 0:
-            return tl_attr ++ "let " ++ safe_name ++ ": " ++ actual_type ++ " = " ++ init_val ++ "\n"
+            return tl_attr ++ "let " ++ safe_name ++ ": " ++ actual_type ++ " = " ++ ci_render_int_value(init_val) ++ "\n"
         // const without initializer is always extern (defined elsewhere)
         tl_attr ++ "extern let " ++ safe_name ++ ": " ++ actual_type ++ "\n"
     else:
@@ -2781,7 +2781,9 @@ fn ci_try_translate_object_macro_probe(macro_source: &str, name: &str) -> str:
             if ty.len() > 0 and not ci_starts_with(ty, "__UNSUPPORTED"):
                 let init = ci_try_eval_var_init_for_type(probe_session, i, ty)
                 if ci_var_init_translation_is_valid(ty, init) and not ci_str_contains(init, name):
-                    result = "let " ++ ci_escape_reserved(name) ++ ": " ++ ty ++ " = " ++ init
+                    // #775: clang's evaluated init can be i64.min's bare
+                    // spelling; render it as arithmetic.
+                    result = "let " ++ ci_escape_reserved(name) ++ ": " ++ ty ++ " = " ++ ci_render_int_value(init)
             i = count
         else:
             i = i + 1
@@ -2986,7 +2988,15 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: &str, macro
             let clean_value = ci_strip_int_suffix(stripped)
             with_cimport_mark_name_emitted(name)
             known_values = known_values ++ name ++ "=" ++ clean_value ++ "|"
-            let let_line = "let " ++ safe_name ++ ": " ++ int_ty ++ " = " ++ clean_value
+            // #775: the bridge hands over macro values pre-folded and often
+            // suffix-less (UINT_MAX arrives as bare 0xffffffff), so the
+            // suffix-derived type can be narrower than the value. Widen the
+            // annotation to the value's range (flip-honest fit check).
+            var lit_ann = int_ty ++ ""
+            let lit_range_ann = ci_int_annotation_for_value(clean_value)
+            if ci_int_type_rank(lit_range_ann) > ci_int_type_rank(int_ty):
+                lit_ann = lit_range_ann
+            let let_line = "let " ++ safe_name ++ ": " ++ lit_ann ++ " = " ++ ci_render_int_value(clean_value)
             if not ci_migrate_shared_decl_add("let", safe_name, let_line):
                 output = output ++ let_line ++ "\n"
         else if ci_is_char_literal(stripped):
@@ -3048,7 +3058,17 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: &str, macro
             if macro_expr_result.len() > 0 and cast_expr_ty.len() > 0:
                 let safe_name = ci_escape_reserved(name)
                 with_cimport_mark_name_emitted(name)
-                let let_line = "let " ++ safe_name ++ ": " ++ cast_expr_ty ++ " = " ++ macro_expr_result
+                // #775: clang's semantic type for a folded macro can be
+                // narrower than the folded VALUE (UINT_MAX's (__INT_MAX__
+                // *2U +1U) reports int but folds to 0xffffffff). When the
+                // result is a plain int literal, widen the annotation to the
+                // value's range so the (flip-honest) fit check passes.
+                var mac_ann = cast_expr_ty ++ ""
+                if ci_is_int_literal(macro_expr_result) and ci_int_type_is_c_integer(cast_expr_ty):
+                    let mac_range_ann = ci_int_annotation_for_value(ci_strip_int_suffix(macro_expr_result))
+                    if ci_int_type_rank(mac_range_ann) > ci_int_type_rank(cast_expr_ty):
+                        mac_ann = mac_range_ann
+                let let_line = "let " ++ safe_name ++ ": " ++ mac_ann ++ " = " ++ ci_render_int_value(macro_expr_result)
                 if not ci_migrate_shared_decl_add("let", safe_name, let_line):
                     output = output ++ let_line ++ "\n"
             else:
@@ -3057,7 +3077,12 @@ fn ci_translate_macros(session: i64, type_session: i64, extern_vars: &str, macro
                     let safe_name = ci_escape_reserved(name)
                     with_cimport_mark_name_emitted(name)
                     known_values = known_values ++ name ++ "=" ++ eval_result ++ "|"
-                    let let_line = "let " ++ safe_name ++ ": c_int = " ++ eval_result
+                    // #775: the evaluated constant's TYPE follows its value's
+                    // range, not a hardcoded c_int — UINT_MAX evaluates to
+                    // 4294967295 via (__INT_MAX__ * 2U + 1U) and is unsigned
+                    // int in C; annotating c_int failed the (flip-honest)
+                    // literal-fit check for every such limits.h macro.
+                    let let_line = "let " ++ safe_name ++ ": " ++ ci_int_annotation_for_value(eval_result) ++ " = " ++ ci_render_int_value(eval_result)
                     if not ci_migrate_shared_decl_add("let", safe_name, let_line):
                         output = output ++ let_line ++ "\n"
                 else:
@@ -3318,7 +3343,9 @@ fn ci_parse_unary_expr(s: &str, params: &str, known: &str) -> str:
     if c0 == 45:
         let neg_rest = ci_trim(t.slice(1, t.len()))
         if ci_is_int_literal(neg_rest):
-            return "-" ++ ci_strip_int_suffix(neg_rest)
+            // #775: -(2^63) must render as arithmetic — the bare negative
+            // literal's magnitude alone exceeds i64's default ladder.
+            return ci_render_int_value("-" ++ ci_strip_int_suffix(neg_rest))
         if ci_is_float_literal(neg_rest):
             return "-" ++ ci_strip_float_suffix(neg_rest)
         let inner = ci_parse_cast_expr(t.slice(1, t.len()), params, known)
@@ -3450,7 +3477,8 @@ fn ci_parse_postfix_expr(s: &str, params: &str, known: &str) -> str:
         else:
             let kv = ci_lookup_known(base_ident, known)
             if kv.len() > 0:
-                base_resolved = kv
+                // #775: a known value may be i64.min's bare spelling.
+                base_resolved = ci_render_int_value(kv)
             else if with_cimport_is_name_emitted(base_ident) != 0 and not ci_str_contains(g_macro_type_names, "|" ++ base_ident ++ "|"):
                 base_resolved = base_ident
         if base_resolved.len() > 0:
@@ -4487,7 +4515,7 @@ fn ci_eval_float_const_expr_ctx(s: &str, known: &str) -> str:
         let builtin_val = ci_map_compiler_builtin(trimmed)
         if builtin_val.len() > 0:
             return builtin_val
-        return ci_lookup_known(trimmed, known)
+        return ci_render_int_value(ci_lookup_known(trimmed, known))
     ""
 
 fn ci_eval_const_expr_ctx(s: &str, known: &str) -> str:
@@ -4559,7 +4587,7 @@ fn ci_eval_const_expr_ctx(s: &str, known: &str) -> str:
         let builtin_val = ci_map_compiler_builtin(trimmed)
         if builtin_val.len() > 0:
             return builtin_val
-        return ci_lookup_known(trimmed, known)
+        return ci_render_int_value(ci_lookup_known(trimmed, known))
     ""
 
 fn ci_find_matching_paren(s: &str, start: i32) -> i32:
@@ -11854,6 +11882,72 @@ fn ci_is_int_literal(s: &str) -> bool:
                 continue
             return false
     true
+
+// #775: the C type of an evaluated integer constant, by value range —
+// mirrors C's usual arithmetic conversions closely enough for macro
+// constants (int → unsigned int → long long → unsigned long long).
+// #775: i64.min's direct spelling negates a 2^63 literal the default
+// ladder rejects; render it as arithmetic (the C headers' own idiom).
+fn ci_render_int_value(v: &str) -> str:
+    if v == "-9223372036854775808":
+        return "(0 - 9223372036854775807 - 1)"
+    v ++ ""
+
+fn ci_int_type_is_c_integer(t: &str) -> bool:
+    t == "c_int" or t == "c_uint" or t == "c_long" or t == "c_ulong" or t == "c_longlong" or t == "c_ulonglong" or t == "c_short" or t == "c_ushort" or t == "c_char" or t == "c_uchar" or t == "c_schar"
+
+fn ci_int_type_rank(t: &str) -> i32:
+    if t == "c_char" or t == "c_uchar" or t == "c_schar": return 1
+    if t == "c_short" or t == "c_ushort": return 2
+    if t == "c_int": return 3
+    if t == "c_uint": return 4
+    if t == "c_long" or t == "c_longlong": return 5
+    if t == "c_ulong" or t == "c_ulonglong": return 6
+    0
+
+fn ci_int_annotation_for_value(v0: &str) -> str:
+    // Hex literals range by digit count; decimals by magnitude compare.
+    if v0.len() > 2 and v0.byte_at(0) == 48 and (v0.byte_at(1) == 120 or v0.byte_at(1) == 88):
+        var hj: i64 = 2
+        while hj < v0.len() and v0.byte_at(hj) == 48:
+            hj += 1
+        let hn = v0.len() - hj
+        if hn > 16:
+            return "c_ulonglong"
+        if hn == 16:
+            let hb = v0.byte_at(hj)
+            if hb >= 56 or (hb >= 97 and hb <= 102) or (hb >= 65 and hb <= 70):
+                return "c_ulonglong"
+            return "c_longlong"
+        if hn > 8:
+            return "c_longlong"
+        if hn == 8:
+            let hb8 = v0.byte_at(hj)
+            if hb8 >= 56 or (hb8 >= 97 and hb8 <= 102) or (hb8 >= 65 and hb8 <= 70):
+                return "c_uint"
+        return "c_int"
+    if v0.len() == 0:
+        return "c_int"
+    let v = v0
+    if v.byte_at(0) == 45:
+        // Negative: c_int unless it underflows i32.
+        if v.len() > 11:
+            return "c_longlong"
+        if v.len() == 11 and v.slice(1, v.len()) > "2147483648":
+            return "c_longlong"
+        return "c_int"
+    if ci_int_literal_exceeds_i64(v):
+        return "c_ulonglong"
+    var j: i64 = 0
+    while j < v.len() and v.byte_at(j) == 48:
+        j += 1
+    let n = v.len() - j
+    let mag = v.slice(j, v.len())
+    if n > 10 or (n == 10 and mag > "4294967295"):
+        return "c_longlong"
+    if n == 10 and mag > "2147483647":
+        return "c_uint"
+    "c_int"
 
 // True when a suffix-stripped C integer literal exceeds i64::MAX (so C
 // treats it as unsigned long long). 20-digit decimals may exceed u64::MAX
