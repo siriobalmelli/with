@@ -5794,6 +5794,9 @@ impl MirBuilder:
             let inner_result = self.lower_expr_discard(self.ast.get_data0(node))
             self.no_suspend_nodes.pop()
             inner_result
+        else if kind == NodeKind.NK_WITH_EXPR and self.sema.with_form_kinds.contains(node) and (self.sema.with_form_kinds.get(node).unwrap() == WithFormKind.Guarded as i32 or self.sema.with_form_kinds.get(node).unwrap() == WithFormKind.GuardedMut as i32):
+            self.cur_node = node
+            self.lower_with_guarded_mode(node, 0)
         else:
             self.lower_expr(node)
         self.expected_type = saved_expected
@@ -11652,6 +11655,9 @@ impl MirBuilder:
         result
 
     mut fn lower_with_guarded(node: i32) -> i32:
+        self.lower_with_guarded_mode(node, 1)
+
+    mut fn lower_with_guarded_mode(node: i32, want_result: i32) -> i32:
         let source = self.ast.get_data0(node)
         let body = self.ast.get_data1(node)
         let encoded = self.ast.get_data2(node)
@@ -11699,12 +11705,11 @@ impl MirBuilder:
         let drop_kind = if is_mut != 0: DropKind.DK_WITH_GUARD_MUT else: DropKind.DK_WITH_GUARD
         self.schedule_with_guard_cleanup(guard_local, payload_local, exit_fn, exit_sig, exit_mono_sym, drop_kind)
 
-        // #772 (barrier): a statement-position body (void-typed — e.g. a bare
-        // `if flag: c.field = ...`) must lower as DISCARD. Value-mode forced
-        // lower_if to build a void join result and leak expected_type=void
-        // into the arms, typing the assign's RHS binop void (invalid MIR).
-        let body_ty = self.expr_type(body)
-        if body_ty == 0 or body_ty == self.sema.ty_void as i32:
+        // #772 (barrier): statement-position bodies lower as DISCARD — the
+        // CALLER's mode decides, not a type guess (a void guess broke ss07's
+        // value-position nested with). Value-mode kept lower_if building a
+        // void join and leaking expected_type=void into the arms.
+        if want_result == 0:
             let _ = self.lower_expr_discard(body)
             self.pop_scope_inline()
             return self.unit_operand()
