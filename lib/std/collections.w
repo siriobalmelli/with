@@ -74,7 +74,9 @@ impl[K: Ord, V] BTreeMap[K, V]:
     fn value_at(index: i64) -> &V:
         unsafe { &(*(self.entries.ptr + (index as usize))).1 }
 
-    fn last_index_of(key: K) -> i64:
+    // #773: pure read — takes &K so both view-holding callers (get/contains)
+    // and owning callers (remove, whose D22 contract keeps `key: K`) borrow.
+    fn last_index_of(key: &K) -> i64:
         var found = -1
         var i = 0
         while i < self.entries.len():
@@ -132,8 +134,10 @@ impl[K: Ord, V] BTreeMap[K, V]:
         let out: Vec[K] = Vec.new()
         var entry_i = 0
         while entry_i < self.entries.len():
+            // #773/D27: entries.get yields a view; the owned Vec[K] demand
+            // materializes via clone (per-instantiation dispatch).
             let (key, _) = self.entries.get(entry_i)
-            out.push(key)
+            out.push(key.clone())
             entry_i = entry_i + 1
         out
 
@@ -142,7 +146,7 @@ impl[K: Ord, V] BTreeMap[K, V]:
         var entry_i = 0
         while entry_i < self.entries.len():
             let (_, value) = self.entries.get(entry_i)
-            out.push(value)
+            out.push(value.clone())
             entry_i = entry_i + 1
         out
 
@@ -150,8 +154,9 @@ impl[K: Ord, V] BTreeMap[K, V]:
         let out: Vec[(K, V)] = Vec.new()
         var entry_i = 0
         while entry_i < self.entries.len():
+            // #773/D27: views materialize into the owned tuple.
             let (key, value) = self.entries.get(entry_i)
-            out.push((key, value))
+            out.push((key.clone(), value.clone()))
             entry_i = entry_i + 1
         out
 
@@ -236,7 +241,7 @@ impl[T: Ord] BTreeSet[T]:
         var value_i = 0
         while value_i < self.values.len():
             let value = self.values.get(value_i)
-            out.push(value)
+            out.push(value.clone())
             value_i = value_i + 1
         out
 
