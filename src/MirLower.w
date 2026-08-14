@@ -5635,6 +5635,12 @@ impl MirBuilder:
             if self.sema.is_copy_frozen(bind_ty) == 0 and not self.sema.drop_consumed_binding_values.contains(rhs_expr):
                 let alias_place = self.lower_binding_alias_place(rhs_expr)
                 if alias_place >= 0:
+                    // A live str view of this place: later self-appends must
+                    // take the COPY concat form, never in-place move_first
+                    // (`let saved = a.buf; a.buf = a.buf ++ ...` — the alias
+                    // taint the dump_mir_str_field_concat pins assert).
+                    if self.place_type_is_str(alias_place) != 0:
+                        self.mark_string_place_copied(alias_place)
                     self.bind_alias_place(name_sym, alias_place, bind_ty)
                     return
         let local_id = self.body.new_local(bind_ty, mutable, name_sym, 1)

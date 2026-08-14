@@ -8879,6 +8879,34 @@ impl Sema:
     // Drop field's destructor never runs (behav_explicit_drop_consumed_field).
     // Consuming USES (call arguments, `var`/typed bindings, record updates)
     // still mark. Outside drop bodies the marking is unchanged.
+    // Shape detector: an unannotated non-mut let of a field-access chain over
+    // a named base — the alias-eligible binding MirLower binds as a view
+    // (D22 "a binding names what's there"). Returns 1 for the shape alone;
+    // the drop-body variant below adds the §2.4 owner check.
+    mut fn field_let_binds_as_view(value: i32, is_mut: i32, ann_type: TypeId) -> i32:
+        if is_mut != 0 or ann_type != 0:
+            return 0
+        var expr = value
+        while expr != 0 and self.ast.kind(expr) == NodeKind.NK_GROUPED:
+            expr = self.ast.get_data0(expr)
+        if expr == 0 or self.ast.kind(expr) != NodeKind.NK_FIELD_ACCESS:
+            return 0
+        // A Drop-implementing owner keeps the §2.4 outside-drop diagnostic
+        // (err_partial_move_drop_field): the marking path emits it.
+        let v_owner = self.drop_owner_for_field_access(expr)
+        if v_owner != 0 and self.has_drop_method(v_owner) != 0:
+            return 0
+        var vbase = self.ast.get_data0(expr)
+        while vbase != 0:
+            let vbk = self.ast.kind(vbase)
+            if vbk == NodeKind.NK_GROUPED or vbk == NodeKind.NK_FIELD_ACCESS:
+                vbase = self.ast.get_data0(vbase)
+                continue
+            if vbk == NodeKind.NK_IDENT:
+                return if self.scope_has(self.ast.get_data0(vbase)) != 0: 1 else: 0
+            return 0
+        0
+
     mut fn drop_body_field_observation(value: i32, is_mut: i32, ann_type: TypeId) -> i32:
         if is_mut != 0 or ann_type != 0 or self.current_drop_type_sym == 0:
             return 0
@@ -8979,8 +9007,17 @@ impl Sema:
             // move instead of the alias path (the aliasing was the original
             // leak 84ebff6d mis-fixed on the sema side).
             if self.drop_body_field_observation(value, is_mut, ann_type) != 0:
+                // §2.4: drop-body field lets CONSUME — record for MirLower's
+                // move binding and mark.
                 self.drop_consumed_binding_values.insert(value, 1)
-            self.mark_moved_if_consumed(value)
+                self.mark_moved_if_consumed(value)
+            else if self.field_let_binds_as_view(value, is_mut, ann_type) != 0:
+                // D22 outside drop bodies: the binding OBSERVES (MirLower
+                // alias-binds it) — marking would blank the field and reject
+                // legal later base uses (`let saved = a.buf; a.buf = ...`).
+                let _ = value
+            else:
+                self.mark_moved_if_consumed(value)
 
         if ann_type_node != 0 and self.type_expr_is_collection_with_ref(ann_type_node) != 0:
             self.emit_error("ephemeral references cannot be stored in generic containers", node)
