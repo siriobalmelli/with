@@ -5998,7 +5998,10 @@ impl MirBuilder:
         let result_place = if want_result != 0: self.place_for_local(result_local) else: -1
 
         let saved_expected = self.expected_type
-        if want_result != 0 and result_ty != 0:
+        // #772: never propagate a VOID result type as the arms' expected type
+        // — a statement-if reached in value mode (`with … as mut c:` bodies)
+        // poisoned an arm assign's RHS binop to void (invalid MIR).
+        if want_result != 0 and result_ty != 0 and result_ty != self.sema.ty_void as i32:
             self.expected_type = result_ty
         else if want_result == 0:
             self.expected_type = self.sema.ty_void as i32
@@ -11696,6 +11699,15 @@ impl MirBuilder:
         let drop_kind = if is_mut != 0: DropKind.DK_WITH_GUARD_MUT else: DropKind.DK_WITH_GUARD
         self.schedule_with_guard_cleanup(guard_local, payload_local, exit_fn, exit_sig, exit_mono_sym, drop_kind)
 
+        // #772 (barrier): a statement-position body (void-typed — e.g. a bare
+        // `if flag: c.field = ...`) must lower as DISCARD. Value-mode forced
+        // lower_if to build a void join result and leak expected_type=void
+        // into the arms, typing the assign's RHS binop void (invalid MIR).
+        let body_ty = self.expr_type(body)
+        if body_ty == 0 or body_ty == self.sema.ty_void as i32:
+            let _ = self.lower_expr_discard(body)
+            self.pop_scope_inline()
+            return self.unit_operand()
         let result = self.lower_expr(body)
         self.pop_scope_inline()
         result
