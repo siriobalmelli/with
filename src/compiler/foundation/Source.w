@@ -20,8 +20,8 @@ pub type SourceLocation {
 
 pub fn Source.from_string(path: &str, text: &str, file_id: FileId) -> Source:
     Source {
-        path,
-        text,
+        path: path.clone(),
+        text: text.clone(),
         line_offsets: source_compute_line_offsets(text),
         file_id,
     }

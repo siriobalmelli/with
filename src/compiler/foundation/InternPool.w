@@ -97,19 +97,20 @@ pub fn InternPool.intern_str(self: &Self, s: &str) -> Symbol:
 
     var raw = 1
     while raw < st.symbol_texts.len() as i32:
-        let existing_text: str = st.symbol_texts.get(raw as i64)
+        let existing_text = st.symbol_texts.get(raw as i64)
         if foundation_intern_text_eq(existing_text, s):
-            st.symbol_map.insert(existing_text, raw)
+            let owned_key = existing_text.clone()
+            st.symbol_map.insert(owned_key, raw)
             return symbol_from_raw(raw)
         raw = raw + 1
 
     let id = st.symbol_texts.len() as i32
     let owned = st.strings.store(s)
-    st.symbol_texts.push(owned)
+    st.symbol_texts.push(owned.clone())
     st.symbol_map.insert(owned, id)
     symbol_from_raw(id)
 
-pub fn InternPool.resolve_symbol(self: &Self, sym: Symbol) -> str:
+pub fn InternPool.resolve_symbol(self: &Self, sym: Symbol) -> &str:
     if not symbol_is_valid(sym):
         return ""
     let raw = symbol_raw(sym)

@@ -52,7 +52,7 @@ impl Arena:
         self.slots.push(ArenaSlot {
             kind: ARENA_SLOT_STR(),
             int_value: 0,
-            str_value: value,
+            str_value: value.clone(),
         })
         id
 

@@ -2,7 +2,6 @@
 
 use compiler.foundation.Span
 
-extern fn with_str_clone(s: str) -> str
 
 pub enum DiagSeverity: i32:
     Error = 1
@@ -29,7 +28,7 @@ pub type DiagnosticStore {
 }
 
 fn diagnostic_owned_text(text: &str) -> str:
-    with_str_clone(text)
+    text.clone()
 
 pub fn diagnostic_error(message: &str, primary: Span) -> Diagnostic:
     Diagnostic {

@@ -29,7 +29,7 @@ impl SourceMap:
 
         let id = file_id_from_raw(self.next_file_raw)
         self.next_file_raw = self.next_file_raw + 1
-        self.path_index.insert(path, file_id_raw(id))
+        self.path_index.insert(path.clone(), file_id_raw(id))
         self.sources.push(Source.from_string(path, text, id))
         id
 
@@ -40,7 +40,7 @@ impl SourceMap:
 
         let id = file_id_from_raw(self.next_file_raw)
         self.next_file_raw = self.next_file_raw + 1
-        self.path_index.insert(path, file_id_raw(id))
+        self.path_index.insert(path.clone(), file_id_raw(id))
         self.sources.push(Source.from_file(path, id))
         id
 
