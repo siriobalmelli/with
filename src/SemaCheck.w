@@ -408,7 +408,23 @@ impl Sema:
         n
 
     mut fn record_contextual_copy_adjustment(source_node: i32, expected: i32, actual: i32) -> i32:
-        if source_node <= 0 or self.can_contextually_copy_ref(expected, actual) == 0:
+        if source_node <= 0:
+            return 0
+        // D22: value-carriers are transparent to a Copy-view origin. Record the
+        // adjustment on the carried value leaf, never on the carrier node itself.
+        // A carrier that also held an adjustment would be materialized a second
+        // time on top of its leaf's materialization (a double deref of the &V
+        // pointee → a bad-address load). The carrier's type equals its value
+        // leaf's type, so the same demand applies unchanged to the leaf.
+        let sk = self.ast.kind(source_node)
+        if sk == NodeKind.NK_GROUPED or sk == NodeKind.NK_NO_SUSPEND:
+            return self.record_contextual_copy_adjustment(self.ast.get_data0(source_node), expected, actual)
+        if sk == NodeKind.NK_BLOCK:
+            let tail = self.ast.get_data2(source_node)
+            if tail == 0:
+                return 0
+            return self.record_contextual_copy_adjustment(tail, expected, actual)
+        if self.can_contextually_copy_ref(expected, actual) == 0:
             return 0
         let context_sig = self.current_fn_sig_idx
         let context_key = sema_pair_key(context_sig, source_node)
@@ -9029,6 +9045,7 @@ impl Sema:
             self.emit_error(f"{what} condition must be bool", cond)
         t
 
+
     mut fn check_if_expr(node: i32) -> i32:
         let cond = self.ast.get_data0(node)
         let then_body = self.ast.get_data1(node)
@@ -12801,8 +12818,6 @@ impl Sema:
         let qualified = self.qualified_enum_variant_sym(enum_decl, bare_variant_sym)
         if self.disc_values.contains(qualified):
             return self.disc_values.get(qualified).unwrap()
-        if self.disc_values.contains(bare_variant_sym):
-            return self.disc_values.get(bare_variant_sym).unwrap()
         index
 
     mut fn enum_accessor_return_type(enum_tid: i32, variant_sym: i32, accessor_kind: i32) -> i32:
@@ -20919,12 +20934,12 @@ impl Sema:
         if type_name_sym != 0:
             let qual_name = self.pool_resolve(type_name_sym) ++ "." ++ self.pool_resolve(name_sym)
             // Enum checking interns qualified variants before storing disc_values;
-            // reflection and codegen only look them up.
+            // reflection and codegen only look them up. A bare-name fallback is
+            // unsafe: disc_values is name-keyed, so a DiscEnum `None = 0` would
+            // shadow a payload enum's `Option.None` (implicit disc = index).
             let qual_sym = self.pool_lookup_symbol(qual_name)
             if qual_sym != 0 and self.disc_values.contains(qual_sym):
                 return self.disc_values.get(qual_sym).unwrap() as i64
-        if self.disc_values.contains(name_sym):
-            return self.disc_values.get(name_sym).unwrap() as i64
         variant_index as i64
 
     mut fn type_reflection_variant_payload_type(tid: i32, variant_index: i32, payload_index: i32) -> i32:
