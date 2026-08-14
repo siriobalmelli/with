@@ -5285,6 +5285,59 @@ impl Sema:
         let _ = self.needs_drop_visit.remove(resolved as i32)
         result
 
+    // Whether a value of this type transitively carries a USER Drop impl
+    // (W, Vec[W], Holder{item: W}). Narrower than `type_needs_drop`: pure
+    // memory-managed types (str, Vec[str], HashMap[str, str]) answer 0 —
+    // their cleanup is invisible, so a field let may observe them (D22),
+    // while a user-Drop-bearing field stays an explicit ownership transfer
+    // (err_use_after_move_*_field pins).
+    mut fn type_carries_user_drop(tid: i32) -> i32:
+        if tid == 0:
+            return 0
+        let resolved = self.resolve_alias(tid as TypeId)
+        if self.type_has_drop_impl(resolved as i32) != 0:
+            return 1
+        if self.needs_drop_visit.contains(resolved as i32):
+            return 0
+        self.needs_drop_visit.insert(resolved as i32)
+        var result = 0
+        let tk = self.get_type_kind(resolved)
+        if tk == TypeKind.TY_GENERIC_INST:
+            let arg_count = self.get_generic_inst_arg_count(resolved as i32)
+            for ai in 0..arg_count:
+                if self.type_carries_user_drop(self.get_generic_inst_arg(resolved as i32, ai)) != 0:
+                    result = 1
+                    break
+        else if tk == TypeKind.TY_TUPLE:
+            let te_start = self.get_type_d0(resolved)
+            let elem_count = self.get_type_d1(resolved)
+            for ei in 0..elem_count:
+                if self.type_carries_user_drop(self.type_extra.get((te_start + ei) as i64)) != 0:
+                    result = 1
+                    break
+        else if tk == TypeKind.TY_ARRAY or tk == TypeKind.TY_RANGE:
+            result = self.type_carries_user_drop(self.get_type_d0(resolved))
+        else:
+            let field_count = self.type_reflection_field_count(resolved as i32)
+            for fi in 0..field_count:
+                let cf_ty = self.type_reflection_field_type(resolved as i32, fi)
+                if self.type_carries_user_drop(cf_ty) != 0:
+                    result = 1
+                    break
+            if result == 0:
+                let variant_count = self.type_reflection_variant_count(resolved as i32)
+                var vidx = 0
+                while vidx < variant_count and result == 0:
+                    let payload_count = self.type_reflection_variant_payload_count(resolved as i32, vidx)
+                    for pi in 0..payload_count:
+                        let cp_ty = self.type_reflection_variant_payload_type(resolved as i32, vidx, pi)
+                        if self.type_carries_user_drop(cp_ty) != 0:
+                            result = 1
+                            break
+                    vidx = vidx + 1
+        let _ = self.needs_drop_visit.remove(resolved as i32)
+        result
+
     mut fn emit_implicit_drop_view_use_error(view_sym: i32, origin_sym: i32, origin_node: i32):
         let view_name = self.pool_resolve(view_sym)
         let origin_name = self.pool_resolve(origin_sym)

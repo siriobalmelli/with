@@ -8896,6 +8896,14 @@ impl Sema:
         let v_owner = self.drop_owner_for_field_access(expr)
         if v_owner != 0 and self.has_drop_method(v_owner) != 0:
             return 0
+        // A field whose TYPE carries a user Drop impl (directly or
+        // transitively — W, Vec[W]) stays a MOVE: RAII resources want
+        // explicit ownership transfer (err_use_after_move_*_field pins).
+        // Pure memory-managed types (str, Vec[str]) observe per D22.
+        let v_fty_opt = self.typed_expr_types.get(expr)
+        let v_fty = if v_fty_opt.is_some(): v_fty_opt.unwrap() else: self.field_access_type_no_diagnostic(expr)
+        if v_fty != 0 and self.type_carries_user_drop(v_fty) != 0:
+            return 0
         var vbase = self.ast.get_data0(expr)
         while vbase != 0:
             let vbk = self.ast.kind(vbase)
