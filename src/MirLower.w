@@ -5625,7 +5625,11 @@ impl MirBuilder:
 
         let bind_ty = self.binding_type(node)
         if mutable == 0:
-            if self.sema.is_copy_frozen(bind_ty) == 0:
+            // §2.4: a drop-body self-field let CONSUMES — never the alias
+            // path (an alias left the field glue skipping a field nobody
+            // owned: the 84ebff6d leak, now bound as an owning local whose
+            // drop precedes the glue — spec_ss02_4 pins the WFN order).
+            if self.sema.is_copy_frozen(bind_ty) == 0 and not self.sema.drop_consumed_binding_values.contains(rhs_expr):
                 let alias_place = self.lower_binding_alias_place(rhs_expr)
                 if alias_place >= 0:
                     self.bind_alias_place(name_sym, alias_place, bind_ty)

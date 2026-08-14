@@ -8967,8 +8967,15 @@ impl Sema:
         // keeps `let _ = param` a non-consuming acknowledgement: the param stays
         // share-place (borrowed) instead of being forced to owned.
         if self.pool_resolve(name) != "_" and not self.view_projection_exprs.contains(value):
-            if self.drop_body_field_observation(value, is_mut, ann_type) == 0:
-                self.mark_moved_if_consumed(value)
+            // §2.4: a drop-body let of a self field CONSUMES (the 84ebff6d
+            // observation rule contradicted the spec — spec_ss02_4 pins the
+            // WFN order: consumed local drops before the remaining-field
+            // glue). Record the binding's value node so MirLower binds by
+            // move instead of the alias path (the aliasing was the original
+            // leak 84ebff6d mis-fixed on the sema side).
+            if self.drop_body_field_observation(value, is_mut, ann_type) != 0:
+                self.drop_consumed_binding_values.insert(value, 1)
+            self.mark_moved_if_consumed(value)
 
         if ann_type_node != 0 and self.type_expr_is_collection_with_ref(ann_type_node) != 0:
             self.emit_error("ephemeral references cannot be stored in generic containers", node)
