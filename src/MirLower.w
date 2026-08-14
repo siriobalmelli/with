@@ -4328,8 +4328,11 @@ impl MirBuilder:
         var lhs_ty = self.expr_type(lhs_expr)
         if lhs_ty == 0 and elem_count > 0:
             lhs_ty = self.expr_type(self.ast.get_extra(extra_start))
-        let lhs_op = self.lower_expr(lhs_expr)
-        let lhs_place = self.materialize_operand(lhs_op, lhs_ty, self.ast.get_start(lhs_expr))
+        // #774: membership OBSERVES its subject — a named non-Copy lhs read
+        // via lower_expr was moved into the temp and reset-blanked, so a
+        // later `x == "..."` compared "" (same class as the =~ subject fix;
+        // the helper reads named places in place, rvalues still materialize).
+        let lhs_place = self.lower_regex_subject_place(lhs_expr)
         var acc = 0
         var has_acc = 0
         for i in 0..elem_count:
