@@ -10556,8 +10556,15 @@ impl MirBuilder:
         self.terminate(TermKind.TK_GOTO, join_bb, 0, 0, 0)
 
         self.switch_to(none_bb)
+        // #772: a stmt-temp frame + divergence guard, exactly like lower_if's
+        // branches. A diverging default (`?? return e`) leaves a Unit operand
+        // in its unreachable continuation; assigning it into the typed join
+        // result is the void-into-int/str invalid MIR the validator rejects.
+        let dq_temp_frame = self.push_stmt_temp_frame()
         let default_op = self.lower_expr(default_expr)
-        self.assign_operand_to_place(result_place, default_op, self.ast.get_start(default_expr))
+        if self.sema.body_can_fall_through(default_expr) != 0:
+            self.assign_operand_to_place(result_place, default_op, self.ast.get_start(default_expr))
+        self.finish_stmt_temp_frame(dq_temp_frame)
         self.terminate(TermKind.TK_GOTO, join_bb, 0, 0, 0)
 
         self.switch_to(join_bb)

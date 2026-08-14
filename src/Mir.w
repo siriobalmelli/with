@@ -508,6 +508,7 @@ type MirModule {
     // lets the typed validator mirror sema's Box[Concrete] -> Box[dyn Trait]
     // coercion arm exactly instead of approximating it.
     sema_box_sym: i32,
+    sema_option_sym: i32,
 }
 
 // ── MirModule helpers ────────────────────────────────────────────
@@ -526,6 +527,7 @@ fn MirModule.init -> MirModule:
         sema_disc_repr_types: HashMap.new(),
         sema_distinct_type_names: HashMap.new(),
         sema_box_sym: 0,
+        sema_option_sym: 0,
     }
 
 impl MirModule:
@@ -556,6 +558,7 @@ impl MirModule:
             self.sema_distinct_type_names.insert(sym, sema.distinct_type_names.get(sym).unwrap())
         if sema.type_symbol_is_std_box(sema.syms.box) != 0:
             self.sema_box_sym = sema.syms.box
+            self.sema_option_sym = sema.syms.option
 
     fn mir_is_bitpacked(tid: i32) -> bool:
         self.sema_bitpacked_types.contains(tid)
@@ -3239,6 +3242,17 @@ fn mir_validate_use_assign_compatible(mir_mod: &MirModule, expected: i32, actual
                 let box_exp_arg = mir_mod.mir_resolve_alias(mir_validate_get_generic_inst_arg(mir_mod, box_exp_r, 0))
                 if mir_mod.mir_get_type_kind(box_exp_arg) == TypeKind.TY_TRAIT_OBJ:
                     return true
+    // §16.10: a raw pointer (or extern-fn pointer) use into an
+    // Option[pointer] destination — the vetted option-pointer coercion
+    // (sema's is_option_pointer_type arm; niche-encoded, codegen stores the
+    // pointer bits directly). Mirror sema's rule.
+    if expected_kind == TypeKind.TY_GENERIC_INST and (actual_kind == TypeKind.TY_PTR or actual_kind == TypeKind.TY_EXTERN_FN) and mir_mod.sema_option_sym != 0:
+        let opt_exp_r = mir_mod.mir_resolve_alias(expected)
+        if mir_mod.mir_get_type_d0(opt_exp_r) == mir_mod.sema_option_sym and mir_validate_get_generic_inst_arg_count(mir_mod, opt_exp_r) == 1:
+            let opt_payload = mir_mod.mir_resolve_alias(mir_validate_get_generic_inst_arg(mir_mod, opt_exp_r, 0))
+            let opt_pk = mir_mod.mir_get_type_kind(opt_payload)
+            if opt_pk == TypeKind.TY_PTR or opt_pk == TypeKind.TY_EXTERN_FN:
+                return true
     let expected_numeric = expected_kind == TypeKind.TY_INT or expected_kind == TypeKind.TY_FLOAT
     let actual_numeric = actual_kind == TypeKind.TY_INT or actual_kind == TypeKind.TY_FLOAT
     expected_numeric and actual_numeric

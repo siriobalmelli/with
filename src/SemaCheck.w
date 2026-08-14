@@ -5642,6 +5642,11 @@ impl Sema:
             return 0
         if kind == NodeKind.NK_GOTO:
             return 0
+        // #772: break/continue transfer control to a loop edge — they never
+        // fall through into a join (`?? break` assigned the unreachable Unit
+        // into the typed join result).
+        if kind == NodeKind.NK_BREAK or kind == NodeKind.NK_CONTINUE:
+            return 0
         if kind == NodeKind.NK_BLOCK:
             let extra_start = self.ast.get_data0(node)
             let stmt_count = self.ast.get_data1(node)
