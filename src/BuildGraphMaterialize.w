@@ -5,6 +5,9 @@ use BuildGraphModel
 use BuildGraphRuntime
 use ComptimeValue
 use Sema
+
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_eprint(s: &str) -> Unit
 extern fn with_str_clone_ref(s: &str) -> str
 
 type BuildGraphMaterializer {
@@ -240,12 +243,19 @@ impl BuildGraphMaterializer:
             return self.error("Build.package is not a Package value")
         let package_name = self.expect_str_field(package, "name")
         let package_version = self.expect_str_field(package, "version")
+        if with_getenv_str("WITH_TRACE_GRAPH").len() > 0:
+            with_eprint(f"[graph] build value start={value.extra_start} count={value.extra_count} extras_len={self.extras.len()}")
+            for tf in 0..value.extra_count:
+                let tfv = self.extras.get((value.extra_start + tf) as i64)
+                with_eprint(f"[graph] field[{tf}] kind={tfv.kind as i32} text=" ++ (if tfv.kind == ComptimeValueKind.CV_STR: tfv.text else: ""))
         let default_target = self.expect_str_field(value, "default_target")
         if package_name.kind == ComptimeValueKind.CV_INVALID or package_version.kind == ComptimeValueKind.CV_INVALID or default_target.kind == ComptimeValueKind.CV_INVALID:
             return self.error("Build has a field with the wrong comptime value type")
         graph.package_name = with_str_clone_ref(package_name.text)
         graph.package_version = with_str_clone_ref(package_version.text)
         graph.default_target = with_str_clone_ref(default_target.text)
+        if with_getenv_str("WITH_TRACE_GRAPH").len() > 0:
+            with_eprint("[graph] after-assign dt=" ++ graph.default_target)
 
         let generated_sources = self.field_value(value, "generated_sources")
         if generated_sources.kind != ComptimeValueKind.CV_VEC and generated_sources.kind != ComptimeValueKind.CV_ARRAY:
@@ -262,8 +272,14 @@ impl BuildGraphMaterializer:
             graph = self.materialize_target(self.extras.get((targets.extra_start + i) as i64), move graph)
             if graph.error_msg.len() > 0:
                 return graph
+            if with_getenv_str("WITH_TRACE_GRAPH").len() > 0:
+                with_eprint(f"[graph] after-target-{i} dt=" ++ graph.default_target)
         graph.ok = true
+        if with_getenv_str("WITH_TRACE_GRAPH").len() > 0:
+            with_eprint("[graph] after-ok dt=" ++ graph.default_target)
         graph.raw_text = build_graph_emit(graph)
+        if with_getenv_str("WITH_TRACE_GRAPH").len() > 0:
+            with_eprint("[graph] after-emit dt=" ++ graph.default_target)
         graph
 
 // Returns the materialized graph alongside the Sema handed in: the

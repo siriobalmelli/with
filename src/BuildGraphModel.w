@@ -1,4 +1,6 @@
 extern fn with_str_clone_ref(s: &str) -> str
+extern fn with_getenv_str(name: &str) -> str
+extern fn with_eprint(s: &str) -> Unit
 // BuildGraphModel -- parsed build.w graph data and serialization.
 
 pub type BuildGraphTarget {
@@ -156,6 +158,8 @@ fn build_graph_escape(value: &str) -> str:
 pub fn build_graph_emit(graph: &BuildGraph) -> str:
     var out = "WITH_BUILD_GRAPH\t2\n"
     out = out ++ "package\t" ++ build_graph_escape(graph.package_name) ++ "\t" ++ build_graph_escape(graph.package_version) ++ "\n"
+    if with_getenv_str("WITH_TRACE_GRAPH").len() > 0:
+        with_eprint(f"[emit] dt.len={graph.default_target.len()} dt=" ++ graph.default_target)
     if graph.default_target.len() > 0:
         out = out ++ "default_target\t" ++ build_graph_escape(graph.default_target) ++ "\n"
     for gi in 0..graph.generated_sources.len() as i32:
@@ -396,6 +400,8 @@ pub fn build_graph_filter_target(graph: &BuildGraph, target_name: &str) -> Build
     else:
         for ti in 0..selected.targets.len() as i32:
             out.targets.push(build_graph_target_deep_copy(&selected.targets[ti as i64]))
+        if with_getenv_str("WITH_TRACE_GRAPH").len() > 0:
+            with_eprint("[filt] pre-emit dt=" ++ out.default_target)
         out.raw_text = build_graph_emit(out)
     out
 

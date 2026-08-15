@@ -2276,7 +2276,10 @@ fn run_build_command(options: BuildCommandOptions, graph_options: &BuildGraphCom
                 return build_cache_print_effects(root, graph, "")
             var selected_target_name = graph_options.selected_target
             if selected_target_name.len() == 0 and graph.default_target.len() > 0:
-                selected_target_name = graph.default_target
+                // Clone: a bare field read on an assignment RHS moves the str
+                // out of graph (blank-on-move), and the filter below would
+                // copy an empty default_target (#782 class).
+                selected_target_name = with_str_clone_ref(graph.default_target)
             let selected_graph = if graph_options.no_deps: build_graph_filter_single_target(&graph, selected_target_name) else: build_graph_filter_target(&graph, selected_target_name)
             if not selected_graph.ok:
                 with_eprint("error: " ++ selected_graph.error_msg)
@@ -2381,7 +2384,7 @@ fn run_run_project_command(selected_target_hint: &str, opt_level: i32, no_std: b
         return 1
     var selected_target_name = with_str_clone_ref(selected_target_hint)
     if selected_target_name.len() == 0:
-        selected_target_name = graph.default_target
+        selected_target_name = with_str_clone_ref(graph.default_target)
     if selected_target_name.len() == 0:
         with_eprint("error: 'run' needs an executable default target in build.w or ':target'")
         return 1
