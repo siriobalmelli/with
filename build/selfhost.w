@@ -2987,7 +2987,7 @@ fn bs_check_emit_c_receiver_abi(ctx: &ActionCtx, compiler_path: &str, case_dir: 
     let src = bs_join(case_dir, "receiver_abi.w")
     let c_path = bs_join(case_dir, "receiver_abi.c")
     let bin = bs_join(case_dir, "receiver_abi")
-    let source = "extern fn with_print_str(s: str) -> Unit\n\n" ++
+    let source = "extern fn with_print_str(s: &str) -> Unit\n\n" ++
         "type Counter {\n" ++
         "    value: i32,\n" ++
         "}\n\n" ++
@@ -3128,7 +3128,7 @@ fn bs_check_emit_c_hashmap_new_field(ctx: &ActionCtx, compiler_path: &str, case_
     let bin = bs_join(case_dir, "hashmap_new_field")
     let source = "use std.prelude_alloc\n" ++
         "use std.collections.HashMap\n\n" ++
-        "extern fn with_print_str(s: str) -> Unit\n\n" ++
+        "extern fn with_print_str(s: &str) -> Unit\n\n" ++
         "type Registry {\n" ++
         "    names: HashMap[str, i32],\n" ++
         "}\n\n" ++
@@ -3182,7 +3182,7 @@ fn bs_check_emit_c_array_fill_rvalue(ctx: &ActionCtx, compiler_path: &str, case_
     let src = bs_join(case_dir, "array_fill_rvalue.w")
     let c_path = bs_join(case_dir, "array_fill_rvalue.c")
     let bin = bs_join(case_dir, "array_fill_rvalue")
-    let source = "extern fn with_print_str(s: str) -> Unit\n\n" ++
+    let source = "extern fn with_print_str(s: &str) -> Unit\n\n" ++
         "fn main() -> i32:\n" ++
         "    var buf: [u8; 128] = [7u8; 128]\n" ++
         "    if buf[0] != 7u8:\n" ++

@@ -30,7 +30,16 @@ with_str with_str_from_bytes(const uint8_t *s, int64_t len);
 with_str with_str_from_vec_u8(const void *bytes);
 with_str with_str_substr(with_str s, int64_t start, int64_t len);
 with_str with_str_slice(with_str s, int64_t start, int64_t end);
-int64_t with_str_len(with_str s);
+int64_t with_str_len(const with_str* s);
+// #747 flip: reference-ABI runtime entry points (param = pointer to header).
+with_str with_str_clone_ref(const with_str* s);
+int32_t with_str_eq_ref(const with_str* a, const with_str* b);
+with_str with_str_slice_ref(const with_str* s, int64_t start, int64_t end);
+int64_t with_parse_i64_ref(const with_str* s);
+void with_panic_ref(const with_str* msg, const with_str* file, int32_t line);
+void with_fmt_buf_write_str_ref(uint8_t* b, const with_str* s);
+void with_lines_out_ref(void* out, const with_str* s);
+void with_print_str(const with_str* s);
 int32_t with_str_byte_at(with_str s, int64_t index);
 int32_t with_str_starts_with(with_str s, with_str prefix);
 int32_t with_str_ends_with(with_str s, with_str suffix);
@@ -150,15 +159,14 @@ with_str with_fmt_str_debug(with_str s);
 
 // ── I/O ────────────────────────────────────────────────────────────
 
-void with_println_str(with_str s);
+void with_println_str(const with_str* s);
 void with_println_i32(int32_t n);
 void with_println_i64(int64_t n);
 void with_println_bool(bool b);
-void with_print_str(with_str s);
 void with_eprintln(with_str s);
-void with_eprint(with_str s);
-void with_write(with_str s);
-void with_ewrite(with_str s);
+void with_eprint(const with_str* s);
+void with_write(const with_str* s);
+void with_ewrite(const with_str* s);
 with_str with_read_line_stdin(void);
 with_str with_read_bytes_stdin(int32_t count);
 void with_write_stdout(with_str s);
