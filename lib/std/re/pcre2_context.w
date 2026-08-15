@@ -481,18 +481,4 @@ fn _pcre2_memctl_malloc_8(__param_size: c_ulong, __param_memctl: *mut pcre2_memc
 
 }
 
-fn default_malloc(__param_size: c_ulong, __param_data: *mut c_void) -> *mut c_void {
-    __param_data
-
-    return ((with_alloc((__param_size as i64)) as *mut c_void))
-
-}
-
-fn default_free(__param_block: *mut c_void, __param_data: *mut c_void) {
-    __param_data
-
-    with_free((__param_block as *mut i8))
-
-}
-
 var globpunct: *const i8 = c"\x21\x22\x23\x24\x25\x26\x27\x28\x29\x2a\x2b\x2c\x2d\x2e\x2f\x3a\x3b\x3c\x3d\x3e\x3f\x40\x5b\x5c\x5d\x5e\x5f\x60\x7b\x7c\x7d\x7e".ptr as *const i8

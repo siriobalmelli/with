@@ -104,6 +104,23 @@ extern fn with_memmove(dst: *i8, src: *i8, n: i64) -> *i8
 extern fn with_memset(ptr: *i8, c: i32, n: i64) -> *i8
 extern fn with_memcmp(a: *i8, b: *i8, n: i64) -> i32
 
+// Lives here, not pcre2_context.w: the _pcre2_default_*_context_8 globals
+// below initialize their memctl with these, and defs is the dependency root
+// (context uses defs; defs can't use context back).
+pub fn default_malloc(__param_size: c_ulong, __param_data: *mut c_void) -> *mut c_void {
+    __param_data
+
+    return ((with_alloc((__param_size as i64)) as *mut c_void))
+
+}
+
+pub fn default_free(__param_block: *mut c_void, __param_data: *mut c_void) -> Unit {
+    __param_data
+
+    with_free((__param_block as *mut i8))
+
+}
+
 // PCRE2 string constants (from pcre2_internal.h macros)
 let STRING_MARK: *const u8 = c"MARK".ptr
 let STRING_DEFINE: *const u8 = c"DEFINE".ptr
