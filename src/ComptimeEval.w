@@ -7389,6 +7389,13 @@ impl ComptimeEvaluator:
                 return self.fail(node, "with_setenv_str expects string arguments")
             self.record_runtime_env_set(name.text)
             return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i32 as i32), with_setenv_str(name.text, value.text) as i64))
+        if fn_name == "with_str_clone_ref" or fn_name == "with_str_clone":
+            if arg_values.len() as i32 != 1:
+                return self.fail(node, fn_name ++ " takes one argument")
+            let clone_text = arg_values.get(0)
+            if clone_text.kind != ComptimeValueKind.CV_STR:
+                return self.fail(node, fn_name ++ " argument must be a string")
+            return comptime_control_value(comptime_value_str(with_str_clone_ref(clone_text.text)))
         if fn_name == "with_str_len":
             if arg_values.len() as i32 != 1:
                 return self.fail(node, "with_str_len takes one argument")
