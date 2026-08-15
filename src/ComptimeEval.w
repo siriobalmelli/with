@@ -7733,7 +7733,10 @@ impl ComptimeEvaluator:
                     else:
                         Vec.new()
                 record.intercept_started = 1
-                record = self.enqueue_workspace_compile_result(move record, result, messages, node)
+                // The enqueue retains the result inside the Complete message;
+                // hand it a clone so the copy pushed into `results` below (the
+                // value returned to the build script) stays valid.
+                record = self.enqueue_workspace_compile_result(move record, comptime_value_clone(result), messages, node)
                 if self.had_error != 0:
                     comptime_workspace_native_compile_result_free(native)
                     return comptime_control_error()
