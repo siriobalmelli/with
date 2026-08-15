@@ -9114,6 +9114,20 @@ impl MirBuilder:
 
         let reference_place = self.materialize_operand(reference_op, adjustment.exact_source_type, self.ast.get_start(node))
         let pointee_place = self.new_deref_place(reference_place)
+        // #781: a str materialization mints an independent owner (two-part
+        // concat copy); a shallow pointee copy would alias the buffer into a
+        // double free.
+        if self.type_id_is_str(adjustment.owned_value_type) != 0:
+            let sc_parts: Vec[i32] = Vec.new()
+            sc_parts.push(self.body.new_operand(OperandKind.OK_COPY, pointee_place))
+            sc_parts.push(self.lower_str_lit(self.pool.intern("")))
+            let sc_args = self.body.new_call_args(sc_parts)
+            let sc_rv = self.body.new_rvalue(RvalueKind.RK_STR_CONCAT_N, sc_args, 2, 0)
+            let sc_tmp = self.new_temp(adjustment.owned_value_type)
+            let sc_place = self.place_for_local(sc_tmp)
+            self.body.push_stmt(self.cur_bb, StmtKind.Assign, sc_place, sc_rv, self.ast.get_start(node))
+            self.set_string_local_flags(sc_tmp, 2)
+            return self.body.new_operand(OperandKind.OK_MOVE, sc_place)
         let owned_op = self.body.new_operand(OperandKind.OK_COPY, pointee_place)
         if adjustment.post_copy_type == 0:
             return owned_op

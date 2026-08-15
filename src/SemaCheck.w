@@ -15512,8 +15512,52 @@ impl Sema:
     mut fn check_expr_with_owned_demand(node: i32, expected: TypeId) -> TypeId:
         let exact = self.check_expr_with_expected(node, expected)
         if expected != 0 and exact != 0:
-            let _ = self.record_contextual_copy_adjustment(node, expected as i32, exact as i32)
+            if self.record_contextual_copy_adjustment(node, expected as i32, exact as i32) == 0:
+                let _ = self.record_contextual_str_clone_adjustment(node, expected as i32, exact as i32)
         exact
+
+    // #781: an EXPLICIT owned demand (annotated let, assignment into an owned
+    // place, return, comprehension element) materializes a &str view as an
+    // independent str — D22/D27: the annotation demands what it says. Only
+    // reachable from check_expr_with_owned_demand; general call args and
+    // binops keep the Copy-view-only rule (explicit clone stays the spelling
+    // for consuming a view elsewhere).
+    mut fn record_contextual_str_clone_adjustment(node: i32, expected: i32, actual: i32) -> i32:
+        if node <= 0 or expected == 0 or actual == 0:
+            return 0
+        let sk = self.ast.kind(node)
+        if sk == NodeKind.NK_GROUPED or sk == NodeKind.NK_NO_SUSPEND:
+            return self.record_contextual_str_clone_adjustment(self.ast.get_data0(node), expected, actual)
+        if sk == NodeKind.NK_BLOCK:
+            let tail = self.ast.get_data2(node)
+            if tail == 0:
+                return 0
+            return self.record_contextual_str_clone_adjustment(tail, expected, actual)
+        let expected_resolved = self.resolve_alias(expected as TypeId)
+        if self.get_type_kind(expected_resolved) != TypeKind.TY_STR:
+            return 0
+        let actual_resolved = self.resolve_alias(actual as TypeId)
+        if self.get_type_kind(actual_resolved) != TypeKind.TY_REF or self.get_type_d1(actual_resolved) != 0:
+            return 0
+        let pointee = self.get_type_d0(actual_resolved)
+        if pointee == 0 or self.get_type_kind(self.resolve_alias(pointee as TypeId)) != TypeKind.TY_STR:
+            return 0
+        let context_sig = self.current_fn_sig_idx
+        let context_key = sema_pair_key(context_sig, node)
+        if self.contextual_copy_adjustment_indices.contains(context_key):
+            return 1
+        let adjustment = ContextualCopyAdjustment {
+            context_sig,
+            source_node: node,
+            exact_source_type: actual,
+            owned_value_type: pointee,
+            target_type: expected,
+            post_copy_type: 0,
+        }
+        let index = self.contextual_copy_adjustments.len() as i32
+        self.contextual_copy_adjustments.push(move adjustment)
+        self.contextual_copy_adjustment_indices.insert(context_key, index)
+        1
 
     mut fn check_expr_value_context(node: i32) -> TypeId:
         let saved_expected = self.expected_expr_type
