@@ -3499,7 +3499,7 @@ impl MirBuilder:
         let local_id = self.body.place_locals.get(place as i64)
         self.local_type_is_str(local_id)
 
-    // #781: whether a field-access value expr reads through a shared borrow
+    // #780: whether a field-access value expr reads through a shared borrow
     // this frame does not own — any base link in the chain typed &T. Read
     // receivers whose `self` is typed as the value type are not caught here;
     // receiver field takes flow through D17's receiver-effect machinery.
@@ -10219,10 +10219,13 @@ impl MirBuilder:
             let field_ty = self.expr_type(expr)
             if field_ty != 0 and self.sema.is_copy_frozen(field_ty) != 0:
                 return
-            // #781: a str field returned through a shared borrow is CLONED by
-            // the NK_FIELD_ACCESS value arm (this frame doesn't own the place),
-            // so it must not be marked moved or blanked — the caller keeps it.
-            if field_ty != 0 and self.type_id_is_str(field_ty) != 0 and self.field_read_base_is_shared_borrow(expr) != 0:
+            // #780: a str field returned through a shared borrow under an
+            // owned-str demand is CLONED by the NK_FIELD_ACCESS value arm
+            // (this frame doesn't own the place), so it must not be marked
+            // moved or blanked — the caller keeps it. View demands (-> &str)
+            // keep the historical place/auto-ref path.
+            let ce_owned_demand = self.expected_type != 0 and self.type_id_is_str(self.sema.resolve_alias(self.expected_type as TypeId) as i32) != 0
+            if ce_owned_demand and field_ty != 0 and self.type_id_is_str(field_ty) != 0 and self.field_read_base_is_shared_borrow(expr) != 0:
                 return
             let recv_place = self.lower_expr_place(expr)
             self.mark_place_field_moved(recv_place)
@@ -12528,7 +12531,7 @@ impl MirBuilder:
             self.mark_string_place_copied(place)
             let fa_val_ty = self.expr_type(node)
             if fa_val_ty != 0 and self.sema.type_needs_drop_frozen(fa_val_ty) != 0:
-                // #781: a field value read whose base chain passes through a
+                // #780: a field value read whose base chain passes through a
                 // shared borrow (&T param or & field) cannot move out — this
                 // frame doesn't own the place (an explicit `return fact.name`
                 // through &fact blanked the caller's field; the tail form
@@ -12536,8 +12539,9 @@ impl MirBuilder:
                 // independent owner instead (D22 owned-demand): for str the
                 // two-part concat copy (a one-part RK_STR_CONCAT_N is a
                 // codegen pass-through). Non-str drop types keep the
-                // historical move; recorded as #781 residue.
-                if self.type_id_is_str(fa_val_ty) != 0 and self.field_read_base_is_shared_borrow(node) != 0:
+                // historical move; recorded as #780 residue.
+                let fb_owned_demand = self.expected_type != 0 and self.type_id_is_str(self.sema.resolve_alias(self.expected_type as TypeId) as i32) != 0
+                if fb_owned_demand and self.type_id_is_str(fa_val_ty) != 0 and self.field_read_base_is_shared_borrow(node) != 0:
                     let fb_parts: Vec[i32] = Vec.new()
                     fb_parts.push(self.body.new_operand(OperandKind.OK_COPY, place))
                     fb_parts.push(self.lower_str_lit(self.pool.intern("")))
