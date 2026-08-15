@@ -9901,7 +9901,18 @@ impl MirBuilder:
         if intrinsic != MirIntrinsic.NONE:
             return self.lower_intrinsic_call(intrinsic, self_expr, method_sym, arg_start, arg_count, node)
 
-        if self.sema.dyn_trait_symbol_for_type(recv_type) != 0:
+        // A static method on a dyn-carrying type (Box[dyn T] under an annotated
+        // let makes recv_type Box[dyn T] for `Box.new(...)`) is NOT a dyn
+        // dispatch: the receiver is a type name, not a value. Without this
+        // guard the branch speculatively lowered `Box` as a variable, marked
+        // the body lowering-failed, and only the (layout-dependent, #783) loss
+        // of that flag write let the fallback's complete body compile.
+        var dyn_recv_is_static = false
+        if self.ast.kind(self_expr) == NodeKind.NK_IDENT:
+            let dyn_id_sym = self.ast.get_data0(self_expr)
+            if self.lookup_local(dyn_id_sym) < 0 and self.sema.named_types.contains(dyn_id_sym):
+                dyn_recv_is_static = true
+        if not dyn_recv_is_static and self.sema.dyn_trait_symbol_for_type(recv_type) != 0:
             let dyn_fn_op = self.const_operand(ConstKind.CK_FN, method_sym, 0)
             let dyn_args: Vec[i32] = Vec.new()
             let dyn_recv_op = self.lower_expr(self_expr)
