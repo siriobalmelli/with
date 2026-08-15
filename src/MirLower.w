@@ -9906,36 +9906,39 @@ impl MirBuilder:
         // dispatch: the receiver is a type name, not a value. Without this
         // guard the branch speculatively lowered `Box` as a variable, marked
         // the body lowering-failed, and only the (layout-dependent, #783) loss
-        // of that flag write let the fallback's complete body compile.
-        var dyn_recv_is_static = false
-        if self.ast.kind(self_expr) == NodeKind.NK_IDENT:
-            let dyn_id_sym = self.ast.get_data0(self_expr)
-            if self.lookup_local(dyn_id_sym) < 0 and self.sema.named_types.contains(dyn_id_sym):
-                dyn_recv_is_static = true
-        if not dyn_recv_is_static and self.sema.dyn_trait_symbol_for_type(recv_type) != 0:
-            let dyn_fn_op = self.const_operand(ConstKind.CK_FN, method_sym, 0)
-            let dyn_args: Vec[i32] = Vec.new()
-            let dyn_recv_op = self.lower_expr(self_expr)
-            self.consume_moved_operand(dyn_recv_op)
-            dyn_args.push(dyn_recv_op)
-            for dyn_ai in 0..arg_count:
-                let dyn_arg_op = self.lower_expr(self.ast.get_extra(arg_start + dyn_ai))
-                self.consume_moved_operand(dyn_arg_op)
-                dyn_args.push(dyn_arg_op)
-            let dyn_args_id = self.body.new_call_args(dyn_args)
-            self.body.set_call_intrinsic(dyn_args_id, MirIntrinsic.DYN_CALL)
-            self.body.set_call_ast_node(dyn_args_id, node)
-            var dyn_ret_ty = self.method_call_result_type(node)
-            if dyn_ret_ty == 0:
-                dyn_ret_ty = self.sema.ty_void as i32
-            let dyn_result = self.new_temp(dyn_ret_ty)
-            let dyn_place = self.place_for_local(dyn_result)
-            let dyn_next = self.new_block()
-            self.terminate(TermKind.TK_CALL, dyn_fn_op, dyn_args_id, dyn_place, dyn_next)
-            self.switch_to(dyn_next)
-            if self.sema.is_copy_frozen(dyn_ret_ty) != 0:
-                return self.body.new_operand(OperandKind.OK_COPY, dyn_place)
-            return self.body.new_operand(OperandKind.OK_MOVE, dyn_place)
+        // of that flag write let the fallback's complete body compile. The
+        // static test runs only after the (rare) dyn hit — lookup_local is a
+        // linear scan and must not run per method call.
+        if self.sema.dyn_trait_symbol_for_type(recv_type) != 0:
+            var dyn_recv_is_static = false
+            if self.ast.kind(self_expr) == NodeKind.NK_IDENT:
+                let dyn_id_sym = self.ast.get_data0(self_expr)
+                if self.lookup_local(dyn_id_sym) < 0 and self.sema.named_types.contains(dyn_id_sym):
+                    dyn_recv_is_static = true
+            if not dyn_recv_is_static:
+                let dyn_fn_op = self.const_operand(ConstKind.CK_FN, method_sym, 0)
+                let dyn_args: Vec[i32] = Vec.new()
+                let dyn_recv_op = self.lower_expr(self_expr)
+                self.consume_moved_operand(dyn_recv_op)
+                dyn_args.push(dyn_recv_op)
+                for dyn_ai in 0..arg_count:
+                    let dyn_arg_op = self.lower_expr(self.ast.get_extra(arg_start + dyn_ai))
+                    self.consume_moved_operand(dyn_arg_op)
+                    dyn_args.push(dyn_arg_op)
+                let dyn_args_id = self.body.new_call_args(dyn_args)
+                self.body.set_call_intrinsic(dyn_args_id, MirIntrinsic.DYN_CALL)
+                self.body.set_call_ast_node(dyn_args_id, node)
+                var dyn_ret_ty = self.method_call_result_type(node)
+                if dyn_ret_ty == 0:
+                    dyn_ret_ty = self.sema.ty_void as i32
+                let dyn_result = self.new_temp(dyn_ret_ty)
+                let dyn_place = self.place_for_local(dyn_result)
+                let dyn_next = self.new_block()
+                self.terminate(TermKind.TK_CALL, dyn_fn_op, dyn_args_id, dyn_place, dyn_next)
+                self.switch_to(dyn_next)
+                if self.sema.is_copy_frozen(dyn_ret_ty) != 0:
+                    return self.body.new_operand(OperandKind.OK_COPY, dyn_place)
+                return self.body.new_operand(OperandKind.OK_MOVE, dyn_place)
 
         // A bare method symbol is unresolved only when Sema did not record a
         // concrete signature for this call. Inherent impl methods may legitimately
