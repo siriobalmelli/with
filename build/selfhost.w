@@ -1484,8 +1484,12 @@ fn bs_check_declarative_manifest_config(ctx: &ActionCtx, compiler_path: &str, ca
     let cross_target = bs_run_cli_capture_cwd(ctx, compiler_path, "declarative-target-default-cross", bs_project_args("build"), 120000, cross_target_dir)
     if cross_target.rc == 0:
         return bs_fail(ctx, "cross-target manifest default unexpectedly succeeded")
-    rc = bs_assert_contains(ctx, cross_target.stderr, "not implemented yet", "declarative_target_default_cross")
-    if rc != 0: return rc
+    // Cross targets are becoming real: platforms with runtime support fail
+    // with the :cross-rt guidance until the objects are built; the rest still
+    // say "not implemented yet". Either way the property pinned here is that
+    // no native binary is produced silently.
+    if not cross_target.stderr.contains("not implemented yet") and not cross_target.stderr.contains("runtime object"):
+        return bs_fail(ctx, "declarative_target_default_cross: expected a cross-target failure message, got: " ++ cross_target.stderr)
     if ctx.fs().exists(bs_join(cross_target_dir, "out/bin/targetcross")):
         return bs_fail(ctx, "cross-target manifest default produced native output")
 
