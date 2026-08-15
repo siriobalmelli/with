@@ -72,53 +72,53 @@ fn run_cross_unsupported_action(ctx: ActionCtx) -> i32:
 // gets a full runtime/bridge/embed/rsp target set under
 // out/lib/cross/<tag>/ and a group (":cross-rt" / ":cross-rt-arm").
 
-fn cross_dir(tag: str) -> str:
+fn cross_dir(tag: &str) -> str:
     "out/lib/cross/" ++ tag
 
-fn cross_triple(tag: str) -> str:
+fn cross_triple(tag: &str) -> str:
     if tag == "linux_aarch64":
         return "aarch64-unknown-linux-gnu"
     "x86_64-unknown-linux-gnu"
 
-fn cross_platform_source(tag: str) -> str:
+fn cross_platform_source(tag: &str) -> str:
     if tag == "linux_aarch64":
         return "rt/linux_aarch64.w"
     "rt/linux_x86_64.w"
 
-fn cross_platform_obj(tag: str) -> str:
+fn cross_platform_obj(tag: &str) -> str:
     if tag == "linux_aarch64":
         return "rt_linux_aarch64.o"
     "rt_linux_x86_64.o"
 
-fn cross_platform_symbol(tag: str) -> str:
+fn cross_platform_symbol(tag: &str) -> str:
     if tag == "linux_aarch64":
         return "rt_linux_aarch64_o"
     "rt_linux_x86_64_o"
 
-fn cross_llvm_prefix(tag: str) -> str:
+fn cross_llvm_prefix(tag: &str) -> str:
     let arch_tag = if tag == "linux_aarch64": "linux-aarch64" else: "linux-x86_64"
     ".deps/llvm-" ++ compiler_llvm_version() ++ "-" ++ arch_tag
 
 // A runtime/bridge object compiled FOR the cross tag by the freshly
 // built native compiler (dep "build"), landing in cross_dir(tag).
-fn cross_object_target_named(tag: str, name: str, source: str, obj_name: str, opt: str) -> Target:
+fn cross_object_target_named(tag: &str, name: &str, source: &str, obj_name: &str, opt: &str) -> Target:
     var target = with_object_target(name, release_compiler_bin("with"), source, cross_dir(tag) ++ "/" ++ obj_name, opt, "build")
     target = target.arg("--target=" ++ cross_triple(tag))
     target
 
-fn cross_object_target(tag: str, name: str, source: str, opt: str) -> Target:
+fn cross_object_target(tag: &str, name: &str, source: &str, opt: &str) -> Target:
     let base = comp_path_basename(source)
     let stem = if base.ends_with(".w"): base.slice(0, base.len() - 2) else: base
     cross_object_target_named(tag, name, source, stem ++ ".o", opt)
 
-fn cross_fiber_asm_source(tag: str) -> str:
+fn cross_fiber_asm_source(tag: &str) -> str:
     if tag == "linux_aarch64":
         return "runtime/fiber_asm_linux_aarch64.s"
     "runtime/fiber_asm_linux_x86_64.s"
 
 // Register the full cross runtime/bridge/embed/rsp target set for one
 // cross tag under name prefix `p`, grouped as `group_name`.
-fn add_cross_rt_targets(out0: Build, tag: str, p: str, group_name: str) -> Build:
+fn add_cross_rt_targets(out0: Build, tag: &str, p: &str, group_name: &str) -> Build:
     var out = out0
     let dir = cross_dir(tag)
     let triple = cross_triple(tag)
@@ -150,7 +150,7 @@ fn add_cross_rt_targets(out0: Build, tag: str, p: str, group_name: str) -> Build
     cross_fiber_asm = cross_fiber_asm.arg("triple=" ++ triple)
     out = out.add_target(cross_fiber_asm)
 
-    var cross_embedded = target_new(.EmbedObjectFiles, p ++ "embedded-objects-asm", tag).output(dir ++ "/embedded_objects.s")
+    var cross_embedded = target_new(.EmbedObjectFiles, p ++ "embedded-objects-asm", build_owned_text(tag)).output(dir ++ "/embedded_objects.s")
     cross_embedded = cross_embedded.input(dir ++ "/cimport_stubs.o")
     cross_embedded = cross_embedded.arg("cimport_stubs_o")
     cross_embedded = cross_embedded.input(dir ++ "/compat_runtime.o")
@@ -193,12 +193,12 @@ fn add_cross_rt_targets(out0: Build, tag: str, p: str, group_name: str) -> Build
 
     var cross_ld_rsp = target_new(.Action, p ++ "llvm-link-metadata", "").output(dir ++ "/llvm_ld.rsp")
     cross_ld_rsp.action = run_cross_linux_llvm_link_metadata_action
-    cross_ld_rsp = cross_ld_rsp.arg(tag)
+    cross_ld_rsp = cross_ld_rsp.arg(build_owned_text(tag))
     cross_ld_rsp = cross_ld_rsp.write_scope(dir)
     cross_ld_rsp = cross_ld_rsp.write_scope("out/command/" ++ p ++ "llvm-link-metadata")
     out = out.add_target(cross_ld_rsp)
 
-    var cross_rt = target_new(.Group, group_name, "")
+    var cross_rt = target_new(.Group, build_owned_text(group_name), "")
     cross_rt = cross_rt.dep(p ++ "embedded-objects-object")
     cross_rt = cross_rt.dep(p ++ "llvm-bridge-object")
     cross_rt = cross_rt.dep(p ++ "clang-bridge-object")
@@ -212,7 +212,7 @@ fn add_cross_rt_targets(out0: Build, tag: str, p: str, group_name: str) -> Build
 fn run_cross_linux_llvm_link_metadata_action(ctx: ActionCtx) -> i32:
     let fs = ctx.fs()
     let args = ctx.args()
-    let tag = if args.len() > 0: args.get(0) else: "linux_x86_64"
+    let tag = if args.len() > 0: build_owned_text(args.get(0)) else: "linux_x86_64"
     let output_path = ctx.output()
     let lib_dir = cross_llvm_prefix(tag) ++ "/lib"
     let libclang = lib_dir ++ "/libclang.a"
@@ -230,10 +230,10 @@ fn run_cross_linux_llvm_link_metadata_action(ctx: ActionCtx) -> i32:
         let name = comp_path_basename(path)
         if name.ends_with(".a"):
             if name.starts_with("libclang") and path != libclang:
-                clang_archives.push(path)
+                clang_archives.push(build_owned_text(path))
             else:
                 if name.starts_with("libLLVM"):
-                    llvm_archives.push(path)
+                    llvm_archives.push(build_owned_text(path))
     var ld_rsp = comp_rsp_path(libclang) ++ "\n"
     let sorted_clang = comp_sort_strings(clang_archives)
     for i in 0..sorted_clang.len() as i32:
@@ -258,12 +258,12 @@ fn cross_windows_triple() -> str:
 fn cross_windows_llvm_prefix() -> str:
     ".deps/llvm-" ++ compiler_llvm_version() ++ "-windows-x86_64-msvc"
 
-fn cross_windows_object_target_named(name: str, source: str, obj_name: str, opt: str) -> Target:
+fn cross_windows_object_target_named(name: &str, source: &str, obj_name: &str, opt: &str) -> Target:
     var target = with_object_target(name, release_compiler_bin("with"), source, cross_windows_dir() ++ "/" ++ obj_name, opt, "build")
     target = target.arg("--target=" ++ cross_windows_triple())
     target
 
-fn cross_windows_object_target(name: str, source: str, opt: str) -> Target:
+fn cross_windows_object_target(name: &str, source: &str, opt: &str) -> Target:
     let base = comp_path_basename(source)
     let stem = if base.ends_with(".w"): base.slice(0, base.len() - 2) else: base
     cross_windows_object_target_named(name, source, stem ++ ".o", opt)
@@ -293,10 +293,10 @@ fn run_cross_windows_llvm_link_metadata_action(ctx: ActionCtx) -> i32:
         let name = comp_path_basename(path)
         if name.ends_with(".lib"):
             if (name.starts_with("clang") or name.starts_with("libclang")) and path != libclang:
-                clang_archives.push(path)
+                clang_archives.push(build_owned_text(path))
             else:
                 if name.starts_with("LLVM") and name != "LLVM-C.lib":
-                    llvm_archives.push(path)
+                    llvm_archives.push(build_owned_text(path))
     var ld_rsp = comp_rsp_path(libclang) ++ "\n"
     let sorted_clang = comp_sort_strings(clang_archives)
     for i in 0..sorted_clang.len() as i32:
@@ -1546,11 +1546,6 @@ pub fn build(ctx: BuildCtx) -> Build:
     prepare_bootstrap_link_root = prepare_bootstrap_link_root.dep("bootstrap-runtime")
     out = out.add_target(prepare_bootstrap_link_root)
 
-    var sha256_tool = target_new(.Executable, "with-sha256", "tools/with-sha256.w").output(host_bin("out/bin/with-sha256"))
-    sha256_tool = sha256_tool.compiler("seed")
-    sha256_tool = sha256_tool.dep("prepare-bootstrap-link-root")
-    out = out.add_target(sha256_tool)
-
     out = out.add_target(with_object_target("llvm-bridge-object", stage_compiler_bin("with-stage2"), "src/compiler/LlvmBridge.w", "out/lib/llvm_bridge.o", "-O1", "stage2"))
     out = out.add_target(with_object_target("clang-bridge-object", stage_compiler_bin("with-stage2"), "src/compiler/ClangBridge.w", "out/lib/clang_bridge.o", "-O1", "stage2"))
 
@@ -1574,6 +1569,7 @@ pub fn build(ctx: BuildCtx) -> Build:
     stage1 = stage1.arg("-O1")
     stage1 = stage1.extra_output("out/command/stage1")
     stage1 = stage1.extra_output("out/.build-state/seed-input.json")
+    stage1 = stage1.timeout(1800000)
     stage1 = stage1.input(host_bin("out/bin/with-sha256"))
     stage1 = stage1.write_scope("out/bootstrap/bin")
     stage1 = stage1.write_scope("out/.build-state")
@@ -1600,6 +1596,7 @@ pub fn build(ctx: BuildCtx) -> Build:
     stage2 = target_with_compiler_source_inputs(move stage2, ctx)
     stage2 = stage2.arg("-O1")
     stage2 = stage2.extra_output("out/command/stage2")
+    stage2 = stage2.timeout(1800000)
     stage2 = stage2.write_scope("out/stage/bin")
     stage2 = stage2.dep("stage1")
     stage2 = stage2.dep("compiler-main-source")
@@ -1614,8 +1611,10 @@ pub fn build(ctx: BuildCtx) -> Build:
     stage3 = target_with_compiler_source_inputs(move stage3, ctx)
     stage3 = stage3.arg("-O1")
     stage3 = stage3.extra_output("out/command/stage3")
+    stage3 = stage3.timeout(1800000)
     stage3 = stage3.write_scope("out/stage/bin")
     stage3 = stage3.dep("stage2")
+    stage3 = stage3.dep("compiler-main-source")
     stage3 = stage3.dep("compat-runtime-source")
     stage3 = stage3.dep("embedded-clang-resource-source")
     out = out.add_target(stage3)
@@ -1628,6 +1627,7 @@ pub fn build(ctx: BuildCtx) -> Build:
     stage2_fixpoint = stage2_fixpoint.arg("--emit-obj")
     stage2_fixpoint = stage2_fixpoint.arg("-O1")
     stage2_fixpoint = stage2_fixpoint.extra_output("out/command/stage2-fixpoint-object")
+    stage2_fixpoint = stage2_fixpoint.timeout(1800000)
     stage2_fixpoint = stage2_fixpoint.write_scope("out/stage/bin")
     stage2_fixpoint = stage2_fixpoint.dep("stage1")
     stage2_fixpoint = stage2_fixpoint.dep("compiler-main-source")
@@ -1643,6 +1643,7 @@ pub fn build(ctx: BuildCtx) -> Build:
     stage3_fixpoint = stage3_fixpoint.arg("--emit-obj")
     stage3_fixpoint = stage3_fixpoint.arg("-O1")
     stage3_fixpoint = stage3_fixpoint.extra_output("out/command/stage3-fixpoint-object")
+    stage3_fixpoint = stage3_fixpoint.timeout(1800000)
     stage3_fixpoint = stage3_fixpoint.write_scope("out/stage/bin")
     stage3_fixpoint = stage3_fixpoint.dep("stage2")
     stage3_fixpoint = stage3_fixpoint.dep("compiler-main-source")
@@ -1895,6 +1896,7 @@ pub fn build(ctx: BuildCtx) -> Build:
     compiler = target_with_compiler_source_inputs(move compiler, ctx)
     compiler = compiler.arg("-O1")
     compiler = compiler.extra_output("out/command/link-compiler")
+    compiler = compiler.timeout(1800000)
     compiler = compiler.write_scope("out/release/bin")
     compiler = compiler.dep("compiler-main-source")
     compiler = compiler.dep("llvm-link-metadata")
@@ -2621,5 +2623,13 @@ pub fn build(ctx: BuildCtx) -> Build:
     prune_apply = prune_apply.write_scope("out/test-graph")
     prune_apply = prune_apply.write_scope("out/command/prune-apply")
     out = out.add_target(prune_apply)
+
+    // Keep the seed-built helper last until every public seed carries the
+    // borrowed target lookup. Older seeds invalidate earlier non-Copy graph
+    // entries while selecting a late default target.
+    var sha256_tool = target_new(.Executable, "with-sha256", "tools/with-sha256.w").output(host_bin("out/bin/with-sha256"))
+    sha256_tool = sha256_tool.compiler("seed")
+    sha256_tool = sha256_tool.dep("prepare-bootstrap-link-root")
+    out = out.add_target(move sha256_tool)
 
     out.default("build")

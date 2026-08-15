@@ -70,7 +70,7 @@ extern fn with_str_concat_n(parts: *const str, count: i64) -> str
 extern fn with_str_from_byte(byte: i32) -> str
 extern fn with_str_starts_with(s: str, prefix: str) -> i32
 extern fn with_str_ends_with(s: str, suffix: str) -> i32
-extern fn with_str_replace(s: str, old: str, new_s: str) -> str
+extern fn with_str_replace_ref(s: &str, old: &str, new_s: &str) -> str
 extern fn with_sysinfo_hostname() -> str
 
 const COMPTIME_RECURSION_LIMIT: i32 = 256
@@ -3313,6 +3313,10 @@ impl ComptimeEvaluator:
             if arg_count != 0:
                 return self.fail(node, "str.len() takes no arguments")
             return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i64 as i32), text.len()))
+        if method == "to_owned":
+            if arg_count != 0:
+                return self.fail(node, "str.to_owned() takes no arguments")
+            return comptime_control_value(comptime_value_str(text))
         if method == "byte_at":
             if arg_count != 1:
                 return self.fail(node, "str.byte_at() expects exactly one argument")
@@ -3368,7 +3372,7 @@ impl ComptimeEvaluator:
                 return new_signal
             if old_signal.value.kind != ComptimeValueKind.CV_STR or new_signal.value.kind != ComptimeValueKind.CV_STR:
                 return self.fail(node, "str.replace() arguments must be strings")
-            return comptime_control_value(comptime_value_str(with_str_replace(text, old_signal.value.text, new_signal.value.text)))
+            return comptime_control_value(comptime_value_str(with_str_replace_ref(text, old_signal.value.text, new_signal.value.text)))
         if method == "split":
             if arg_count != 1:
                 return self.fail(node, "str.split() expects exactly one argument")
@@ -4429,7 +4433,7 @@ impl ComptimeEvaluator:
             out.messages.push(message)
         out
 
-    mut fn enqueue_workspace_compile_result(record: ComptimeWorkspaceRecord, result: ComptimeValue, messages: &Vec[ComptimeValue], node: i32) -> ComptimeWorkspaceRecord:
+    mut fn enqueue_workspace_compile_result(record: ComptimeWorkspaceRecord, result: &ComptimeValue, messages: &Vec[ComptimeValue], node: i32) -> ComptimeWorkspaceRecord:
         var out = record
         for mi in 0..messages.len() as i32:
             out.messages.push(comptime_value_clone(messages.get(mi as i64)))
@@ -4447,9 +4451,9 @@ impl ComptimeEvaluator:
         out.intercept_terminal = 1
         out
 
-    mut fn compiler_message_complete_value(result: ComptimeValue, node: i32) -> ComptimeValue:
+    mut fn compiler_message_complete_value(result: &ComptimeValue, node: i32) -> ComptimeValue:
         let payloads: Vec[ComptimeValue] = Vec.new()
-        payloads.push(result)
+        payloads.push(comptime_value_clone(result))
         self.compiler_message_value("Complete", payloads, node)
 
     mut fn compiler_message_error_value(code: i32, message: &str, node: i32) -> ComptimeValue:
@@ -7463,6 +7467,13 @@ impl ComptimeEvaluator:
         let fn_name: str = with_str_clone_ref(self.pool.resolve(fn_sym))
         if fn_name == "parallel":
             return self.eval_parallel_workspaces_call(arg_values, node)
+        if fn_name == "str.to_owned":
+            if arg_values.len() as i32 != 1:
+                return self.fail(node, "str.to_owned() takes no arguments")
+            let receiver = arg_values.get(0)
+            if receiver.kind != ComptimeValueKind.CV_STR:
+                return self.fail(node, "str.to_owned() receiver must be a string")
+            return comptime_control_value(comptime_value_str(receiver.text))
         let string_builder_constructor = comptime_string_builder_constructor_method(fn_name)
         if string_builder_constructor.len() > 0:
             var result_type = self.node_type_or(node, 0)
