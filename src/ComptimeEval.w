@@ -6170,7 +6170,10 @@ impl ComptimeEvaluator:
             if result.kind == ComptimeValueKind.CV_INVALID:
                 return comptime_control_error()
             if record.intercept_active != 0:
-                record = self.enqueue_workspace_compile_result(move record, result, compiled.messages, node)
+                // The enqueue retains the result inside the Complete message;
+                // hand it an independent clone so the `result` we return to the
+                // build script stays valid (a consumed view blanks its source).
+                record = self.enqueue_workspace_compile_result(move record, comptime_value_clone(result), compiled.messages, node)
                 if self.had_error != 0:
                     return comptime_control_error()
                 self.store_workspace_record(workspace_id, record)
