@@ -1597,8 +1597,10 @@ fn ci_migrate_translate_function(session: i64, idx: i32, known_structs: &str, pr
     let bail_loc = ci_get_bail_location()
     let bail_k = ci_get_bail_kind()
     let fn_loc = if fn_cursor >= 0: with_ci_cursor_location(session, fn_cursor) else: ""
-    let loc = if bail_loc.len() > 0: bail_loc else: fn_loc
+    // reason first: the loc conditional MOVES bail_loc (blank-on-move), so
+    // any later len() check would always take the generic branch.
     let reason = if bail_loc.len() > 0: "bailed at " ++ ci_cursor_kind_name(bail_k) else: "body translation failed"
+    let loc = if bail_loc.len() > 0: bail_loc else: fn_loc
     let loc_suffix = if loc.len() > 0: " at " ++ loc else: ""
     ci_migrate_fail_function(f"migrate: untranslatable function '{name}': {reason}{loc_suffix}")
 
