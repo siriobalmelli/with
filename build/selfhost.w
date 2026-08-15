@@ -2806,8 +2806,10 @@ fn bs_check_build_options_cli(ctx: &ActionCtx, compiler_path: &str, case_dir: &s
     let cross = bs_run_cli_capture_cwd(ctx, compiler_path, "build-options-target-cross", cross_args, 120000, case_dir)
     if cross.rc == 0:
         return bs_fail(ctx, "cross-target build unexpectedly succeeded")
-    rc = bs_assert_contains(ctx, cross.stderr, "not implemented yet", "build_options_target_cross")
-    if rc != 0: return rc
+    // Same two-way pin as declarative_target_default_cross: platforms with
+    // runtime support fail with the :cross-rt guidance instead.
+    if not cross.stderr.contains("not implemented yet") and not cross.stderr.contains("runtime object"):
+        return bs_fail(ctx, "build_options_target_cross: expected a cross-target failure message, got: " ++ cross.stderr)
     if ctx.fs().exists(cross_bin):
         return bs_fail(ctx, "cross-target build produced a native artifact: " ++ cross_bin)
 
