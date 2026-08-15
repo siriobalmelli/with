@@ -456,11 +456,11 @@ fn ci_migrate_write_shared_defs(output_dir: &str):
     defs.push_str(ci_migrate_preamble_text())
     // Hardcoded extras from pcre2_internal.h
     defs.push_str("// PCRE2 string constants (from pcre2_internal.h macros)\n")
-    defs.push_str("let STRING_MARK: *const u8 = \"MARK\"\n")
-    defs.push_str("let STRING_DEFINE: *const u8 = \"DEFINE\"\n")
-    defs.push_str("let STRING_VERSION: *const u8 = \"VERSION\"\n")
-    defs.push_str("let STRING_WEIRD_STARTWORD: *const u8 = \"[:<:]]\"\n")
-    defs.push_str("let STRING_WEIRD_ENDWORD: *const u8 = \"[:>:]]\"\n")
+    defs.push_str("let STRING_MARK: *const u8 = c\"MARK\".ptr\n")
+    defs.push_str("let STRING_DEFINE: *const u8 = c\"DEFINE\".ptr\n")
+    defs.push_str("let STRING_VERSION: *const u8 = c\"VERSION\".ptr\n")
+    defs.push_str("let STRING_WEIRD_STARTWORD: *const u8 = c\"[:<:]]\".ptr\n")
+    defs.push_str("let STRING_WEIRD_ENDWORD: *const u8 = c\"[:>:]]\".ptr\n")
     // Shared declarations collected during migration.
     if g_migrate_shared_decl_buf.len() > 0:
         defs.push_str("\n")
