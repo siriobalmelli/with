@@ -1308,7 +1308,6 @@ impl Sema:
     mut fn collect_fn_decl(node: i32, is_local: i32, decl_index: i32):
         let parsed_fn_name = self.ast.get_data0(node)
         let method_owner_sym = self.method_decl_owner_symbol(node, parsed_fn_name)
-        let method_impl_node = self.impl_node_for_method_decl(node)
         let method_base_sym = self.method_decl_base_symbol(node, parsed_fn_name)
         var fn_name = method_base_sym
         var dispatch_fn_name = 0
@@ -1320,6 +1319,10 @@ impl Sema:
         // distinct pools and the same slot names unrelated declarations.
         self.fn_decl_effective_syms.insert(node, fn_name)
         if method_owner_sym != 0:
+            // Only methods need their enclosing impl. Computing it eagerly for
+            // every fn scanned all decls (O(n) miss) for non-methods and threw
+            // the result away — O(n^2) over the decl table.
+            let method_impl_node = self.impl_node_for_method_decl(node)
             if method_impl_node != 0:
                 self.method_impl_nodes.insert(fn_name, method_impl_node)
             self.method_symbol_flags.insert(fn_name, 1)
@@ -1713,26 +1716,14 @@ impl Sema:
         let decl_index = self.find_decl_index(decl)
         if decl_index >= 0 and self.method_decl_impl_nodes.contains(decl_index):
             return self.method_decl_impl_nodes.get(decl_index).unwrap()
-        if decl_index < 0:
-            return 0
-        let start = self.ast.get_start(decl)
-        let end = self.ast.get_end(decl)
-        var best_span = 0
-        var best_node = 0
-        for di in 0..self.ast.decl_count():
-            if self.decls_share_source_file(decl_index, di) == 0:
-                continue
-            let cand = self.ast.get_decl(di)
-            if self.ast.kind(cand) != NodeKind.NK_IMPL_DECL:
-                continue
-            let impl_start = self.ast.get_start(cand)
-            let impl_end = self.ast.get_end(cand)
-            if impl_start <= start and end <= impl_end:
-                let span = impl_end - impl_start
-                if best_node == 0 or span < best_span:
-                    best_span = span
-                    best_node = cand
-        best_node
+        // method_decl_impl_nodes is authoritative: compute_method_origins walks
+        // every impl's contiguous in-span method FN_DECLs (impl bodies hold only
+        // methods, so the backward-walk is complete) and records each method's
+        // enclosing impl. A cache miss therefore means `decl` has no enclosing
+        // impl. The former O(n) decl-order span-containment scan never resolved
+        // an impl the cache lacked over a full self-compile — it only re-derived
+        // the 0 at whole-program cost.
+        0
 
 fn sema_extension_path_hash(path: &str) -> i64:
     var h: i64 = 17
@@ -2447,13 +2438,11 @@ impl Sema:
     fn find_trait_decl_node(trait_sym: i32) -> NodeId:
         if self.trait_decl_node_cache.contains(trait_sym):
             return self.trait_decl_node_cache.get(trait_sym).unwrap() as NodeId
-        // Fallback scan for callers that run before collection has seen the
-        // trait; post-collection callers (the hot check-time path) always hit
-        // the cache filled by collect_trait_decl.
-        for di in 0..self.ast.decl_count():
-            let decl = self.ast.get_decl(di)
-            if self.ast.kind(decl) == NodeKind.NK_TRAIT_DECL and self.ast.get_data0(decl) == trait_sym:
-                return decl
+        // trait_decl_node_cache is authoritative: collect_trait_decl inserts
+        // every NK_TRAIT_DECL keyed by the same data0 symbol this lookup uses,
+        // so a cache miss means `trait_sym` is not a trait. (The former O(n)
+        // decl-order fallback scan never matched over a full self-compile — it
+        // only re-derived the miss at whole-program cost.)
         0 as NodeId
 
     mut fn emit_trait_object_safety_error(trait_sym: i32, method_sym: i32, reason: &str, node: i32):
