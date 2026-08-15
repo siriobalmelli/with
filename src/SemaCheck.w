@@ -6049,7 +6049,13 @@ impl Sema:
             let rhs = self.ast.get_data1(node)
             let lhs_ty = self.check_expr(lhs)
             let rhs_ty = self.check_expr(rhs)
-            if lhs_ty != 0 and self.types_compatible(self.ty_str as i32, lhs_ty as i32) == 0:
+            // D22: a &str view observes as its pointee — a regex match reads
+            // the subject, so a view LHS is str-compatible.
+            var mo_lhs_obs = lhs_ty as i32
+            let mo_lhs_res = self.resolve_alias(lhs_ty)
+            if self.get_type_kind(mo_lhs_res) == TypeKind.TY_REF:
+                mo_lhs_obs = self.get_type_d0(mo_lhs_res)
+            if mo_lhs_obs != 0 and self.types_compatible(self.ty_str as i32, mo_lhs_obs) == 0:
                 self.emit_error("left side of regex match must be str-compatible", lhs)
             let regex_ty = self.lookup_named_type_ambient(self.syms.regex)
             if regex_ty != 0 and rhs_ty != 0 and self.types_compatible(regex_ty, rhs_ty as i32) == 0:
@@ -13083,7 +13089,11 @@ impl Sema:
             return
 
         if kind == NodeKind.NK_PAT_REGEX:
-            if subject_type != 0 and self.types_compatible(self.ty_str as i32, subject_type) == 0:
+            var pr_subj_obs = subject_type
+            let pr_subj_res = self.resolve_alias(subject_type as TypeId)
+            if self.get_type_kind(pr_subj_res) == TypeKind.TY_REF:
+                pr_subj_obs = self.get_type_d0(pr_subj_res)
+            if pr_subj_obs != 0 and self.types_compatible(self.ty_str as i32, pr_subj_obs) == 0:
                 self.emit_error("regex pattern requires a str-compatible match subject", node)
             let regex_ty = self.lookup_named_type_ambient(self.syms.regex)
             if regex_ty != 0:

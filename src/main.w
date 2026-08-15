@@ -667,7 +667,7 @@ fn cli_build_synthetic_source(one: &CliOneLiner) -> CliSyntheticSource:
         return syn
     source.push_str("for __line in stdin.lines():\n")
     source.push_str("    nr = nr + 1\n")
-    source.push_str("    var line = __line\n")
+    source.push_str("    var line = __line.clone()\n")
     for i in 0..one.code_parts.len() as i32:
         let rewritten = cli_rewrite_semicolons(one.code_parts.get(i as i64))
         let indented = cli_indent_code(rewritten, "    ")
