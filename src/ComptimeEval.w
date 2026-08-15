@@ -3382,6 +3382,10 @@ impl ComptimeEvaluator:
             for i in 0..pieces.len() as i32:
                 self.extra_values.push(comptime_value_str(pieces.get(i as i64)))
             return comptime_control_value(comptime_value_vec(self.node_type_or(node, 0), start, pieces.len() as i32))
+        if method == "clone" or method == "to_owned":
+            if arg_count != 0:
+                return self.fail(node, "str." ++ method ++ "() takes no arguments")
+            return comptime_control_value(comptime_value_str(with_str_clone_ref(text)))
         self.fail(node, "str method '" ++ method ++ "' is not comptime-evaluable yet")
 
     mut fn concrete_method_comptime_type_args(fn_sym: i32, concrete_sig: i32, node: i32) -> ComptimeGenericResolvedArgs:
