@@ -5766,6 +5766,14 @@ impl CCodegen:
                         out = out ++ arg_text
                         continue
                     if arg_tk_for_ptr == TypeKind.TY_STR:
+                        if p_inner_tk == TypeKind.TY_STR:
+                            // &str / *str param: pass a HEADER pointer. An
+                            // array compound literal materializes the value
+                            // and decays to with_str* (block lifetime covers
+                            // the call). The old .ptr cast passed the DATA
+                            // pointer as a header — reads garbage (#785).
+                            out = out ++ "((with_str[]){ " ++ arg_text ++ " })"
+                            continue
                         out = out ++ "((" ++ self.c_type(p_tid, 0) ++ ")((" ++ arg_text ++ ").ptr))"
                         continue
                     if self.operand_ref_target_tid(body, op_id) != 0:
