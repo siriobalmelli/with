@@ -2958,8 +2958,13 @@ fn bs_compile_emit_c_output(ctx: &ActionCtx, root: &str, case_dir: &str, c_path:
     var cc_args: Vec[str] = Vec.new()
     cc_args = bs_push_c_compiler(move cc_args)
     cc_args |> push("-O1")
+    // Mirror the real link path: dead-strip removes unreferenced runtime
+    // thunks (e.g. regex->pcre2) so their undefs never reach resolution.
     if os() == "Linux":
         cc_args |> push("-no-pie")
+        cc_args |> push("-Wl,--gc-sections")
+    else:
+        cc_args |> push("-Wl,-dead_strip")
     cc_args |> push("-o")
     cc_args |> push(bs_abs(root, bin))
     cc_args |> push(bs_abs(root, c_path))
@@ -3394,8 +3399,13 @@ pub fn run_emit_c_smoke_action(ctx: ActionCtx) -> i32:
     var cc_args: Vec[str] = Vec.new()
     cc_args = bs_push_c_compiler(move cc_args)
     cc_args |> push("-O1")
+    // Mirror the real link path: dead-strip removes unreferenced runtime
+    // thunks (e.g. regex->pcre2) so their undefs never reach resolution.
     if os() == "Linux":
         cc_args |> push("-no-pie")
+        cc_args |> push("-Wl,--gc-sections")
+    else:
+        cc_args |> push("-Wl,-dead_strip")
     cc_args |> push("-o")
     cc_args |> push(bs_abs(root, bin_path))
     cc_args |> push(bs_abs(root, c_path))

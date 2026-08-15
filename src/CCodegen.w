@@ -3260,8 +3260,26 @@ impl CCodegen:
             if d0 == BinaryOp.OP_EQ or d0 == BinaryOp.OP_NEQ:
                 let lhs_tid = self.sema.resolve_alias(self.operand_tid(body, d1))
                 let rhs_tid = self.sema.resolve_alias(self.operand_tid(body, d2))
-                if self.sema.get_type_kind(lhs_tid) == TypeKind.TY_STR and self.sema.get_type_kind(rhs_tid) == TypeKind.TY_STR:
-                    let eq_expr = "with_str_eq(" ++ lhs ++ ", " ++ rhs ++ ")"
+                var eq_is_str = self.sema.get_type_kind(lhs_tid) == TypeKind.TY_STR and self.sema.get_type_kind(rhs_tid) == TypeKind.TY_STR
+                var eq_lhs = with_str_clone_ref(lhs)
+                var eq_rhs = with_str_clone_ref(rhs)
+                if not eq_is_str:
+                    // #785: &str operands compare by CONTENT; render pointee
+                    // values (shim locals for &str params are pointers).
+                    var lhs_ref_str = false
+                    if self.sema.get_type_kind(lhs_tid) == TypeKind.TY_REF:
+                        lhs_ref_str = self.sema.get_type_kind(self.sema.resolve_alias(self.sema.get_type_d0(lhs_tid) as TypeId)) == TypeKind.TY_STR
+                    var rhs_ref_str = false
+                    if self.sema.get_type_kind(rhs_tid) == TypeKind.TY_REF:
+                        rhs_ref_str = self.sema.get_type_kind(self.sema.resolve_alias(self.sema.get_type_d0(rhs_tid) as TypeId)) == TypeKind.TY_STR
+                    let lhs_strish = lhs_ref_str or self.sema.get_type_kind(lhs_tid) == TypeKind.TY_STR
+                    let rhs_strish = rhs_ref_str or self.sema.get_type_kind(rhs_tid) == TypeKind.TY_STR
+                    if lhs_strish and rhs_strish and (lhs_ref_str or rhs_ref_str):
+                        eq_is_str = true
+                        eq_lhs = self.str_value_text(body, d1)
+                        eq_rhs = self.str_value_text(body, d2)
+                if eq_is_str:
+                    let eq_expr = "with_str_eq(" ++ eq_lhs ++ ", " ++ eq_rhs ++ ")"
                     if d0 == BinaryOp.OP_EQ:
                         return eq_expr
                     return "(!(" ++ eq_expr ++ "))"
@@ -3598,7 +3616,7 @@ impl CCodegen:
         for i in 0..count:
             if i > 0:
                 out = out ++ ", "
-            out = out ++ self.operand_text(body, body.call_arg_operands.get((start + i) as i64))
+            out = out ++ self.str_value_text(body, body.call_arg_operands.get((start + i) as i64))
         out ++ "}, " ++ with_i64_to_str(count as i64) ++ ")"
 
     fn local_assigned_fn_sym_depth(body: &MirBody, local_id: i32, depth: i32) -> i32:
@@ -4765,6 +4783,22 @@ impl CCodegen:
                 if match_idx >= 0:
                     out = match_idx
             if out < 0 and cc_str_contains_dot(raw) == 0:
+                // #785: a dotless name (plain extern like with_print_str) must
+                // first try the EXACT sig-name match; without it the callee sig
+                // stays unresolved and call args skip pointer marshalling.
+                var exact_idx = -1
+                for si in 0..self.sema.sig_names.len() as i32:
+                    let sym_text = cc_intern_resolve(self.intern, self.sema.sig_names.get(si as i64))
+                    if sym_text != raw:
+                        continue
+                    if exact_idx < 0:
+                        exact_idx = si
+                    else:
+                        exact_idx = -2
+                        break
+                if exact_idx >= 0:
+                    out = exact_idx
+            if out < 0 and cc_str_contains_dot(raw) == 0:
                 let wanted = "." ++ raw
                 var match_idx = -1
                 for si in 0..self.sema.sig_names.len() as i32:
@@ -5725,6 +5759,8 @@ impl CCodegen:
         let callee_extern_name = self.callee_extern_name_from_operand(body, callee_operand)
         let callee_fn_tid = if callee_sig >= 0: 0 else: self.callee_fn_type_from_operand(body, callee_operand)
         let callee_param_count = if callee_sig >= 0: self.sema.sig_get_param_count(callee_sig) else if callee_fn_tid != 0: self.sema.get_type_d1(callee_fn_tid) else: 0
+        if with_getenv_str("WITH_TRACE_CARGS").len() > 0:
+            with_eprint(f"[cargs] extern={callee_extern_name} sig={callee_sig} fn_tid={callee_fn_tid} params={callee_param_count} argc={count}")
         var out = ""
         for i in 0..count:
             if i > 0:
@@ -5785,6 +5821,13 @@ impl CCodegen:
                     if arg_tk != TypeKind.TY_PTR and arg_tk != TypeKind.TY_REF:
                         out = out ++ self.call_arg_address_text(body, op_id, arg_text)
                         continue
+                    // #785: a str CONSTANT typed &str by expected-type
+                    // propagation renders as a with_str VALUE; a &str param
+                    // needs a real header pointer. The array compound literal
+                    // materializes it with block lifetime.
+                    if p_inner_tk == TypeKind.TY_STR and self.operand_is_str_const(body, op_id) != 0:
+                        out = out ++ "((with_str[]){ " ++ arg_text ++ " })"
+                        continue
                 // Reverse: callee expects struct by value but arg is a pointer — dereference
                 if p_tk == TypeKind.TY_STRUCT:
                     if self.operand_ref_target_tid(body, op_id) != 0:
@@ -5798,6 +5841,32 @@ impl CCodegen:
                         continue
             out = out ++ arg_text
         out
+
+    fn operand_is_str_const(body: &MirBody, op_id: i32) -> i32:
+        if op_id < 0 or op_id >= body.operand_kinds.len() as i32:
+            return 0
+        if body.operand_kinds.get(op_id as i64) != OperandKind.OK_CONSTANT:
+            return 0
+        let cd = body.operand_d0.get(op_id as i64)
+        if cd < 0 or cd >= body.const_kinds.len() as i32:
+            return 0
+        if body.const_kinds.get(cd as i64) == ConstKind.CK_STR: 1 else: 0
+
+    // #785: value-context rendering for a str-ish operand. A &str-typed
+    // operand renders as a pointer (param locals may already deref to
+    // "(*_N)"); this returns the with_str VALUE text either way.
+    mut fn str_value_text(body: &MirBody, op_id: i32) -> str:
+        let rendered = self.operand_text(body, op_id)
+        let tid = self.sema.resolve_alias(self.operand_tid(body, op_id))
+        if self.sema.get_type_kind(tid) == TypeKind.TY_REF:
+            let inner = self.sema.resolve_alias(self.sema.get_type_d0(tid) as TypeId)
+            if self.sema.get_type_kind(inner) == TypeKind.TY_STR:
+                if rendered.starts_with("(*"):
+                    return rendered
+                if self.operand_is_str_const(body, op_id) != 0:
+                    return rendered
+                return "(*(" ++ rendered ++ "))"
+        rendered
 
     fn callee_extern_name_from_operand(body: &MirBody, callee_op: i32) -> str:
         if callee_op < 0 or callee_op >= body.operand_kinds.len() as i32:
