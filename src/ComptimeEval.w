@@ -7643,7 +7643,10 @@ impl ComptimeEvaluator:
                     return self.fail(node, "parallel does not support partially consumed intercepted workspaces yet")
             let capability = ce_clone_capability_record(&self.capability_records[capability_handle as i64])
             if par_project_root.len() == 0:
-                par_project_root = capability.project_root
+                // A bare field read here MOVES the str out of the owned local
+                // (blanking it) and workspace_compile_plan below would see an
+                // empty project_root ('/out/bin' mkdir failure).
+                par_project_root = with_str_clone_ref(capability.project_root)
             let plan = self.workspace_compile_plan(record, capability, node)
             if plan.valid == 0:
                 return comptime_control_error()
