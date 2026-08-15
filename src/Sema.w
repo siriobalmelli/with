@@ -418,6 +418,9 @@ type Sema {
     pool: InternPool,
     diags: DiagnosticList,
     ast: AstPool,
+    // Reverse index for the AST declaration table. The first declaration for
+    // a node wins, matching find_decl_index's original forward scan.
+    decl_index_by_node: HashMap[i32, i32],
 
     // Type table (SoA parallel arrays)
     type_kinds: Vec[i32],
@@ -425,6 +428,10 @@ type Sema {
     type_d1: Vec[i32],
     type_d2: Vec[i32],
     type_extra: Vec[i32],
+    // Exact structural type lookup. Hash buckets point into a collision chain
+    // indexed by TypeId; component checks keep hash collisions harmless.
+    exact_type_cache_heads: HashMap[i64, i32],
+    exact_type_cache_next: Vec[i32],
 
     // Named type lookup: sym → TypeId
     named_types: HashMap[i32, i32],
@@ -1127,6 +1134,8 @@ type Sema {
     named_type_candidate_tids: Vec[i32],       // parallel type id for candidate
     named_type_candidate_paths: Vec[str],      // defining module path or "" for global
     named_type_candidate_pub: Vec[i32],        // parallel public flag
+    named_type_candidate_heads: HashMap[i32, i32], // symbol -> newest candidate index
+    named_type_candidate_next: Vec[i32],       // previous candidate for the same symbol
     decl_visibility_syms: Vec[i32],            // top-level symbol visibility candidates
     decl_visibility_paths: Vec[str],           // parallel declaring module path
     decl_visibility_pub: Vec[i32],             // parallel public flag
@@ -1475,11 +1484,16 @@ fn sema_clone_str_str_hashmap(src: &HashMap[str, str]) -> HashMap[str, str]:
 
 impl Sema:
     pub move fn prepare_comptime_eval_copy() -> Sema:
+        // Comptime callers replace `ast` before copying Sema. Rebuild this
+        // owning map for that AST instead of sharing the source map header.
+        self.rebuild_decl_index()
         self.type_kinds = sema_clone_i32_vec(&self.type_kinds)
         self.type_d0 = sema_clone_i32_vec(&self.type_d0)
         self.type_d1 = sema_clone_i32_vec(&self.type_d1)
         self.type_d2 = sema_clone_i32_vec(&self.type_d2)
         self.type_extra = sema_clone_i32_vec(&self.type_extra)
+        self.rebuild_exact_type_cache()
+        self.rebuild_named_type_candidate_index()
         self.generic_inst_cache = sema_new_map_i64_i32()
         self.layout_size_cache = HashMap.new()
         self.layout_align_cache = HashMap.new()
@@ -1504,6 +1518,13 @@ impl Sema:
 
 fn sema_pair_key(a: i32, b: i32) -> i64:
     (a as i64) * 4294967296 + (b as i64)
+
+fn sema_exact_type_hash(kind: i32, d0: i32, d1: i32, d2: i32) -> i64:
+    var h: u64 = 14695981039346656037
+    h = (h ^ kind as u64) *% 1099511628211
+    h = (h ^ d0 as u64) *% 1099511628211
+    h = (h ^ d1 as u64) *% 1099511628211
+    ((h ^ d2 as u64) *% 1099511628211) as i64
 
 fn sema_pair_hi(key: i64): (key / 4294967296) as i32
 fn sema_pair_lo(key: i64): (key % 4294967296) as i32
@@ -1722,6 +1743,7 @@ fn sema_visibility_cache_key(from_path: &str, to_path: &str) -> str:
 
 fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Sema:
     let named_types = sema_new_map_i32_i32()
+    let exact_type_cache_heads = sema_new_map_i64_i32()
     let type_decl_nodes = sema_new_map_i32_i32()
     let trait_decl_node_cache = sema_new_map_i32_i32()
     let type_decl_tids = sema_new_map_i32_i32()
@@ -1814,11 +1836,14 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         pool: pool,
         diags: diags,
         ast: ast,
+        decl_index_by_node: sema_new_map_i32_i32(),
         type_kinds: Vec.new(),
         type_d0: Vec.new(),
         type_d1: Vec.new(),
         type_d2: Vec.new(),
         type_extra: Vec.new(),
+        exact_type_cache_heads,
+        exact_type_cache_next: Vec.new(),
         named_types,
         type_decl_nodes,
         trait_decl_node_cache,
@@ -2259,6 +2284,8 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         named_type_candidate_tids: Vec.new(),
         named_type_candidate_paths: sema_new_vec_str(),
         named_type_candidate_pub: Vec.new(),
+        named_type_candidate_heads: sema_new_map_i32_i32(),
+        named_type_candidate_next: Vec.new(),
         decl_visibility_syms: Vec.new(),
         decl_visibility_paths: sema_new_vec_str(),
         decl_visibility_pub: Vec.new(),
@@ -2273,6 +2300,7 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         reachable_visiting: sema_new_map_i32_i32(),
         reachable_decl_indices: sema_new_map_i32_i32(),
     }
+    s.rebuild_decl_index()
     return s
 
 fn Sema.placeholder(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Sema:
@@ -2465,8 +2493,27 @@ impl Sema:
     mut fn record_named_type(sym: i32, tid: i32) -> Unit:
         self.record_named_type_with_pub(sym, tid, 1)
 
+    fn named_type_candidate_head(sym: i32) -> i32:
+        if self.named_type_candidate_heads.contains(sym):
+            return self.named_type_candidate_heads.get(sym).unwrap()
+        -1
+
+    fn index_named_type_candidate(sym: i32, candidate_index: i32):
+        self.named_type_candidate_next.push(self.named_type_candidate_head(sym))
+        self.named_type_candidate_heads.insert(sym, candidate_index)
+
+    mut fn rebuild_named_type_candidate_index():
+        self.named_type_candidate_heads = sema_new_map_i32_i32()
+        self.named_type_candidate_next = Vec.new()
+        for candidate_index in 0..self.named_type_candidate_syms.len() as i32:
+            self.index_named_type_candidate(
+                self.named_type_candidate_syms.get(candidate_index as i64),
+                candidate_index,
+            )
+
     mut fn record_named_type_with_pub(sym: i32, tid: i32, is_pub: i32) -> Unit:
         self.named_types.insert(sym, tid)
+        self.index_named_type_candidate(sym, self.named_type_candidate_syms.len() as i32)
         self.named_type_candidate_syms.push(sym)
         self.named_type_candidate_tids.push(tid)
         let path = if self.current_module_path.len() > 0: self.current_module_path else: ""
@@ -2738,15 +2785,14 @@ impl Sema:
     // codegen runs after checking and needs the layout of a specific tier's
     // decl, not a context-relative resolution.
     fn lookup_named_type_for_tier(sym: i32, want_std: i32) -> i32:
-        var i = self.named_type_candidate_syms.len() as i32 - 1
+        var i = self.named_type_candidate_head(sym)
         while i >= 0:
-            if self.named_type_candidate_syms.get(i as i64) == sym:
-                let path = self.named_type_candidate_paths.get(i as i64)
-                if path.len() > 0:
-                    let cand_std = if sema_tier_path_is_std_implementation(path) != 0: 1 else: 0
-                    if cand_std == want_std:
-                        return self.named_type_candidate_tids.get(i as i64)
-            i = i - 1
+            let path = self.named_type_candidate_paths.get(i as i64)
+            if path.len() > 0:
+                let cand_std = if sema_tier_path_is_std_implementation(path) != 0: 1 else: 0
+                if cand_std == want_std:
+                    return self.named_type_candidate_tids.get(i as i64)
+            i = self.named_type_candidate_next.get(i as i64)
         if self.named_types.contains(sym): self.named_types.get(sym).unwrap() else: 0
 
     fn lookup_named_type_filtered(sym: i32, gated: i32) -> i32:
@@ -2754,22 +2800,21 @@ impl Sema:
         var global_tid = 0
         var saw_recorded = 0
         var saw_named_tid = 0
-        var i = self.named_type_candidate_syms.len() as i32 - 1
+        var i = self.named_type_candidate_head(sym)
         while i >= 0:
-            if self.named_type_candidate_syms.get(i as i64) == sym:
-                saw_recorded = 1
-                let candidate_tid = self.named_type_candidate_tids.get(i as i64)
-                let candidate_path = self.named_type_candidate_paths.get(i as i64)
-                let candidate_pub = self.named_type_candidate_pub.get(i as i64)
-                if named_tid != 0 and candidate_tid == named_tid:
-                    saw_named_tid = 1
-                let candidate_visible = if gated != 0: self.decl_visible_from_current_gated(candidate_path, candidate_pub, sym) else: self.decl_visible_from_current(candidate_path, candidate_pub)
-                if candidate_path.len() == 0:
-                    if global_tid == 0:
-                        global_tid = candidate_tid
-                else if candidate_visible != 0:
-                    return candidate_tid
-            i = i - 1
+            saw_recorded = 1
+            let candidate_tid = self.named_type_candidate_tids.get(i as i64)
+            let candidate_path = self.named_type_candidate_paths.get(i as i64)
+            let candidate_pub = self.named_type_candidate_pub.get(i as i64)
+            if named_tid != 0 and candidate_tid == named_tid:
+                saw_named_tid = 1
+            let candidate_visible = if gated != 0: self.decl_visible_from_current_gated(candidate_path, candidate_pub, sym) else: self.decl_visible_from_current(candidate_path, candidate_pub)
+            if candidate_path.len() == 0:
+                if global_tid == 0:
+                    global_tid = candidate_tid
+            else if candidate_visible != 0:
+                return candidate_tid
+            i = self.named_type_candidate_next.get(i as i64)
         if named_tid != 0 and (saw_recorded == 0 or saw_named_tid == 0):
             return named_tid
         if global_tid != 0:
@@ -3332,6 +3377,40 @@ impl Sema:
 
     // ── Type management ──────────────────────────────────────────────
 
+    fn exact_type_components_match(tid: i32, kind: i32, d0: i32, d1: i32, d2: i32) -> bool:
+        self.type_kinds.get(tid as i64) == kind and
+            self.type_d0.get(tid as i64) == d0 and
+            self.type_d1.get(tid as i64) == d1 and
+            self.type_d2.get(tid as i64) == d2
+
+    fn index_exact_type(tid: i32, kind: i32, d0: i32, d1: i32, d2: i32):
+        let key = sema_exact_type_hash(kind, d0, d1, d2)
+        var head = -1
+        if self.exact_type_cache_heads.contains(key):
+            head = self.exact_type_cache_heads.get(key).unwrap()
+        var existing = head
+        while existing >= 0:
+            if self.exact_type_components_match(existing, kind, d0, d1, d2):
+                // Preserve find_exact_type's original first-TypeId result when
+                // identical rows exist in the type table.
+                self.exact_type_cache_next.push(-1)
+                return
+            existing = self.exact_type_cache_next.get(existing as i64)
+        self.exact_type_cache_next.push(head)
+        self.exact_type_cache_heads.insert(key, tid)
+
+    mut fn rebuild_exact_type_cache():
+        self.exact_type_cache_heads = sema_new_map_i64_i32()
+        self.exact_type_cache_next = Vec.new()
+        for tid in 0..self.type_kinds.len() as i32:
+            self.index_exact_type(
+                tid,
+                self.type_kinds.get(tid as i64),
+                self.type_d0.get(tid as i64),
+                self.type_d1.get(tid as i64),
+                self.type_d2.get(tid as i64),
+            )
+
     mut fn freeze_symbols():
         self.symbols_frozen = 1
 
@@ -3345,6 +3424,7 @@ impl Sema:
         self.type_d0.push(d0)
         self.type_d1.push(d1)
         self.type_d2.push(d2)
+        self.index_exact_type(id, kind, d0, d1, d2)
         id as TypeId
 
     // Mark type tables as immutable. Any subsequent add_type will error.
@@ -3358,17 +3438,14 @@ impl Sema:
         1
 
     fn find_exact_type(kind: i32, d0: i32, d1: i32, d2: i32) -> TypeId:
-        let type_count = self.type_kinds.len() as i32
-        for ti in 0..type_count:
-            if self.type_kinds.get(ti as i64) != kind:
-                continue
-            if self.type_d0.get(ti as i64) != d0:
-                continue
-            if self.type_d1.get(ti as i64) != d1:
-                continue
-            if self.type_d2.get(ti as i64) != d2:
-                continue
-            return ti as TypeId
+        let key = sema_exact_type_hash(kind, d0, d1, d2)
+        if not self.exact_type_cache_heads.contains(key):
+            return 0 as TypeId
+        var ti = self.exact_type_cache_heads.get(key).unwrap()
+        while ti >= 0:
+            if self.exact_type_components_match(ti, kind, d0, d1, d2):
+                return ti as TypeId
+            ti = self.exact_type_cache_next.get(ti as i64)
         0 as TypeId
 
     fn ensure_exact_type(kind: i32, d0: i32, d1: i32, d2: i32) -> TypeId:
