@@ -895,7 +895,7 @@ fn comp_spec_cli_commands(spec: &str) -> Vec[str]:
 
 fn comp_spec_cli_flags() -> Vec[str]:
     var flags: Vec[str] = Vec.new()
-    let defaults = "--release --target --emit-c --emit-obj --overflow --no-std --strict-effects --debug-alloc --dump-drop-state -O0 -O1 -O2 -O3 --open -e -n -p"
+    let defaults = "--release --target --emit-c --emit-obj --overflow --no-std --strict-effects --debug-alloc --dump-drop-state -O0 -O1 -O2 -O3 --open -e -n -p --fail-fast"
     comp_add_words(move flags, defaults)
 
 fn comp_impl_commands(fs: &ToolFs) -> Vec[str]:
