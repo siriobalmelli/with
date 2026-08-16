@@ -5767,6 +5767,16 @@ impl CCodegen:
                 out = out ++ ", "
             let op_id = body.call_arg_operands.get((start + i) as i64)
             let arg_text = self.operand_text(body, op_id)
+            // #785: a str CONSTANT typed &str renders as a with_str VALUE,
+            // but every &str param's C type is const with_str* (decl table +
+            // with_runtime.h are pointer-typed). Decide from the operand's own
+            // type — the sig-gated wraps below depend on callee-sig resolution,
+            // which #783's layout lottery has been observed to flip.
+            if self.operand_is_str_const(body, op_id) != 0:
+                let oc_tid = self.sema.resolve_alias(self.operand_tid(body, op_id))
+                if self.sema.get_type_kind(oc_tid) == TypeKind.TY_REF:
+                    out = out ++ "((with_str[]){ " ++ arg_text ++ " })"
+                    continue
             if callee_extern_name == "strtod" and i == 1:
                 out = out ++ "((char **)" ++ arg_text ++ ")"
                 continue
