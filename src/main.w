@@ -1896,7 +1896,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                 if test_rc != 0:
                     with_eprint("error: build.w test target failed: " ++ target.name)
                     if not survey:
-                        with_eprint("note: stopping at the first failed target; rerun with --survey to run every target and list all failures")
+                        with_eprint("note: --fail-fast stopped at the first failed target; drop the flag to run every target and list all failures")
                         return test_rc
                     survey_target_failed = true
             else:
@@ -1919,7 +1919,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                     if test_rc != 0:
                         with_eprint("error: build.w test target failed: " ++ target.name)
                         if not survey:
-                            with_eprint("note: stopping at the first failed target; rerun with --survey to run every target and list all failures")
+                            with_eprint("note: --fail-fast stopped at the first failed target; drop the flag to run every target and list all failures")
                             return test_rc
                         survey_target_failed = true
             if survey_target_failed:
@@ -4111,6 +4111,7 @@ fn print_build_usage:
     with_write("  --emit-c         Emit C instead of a binary\n")
     with_write("  --emit-obj       Emit an object file instead of a binary\n")
     with_write("  --graph          Print the build graph and exit\n")
+    with_write("  --fail-fast      Stop at the first failed test/action target (default: run all, report all)\n")
     with_write("  --dry-run        Print planned build actions without running them\n")
     with_write("  --no-deps        Build only the selected target\n")
     with_write("  --explain <name> Explain a build graph target\n")

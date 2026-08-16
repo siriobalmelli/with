@@ -438,6 +438,10 @@ pub fn parse_build_command_options(argc: i32) -> BuildCommandParseResult:
     graph.graph_only = driver_has_flag(argc, "--graph")
     graph.dry_run = driver_has_flag(argc, "--dry-run")
     graph.no_deps = driver_has_flag(argc, "--no-deps")
-    graph.survey = driver_has_flag(argc, "--survey")
+    // Survey (keep going past test/action failures, report them all at the
+    // end) is the DEFAULT — Eric's ruling 2026-08-15 after fail-fast
+    // serialized a 25-run discovery campaign. --fail-fast opts into
+    // stop-at-first-failure; --survey stays accepted as a no-op.
+    graph.survey = not driver_has_flag(argc, "--fail-fast")
     graph.explain_target = driver_explain_arg(argc)
     BuildCommandParseResult { ok: true, error_msg: "", build, graph }
