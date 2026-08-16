@@ -3445,15 +3445,20 @@ pub fn run_emit_c_smoke_action(ctx: ActionCtx) -> i32:
     let prelude_src = bs_join(output_dir, "prelude_runtime.w")
     var rc = bs_write_fixture(ctx, prelude_src, "fn main:\n    print(\"hello\")\n", "emit-c prelude runtime source")
     if rc != 0: return rc
-    let prelude_workspace = ctx.create_workspace("emit-c-smoke-prelude-runtime")
-    prelude_workspace.add_file(prelude_src)
-    var prelude_options = prelude_workspace.options()
-    prelude_options.output_kind = BuildOutputKind.C
-    prelude_options.output_path = selfhost_owned_text(prelude_c_path)
-    prelude_workspace.set_options(prelude_options)
-    let prelude_emit_result = prelude_workspace.compile()
+    // Same as the hello case above: emit with the compiler under test as a
+    // subprocess, not an in-process (seed-driver) workspace compile.
+    let prelude_emit_stdout = bs_capture_path(root, output_dir, "emit-c-prelude-emit", "stdout")
+    let prelude_emit_stderr = bs_capture_path(root, output_dir, "emit-c-prelude-emit", "stderr")
+    var pr_args: Vec[str] = Vec.new()
+    pr_args |> push(selfhost_owned_text(compiler_path))
+    pr_args |> push("build")
+    pr_args |> push(bs_abs(root, prelude_src))
+    pr_args |> push("--emit-c")
+    pr_args |> push("-o")
+    pr_args |> push(bs_abs(root, prelude_c_path))
+    let prelude_emit_result = ctx.process_runner().run_capture(pr_args, prelude_emit_stdout, prelude_emit_stderr, 600000)
     if prelude_emit_result.rc != 0:
-        return bs_fail(ctx, f"prelude emit-c workspace compile failed with exit code {prelude_emit_result.rc}")
+        return bs_fail(ctx, f"prelude emit-c compile failed with exit code {prelude_emit_result.rc}: " ++ fs.read_text(prelude_emit_stderr))
     if not fs.exists(prelude_c_path):
         return bs_fail(ctx, "prelude emit-c did not produce " ++ prelude_c_path)
     rc = bs_compile_emit_c_output(ctx, root, output_dir, prelude_c_path, prelude_bin_path, "emit-c-prelude-runtime")
