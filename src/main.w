@@ -1896,6 +1896,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                 if test_rc != 0:
                     with_eprint("error: build.w test target failed: " ++ target.name)
                     if not survey:
+                        with_eprint("note: stopping at the first failed target; rerun with --survey to run every target and list all failures")
                         return test_rc
                     survey_target_failed = true
             else:
@@ -1918,6 +1919,7 @@ unsafe fn run_build_graph(root: &str, cfg: &ProjectConfig, graph: &BuildGraph, a
                     if test_rc != 0:
                         with_eprint("error: build.w test target failed: " ++ target.name)
                         if not survey:
+                            with_eprint("note: stopping at the first failed target; rerun with --survey to run every target and list all failures")
                             return test_rc
                         survey_target_failed = true
             if survey_target_failed:
