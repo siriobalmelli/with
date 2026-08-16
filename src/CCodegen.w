@@ -1408,6 +1408,13 @@ impl CCodegen:
             self.fat_thunk_tids.push(canon)
         "((" ++ self.fn_type_c_name(canon) ++ ")" ++ cc_lbrace() ++ " " ++ self.fat_thunk_name(fn_sym, canon) ++ ", 0 " ++ cc_rbrace() ++ ")"
 
+    fn rvalue_is_str_const_use(body: &MirBody, rval_id: i32) -> i32:
+        if rval_id < 0 or rval_id >= body.rval_kinds.len() as i32:
+            return 0
+        if body.rval_kinds.get(rval_id as i64) != RvalueKind.RK_USE:
+            return 0
+        self.operand_is_str_const(body, body.rval_d0.get(rval_id as i64))
+
     fn rvalue_ck_fn_sym(body: &MirBody, rval_id: i32) -> i32:
         if rval_id < 0 or rval_id >= body.rval_kinds.len() as i32:
             return 0
@@ -8092,6 +8099,13 @@ impl CCodegen:
                 if dst_kind_for_copy == TypeKind.TY_PTR or dst_kind_for_copy == TypeKind.TY_REF:
                     if rval.len() >= 2 and rval.byte_at(0) == 40 and rval.byte_at(1) == 38:
                         return "    " ++ dst_place ++ " = (" ++ dst_c_for_copy ++ ")" ++ rval ++ ";"
+                if dst_kind_for_copy == TypeKind.TY_REF:
+                    // #785: a str CONSTANT assigned to a &str-typed local (an
+                    // if-join over literals) renders as a with_str VALUE; the
+                    // pointer local takes the array-compound-literal address.
+                    let dst_pointee_for_copy = self.sema.resolve_alias(self.sema.get_type_d0(dst_resolved_for_copy) as TypeId)
+                    if self.sema.get_type_kind(dst_pointee_for_copy) == TypeKind.TY_STR and self.rvalue_is_str_const_use(body, d1) != 0:
+                        return "    " ++ dst_place ++ " = ((with_str[]){ " ++ rval ++ " });"
                 if dst_c_for_copy != rv_c_for_copy:
                     let dst_scalar = self.is_scalar_like_tid(dst_tid)
                     let rv_scalar = self.is_scalar_like_tid(rv_tid_for_copy)
