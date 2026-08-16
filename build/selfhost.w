@@ -3365,16 +3365,24 @@ pub fn run_emit_c_smoke_action(ctx: ActionCtx) -> i32:
     let c_path = bs_join(output_dir, "hello.c")
     let bin_path = bs_join(output_dir, "hello")
 
-    let workspace = ctx.create_workspace("emit-c-smoke")
-    workspace.add_file(source_input)
-    var options = workspace.options()
-    options.output_kind = BuildOutputKind.C
-    options.output_path = selfhost_owned_text(c_path)
-    options.prelude_mode = PreludeMode.None
-    workspace.set_options(options)
-    let emit_result = workspace.compile()
+    // Emit with the FRESH compiler as a subprocess. A comptime
+    // workspace.compile() here runs in-process inside the build driver —
+    // the SEED — so until a reseed the smoke would exercise the seed's C
+    // emitter, not the binary under test (the #761 mixed-world class; the
+    // stale decl surface broke the cc step in battery take 27).
+    let emit_stdout = bs_capture_path(root, output_dir, "emit-c-smoke-emit", "stdout")
+    let emit_stderr = bs_capture_path(root, output_dir, "emit-c-smoke-emit", "stderr")
+    var em_args: Vec[str] = Vec.new()
+    em_args |> push(selfhost_owned_text(compiler_path))
+    em_args |> push("build")
+    em_args |> push(bs_abs(root, source_input))
+    em_args |> push("--emit-c")
+    em_args |> push("--no-prelude")
+    em_args |> push("-o")
+    em_args |> push(bs_abs(root, c_path))
+    let emit_result = ctx.process_runner().run_capture(em_args, emit_stdout, emit_stderr, 600000)
     if emit_result.rc != 0:
-        return bs_fail(ctx, f"emit-c workspace compile failed with exit code {emit_result.rc}")
+        return bs_fail(ctx, f"emit-c compile failed with exit code {emit_result.rc}: " ++ fs.read_text(emit_stderr))
     if not fs.exists(c_path):
         return bs_fail(ctx, "emit-c did not produce " ++ c_path)
 
