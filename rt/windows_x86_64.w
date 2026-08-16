@@ -90,7 +90,6 @@ var rt_argc: i32 = 0
 var rt_argv_raw: i64 = 0
 var rt_handles: [256]i64 = [0 as i64; 256]
 var qpc_freq: i64 = 0
-var env_result_buf: [32768]u8 = [0 as u8; 32768]
 var process_handles: [256]i64 = [0 as i64; 256]
 var process_ids: [256]i32 = [0 as i32; 256]
 var process_next_slot: i32 = 1
@@ -129,11 +128,13 @@ unsafe fn win_utf8_to_utf16_buf(src: *const u8, dst: *mut u16, cap: i64) -> i32:
     unsafe *((dst as i64 + i * 2) as *mut u16) = 0 as u16
     0
 
-unsafe fn win_str_to_utf16_buf(src: str, dst: *mut u16, cap: i64) -> i32:
+unsafe fn win_str_data(s: &str) -> *const u8:
+    unsafe **(&s as *const *const *const u8)
+
+unsafe fn win_str_to_utf16_buf(src: &str, dst: *mut u16, cap: i64) -> i32:
     if cap <= 0:
         return -1
-    let sp = &src as *const *const u8
-    let data = unsafe *sp
+    let data = win_str_data(src)
     var i: i64 = 0
     while i < src.len() and i < cap - 1:
         unsafe *((dst as i64 + i * 2) as *mut u16) = (unsafe *((data as i64 + i) as *const u8)) as u16
@@ -630,8 +631,12 @@ pub unsafe fn rt_access(path: *const u8, mode: i32) -> i32:
 pub unsafe fn rt_sysinfo(out: *mut RtSysInfo) -> i32:
     var info: [64]u8 = [0 as u8; 64]
     GetSystemInfo(&raw mut info as *mut [64]u8 as *mut u8)
-    let page_size = unsafe *((&info as i64 + 8) as *const u32)
-    let processors = unsafe *((&info as i64 + 36) as *const u32)
+    // SYSTEM_INFO (x64): dwPageSize @4, dwNumberOfProcessors @32.
+    // (@8 is lpMinimumApplicationAddress, @36 is the obsolete dwProcessorType
+    // which reads ~8664 on x64 — reading it as the core count oversubscribed
+    // the build worker pool 16-wide on small runners.)
+    let page_size = unsafe *((&info as i64 + 4) as *const u32)
+    let processors = unsafe *((&info as i64 + 32) as *const u32)
     var mem: [64]u8 = [0 as u8; 64]
     unsafe *((&raw mut mem) as *mut [64]u8 as *mut u32) = 64 as u32
     var total: i64 = 0
@@ -656,8 +661,31 @@ pub unsafe fn rt_getenv(name: *const u8) -> *const u8:
     let n = GetEnvironmentVariableW(&wname as *const [1024]u16 as *const u16, &raw mut wvalue as *mut [16384]u16 as *mut u16, 16384 as u32)
     if n == 0:
         return 0 as *const u8
-    let _ = win_utf16_to_utf8_buf(&wvalue as *const [16384]u16 as *const u16, &raw mut env_result_buf as *mut [32768]u8 as *mut u8, 32768)
-    &env_result_buf as *const [32768]u8 as *const u8
+    // Each returned value gets its own allocation so retained `env()`/
+    // `with_getenv_str` results never alias. Linux/darwin satisfy this for
+    // free because libc `getenv` hands out stable per-variable `environ`
+    // pointers; Windows `GetEnvironmentVariableW` copies into a caller buffer,
+    // so a single shared static buffer would make every retained result alias
+    // the last read. The converter writes one byte per UTF-16 code unit, so the
+    // returned unit count `n` is the exact UTF-8 length; the buffer covers
+    // value + NUL (rt_mmap pages are zero-filled, so byte `n` is already NUL).
+    //
+    // The buffer MUST come from rt_mmap, not with_alloc: rt_getenv is called
+    // from inside the allocator lock. The allocator's own config checks
+    // (dbg_on/alloc_system_on/rt_alloc_effective_limit_unlocked reading
+    // WITH_MEMORY_LIMIT_BYTES) run in rt_alloc_unlocked while rt_alloc_lock_word
+    // is held; a with_alloc here would re-enter rt_allocator_lock() on the same
+    // thread and deadlock on the non-recursive spinlock. Linux/darwin never hit
+    // this because their rt_getenv returns environ pointers and allocates
+    // nothing. rt_mmap (VirtualAlloc) is thread-safe and takes no allocator
+    // lock, mirroring dbg_ledger_init's raw-page pattern. This is an owned,
+    // non-aliasing, process-lifetime region — the same lifetime model as
+    // `environ` — so "non-allocating rt_getenv" (rt_core.w) holds on Windows too.
+    let buf = rt_mmap(n as i64 + 1)
+    if buf as i64 == 0:
+        return 0 as *const u8
+    let _ = win_utf16_to_utf8_buf(&wvalue as *const [16384]u16 as *const u16, buf, n as i64 + 1)
+    buf as *const u8
 
 pub unsafe fn gethostname(name: *mut u8, len: u64) -> i32:
     var wname: [256]u16 = [0 as u16; 256]
@@ -699,14 +727,15 @@ pub unsafe fn realpath(path: *const u8, resolved_path: *mut u8) -> *mut u8:
         return 0 as *mut u8
     resolved_path
 
-unsafe fn win_setenv(name: str, value: str) -> i32:
+unsafe fn win_setenv(name: &str, value: &str) -> i32:
     var wname: [1024]u16 = [0 as u16; 1024]
     var wvalue: [8192]u16 = [0 as u16; 8192]
+    let value_len = value.len()
     if win_str_to_utf16_buf(name, &raw mut wname as *mut [1024]u16 as *mut u16, 1024) != 0:
         return -1
     if win_str_to_utf16_buf(value, &raw mut wvalue as *mut [8192]u16 as *mut u16, 8192) != 0:
         return -1
-    let value_ptr = if value.len() == 0: 0 as *const u16 else: &wvalue as *const [8192]u16 as *const u16
+    let value_ptr = if value_len == 0: 0 as *const u16 else: &wvalue as *const [8192]u16 as *const u16
     if SetEnvironmentVariableW(&wname as *const [1024]u16 as *const u16, value_ptr) == 0:
         return win_neg_error()
     0
@@ -826,7 +855,7 @@ unsafe fn win_make_security_attrs(out: *mut u8):
     unsafe *((out as i64 + 8) as *mut i64) = 0
     unsafe *((out as i64 + 16) as *mut i32) = 1
 
-unsafe fn win_open_redirect(path: str, write_mode: bool) -> i64:
+unsafe fn win_open_redirect(path: &str, write_mode: bool) -> i64:
     var wpath: [4096]u16 = [0 as u16; 4096]
     let _ = win_str_to_utf16_buf(path, &raw mut wpath as *mut [4096]u16 as *mut u16, 4096)
     var sec: [24]u8 = [0 as u8; 24]
@@ -835,9 +864,8 @@ unsafe fn win_open_redirect(path: str, write_mode: bool) -> i64:
     let creation = if write_mode: CREATE_ALWAYS else: OPEN_EXISTING
     CreateFileW(&wpath as *const [4096]u16 as *const u16, access, FILE_SHARE_ALL, &raw mut sec as *mut [24]u8 as *mut u8, creation, FILE_ATTRIBUTE_NORMAL, 0)
 
-unsafe fn win_spawn_argv(args: str, stdout_path: str, stderr_path: str, stdin_path: str, cwd: str, wait: bool, timeout_ms: i32) -> i32:
-    let sp = &args as *const *const u8
-    let data = unsafe *sp
+unsafe fn win_spawn_argv(args: &str, stdout_path: &str, stderr_path: &str, stdin_path: &str, cwd: &str, wait: bool, timeout_ms: i32) -> i32:
+    let data = win_str_data(args)
     let cmd = with_alloc(32768 * 2)
     if cmd as i64 == 0:
         return -12
@@ -851,13 +879,16 @@ unsafe fn win_spawn_argv(args: str, stdout_path: str, stderr_path: str, stdin_pa
     var stdin_h = GetStdHandle(STD_INPUT_HANDLE)
     var stdout_h = GetStdHandle(STD_OUTPUT_HANDLE)
     var stderr_h = GetStdHandle(STD_ERROR_HANDLE)
-    if stdin_path.len() > 0:
+    let has_stdin = stdin_path.len() > 0
+    let has_stdout = stdout_path.len() > 0
+    let has_stderr = stderr_path.len() > 0
+    if has_stdin:
         stdin_h = win_open_redirect(stdin_path, false)
         inherit = 1
-    if stdout_path.len() > 0:
+    if has_stdout:
         stdout_h = win_open_redirect(stdout_path, true)
         inherit = 1
-    if stderr_path.len() > 0:
+    if has_stderr:
         stderr_h = win_open_redirect(stderr_path, true)
         inherit = 1
     if inherit != 0:
@@ -873,11 +904,11 @@ unsafe fn win_spawn_argv(args: str, stdout_path: str, stderr_path: str, stdin_pa
         cwdp = &cwdw as *const [4096]u16 as *const u16
     let ok = CreateProcessW(0 as *const u16, cmd as *mut u16, 0 as *mut u8, 0 as *mut u8, inherit, 0 as u32, 0 as *mut u8, cwdp, &raw mut startup as *mut [104]u8 as *mut u8, &raw mut proc_info as *mut [24]u8 as *mut u8)
     with_free(cmd)
-    if stdin_path.len() > 0 and stdin_h != 0 and stdin_h != INVALID_HANDLE_VALUE:
+    if has_stdin and stdin_h != 0 and stdin_h != INVALID_HANDLE_VALUE:
         let _ = CloseHandle(stdin_h)
-    if stdout_path.len() > 0 and stdout_h != 0 and stdout_h != INVALID_HANDLE_VALUE:
+    if has_stdout and stdout_h != 0 and stdout_h != INVALID_HANDLE_VALUE:
         let _ = CloseHandle(stdout_h)
-    if stderr_path.len() > 0 and stderr_h != 0 and stderr_h != INVALID_HANDLE_VALUE:
+    if has_stderr and stderr_h != 0 and stderr_h != INVALID_HANDLE_VALUE:
         let _ = CloseHandle(stderr_h)
     if ok == 0:
         return win_neg_error()
@@ -893,7 +924,7 @@ unsafe fn win_spawn_argv(args: str, stdout_path: str, stderr_path: str, stdin_pa
         return win_wait_process_slot(slot, timeout_ms, true)
     slot
 
-pub unsafe fn rt_compat_setenv_str(name: str, value: str) -> i32:
+pub unsafe fn rt_compat_setenv_str(name: &str, value: &str) -> i32:
     win_setenv(name, value)
 
 pub unsafe fn rt_compat_install_interrupt_handlers() -> Unit:
@@ -909,10 +940,9 @@ pub unsafe fn rt_set_process_memory_limit_bytes(limit: i64) -> i32:
 pub unsafe fn rt_compat_interrupt_requested() -> i32:
     0
 
-pub unsafe fn rt_compat_exec_binary(path: str) -> i32:
+pub unsafe fn rt_compat_exec_binary(path: &str) -> i32:
     var blob: [4096]u8 = [0 as u8; 4096]
-    let sp = &path as *const *const u8
-    let data = unsafe *sp
+    let data = win_str_data(path)
     var i: i64 = 0
     while i < path.len() and i < 4095:
         unsafe *((((&raw mut blob) as *mut [4096]u8 as i64) + i) as *mut u8) = unsafe *((data as i64 + i) as *const u8)
@@ -926,22 +956,22 @@ unsafe fn make_windows_blob_str(ptr: *const u8, len: i64) -> str:
     let p = &raw as *const str
     unsafe *p
 
-pub unsafe fn rt_compat_exec_argv(args: str) -> i32:
+pub unsafe fn rt_compat_exec_argv(args: &str) -> i32:
     win_spawn_argv(args, "", "", "", "", true, 0)
 
-pub unsafe fn rt_compat_exec_argv_cwd(args: str, cwd: str) -> i32:
+pub unsafe fn rt_compat_exec_argv_cwd(args: &str, cwd: &str) -> i32:
     win_spawn_argv(args, "", "", "", cwd, true, 0)
 
-pub unsafe fn rt_compat_exec_argv_capture(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32:
+pub unsafe fn rt_compat_exec_argv_capture(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32:
     win_spawn_argv(args, stdout_path, stderr_path, "", "", true, timeout_ms)
 
-pub unsafe fn rt_compat_exec_argv_capture_input(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, stdin_path: str) -> i32:
+pub unsafe fn rt_compat_exec_argv_capture_input(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, stdin_path: &str) -> i32:
     win_spawn_argv(args, stdout_path, stderr_path, stdin_path, "", true, timeout_ms)
 
-pub unsafe fn rt_compat_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str) -> i32:
+pub unsafe fn rt_compat_exec_argv_capture_cwd(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> i32:
     win_spawn_argv(args, stdout_path, stderr_path, "", cwd, true, timeout_ms)
 
-pub unsafe fn rt_compat_exec_argv_capture_spawn(args: str, stdout_path: str, stderr_path: str) -> i32:
+pub unsafe fn rt_compat_exec_argv_capture_spawn(args: &str, stdout_path: &str, stderr_path: &str) -> i32:
     win_spawn_argv(args, stdout_path, stderr_path, "", "", false, 0)
 
 pub unsafe fn rt_compat_exec_wait(pid: i32, timeout_ms: i32) -> i32:
