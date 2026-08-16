@@ -3053,12 +3053,17 @@ fn bs_check_emit_c_collections(ctx: &ActionCtx, compiler_path: &str, case_dir: &
         "    results.push(Ok(29))\n" ++
         "    let result_view = results.get(0).expect(\"present\")\n" ++
         "    let t = pair()\n" ++
-        "    let (a, b) = t\n" ++
         "    var good = s.contains(7) and not s.contains(9)\n" ++
         "    good = good and names.contains(\"alpha\") and not names.contains(\"beta\")\n" ++
         "    good = good and m.get(5).unwrap() == \"five\"\n" ++
         "    good = good and opt_view == 23 and result_view == 29\n" ++
-        "    good = good and t.0 == 42 and t.1 == \"x\" and a == 42 and b == \"x\"\n" ++
+        // Projections observed BEFORE the destructure: `let (a, b) = t`
+        // consumes t (the str member moves), so a later t.0/t.1 read is
+        // use-after-move under flip semantics (pre-flip fixture read them
+        // after; the missing diagnostic for that read is #782-family).
+        "    good = good and t.0 == 42 and t.1 == \"x\"\n" ++
+        "    let (a, b) = t\n" ++
+        "    good = good and a == 42 and b == \"x\"\n" ++
         "    print(if good: \"ok\" else: \"bad\")\n"
     var rc = bs_write_fixture(ctx, src, source, "emit-c collections source")
     if rc != 0: return rc
