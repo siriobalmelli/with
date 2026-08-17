@@ -21435,6 +21435,10 @@ impl Sema:
         let place = self.borrow_root_place(operand_node)
         if place == 0:
             return
+        // #782: borrowing the WHOLE binding (a bare ident — auto-ref call arg
+        // or explicit `&x`) hands out a value with a blanked field. A borrow
+        // of a projection (`&x.field`) has a path and stays legal.
+        self.check_whole_use_partially_moved(operand_node)
         let new_field = self.borrow_field(operand_node)
         let path_start = self.borrow_path_data.len() as i32
         let path_count = self.borrow_collect_path(operand_node)
@@ -22853,6 +22857,28 @@ impl Sema:
             return 0
         1
 
+    // #782: error when `node` is a bare-ident use in a WHOLE-value position
+    // (whole move, whole borrow — plain call arg auto-ref or explicit `&x`)
+    // and the binding has a moved-out field. Projections, sibling-field
+    // borrows, and method receivers never route here, so take-and-restore
+    // idioms stay legal by construction.
+    mut fn check_whole_use_partially_moved(node: i32):
+        var pm_n = node
+        while pm_n != 0 and self.ast.kind(pm_n) == NodeKind.NK_GROUPED:
+            pm_n = self.ast.get_data0(pm_n)
+        if pm_n == 0 or self.ast.kind(pm_n) != NodeKind.NK_IDENT:
+            return
+        let pm_sym = self.ast.get_data0(pm_n)
+        if self.scope_has(pm_sym) == 0:
+            return
+        if self.binding_has_moved_field(pm_sym) == 0:
+            return
+        let pm_field = self.first_moved_field_sym(pm_sym)
+        let pm_field_name = if pm_field != 0: with_str_clone_ref(self.pool_resolve(pm_field)) else: "" ++ ""
+        let pm_name = with_str_clone_ref(self.pool_resolve(pm_sym))
+        let pm_help = "field `" ++ pm_field_name ++ "` of `" ++ pm_name ++ "` was moved out, so `" ++ pm_name ++ "` is no longer a whole value; reinitialize the field before this use, or clone the field instead of moving it"
+        self.emit_error_with_help("use of partially moved value", pm_n, pm_help)
+
     mut fn mark_moved_if_consumed(node: i32):
         if node == 0:
             return
@@ -22882,6 +22908,9 @@ impl Sema:
                     self.mark_field_moved(node)
             return
         if kind == NodeKind.NK_IDENT:
+            // #782: consuming a binding whole while one of its fields is
+            // moved out would transfer blanked storage.
+            self.check_whole_use_partially_moved(node)
             let sym = self.ast.get_data0(node)
             if self.scope_has(sym) != 0:
                 let tid = self.scope_lookup(sym)

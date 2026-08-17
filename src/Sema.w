@@ -4592,6 +4592,24 @@ impl Sema:
         self.moved_field_path_starts.pop()
         self.moved_field_path_counts.pop()
 
+    // #782: whether any field path rooted at this binding is currently
+    // moved-out (the whole value is no longer intact).
+    fn binding_has_moved_field(sym: i32) -> i32:
+        for i in 0..self.moved_field_base_syms.len() as i32:
+            if self.moved_field_base_syms.get(i as i64) == sym:
+                return 1
+        0
+
+    // First moved field's leaf sym for diagnostics (0 when unknown).
+    fn first_moved_field_sym(sym: i32) -> i32:
+        for i in 0..self.moved_field_base_syms.len() as i32:
+            if self.moved_field_base_syms.get(i as i64) == sym:
+                let count: i32 = self.moved_field_path_counts.get(i as i64)
+                if count > 0:
+                    let start: i32 = self.moved_field_path_starts.get(i as i64)
+                    return self.moved_field_path_syms.get((start + count - 1) as i64)
+        0
+
     fn clear_moved_fields_for_binding(sym: i32):
         var i = self.moved_field_base_syms.len() as i32 - 1
         while i >= 0:

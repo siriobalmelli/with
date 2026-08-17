@@ -1186,7 +1186,7 @@ impl Compilation:
         sema.source_text_file_ids = sema_clone_i32_vec(&zcu.source_text_file_ids)
         sema.source_text_names = sema_clone_str_vec(&zcu.source_text_names)
         sema.source_texts = sema_clone_str_vec(&zcu.source_texts)
-        sema.tool_mode_entry_path = zcu.tool_mode_entry_path
+        sema.tool_mode_entry_path = with_str_clone_ref(zcu.tool_mode_entry_path)
         sema.runtime_available = if zcu.project_config.runtime_available: 1 else: 0
         sema.runtime_fiber_stack_size = zcu.project_config.runtime_fiber_stack_size
         sema.runtime_fiber_pool_size = zcu.project_config.runtime_fiber_pool_size
@@ -1201,6 +1201,9 @@ impl Compilation:
         sema.check_module()
 
         zcu.diagnostics = move sema.diags
+        // #782: restore sema's wholeness before the whole-value transfer —
+        // sync_from_sema must never see the blanked diags slot.
+        sema.diags = DiagnosticList.init()
         zcu.sync_from_sema(move sema)
         zcu.set_typed_snapshot("", typed_pool)
         zcu.set_codegen_snapshot(MirModule.init(), "", AsyncMirModule.init(), "")
@@ -1484,7 +1487,7 @@ impl Compilation:
             sema.source_text_file_ids = sema_clone_i32_vec(&self.zcu.source_text_file_ids)
             sema.source_text_names = sema_clone_str_vec(&self.zcu.source_text_names)
             sema.source_texts = sema_clone_str_vec(&self.zcu.source_texts)
-            sema.tool_mode_entry_path = self.zcu.tool_mode_entry_path
+            sema.tool_mode_entry_path = with_str_clone_ref(self.zcu.tool_mode_entry_path)
             sema.runtime_available = if self.zcu.project_config.runtime_available: 1 else: 0
             sema.runtime_fiber_stack_size = self.zcu.project_config.runtime_fiber_stack_size
             sema.runtime_fiber_pool_size = self.zcu.project_config.runtime_fiber_pool_size
@@ -1557,6 +1560,9 @@ impl Compilation:
             profile_emit("mir.lower", t_mir, f"bodies={mir_mod.body_count()}")
         let t_suspend_check = profile_now()
         var _sp_diags = sema.diags
+        // #782: the callee borrows &sema while diags is moved out — hand it a
+        // whole sema (fresh empty slot; it returns the merged list).
+        sema.diags = DiagnosticList.init()
         sema.diags = check_no_await_guard_suspends(mir_mod, active_pool, &sema, move _sp_diags)
         if do_profile:
             profile_emit("mir.suspend_check", t_suspend_check, "")
@@ -1582,6 +1588,9 @@ impl Compilation:
             return
         let t_async = profile_now()
         var _async_diags = sema.diags
+        // #782: same shape as the suspend check above — whole sema borrowed
+        // while diags is taken; reinit before the borrow.
+        sema.diags = DiagnosticList.init()
         let async_artifacts: AsyncLowerResult = lower_async_module(mir_mod, active_pool, self.zcu.pool, &sema, move _async_diags)
         if do_profile:
             profile_emit("async.lower", t_async, "")
