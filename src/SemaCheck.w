@@ -6899,6 +6899,17 @@ impl Sema:
                         f"[moved-use] sym={name} tid={tid} node_kind={self.ast.kind(node)}"
                     )
                 self.emit_error_with_help("use of moved value", node, "a moved value cannot be used again; if it is moved on only some control-flow paths, reinitialize it on every path before this use, or clone it before the move")
+            // #782: a binding with a moved-out field is not whole; using it as
+            // a complete value (call arg, borrow, return, match subject) reads
+            // the blanked field. Projections (base of a field access or
+            // assign-target place) stay legal: reading live siblings and
+            // reinitializing the moved field are the sanctioned partial uses.
+            if state != VarState.MOVED and sym != self.assign_target_revive_sym and self.checking_projection_base == 0 and self.binding_has_moved_field(sym) != 0:
+                let pm_field = self.first_moved_field_sym(sym)
+                let pm_field_name = if pm_field != 0: with_str_clone_ref(self.pool_resolve(pm_field)) else: "" ++ ""
+                let pm_name = with_str_clone_ref(self.pool_resolve(sym))
+                let pm_help = "field `" ++ pm_field_name ++ "` of `" ++ pm_name ++ "` was moved out, so `" ++ pm_name ++ "` is no longer a whole value; reinitialize the field before this use, or clone the field instead of moving it"
+                self.emit_error_with_help("use of partially moved value", node, pm_help)
             if sym != self.assign_target_revive_sym:
                 self.note_param_effect(sym, EFF_READ)
             var final_tid = tid
@@ -10189,8 +10200,14 @@ impl Sema:
         // §16.4 union last-written tracking.
         if self.ast.kind(target) == NodeKind.NK_FIELD_ACCESS:
             let u_recv = self.ast.get_data0(target)
-            if self.ast.kind(u_recv) == NodeKind.NK_IDENT and self.type_is_union(self.check_expr(u_recv) as i32):
-                self.union_set_last_written(self.ast.get_data0(u_recv), self.ast.get_data1(target))
+            if self.ast.kind(u_recv) == NodeKind.NK_IDENT:
+                // Re-checking the receiver for union classification is a
+                // projection-base use, not a whole-value use (#782).
+                self.checking_projection_base = self.checking_projection_base + 1
+                let u_recv_ty = self.check_expr(u_recv) as i32
+                self.checking_projection_base = self.checking_projection_base - 1
+                if self.type_is_union(u_recv_ty):
+                    self.union_set_last_written(self.ast.get_data0(u_recv), self.ast.get_data1(target))
         else if self.ast.kind(target) == NodeKind.NK_IDENT and self.type_is_union(target_type as i32):
             self.union_set_last_written(self.ast.get_data0(target), self.union_literal_single_field(value))
 
@@ -11069,7 +11086,11 @@ impl Sema:
                     return self.ty_bool as i32
                 return self.ty_str as i32
 
+        // #782: the base of a projection is not a WHOLE-value use — a
+        // partially moved binding may still be projected.
+        self.checking_projection_base = self.checking_projection_base + 1
         var obj_type = self.check_expr(expr)
+        self.checking_projection_base = self.checking_projection_base - 1
         // move-sites: sequence this use on its (root, field) path for the
         // field-shaped transfer-site liveness verdict.
         self.note_field_use(node, field)
