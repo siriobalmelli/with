@@ -1,8 +1,28 @@
 use std.fs
 use std.process
 use std.string
+use std.sysinfo
 
 extern fn with_exec_argv_capture_cwd(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> i32
+extern fn rt_getcwd(buf: *mut u8, size: i64) -> i32
+extern fn with_str_from_cstr(s: *const u8) -> str
+
+// The real working directory as a native path. Unlike `env("PWD")` this is
+// correct on Windows cmd.exe (which never sets PWD) and under a bash shell
+// whose PWD is a POSIX `/d/...` path that Win32 file/spawn APIs reject.
+fn p7_cwd -> str:
+    var buf: [4096]u8 = [0 as u8; 4096]
+    let rc = unsafe { rt_getcwd(&raw mut buf as *mut [4096]u8 as *mut u8, 4096) }
+    if rc != 0:
+        return ""
+    // with_str_from_cstr wraps the pointer (make_str) without copying, so the
+    // returned str aliases `buf`. Copy it off the stack before `buf` dies —
+    // otherwise every path derived from p7_repo_root is a use-after-free. On
+    // Linux/darwin the reused frame happened to survive the read; on Windows
+    // the native stage2's frame layout clobbers it, corrupting case_dir into a
+    // path with an interior NUL → "str to C string conversion" panic → the p7
+    // exit-134 cluster.
+    unsafe { with_str_from_cstr(&buf as *const [4096]u8 as *const u8) }.to_owned()
 
 pub type P7Run {
     rc: i32,
@@ -11,6 +31,9 @@ pub type P7Run {
 }
 
 pub fn p7_repo_root -> str:
+    let real = p7_cwd()
+    if real.len() > 0:
+        return real
     let root = env("PWD")
     if root.len() > 0:
         return root
@@ -34,16 +57,17 @@ fn p7_argv_append(blob: &str, arg: &str) -> str:
     blob ++ arg ++ "\0"
 
 pub fn p7_compiler_path -> str:
-    let staged_stage2 = p7_abs("out/stage/bin/with-stage2")
+    let ext = if os() == "Windows": ".exe" else: ""
+    let staged_stage2 = p7_abs("out/stage/bin/with-stage2" ++ ext)
     if file_exists(staged_stage2):
         return staged_stage2
-    let release = p7_abs("out/release/bin/with")
+    let release = p7_abs("out/release/bin/with" ++ ext)
     if file_exists(release):
         return release
-    let stage2 = p7_abs("out/bin/with-stage2")
+    let stage2 = p7_abs("out/bin/with-stage2" ++ ext)
     if file_exists(stage2):
         return stage2
-    p7_abs("out/bin/with")
+    p7_abs("out/bin/with" ++ ext)
 
 pub fn p7_case_dir(name: &str) -> str:
     p7_abs("out/tmp/pre-d-p7/" ++ name)
