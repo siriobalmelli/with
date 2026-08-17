@@ -1177,7 +1177,9 @@ impl Compilation:
             return true
 
         var sema = zcu.configure_tracked_input_sema(Sema.init(zcu.pool, move zcu.diagnostics, typed_pool))
-        sema.source_text = zcu.current_source_text
+        // #782: a bare assignment would move the source text out of the Zcu
+        // and blank it for later consumers (analyze reads it).
+        sema.source_text = with_str_clone_ref(zcu.current_source_text)
         // Clone: see run_mir_lower — bare assignments would move these tables
         // out of the Zcu and blank them for later consumers.
         sema.decl_source_paths = sema_clone_str_vec(&zcu.decl_source_paths)
