@@ -613,11 +613,6 @@ type Sema {
     union_last_written: HashMap[i32, i32],
     union_tracked_syms: Vec[i32],   // insertion-ordered tracked union var syms
     union_in_assign_target: i32,
-    // #782: >0 while checking an ident as the BASE of a projection
-    // (field access / assign-target place). A partially moved binding may
-    // still be projected (reading a live sibling field, reinitializing the
-    // moved one); only WHOLE-value uses of it are errors.
-    checking_projection_base: i32,
 
     // Dyn-erased generic-inst trait impls: methods specialized for the
     // concrete inst when a ref-to-dyn coercion is accepted, keyed by
@@ -1928,7 +1923,6 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         union_last_written: sema_new_map_i32_i32(),
         union_tracked_syms: Vec.new(),
         union_in_assign_target: 0,
-        checking_projection_base: 0,
         dyn_impl_starts: HashMap.new(),
         dyn_impl_counts: HashMap.new(),
         dyn_impl_flat_method_names: Vec.new(),
@@ -4597,24 +4591,6 @@ impl Sema:
         self.moved_field_base_syms.pop()
         self.moved_field_path_starts.pop()
         self.moved_field_path_counts.pop()
-
-    // #782: whether any field path rooted at this binding is currently
-    // moved-out (the whole value is no longer intact).
-    fn binding_has_moved_field(sym: i32) -> i32:
-        for i in 0..self.moved_field_base_syms.len() as i32:
-            if self.moved_field_base_syms.get(i as i64) == sym:
-                return 1
-        0
-
-    // First moved field's leaf sym for diagnostics ('' when unknown).
-    fn first_moved_field_sym(sym: i32) -> i32:
-        for i in 0..self.moved_field_base_syms.len() as i32:
-            if self.moved_field_base_syms.get(i as i64) == sym:
-                let count: i32 = self.moved_field_path_counts.get(i as i64)
-                if count > 0:
-                    let start: i32 = self.moved_field_path_starts.get(i as i64)
-                    return self.moved_field_path_syms.get((start + count - 1) as i64)
-        0
 
     fn clear_moved_fields_for_binding(sym: i32):
         var i = self.moved_field_base_syms.len() as i32 - 1
