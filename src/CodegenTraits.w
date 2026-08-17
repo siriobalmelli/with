@@ -292,7 +292,27 @@ impl Codegen:
             self.had_error = 1
             return 0
 
-        wl_function_type(ret_ty, vec_data_i64(&param_types), param_types.len() as i32, 0)
+        // D6: the reconstructed dispatch type MUST match the real method and its
+        // vtable wrapper (create_dyn_wrapper copies the method's ABI-lowered param
+        // layout). Trait methods use the native (internal) With ABI, so apply the
+        // same sret / indirect-param lowering declare_function does. Without this,
+        // a win64 aggregate return (>8B, e.g. `str`) is reconstructed here by-value
+        // while the wrapper returns via sret — the exact caller/callee ABI
+        // divergence D6 forbids, producing wrong output at every dyn call site.
+        let abi_param_types: Vec[i64] = Vec.new()
+        var actual_ret_ty = ret_ty
+        if self.internal_abi_needs_sret(ret_ty):
+            actual_ret_ty = wl_void_type(self.context)
+            abi_param_types.push(ptr_ty)
+        var api = 0
+        while api < param_types.len() as i32:
+            let src_ty = param_types.get(api as i64)
+            if self.internal_abi_needs_indirect_param(src_ty):
+                abi_param_types.push(ptr_ty)
+            else:
+                abi_param_types.push(src_ty)
+            api = api + 1
+        wl_function_type(actual_ret_ty, vec_data_i64(&abi_param_types), abi_param_types.len() as i32, 0)
 
     fn find_decl_index(node: i32) -> i32:
         for i in 0..self.pool.decl_count():
@@ -351,15 +371,30 @@ impl Codegen:
         let orig_param_count = wl_count_param_types(method_ft)
         if orig_param_count <= 0:
             return method_fn
+        let is_async_method = if impl_fn_sym != 0 and self.async_fn_ret_types.get(impl_fn_sym).is_some(): 1 else: 0
+        // dyn_trait_method_fn_type applies the native win64 ABI: an aggregate
+        // return >8B (e.g. an async Task {i32,ptr}) becomes a leading sret
+        // parameter and a void return. The wrapper IS the vtable slot, so its
+        // signature must match dyn_ft — carry the sret slot, place self/args
+        // after it, and write the produced value through it instead of
+        // returning by value. Without this the async Task aggregate is seeded
+        // from the void return (`insertvalue void undef`) and every argument
+        // shifts by one slot. On SysV the 16B Task returns in registers (no
+        // sret), so the non-sret path below stays byte-identical.
+        let ret_ty = wl_get_return_type(dyn_ft)
+        let dyn_param_count = wl_count_param_types(dyn_ft)
+        let has_sret = is_async_method != 0 and ret_ty == wl_void_type(self.context) and dyn_param_count == orig_param_count + 1
+        let base = if has_sret: 1 else: 0
         let wrapper_param_types: Vec[i64] = Vec.new()
+        if has_sret:
+            wrapper_param_types.push(ptr_ty)
         wrapper_param_types.push(ptr_ty)
         var pi = 1
         while pi < orig_param_count:
             let pval = wl_get_param(method_fn, pi)
             wrapper_param_types.push(wl_type_of(pval))
             pi = pi + 1
-        let ret_ty = wl_get_return_type(dyn_ft)
-        let wrapper_ft = wl_function_type(ret_ty, vec_data_i64(&wrapper_param_types), orig_param_count, 0)
+        let wrapper_ft = wl_function_type(ret_ty, vec_data_i64(&wrapper_param_types), orig_param_count + base, 0)
         let wrapper_fn = wl_add_function(self.llmod, wrapper_name, wrapper_ft)
         wl_set_linkage(wrapper_fn, wl_internal_linkage())
 
@@ -374,7 +409,7 @@ impl Codegen:
         let entry = wl_append_bb(self.context, wrapper_fn, "entry")
         wl_position_at_end(self.builder, entry)
 
-        let data_ptr = wl_get_param(wrapper_fn, 0)
+        let data_ptr = wl_get_param(wrapper_fn, base)
         let self_param_ty = if orig_param_count > 0: wl_type_of(wl_get_param(method_fn, 0)) else: ptr_ty
         let self_arg = if wl_get_type_kind(self_param_ty) == wl_pointer_type_kind():
             wl_build_bitcast(self.builder, data_ptr, self_param_ty)
@@ -385,15 +420,20 @@ impl Codegen:
         call_args.push(self_arg)
         pi = 1
         while pi < orig_param_count:
-            let p = wl_get_param(wrapper_fn, pi)
+            let p = wl_get_param(wrapper_fn, base + pi)
             let target_ty = wl_type_of(wl_get_param(method_fn, pi))
             call_args.push(self.coerce_value_to_type(p, target_ty))
             pi = pi + 1
 
-        let is_async_method = if impl_fn_sym != 0 and self.async_fn_ret_types.get(impl_fn_sym).is_some(): 1 else: 0
         var call_val: i64 = 0
         if is_async_method != 0:
-            call_val = self.emit_async_fn_spawn_task_value(impl_fn_sym, method_fn, method_ft, &call_args, ret_ty)
+            var async_task_ty = ret_ty
+            if has_sret:
+                let task_fields: Vec[i64] = Vec.new()
+                task_fields.push(wl_i32_type(self.context))
+                task_fields.push(ptr_ty)
+                async_task_ty = wl_struct_type(self.context, vec_data_i64(&task_fields), 2, 0)
+            call_val = self.emit_async_fn_spawn_task_value(impl_fn_sym, method_fn, method_ft, &call_args, async_task_ty)
         else:
             call_val = wl_build_call(self.builder, method_ft, method_fn, vec_data_i64(&call_args), orig_param_count)
         if consumes_self != 0:
@@ -402,10 +442,14 @@ impl Codegen:
                 let free_args: Vec[i64] = Vec.new()
                 free_args.push(data_ptr)
                 let _ = wl_build_call(self.builder, wl_global_get_value_type(free_fn), free_fn, vec_data_i64(&free_args), 1)
-        if ret_ty == wl_void_type(self.context):
+        if has_sret:
+            let _ = wl_build_store(self.builder, call_val, wl_get_param(wrapper_fn, 0))
             let _ = wl_build_ret_void(self.builder)
         else:
-            let _ = wl_build_ret(self.builder, call_val)
+            if ret_ty == wl_void_type(self.context):
+                let _ = wl_build_ret_void(self.builder)
+            else:
+                let _ = wl_build_ret(self.builder, call_val)
 
         self.current_function = saved_fn
         self.current_function_name_sym = saved_fn_name_sym
