@@ -6569,7 +6569,11 @@ impl Sema:
             // (use-after-move diagnostics; reassignment heals).
             if self.ast.kind(inner) == NodeKind.NK_FIELD_ACCESS:
                 let fty = self.check_expr(inner)
+                // #782/§2.5.1: this is the EXPLICIT `move x.f` spelling —
+                // record it so later whole-value uses stay sanctioned.
+                self.marking_explicit_move = self.marking_explicit_move + 1
                 self.mark_moved_if_consumed(inner)
+                self.marking_explicit_move = self.marking_explicit_move - 1
                 // A POD field "move" is a plain copy — no blank, no write.
                 if fty != 0 and self.type_needs_drop(fty as i32) != 0:
                     let froot = self.place_root_sym(inner)
@@ -22873,6 +22877,11 @@ impl Sema:
             return
         if self.binding_has_moved_field(pm_sym) == 0:
             return
+        // §2.5.1: whole transfer after an EXPLICIT `move x.f` is sanctioned —
+        // the spelled-out move declares the hole; only implicit (bare-read)
+        // field moves make later whole-value uses a surprise.
+        if self.explicitly_partial_syms.contains(pm_sym):
+            return
         let pm_field = self.first_moved_field_sym(pm_sym)
         let pm_field_name = if pm_field != 0: with_str_clone_ref(self.pool_resolve(pm_field)) else: "" ++ ""
         let pm_name = with_str_clone_ref(self.pool_resolve(pm_sym))
@@ -22883,6 +22892,13 @@ impl Sema:
         if node == 0:
             return
         let kind = self.ast.kind(node)
+        if kind == NodeKind.NK_MOVE_ARG:
+            // #782/§2.5.1: an explicit `move ...` spelling — the inner field
+            // move is declared, so later whole-value uses stay sanctioned.
+            self.marking_explicit_move = self.marking_explicit_move + 1
+            self.mark_moved_if_consumed(self.ast.get_data0(node))
+            self.marking_explicit_move = self.marking_explicit_move - 1
+            return
         if kind == NodeKind.NK_FIELD_ACCESS:
             let field_ty_opt = self.typed_expr_types.get(node)
             let field_ty = if field_ty_opt.is_some(): field_ty_opt.unwrap() else: self.field_access_type_no_diagnostic(node)

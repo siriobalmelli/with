@@ -769,6 +769,13 @@ type Sema {
     bind_muts: Vec[i32],
     bind_states: Vec[i32],
     moved_field_base_syms: Vec[i32],
+    // #782: bindings whose partial state came from an EXPLICIT `move x.f`.
+    // §2.5.1 sanctions whole-value transfer after a spelled-out field move
+    // (the hole arrives blanked by design); only IMPLICIT moves (bare
+    // assignment-RHS reads) make later whole-value uses an error. A
+    // suppression set, so branch-merge imprecision only ever suppresses.
+    explicitly_partial_syms: HashMap[i32, i32],
+    marking_explicit_move: i32,
     moved_field_path_starts: Vec[i32],
     moved_field_path_counts: Vec[i32],
     moved_field_path_syms: Vec[i32],
@@ -2031,6 +2038,8 @@ fn sema_empty_state(pool: InternPool, diags: DiagnosticList, ast: AstPool) -> Se
         bind_muts: Vec.new(),
         bind_states: Vec.new(),
         moved_field_base_syms: Vec.new(),
+        explicitly_partial_syms: sema_new_map_i32_i32(),
+        marking_explicit_move: 0,
         moved_field_path_starts: Vec.new(),
         moved_field_path_counts: Vec.new(),
         moved_field_path_syms: Vec.new(),
@@ -4567,6 +4576,8 @@ impl Sema:
         self.moved_field_base_syms.push(base_sym)
         self.moved_field_path_starts.push(stored_start)
         self.moved_field_path_counts.push(path_count)
+        if self.marking_explicit_move != 0:
+            self.explicitly_partial_syms.insert(base_sym, 1)
 
     fn field_is_moved(node: i32) -> i32:
         let packed = self.field_move_path_for_expr(node)
@@ -4616,6 +4627,7 @@ impl Sema:
             if self.moved_field_base_syms.get(i as i64) == sym:
                 self.remove_moved_field_entry(i)
             i = i - 1
+        let _ = self.explicitly_partial_syms.remove(sym)
 
     fn clear_moved_fields_for_place_expr(node: i32):
         let packed = self.field_move_path_for_expr(node)
