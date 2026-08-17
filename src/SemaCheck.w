@@ -14294,6 +14294,12 @@ impl Sema:
                     self.scope_put(n_sym, bind_ty, 0)
                     if self.type_is_ephemeral_value(bind_ty) != 0:
                         self.record_view_binding_from_expr(n_sym, value)
+        // #782 arm 2: destructuring CONSUMES the source — MIR moves every
+        // element out, so a later projection (`t.1`) reads blanked storage.
+        // mark_moved_if_consumed applies the uniform rules (Copy tuples and
+        // view sources stay unmarked; ident sources go MOVED so later uses
+        // get the existing use-of-moved diagnostic).
+        self.mark_moved_if_consumed(value)
         self.ty_void as i32
 
     fn is_sizeof_or_alignof(callee: i32) -> i32:
