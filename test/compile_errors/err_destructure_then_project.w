@@ -9,6 +9,6 @@ fn pair() -> (i32, str): (42, "x" ++ "")
 fn main:
     let t = pair()
     let (a, b) = t
-    print_i64(t.1.len())
-    print_i64(a as i64)
+    print(t.1)
+    let _ = a
     print(b)

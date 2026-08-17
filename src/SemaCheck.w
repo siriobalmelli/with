@@ -14185,6 +14185,11 @@ impl Sema:
             self.emit_error("let ... else requires an else branch for refutable patterns", node)
         self.check_pattern(pattern, val_type as i32)
         self.record_pattern_view_bindings(pattern, value)
+        // #782 arm 2: a pattern let over an owned subject EXTRACTS by value —
+        // MIR moves the bound elements out, so a later use of the subject
+        // (`t.1` after `let (a, b) = t`) reads blanked storage.
+        // mark_moved_if_consumed's gates keep Copy and view subjects live.
+        self.mark_moved_if_consumed(value)
         if else_body != 0:
             let else_ty = self.check_expr(else_body)
             let else_kind = self.get_type_kind(self.resolve_alias(else_ty as TypeId))

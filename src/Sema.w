@@ -4755,6 +4755,9 @@ impl Sema:
             self.bind_is_view_bound.set_i32(idx as i64, 1)
 
     mut fn scope_set_state(sym: i32, state: i32):
+        if sema_debug_move_enabled() != 0:
+            let dbg_name = with_str_clone_ref(self.pool_resolve(sym))
+            with_eprint(f"[state] sym=" ++ dbg_name ++ f" -> {state}")
         let opt = self.scope_name_map.get(sym)
         if opt.is_some():
             if state == VarState.MOVED:
