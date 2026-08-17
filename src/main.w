@@ -1161,10 +1161,7 @@ fn reduce_candidate_matches(argc: i32, dashdash: i32, candidate_path: &str, cont
         return false
     if contains.len() > 0:
         let combined = with_fs_read_file(out_path) ++ "\n" ++ with_fs_read_file(err_path)
-        // BOOTSTRAP INTERIM (#747): materialized needle — seed &str
-        // marshalling, same as test_output_contains_expected.
-        let contains_needle = contains ++ ""
-        if not combined.contains(contains_needle):
+        if not combined.contains(contains):
             return false
     true
 
@@ -3014,12 +3011,7 @@ fn run_test_compiler_command(target: &str, command_name: &str, directives: &Test
     TestRunResult { rc, stdout, stderr }
 
 fn test_output_contains_expected(actual: &str, expected: &str) -> bool:
-    // BOOTSTRAP INTERIM (#747): materialize the needle before the contains
-    // intrinsic — the frozen seed marshals a &str view's header address into
-    // the data-pointer slot (same defect as test_validate_output's dodge;
-    // respell to the bare view after the post-merge reseed).
-    let needle = expected ++ ""
-    needle.len() == 0 or actual.contains(needle)
+    expected.len() == 0 or actual.contains(expected)
 
 fn run_test_directive_command(target: &str, directives: &TestDirectives, quiet: bool) -> i32:
     if directives.skip:
@@ -3178,13 +3170,7 @@ fn run_test_process(bin_path: &str, test_name: &str, quiet: bool) -> TestRunResu
 
 fn test_validate_output(stream_name: &str, actual: &str, expected_values: &Vec[str], target: &str, test_name: &str) -> bool:
     for ei in 0..expected_values.len() as i32:
-        // BOOTSTRAP INTERIM (#747): the frozen seed miscompiles passing a
-        // Vec.get &str view straight to the contains intrinsic (forwards the
-        // header address in the data-pointer slot; needle reads garbage and
-        // every seed-built `test` run reports a stdout mismatch). Materialize
-        // an owned str (the `++ ""` idiom, line 3113) — marshals correctly in
-        // both worlds; respell to the bare view after the post-merge reseed.
-        let expected = expected_values.get(ei as i64) ++ ""
+        let expected = expected_values.get(ei as i64)
         if not actual.contains(expected):
             emit_test_stage_error(stream_name ++ " mismatch; missing expected output: " ++ expected, target, "run", test_name)
             return false

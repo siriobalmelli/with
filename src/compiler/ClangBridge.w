@@ -537,8 +537,8 @@ unsafe fn session_strdup(s: *mut CImportSession, p: *const u8) -> *mut u8:
 // with_cimport_dispose a second owner — every session str double-freed at
 // dispose. So this hands out an independent owned copy and tracks nothing;
 // session_strdup tracking remains for raw C-string session consumers only.
-// (BOOTSTRAP INTERIM: the seed world has no str drops, so the copy leaks
-// there until reseed — bounded to c_import compilations under stage1.)
+// (The seed-era leak note retired with the 2026-08-17 reseed — the flip
+// seed drops owned strs, so the copy is properly owned everywhere.)
 unsafe fn session_make_str(s: *mut CImportSession, p: *const u8) -> str:
     let _ = s
     make_str(p)
