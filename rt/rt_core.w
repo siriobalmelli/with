@@ -3570,7 +3570,7 @@ fn with_lines_data_out(out: *mut u8, sp: *const u8, sl: i64) -> Unit:
 pub fn with_lines_out_ref(out: *mut u8, s: &str) -> Unit:
     with_lines_data_out(out, unsafe **(&s as *const *const *const u8), s.len())
 
-pub fn with_str_join(parts: *mut u8, sep: str) -> str:
+pub fn with_str_join(parts: *mut u8, sep: &str) -> str:
     let plen = vec_get_len(parts)
     if plen == 0:
         return make_str("" as *const u8, 0)
@@ -3603,7 +3603,7 @@ pub fn with_str_join(parts: *mut u8, sep: str) -> str:
     unsafe *((out as i64 + total) as *mut u8) = 0
     make_str(out as *const u8, total)
 
-pub fn with_vec_str_join(parts: *mut u8, sep: str) -> str:
+pub fn with_vec_str_join(parts: *mut u8, sep: &str) -> str:
     with_str_join(parts, sep)
 
 // #747: split/lines parts are independent OWNED strs, so each part copies

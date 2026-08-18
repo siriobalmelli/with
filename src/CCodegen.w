@@ -6999,12 +6999,14 @@ impl CCodegen:
                 self.fail("vec.join expects two arguments")
                 return "    abort();"
             let recv_ptr = self.vec_recv_ptr_text(body, args_id)
-            let sep = self.operand_text(body, self.call_arg_operand(body, args_id, 1))
+            let sep_op = self.call_arg_operand(body, args_id, 1)
+            let sep = self.operand_text(body, sep_op)
+            let sep_ptr = self.call_arg_address_text(body, sep_op, sep)
             var out = ""
             if has_ret != 0:
-                out = out ++ "    " ++ self.place_text(body, dest_place) ++ " = with_vec_str_join(" ++ recv_ptr ++ ", " ++ sep ++ ");\n"
+                out = out ++ "    " ++ self.place_text(body, dest_place) ++ " = with_vec_str_join(" ++ recv_ptr ++ ", " ++ sep_ptr ++ ");\n"
             else:
-                out = out ++ "    (void)with_vec_str_join(" ++ recv_ptr ++ ", " ++ sep ++ ");\n"
+                out = out ++ "    (void)with_vec_str_join(" ++ recv_ptr ++ ", " ++ sep_ptr ++ ");\n"
             out = out ++ f"    goto bb{next_bb};"
             return out
 

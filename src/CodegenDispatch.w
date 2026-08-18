@@ -10958,10 +10958,13 @@ impl Codegen:
             var vj_fn = wl_get_named_function(self.llmod, "with_vec_str_join")
             let vj_alloca = self.create_entry_alloca(wl_type_of(vj_recv))
             wl_build_store(self.builder, vj_recv, vj_alloca)
+            // sep is a &str parameter (D30 R1b): a plain pointer on every
+            // target, so only the str RETURN differs per ABI (sret on
+            // Windows x86_64, by-value on SysV).
+            let vj_sep_alloca = self.create_entry_alloca(vj_str_ty)
+            wl_build_store(self.builder, vj_sep, vj_sep_alloca)
             if codegen_windows_x86_64():
                 let vj_ret = self.create_entry_alloca(vj_str_ty)
-                let vj_sep_alloca = self.create_entry_alloca(vj_str_ty)
-                wl_build_store(self.builder, vj_sep, vj_sep_alloca)
                 let vj_params: Vec[i64] = Vec.new()
                 vj_params.push(vj_ptr_ty)
                 vj_params.push(vj_ptr_ty)
@@ -10978,15 +10981,15 @@ impl Codegen:
                 wl_add_call_sret_attr(self.context, call, 0, vj_str_ty)
                 result = wl_build_load(self.builder, vj_str_ty, vj_ret)
             else:
-                if vj_fn == 0:
-                    vj_fn = self.ensure_c_fn("with_vec_str_join", vj_str_ty, 2)
                 let vj_params: Vec[i64] = Vec.new()
                 vj_params.push(vj_ptr_ty)
-                vj_params.push(vj_str_ty)
+                vj_params.push(vj_ptr_ty)
                 let vj_ft = wl_function_type(vj_str_ty, vec_data_i64(&vj_params), 2, 0)
+                if vj_fn == 0:
+                    vj_fn = wl_add_function(self.llmod, "with_vec_str_join", vj_ft)
                 let vj_args: Vec[i64] = Vec.new()
                 vj_args.push(vj_alloca)
-                vj_args.push(vj_sep)
+                vj_args.push(vj_sep_alloca)
                 result = wl_build_call(self.builder, vj_ft, vj_fn, vec_data_i64(&vj_args), 2)
 
         else:

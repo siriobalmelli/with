@@ -83,7 +83,7 @@ bool with_vec_get_bool(with_vec *v, int64_t index);
 void with_vec_set_i32(with_vec *v, int64_t index, int32_t val);
 void with_vec_set_i64(with_vec *v, int64_t index, int64_t val);
 void with_vec_remove(with_vec *v, int64_t index);
-with_str with_vec_str_join(with_vec *v, with_str sep);
+with_str with_vec_str_join(with_vec *v, const with_str *sep);
 void *with_slotmap_new(int64_t elem_size);
 void with_slotmap_insert_out(void *map, const void *val, void *out_handle);
 void *with_slotmap_get_ptr(void *map, uint32_t index, uint32_t generation);
