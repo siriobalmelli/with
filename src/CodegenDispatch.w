@@ -3185,20 +3185,6 @@ impl Codegen:
         let args: Vec[i64] = Vec.new()
         self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 0, "with_fmt_buf_new", 0)
 
-    mut fn gen_fmt_buf_write_str(buf: i64, s: i64):
-        let ptr_ty = wl_ptr_type(self.context)
-        let str_ty = self.resolve_named_type(self.intern.intern("str"))
-        let pts: Vec[i64] = Vec.new()
-        pts.push(ptr_ty)
-        pts.push(str_ty)
-        let func = self.ensure_fmt_buf_fn("with_fmt_buf_write_str", pts, 2, wl_void_type(self.context))
-        let ft_sym = self.intern.intern("with_fmt_buf_write_str")
-        let ft = self.fn_fn_types.get(ft_sym).unwrap() as i64
-        let args: Vec[i64] = Vec.new()
-        args.push(buf)
-        args.push(s)
-        self.build_call_fn_value(ft_sym, func, ft, -1, 0, args, 2, "with_fmt_buf_write_str", 0)
-
     mut fn gen_fmt_buf_write_str_ref(buf: i64, s: i64):
         let ptr_ty = wl_ptr_type(self.context)
         let pts: Vec[i64] = Vec.new()
@@ -17995,33 +17981,14 @@ impl Codegen:
         wl_add_function(self.llmod, name, fn_ty)
 
     fn get_runtime_fn_type(name: &str, ret_ty: i64, param_count: i32) -> i64:
-        let str_sym = self.intern.intern("str")
-        let st_opt = self.struct_type_map.get(str_sym)
-        let str_type = if st_opt.is_some(): self.struct_llvm_types.get(st_opt.unwrap() as i64) else: wl_i64_type(self.context)
+        // Every live ensure_c_fn caller passes slotmap names or
+        // with_vec_str_join, all i64/ptr-parameter shapes; the old by-value
+        // str name table here was dead (D30 R1a).
+        let _ = name
         let i64_ty = wl_i64_type(self.context)
         let params: Vec[i64] = Vec.new()
-        if name == "with_str_contains" or
-           name == "with_str_starts_with" or
-           name == "with_str_ends_with" or
-           name == "with_str_index_of" or
-           name == "with_str_trim" or
-           name == "with_str_to_upper" or
-           name == "with_str_to_lower" or
-           name == "with_str_replace":
-            for i in 0..param_count:
-                params.push(str_type)
-        else if name == "with_str_contains_char":
-            params.push(str_type)
-            params.push(wl_i32_type(self.context))
-        else if name == "with_str_byte_at":
-            params.push(str_type)
+        for i in 0..param_count:
             params.push(i64_ty)
-        else if name == "with_str_repeat":
-            params.push(str_type)
-            params.push(i64_ty)
-        else:
-            for i in 0..param_count:
-                params.push(i64_ty)
         wl_function_type(ret_ty, vec_data_i64(&params), param_count, 0)
 
     fn emit_runtime_panic(msg: &str) -> Unit:
