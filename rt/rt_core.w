@@ -1513,7 +1513,7 @@ pub fn with_eprint(s: &str) -> Unit:
 
 // ── Panic / assert ─────────────────────────────────────────────────
 
-pub fn with_panic_core(msg: str, file: str, line: i32) -> Unit:
+fn with_panic_core(msg: str, file: str, line: i32) -> Unit:
     write_all(2, "panic: " as *const u8, 7)
     let mp = str_data(msg)
     let ml = str_length(msg)
