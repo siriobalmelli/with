@@ -287,6 +287,11 @@ type Codegen {
     module_drop_global_syms: Vec[i32],
     module_drop_global_tids: Vec[i32],
     // Constant integer values: parallel arrays for sym → i64 value lookup
+    // #839: LLVM names declared for With-BODIED fns (interned), so the
+    // extern declare path can distinguish "a With body occupies my C
+    // symbol" (move it aside) from c_import's deliberate same-symbol
+    // different-prototype reuse (keep, marshal via recorded transforms).
+    with_fn_link_names: HashMap[i32, i32],
     const_int_syms: Vec[i32],
     const_int_vals: Vec[i64],
     decl_source_paths: Vec[str],
@@ -923,6 +928,7 @@ fn Codegen.init_with_opt(module_name: &str, opt_level: i32) -> Codegen:
         module_runtime_init_types: Vec.new(),
         module_drop_global_syms: Vec.new(),
         module_drop_global_tids: Vec.new(),
+        with_fn_link_names: HashMap.new(),
         const_int_syms: Vec.new(),
         const_int_vals: Vec.new(),
         decl_source_paths: Vec.new(),
@@ -4544,6 +4550,7 @@ impl Codegen:
                 effective_name = self.current_decl_module_link_name(effective_name)
 
         let function = wl_add_function(self.llmod, effective_name, fn_type)
+        self.with_fn_link_names.insert(self.intern.intern(effective_name), 1)
         if has_sret != 0:
             wl_add_sret_attr(self.context, function, 0, sret_ty)
         self.apply_c_abi_byval_attrs(function, byval_mask, byval_types, param_count, if has_sret != 0: 1 else: 0)
@@ -4708,8 +4715,14 @@ impl Codegen:
                 direct_types.push(0)
 
         let fn_type = wl_function_type(actual_ret_ty, vec_data_i64(&actual_param_types), actual_param_types.len() as i32, self.sema.sig_is_variadic(sig_idx))
-        let existing = wl_get_named_function(self.llmod, effective_name)
+        // #839: reuse only a same-typed entry. A mismatched occupant (e.g. a
+        // link_name extern claiming this bare name) keeps the C symbol; the
+        // With fn takes an LLVM-uniquified name — resolution is value-keyed.
+        var existing = wl_get_named_function(self.llmod, effective_name)
+        if existing != 0 and wl_global_get_value_type(existing) != fn_type:
+            existing = 0
         let function = if existing != 0: existing else: wl_add_function(self.llmod, effective_name, fn_type)
+        self.with_fn_link_names.insert(self.intern.intern(effective_name), 1)
         if has_sret != 0:
             wl_add_sret_attr(self.context, function, 0, sret_ty)
         if has_sret != 0 or byval_mask != 0:
@@ -5298,8 +5311,20 @@ impl Codegen:
         if cc_name.len() > 10 and cc_name.slice(0, 10) == "link_name:":
             link_name = cc_name.slice(10, cc_name.len() as i64)
 
-        // Check if already declared
-        let existing = wl_get_named_function(self.llmod, link_name)
+        // Check if already declared. #839: an extern owns its C symbol — if a
+        // With-BODIED fn occupies the name with a different type
+        // (whole-program mode keeps bare names; e.g. prelude `write` vs
+        // @[link_name("write")]), move the occupant aside (references hold
+        // the LLVM value, not the name — its body attaches through fn_values
+        // in pass 2) and claim the symbol fresh. A mismatched FOREIGN
+        // declaration keeps the old reuse behavior: c_import deliberately
+        // declares one C symbol under multiple prototypes and marshals
+        // through the recorded C-ABI transforms.
+        var existing = wl_get_named_function(self.llmod, link_name)
+        if existing != 0 and wl_global_get_value_type(existing) != fn_type and self.with_fn_link_names.contains(self.intern.intern(link_name)):
+            wl_set_value_name(existing, link_name ++ "__with_body")
+            self.with_fn_link_names.remove(self.intern.intern(link_name))
+            existing = 0
         var function = existing
         if existing == 0:
             function = wl_add_function(self.llmod, link_name, fn_type)
