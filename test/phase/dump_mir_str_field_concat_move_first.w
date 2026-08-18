@@ -1,5 +1,5 @@
 //! args: --dump-mir
-//! expect-check-stdout: _1.f87 = str_concat_n([move _1.f87
+//! expect-check-stdout: _1.f86 = str_concat_n([move _1.f86
 
 type Acc { buf: str, name: str }
 
