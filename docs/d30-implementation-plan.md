@@ -125,12 +125,40 @@ both-worlds honest.
 
 ### Stage R2 — runtime joins the unit (the dissolving move)
 
-R2a. **Embed rt sources** in the compiler binary exactly like the stdlib:
-a `br_generate_embedded_runtime` sibling of `br_generate_embedded_stdlib`
-(`build/runtime.w:195`), an `EmbeddedRuntime.w` accessor with an
-`<embedded-rt>/` prefix, resolver wiring beside the two existing
-embedded-std resolve sites (`src/Resolve.w:1044`,
-`src/compiler/Frontend.w:2346`).
+Reference verdicts (tree-verified 2026-08-18): **Go** keeps a generated
+signature table — `typecheck/builtin.go` is generated from
+`_builtin/runtime.go` by `mkbuiltin.go`, so the compiler's view of
+runtime signatures cannot drift from the source (the drift #761 proved
+fatal); its runtime is still a separately compiled package. **Zig** is
+the destination shape: start code analyzed lazily in-unit with the
+program, and `compiler_rt` built per-target as its own job into the
+global cache (`Compilation.zig:219-223`, `2477`) — objects as cache,
+never as boundary. **Rust** ships precompiled sysroot rlibs, but those
+carry full metadata+MIR, so the contract travels with the object — the
+boundary D30 rejects is specifically a *bare* object with re-derived
+contracts.
+
+**R2b/R2d coupling discovered in R2a:** in-unit runtime definitions keep
+raw `with_*` link names (`codegen_preserve_runtime_link_name` matches any
+path containing `rt/`, which `<embedded-rt>/rt/…` does), so a program
+that compiles the runtime in-unit AND links `rt_core.o` gets duplicate
+strong symbols; the inverse (link change first) gets undefined symbols.
+The stages therefore cannot land by flipping a default in one commit:
+R2b lands **dark behind an internal mode flag** (in-unit parse +
+link-suppression together, off by default), R2c retargets codegen
+family-by-family against that mode's test lane, and the default flip +
+Link.w cleanup is the final, separately-gated commit pair per the
+bootstrap protocol.
+
+R2a. **Embed rt sources** in the compiler binary exactly like the
+stdlib — **COMPLETE (69f3d87a, 2026-08-18)**: `EmbeddedRuntimeData.w`
+generated as a third output of compat-runtime-source with rt/*.w as
+declared inputs; `EmbeddedRuntime.w` accessor under `<embedded-rt>/`;
+the four source-read sites consult it; internals pin
+`embedded_runtime_data_test.w`. No resolve-side behavior change yet —
+the runtime has **no user-spellable module name** (resolver-internal
+prefix only); giving it one is language surface and needs Eric (open
+question 3).
 
 R2b. **Parse the runtime module into the unit** for ordinary (non-`no_std`)
 compiles, as a deterministic prefix like the prelude closure
