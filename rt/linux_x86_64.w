@@ -664,7 +664,7 @@ fn rt_net_write_port_to_c_buf(port: i32, out: *mut u8, cap: i64) -> i32:
 fn rt_net_empty_str() -> str:
     with_str_from_bytes("" as *const u8, 0)
 
-fn rt_net_connect_any(host: str, port: i32, socktype: i32, protocol: i32) -> i32:
+fn rt_net_connect_any(host: &str, port: i32, socktype: i32, protocol: i32) -> i32:
     var host_buf: [256]u8 = [0 as u8; 256]
     var port_buf: [16]u8 = [0 as u8; 16]
     if rt_net_copy_str_to_c_buf(host, &raw mut host_buf as *mut [256]u8 as *mut u8, 256) != 0:
@@ -698,10 +698,10 @@ fn rt_net_connect_any(host: str, port: i32, socktype: i32, protocol: i32) -> i32
     freeaddrinfo(res)
     -1
 
-pub fn with_net_tcp_connect(host: str, port: i32) -> i32:
+pub fn with_net_tcp_connect(host: &str, port: i32) -> i32:
     rt_net_connect_any(host, port, 1, 6)
 
-pub fn with_net_udp_connect(host: str, port: i32) -> i32:
+pub fn with_net_udp_connect(host: &str, port: i32) -> i32:
     rt_net_connect_any(host, port, 2, 17)
 
 fn rt_net_bind_inaddr_any(fd: i32, port: i32) -> i32:
@@ -758,7 +758,7 @@ pub fn with_net_sock_port(sock: i32) -> i32:
         return -get_errno()
     ((sa[2] as i32) << 8) | (sa[3] as i32)
 
-pub fn with_net_send(sock: i32, data: str) -> i64:
+pub fn with_net_send(sock: i32, data: &str) -> i64:
     let ptr = rt_str_data(data)
     let len = data.len()
     var written: i64 = 0

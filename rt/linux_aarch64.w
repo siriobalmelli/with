@@ -628,11 +628,10 @@ type LinuxAddrInfo:
     ai_canonname: *mut u8
     ai_next: *mut LinuxAddrInfo
 
-fn rt_str_data(s: str) -> *const u8:
-    let p = &s as *const *const u8
-    unsafe *p
+fn rt_str_data(s: &str) -> *const u8:
+    unsafe **(&s as *const *const *const u8)
 
-fn rt_net_copy_str_to_c_buf(s: str, out: *mut u8, cap: i64) -> i32:
+fn rt_net_copy_str_to_c_buf(s: &str, out: *mut u8, cap: i64) -> i32:
     if s.len() + 1 > cap:
         return -1
     var i: i64 = 0
@@ -668,7 +667,7 @@ fn rt_net_write_port_to_c_buf(port: i32, out: *mut u8, cap: i64) -> i32:
 fn rt_net_empty_str() -> str:
     with_str_from_bytes("" as *const u8, 0)
 
-fn rt_net_connect_any(host: str, port: i32, socktype: i32, protocol: i32) -> i32:
+fn rt_net_connect_any(host: &str, port: i32, socktype: i32, protocol: i32) -> i32:
     var host_buf: [256]u8 = [0 as u8; 256]
     var port_buf: [16]u8 = [0 as u8; 16]
     if rt_net_copy_str_to_c_buf(host, &raw mut host_buf as *mut [256]u8 as *mut u8, 256) != 0:
@@ -702,10 +701,10 @@ fn rt_net_connect_any(host: str, port: i32, socktype: i32, protocol: i32) -> i32
     freeaddrinfo(res)
     -1
 
-pub fn with_net_tcp_connect(host: str, port: i32) -> i32:
+pub fn with_net_tcp_connect(host: &str, port: i32) -> i32:
     rt_net_connect_any(host, port, 1, 6)
 
-pub fn with_net_udp_connect(host: str, port: i32) -> i32:
+pub fn with_net_udp_connect(host: &str, port: i32) -> i32:
     rt_net_connect_any(host, port, 2, 17)
 
 fn rt_net_bind_inaddr_any(fd: i32, port: i32) -> i32:
@@ -762,7 +761,7 @@ pub fn with_net_sock_port(sock: i32) -> i32:
         return -get_errno()
     ((sa[2] as i32) << 8) | (sa[3] as i32)
 
-pub fn with_net_send(sock: i32, data: str) -> i64:
+pub fn with_net_send(sock: i32, data: &str) -> i64:
     let ptr = rt_str_data(data)
     let len = data.len()
     var written: i64 = 0
@@ -872,7 +871,7 @@ fn posix_signal_bit(signo: i32) -> u32:
         return 0 as u32
     (1 as u32) << ((signo - 1) as u32)
 
-fn posix_str_to_c_buf(s: str) -> *mut u8:
+fn posix_str_to_c_buf(s: &str) -> *mut u8:
     let out = with_alloc(s.len() + 1)
     if out as i64 == 0:
         return 0 as *mut u8
@@ -1026,7 +1025,7 @@ fn posix_interrupt_signal_handler(signo: i32):
 fn posix_interrupted() -> bool:
     posix_interrupt_flag != 0
 
-pub fn rt_compat_setenv_str(name: str, value: str) -> i32:
+pub fn rt_compat_setenv_str(name: &str, value: &str) -> i32:
     let name_buf = posix_str_to_c_buf(name)
     if name_buf as i64 == 0:
         return -1
@@ -1082,19 +1081,18 @@ pub fn rt_set_process_memory_limit_bytes(limit: i64) -> i32:
 pub fn rt_compat_interrupt_requested() -> i32:
     posix_interrupt_flag
 
-pub fn rt_compat_exec_binary(path: str) -> i32:
+pub fn rt_compat_exec_binary(path: &str) -> i32:
     let buf = posix_str_to_c_buf(path)
     if buf as i64 == 0:
         return -1
     if posix_interrupted():
         with_free(buf)
         return -1
-    var argv_blob = path
-    let rc = posix_run_argv(buf as *const u8, argv_blob.len(), 0 as *const u8, 0 as *const u8, 0 as *const u8, 0 as *const u8, 0, true)
+    let rc = posix_run_argv(buf as *const u8, path.len(), 0 as *const u8, 0 as *const u8, 0 as *const u8, 0 as *const u8, 0, true)
     with_free(buf)
     rc
 
-pub fn rt_compat_exec_argv(args: str) -> i32:
+pub fn rt_compat_exec_argv(args: &str) -> i32:
     let buf = posix_str_to_c_buf(args)
     if buf as i64 == 0:
         return -1
@@ -1102,7 +1100,7 @@ pub fn rt_compat_exec_argv(args: str) -> i32:
     with_free(buf)
     rc
 
-pub fn rt_compat_exec_argv_cwd(args: str, cwd: str) -> i32:
+pub fn rt_compat_exec_argv_cwd(args: &str, cwd: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let cwd_buf = posix_str_to_c_buf(cwd)
     if arg_buf as i64 == 0 or cwd_buf as i64 == 0:
@@ -1112,10 +1110,10 @@ pub fn rt_compat_exec_argv_cwd(args: str, cwd: str) -> i32:
     with_free(cwd_buf)
     rc
 
-pub fn rt_compat_exec_argv_capture(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32) -> i32:
+pub fn rt_compat_exec_argv_capture(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32) -> i32:
     rt_compat_exec_argv_capture_cwd(args, stdout_path, stderr_path, timeout_ms, "")
 
-pub fn rt_compat_exec_argv_capture_input(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, stdin_path: str) -> i32:
+pub fn rt_compat_exec_argv_capture_input(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, stdin_path: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let out_buf = posix_str_to_c_buf(stdout_path)
     let err_buf = posix_str_to_c_buf(stderr_path)
@@ -1129,7 +1127,7 @@ pub fn rt_compat_exec_argv_capture_input(args: str, stdout_path: str, stderr_pat
     with_free(in_buf)
     rc
 
-pub fn rt_compat_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path: str, timeout_ms: i32, cwd: str) -> i32:
+pub fn rt_compat_exec_argv_capture_cwd(args: &str, stdout_path: &str, stderr_path: &str, timeout_ms: i32, cwd: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let out_buf = posix_str_to_c_buf(stdout_path)
     let err_buf = posix_str_to_c_buf(stderr_path)
@@ -1144,7 +1142,7 @@ pub fn rt_compat_exec_argv_capture_cwd(args: str, stdout_path: str, stderr_path:
         with_free(cwd_buf)
     rc
 
-pub fn rt_compat_exec_argv_capture_spawn(args: str, stdout_path: str, stderr_path: str) -> i32:
+pub fn rt_compat_exec_argv_capture_spawn(args: &str, stdout_path: &str, stderr_path: &str) -> i32:
     let arg_buf = posix_str_to_c_buf(args)
     let out_buf = posix_str_to_c_buf(stdout_path)
     let err_buf = posix_str_to_c_buf(stderr_path)

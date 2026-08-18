@@ -207,8 +207,8 @@ void with_fill_random(uint8_t *buf, int64_t len);
 
 int32_t with_net_tcp_listen(int32_t port, int32_t backlog);
 int32_t with_net_tcp_accept(int32_t listen_fd);
-int32_t with_net_tcp_connect(with_str host, int32_t port);
-int64_t with_net_send(int32_t fd, with_str data);
+int32_t with_net_tcp_connect(const with_str *host, int32_t port);
+int64_t with_net_send(int32_t fd, const with_str *data);
 with_str with_net_recv(int32_t fd, int64_t max_len);
 int32_t with_net_close(int32_t fd);
 int32_t with_net_udp_bind(int32_t port);

@@ -20,7 +20,7 @@ pub type HttpResponse {
 fn http_empty_response(status: i32) -> HttpResponse:
     HttpResponse { status, headers: "", body: "", location: "" }
 
-fn http_parse_url(url: str) -> HttpUrl:
+fn http_parse_url(url: &str) -> HttpUrl:
     var host: str = ""
     var path: str = "/"
     let port = 443
@@ -40,14 +40,14 @@ fn http_parse_url(url: str) -> HttpUrl:
         path = url.slice(host_end as i64, url_len as i64)
     HttpUrl { host, path, port }
 
-fn http_build_get(host: str, path: str) -> str:
+fn http_build_get(host: &str, path: &str) -> str:
     "GET " ++ path ++ " HTTP/1.1\r\n" ++
         "Host: " ++ host ++ "\r\n" ++
         "User-Agent: with-stdlib-http/1\r\n" ++
         "Accept: */*\r\n" ++
         "Connection: close\r\n\r\n"
 
-fn http_find_header_end(data: str) -> i32:
+fn http_find_header_end(data: &str) -> i32:
     let len = data.len() as i32
     var i = 0
     while i < len - 3:
@@ -56,7 +56,7 @@ fn http_find_header_end(data: str) -> i32:
         i = i + 1
     -1
 
-fn http_status(headers: str) -> i32:
+fn http_status(headers: &str) -> i32:
     if headers.len() < 12:
         return -1
     var i = 0
@@ -79,7 +79,7 @@ fn http_ascii_lower(ch: i32) -> i32:
         return ch + 32
     ch
 
-fn http_name_matches(line: str, name: str) -> bool:
+fn http_name_matches(line: &str, name: &str) -> bool:
     if line.len() < name.len() + 1:
         return false
     for i in 0..name.len() as i32:
@@ -87,7 +87,7 @@ fn http_name_matches(line: str, name: str) -> bool:
             return false
     line.byte_at(name.len()) == 58
 
-fn http_trim_header_value(value: str) -> str:
+fn http_trim_header_value(value: &str) -> str:
     var start = 0
     var end = value.len() as i32
     while start < end:
@@ -102,7 +102,7 @@ fn http_trim_header_value(value: str) -> str:
         end = end - 1
     value.slice(start as i64, end as i64)
 
-fn http_header_value(headers: str, name: str) -> str:
+fn http_header_value(headers: &str, name: &str) -> str:
     var line_start = 0
     var i = 0
     while i <= headers.len() as i32:
@@ -117,11 +117,11 @@ fn http_header_value(headers: str, name: str) -> str:
         i = i + 1
     ""
 
-fn http_is_chunked(headers: str) -> bool:
+fn http_is_chunked(headers: &str) -> bool:
     let value = http_header_value(headers, "Transfer-Encoding")
     value.contains("chunked") or value.contains("Chunked")
 
-fn http_decode_chunked(data: str) -> str:
+fn http_decode_chunked(data: &str) -> str:
     var result = StringBuilder.new()
     let dlen = data.len() as i32
     var pos = 0
@@ -153,7 +153,7 @@ fn http_decode_chunked(data: str) -> str:
             pos = pos + 1
     result.to_str()
 
-fn http_resolve_redirect(current_url: str, location: str) -> str:
+fn http_resolve_redirect(current_url: &str, location: str) -> str:
     if location.starts_with("https://"):
         return location
     if location.starts_with("/"):
@@ -166,7 +166,7 @@ fn http_resolve_redirect(current_url: str, location: str) -> str:
 fn http_is_redirect(status: i32) -> bool:
     status == 301 or status == 302 or status == 303 or status == 307 or status == 308
 
-fn https_get_once(url: str) -> HttpResponse:
+fn https_get_once(url: &str) -> HttpResponse:
     let parsed = http_parse_url(url)
     if parsed.host.len() == 0:
         return http_empty_response(-1)
@@ -212,7 +212,8 @@ fn https_get_once(url: str) -> HttpResponse:
     var body = raw.slice(hdr_end as i64, raw.len())
     if http_is_chunked(headers):
         body = http_decode_chunked(body)
-    HttpResponse { status, headers, body, location: http_header_value(headers, "Location") }
+    let location = http_header_value(headers, "Location")
+    HttpResponse { status, headers, body, location }
 
 pub fn https_get_response(url: str, max_redirects: i32) -> HttpResponse:
     var current = url

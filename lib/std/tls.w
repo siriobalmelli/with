@@ -777,7 +777,7 @@ unsafe fn tls_recv_server_finish(conn: *mut TlsConn) -> i32:
 
 // Perform TLS 1.2 handshake on an established TCP connection.
 // Returns 0 on success, -1 on error.
-unsafe fn tls_handshake(conn: *mut TlsConn, hostname: str) -> i32:
+unsafe fn tls_handshake(conn: *mut TlsConn, hostname: &str) -> i32:
     let hl = hostname.len() as i32
 
     // Send ClientHello
@@ -820,7 +820,7 @@ unsafe fn tls_handshake(conn: *mut TlsConn, hostname: str) -> i32:
 
 // Connect to a host via TLS, returning a TlsConn ready for data transfer.
 // Returns a TlsConn with fd >= 0 on success, fd = -1 on error.
-fn tls_connect(hostname: str, port: i32) -> TlsConn:
+fn tls_connect(hostname: &str, port: i32) -> TlsConn:
     let fd = tcp_connect(hostname, port)
     if fd < 0:
         return TlsConn.new(-1)
