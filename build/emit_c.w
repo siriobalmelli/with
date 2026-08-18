@@ -270,6 +270,8 @@ fn emitc_c_type(with_type: &str) -> str:
     if with_type == "u64": return "uint64_t"
     if with_type == "f64": return "double"
     if with_type == "str": return "with_str"
+    // #785: a &str param is a borrowed header pointer at the C ABI.
+    if with_type == "&str": return "const with_str *"
     if with_type == "WithVec": return "with_vec"
     if with_type == "*const WithVec": return "const with_vec *"
     if with_type == "*mut WithVec": return "with_vec *"

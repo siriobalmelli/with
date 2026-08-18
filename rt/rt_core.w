@@ -1626,9 +1626,6 @@ pub fn with_fmt_bool(b: i32) -> str:
         return make_str("true" as *const u8, 4)
     make_str("false" as *const u8, 5)
 
-pub fn with_fmt_str(s: str) -> str:
-    s
-
 // #761 observing form: returns an independent OWNED copy (the consuming
 // form's identity return aliases its operand — a flip caller that drops
 // the result would free the source).
@@ -1646,9 +1643,6 @@ pub fn with_fmt_str_debug_ref(s: &str) -> str:
     unsafe *((out as i64 + slen + 1) as *mut u8) = 34  // '"'
     unsafe *((out as i64 + out_len) as *mut u8) = 0
     make_str(out as *const u8, out_len)
-
-pub fn with_fmt_str_debug(s: str) -> str:
-    with_fmt_str_debug_ref(&s)
 
 // ── Float formatting ───────────────────────────────────────────────
 
@@ -1713,11 +1707,6 @@ pub fn with_fmt_buf_new() -> *mut u8:
     fb_set_cap(b, 64)
     b
 
-pub fn with_fmt_buf_write_str(b: *mut u8, s: str) -> Unit:
-    let slen = str_length(s)
-    if slen > 0:
-        fb_append(b, str_data(s), slen)
-
 // #747: append through a BORROWED str — the &str spelling for callers whose
 // text params borrow (CCodegen COut.write). Codegen keeps emitting the
 // consuming form for format strings; this one is source wiring only.
@@ -1751,15 +1740,11 @@ pub fn with_fmt_buf_write_char(b: *mut u8, c: u8) -> Unit:
 
 pub fn with_fmt_buf_write_i64_spec(b: *mut u8, val: i64, is_unsigned: i32, flags: i64, width: i32, precision: i32, mode: i32) -> Unit:
     let s = with_fmt_int_spec(val, is_unsigned, flags, width, precision, mode)
-    with_fmt_buf_write_str(b, s)
+    with_fmt_buf_write_str_ref(b, s)
 
 pub fn with_fmt_buf_write_f64_spec(b: *mut u8, val: f64, flags: i64, width: i32, precision: i32, mode: i32) -> Unit:
     let s = with_fmt_f64_spec(val, flags, width, precision, mode)
-    with_fmt_buf_write_str(b, s)
-
-pub fn with_fmt_buf_write_str_spec(b: *mut u8, val: str, flags: i64, width: i32, precision: i32) -> Unit:
-    let s = with_fmt_str_spec(val, flags, width, precision)
-    with_fmt_buf_write_str(b, s)
+    with_fmt_buf_write_str_ref(b, s)
 
 pub fn with_fmt_buf_finish(b: *mut u8) -> str:
     let p = fb_ptr(b)
@@ -1925,20 +1910,6 @@ pub fn with_fmt_f64_spec(val: f64, flags: i64, width: i32, precision: i32, mode:
 
 // ── with_fmt_str_spec ──────────────────────────────────────────────
 
-pub fn with_fmt_str_spec(val: str, flags: i64, width: i32, precision: i32) -> str:
-    var sp = str_data(val)
-    var slen = str_length(val)
-    if precision >= 0 and precision as i64 < slen:
-        slen = precision as i64
-    if width > 0 and slen < width as i64:
-        let fill_char = ((flags >> 8) & 255) as i32
-        let align_mode = ((flags >> 16) & 3) as i32
-        return pad_str(sp, slen, width as i64, fill_char, align_mode)
-    if slen != str_length(val):
-        // Truncated by precision
-        return alloc_str(sp, slen)
-    val
-
 // #761 observing form: every arm returns an independent OWNED str (the
 // consuming form's fall-through aliases its operand).
 pub fn with_fmt_str_spec_ref(val: &str, flags: i64, width: i32, precision: i32) -> str:
@@ -1962,23 +1933,6 @@ pub fn with_fmt_buf_write_str_spec_ref(b: *mut u8, val: &str, flags: i64, width:
 // #761: the observing form — codegen's ++ lowers here so the boundary
 // never transfers ownership (a flip-built body must not drop operands).
 pub fn with_str_concat_ref(a: &str, b: &str) -> str:
-    let al = str_length(a)
-    let bl = str_length(b)
-    let total = al + bl
-    var result = make_str("" as *const u8, 0)
-    if total != 0:
-        let out = rt_alloc(total + 1)
-        let ap = str_data(a)
-        let bp = str_data(b)
-        if ap as i64 != 0 and al > 0:
-            rt_memcpy(out, ap, al)
-        if bp as i64 != 0 and bl > 0:
-            rt_memcpy((out as i64 + al) as *mut u8, bp, bl)
-        unsafe *((out as i64 + total) as *mut u8) = 0
-        result = make_str(out as *const u8, total)
-    result
-
-pub fn with_str_concat(a: str, b: str) -> str:
     let al = str_length(a)
     let bl = str_length(b)
     let total = al + bl
@@ -2077,19 +2031,6 @@ pub fn with_str_concat_n_move_first(parts: *const str, count: i64) -> str:
         rt_free(first_ptr as *mut u8)
     result
 
-pub fn with_str_eq(a: str, b: str) -> i32:
-    let al = str_length(a)
-    let bl = str_length(b)
-    if al != bl:
-        return 0
-    if al == 0:
-        return 1
-    let ap = str_data(a)
-    let bp = str_data(b)
-    if ap as i64 == bp as i64:
-        return 1
-    if rt_memcmp(ap, bp, al) == 0: 1 else: 0
-
 pub fn with_str_eq_ref(a: &str, b: &str) -> i32:
     let al = a.len()
     let bl = b.len()
@@ -2102,19 +2043,6 @@ pub fn with_str_eq_ref(a: &str, b: &str) -> i32:
     if ap as i64 == bp as i64:
         return 1
     if rt_memcmp(ap, bp, al) == 0: 1 else: 0
-
-pub fn with_str_cmp(a: str, b: str) -> i32:
-    let al = str_length(a)
-    let bl = str_length(b)
-    let n = if al < bl: al else: bl
-    let cmp = rt_memcmp(str_data(a), str_data(b), n)
-    if cmp != 0:
-        return cmp
-    if al < bl:
-        return -1
-    if al > bl:
-        return 1
-    0
 
 pub fn with_str_cmp_ref(a: &str, b: &str) -> i32:
     let al = a.len()
@@ -2130,15 +2058,6 @@ pub fn with_str_cmp_ref(a: &str, b: &str) -> i32:
     if al > bl:
         return 1
     0
-
-pub fn with_str_clone(s: str) -> str:
-    let slen = str_length(s)
-    if slen == 0:
-        return make_str("" as *const u8, 0)
-    let out = rt_alloc(slen + 1)
-    rt_memcpy(out, str_data(s), slen)
-    unsafe *((out as i64 + slen) as *mut u8) = 0
-    make_str(out as *const u8, slen)
 
 // #747: owned copy from a BORROWED str — the clone spelling for reading an
 // owned field through a borrow (with_str_clone's consuming param cannot be
@@ -2168,9 +2087,6 @@ fn str_byte_at_ref(s: &str, idx: i64) -> i32:
     let p = str_data(s)
     (unsafe p[idx]) as i32
 
-pub fn with_str_byte_at(s: str, idx: i64) -> i32:
-    str_byte_at_ref(s, idx)
-
 pub fn with_str_byte_at_ref(s: &str, idx: i64) -> i32:
     str_byte_at_ref(s, idx)
 
@@ -2181,16 +2097,6 @@ pub fn with_str_byte_at_ref(s: &str, idx: i64) -> i32:
 // view at offset 0 IS the payload start, so its drop freed the caller's
 // still-owned buffer (double free), and any interior view dangled once the
 // caller's drop ran first. #748 view tokens can recover the zero-copy form.
-pub fn with_str_slice(s: str, start_arg: i64, end_arg: i64) -> str:
-    let slen = str_length(s)
-    var start = start_arg
-    var end = end_arg
-    if start < 0: start = 0
-    if end > slen: end = slen
-    if start >= end:
-        return make_str("" as *const u8, 0)
-    alloc_str((str_data(s) as i64 + start) as *const u8, end - start)
-
 // #747: slice through a BORROWED str header — same owned-copy semantics as
 // with_str_slice, callable from &str contexts (std wrappers whose text
 // params borrow). Codegen keeps emitting the consuming form; this one is
@@ -2213,9 +2119,6 @@ fn str_starts_with_ref(s: &str, prefix: &str) -> i32:
     if pl > sl: return 0
     if rt_memcmp(str_data(s), str_data(prefix), pl) == 0: 1 else: 0
 
-pub fn with_str_starts_with(s: str, prefix: str) -> i32:
-    str_starts_with_ref(s, prefix)
-
 pub fn with_str_starts_with_ref(s: &str, prefix: &str) -> i32:
     str_starts_with_ref(s, prefix)
 
@@ -2225,9 +2128,6 @@ fn str_ends_with_ref(s: &str, suffix: &str) -> i32:
     if sufl > sl: return 0
     let offset = sl - sufl
     if rt_memcmp((str_data(s) as i64 + offset) as *const u8, str_data(suffix), sufl) == 0: 1 else: 0
-
-pub fn with_str_ends_with(s: str, suffix: str) -> i32:
-    str_ends_with_ref(s, suffix)
 
 pub fn with_str_ends_with_ref(s: &str, suffix: &str) -> i32:
     str_ends_with_ref(s, suffix)
@@ -2246,9 +2146,6 @@ fn str_contains_ref(hay: &str, needle: &str) -> i32:
         i = i + 1
     0
 
-pub fn with_str_contains(hay: str, needle: str) -> i32:
-    str_contains_ref(hay, needle)
-
 pub fn with_str_contains_ref(hay: &str, needle: &str) -> i32:
     str_contains_ref(hay, needle)
 
@@ -2264,9 +2161,6 @@ fn str_contains_char_ref(hay: &str, ch: i32) -> i32:
             return 1
         i = i + 1
     0
-
-pub fn with_str_contains_char(hay: str, ch: i32) -> i32:
-    str_contains_char_ref(hay, ch)
 
 pub fn with_str_contains_char_ref(hay: &str, ch: i32) -> i32:
     str_contains_char_ref(hay, ch)
@@ -2284,9 +2178,6 @@ fn str_index_of_ref(hay: &str, needle: &str) -> i64:
             return i
         i = i + 1
     -1
-
-pub fn with_str_index_of(hay: str, needle: str) -> i64:
-    str_index_of_ref(hay, needle)
 
 pub fn with_str_index_of_ref(hay: &str, needle: &str) -> i64:
     str_index_of_ref(hay, needle)
@@ -2311,9 +2202,6 @@ fn str_trim_ref(s: &str) -> str:
     // #747: owned copy, never `return s`/a view (see with_str_slice).
     alloc_str((sp as i64 + start) as *const u8, end - start)
 
-pub fn with_str_trim(s: str) -> str:
-    str_trim_ref(s)
-
 pub fn with_str_trim_ref(s: &str) -> str:
     str_trim_ref(s)
 
@@ -2332,9 +2220,6 @@ fn str_to_upper_ref(s: &str) -> str:
         i = i + 1
     unsafe *((out as i64 + slen) as *mut u8) = 0
     make_str(out as *const u8, slen)
-
-pub fn with_str_to_upper(s: str) -> str:
-    str_to_upper_ref(s)
 
 pub fn with_str_to_upper_ref(s: &str) -> str:
     str_to_upper_ref(s)
@@ -2355,9 +2240,6 @@ fn str_to_lower_ref(s: &str) -> str:
     unsafe *((out as i64 + slen) as *mut u8) = 0
     make_str(out as *const u8, slen)
 
-pub fn with_str_to_lower(s: str) -> str:
-    str_to_lower_ref(s)
-
 pub fn with_str_to_lower_ref(s: &str) -> str:
     str_to_lower_ref(s)
 
@@ -2374,9 +2256,6 @@ fn str_repeat_ref(s: &str, count: i64) -> str:
         i = i + 1
     unsafe *((out as i64 + total) as *mut u8) = 0
     make_str(out as *const u8, total)
-
-pub fn with_str_repeat(s: str, count: i64) -> str:
-    str_repeat_ref(s, count)
 
 pub fn with_str_repeat_ref(s: &str, count: i64) -> str:
     str_repeat_ref(s, count)
@@ -2417,9 +2296,6 @@ fn str_replace_ref(s: &str, old: &str, new_s: &str) -> str:
             i = i + 1
     unsafe *((out as i64 + new_len) as *mut u8) = 0
     make_str(out as *const u8, new_len)
-
-pub fn with_str_replace(s: str, old: str, new_s: str) -> str:
-    str_replace_ref(s, old, new_s)
 
 pub fn with_str_replace_ref(s: &str, old: &str, new_s: &str) -> str:
     str_replace_ref(s, old, new_s)
@@ -2484,9 +2360,6 @@ pub fn with_parse_i64_ref(s: &str) -> i64:
         result = result * 10 + (c - 48) as i64
         i = i + 1
     if neg != 0: 0 - result else: result
-
-pub fn with_parse_float(s: str) -> f64:
-    with_parse_float_ref(s)
 
 pub fn with_parse_float_ref(s: &str) -> f64:
     let slen = str_length(s)
@@ -3633,9 +3506,6 @@ fn str_split_vec_ref(out: *mut u8, s: &str, delim: &str) -> Unit:
             i = i + 1
     let last = alloc_str((sp as i64 + start) as *const u8, sl - start)
     with_vec_push_str(out, move last)
-
-pub fn with_str_split_vec(out: *mut u8, s: str, delim: str) -> Unit:
-    str_split_vec_ref(out, s, delim)
 
 pub fn with_str_split_vec_ref(out: *mut u8, s: &str, delim: &str) -> Unit:
     str_split_vec_ref(out, s, delim)

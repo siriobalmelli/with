@@ -17,34 +17,42 @@ typedef struct {
 } with_str;
 
 #define WITH_STR_LIT(s) ((with_str){(s), (int64_t)(sizeof(s) - 1)})
+// Address of any with_str expression (lvalue or not): array compound
+// literal, enclosing-block lifetime, decays to a pointer. Marshals a
+// str VALUE into the observing `_ref` runtime entry points.
+#define WITH_STR_REF(e) ((const with_str *)((with_str[]){ (e) }))
 #define with_len(v) ((v).len)
 #define with_is_empty(v) (((v).len == 0) ? 1 : 0)
 
-with_str with_str_concat(with_str a, with_str b);
 with_str with_str_concat_n(const with_str *parts, int64_t count);
 with_str with_str_concat_n_move_first(const with_str *parts, int64_t count);
-bool with_str_eq(with_str a, with_str b);
-int32_t with_str_cmp(with_str a, with_str b);
 with_str with_str_from_cstr(const char *s);
 with_str with_str_from_bytes(const uint8_t *s, int64_t len);
 with_str with_str_from_vec_u8(const void *bytes);
-with_str with_str_slice(with_str s, int64_t start, int64_t end);
 int64_t with_str_len(const with_str* s);
 // #747 flip: reference-ABI runtime entry points (param = pointer to header).
+with_str with_str_concat_ref(const with_str* a, const with_str* b);
 with_str with_str_clone_ref(const with_str* s);
 int32_t with_str_eq_ref(const with_str* a, const with_str* b);
+int32_t with_str_cmp_ref(const with_str* a, const with_str* b);
 with_str with_str_slice_ref(const with_str* s, int64_t start, int64_t end);
 int64_t with_parse_i64_ref(const with_str* s);
 void with_panic_ref(const with_str* msg, const with_str* file, int32_t line);
 void with_fmt_buf_write_str_ref(uint8_t* b, const with_str* s);
 void with_lines_out_ref(void* out, const with_str* s);
 void with_print_str(const with_str* s);
-int32_t with_str_byte_at(with_str s, int64_t index);
-int32_t with_str_starts_with(with_str s, with_str prefix);
-int32_t with_str_ends_with(with_str s, with_str suffix);
-int32_t with_str_contains(with_str haystack, with_str needle);
-int64_t with_str_index_of(with_str haystack, with_str needle);
-with_str with_str_replace(with_str s, with_str old, with_str new_s);
+int32_t with_str_byte_at_ref(const with_str* s, int64_t index);
+int32_t with_str_starts_with_ref(const with_str* s, const with_str* prefix);
+int32_t with_str_ends_with_ref(const with_str* s, const with_str* suffix);
+int32_t with_str_contains_ref(const with_str* haystack, const with_str* needle);
+int32_t with_str_contains_char_ref(const with_str* haystack, int32_t ch);
+int64_t with_str_index_of_ref(const with_str* haystack, const with_str* needle);
+with_str with_str_replace_ref(const with_str* s, const with_str* old, const with_str* new_s);
+with_str with_str_trim_ref(const with_str* s);
+with_str with_str_to_upper_ref(const with_str* s);
+with_str with_str_to_lower_ref(const with_str* s);
+with_str with_str_repeat_ref(const with_str* s, int64_t count);
+double with_parse_float_ref(const with_str* s);
 with_str with_i32_to_str(int32_t n);
 with_str with_i64_to_str(int64_t n);
 with_str with_bool_to_str(bool b);
@@ -63,7 +71,7 @@ typedef struct {
 } with_vec;
 
 with_vec with_vec_new(int64_t elem_size);
-void with_str_split_vec(with_vec *out, with_str s, with_str delim);
+void with_str_split_vec_ref(with_vec *out, const with_str* s, const with_str* delim);
 void with_vec_new_out(with_vec *out, int64_t elem_size);
 void with_vec_new_with_capacity_out(with_vec *out, int64_t elem_size, int64_t cap);
 void with_vec_push(with_vec *v, const void *elem);
@@ -149,11 +157,13 @@ with_str with_fmt_int_spec(int64_t val, int32_t is_unsigned,
 with_str with_fmt_f64(double n);
 with_str with_fmt_f64_spec(double val, int64_t flags, int32_t width,
                            int32_t precision, int32_t mode);
-with_str with_fmt_str(with_str s);
-with_str with_fmt_str_spec(with_str val, int64_t flags, int32_t width,
-                           int32_t precision);
+with_str with_fmt_str_ref(const with_str* s);
+with_str with_fmt_str_spec_ref(const with_str* val, int64_t flags, int32_t width,
+                               int32_t precision);
+void with_fmt_buf_write_str_spec_ref(uint8_t* b, const with_str* val, int64_t flags,
+                                     int32_t width, int32_t precision);
 with_str with_fmt_bool(int32_t b);
-with_str with_fmt_str_debug(with_str s);
+with_str with_fmt_str_debug_ref(const with_str* s);
 
 // ── I/O ────────────────────────────────────────────────────────────
 
