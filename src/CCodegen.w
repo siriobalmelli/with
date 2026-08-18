@@ -9498,7 +9498,6 @@ impl CCodegen:
         out.write("extern const int8_t* with_regex_code_copy(const int8_t*);\n")
         out.write("extern void with_regex_code_free(const int8_t*);\n")
         out.write("extern int32_t with_regex_capture_count(const int8_t*);\n")
-        out.write("extern const int32_t* with_regex_match_spans_alloc(const int8_t*, with_str, int32_t*);\n")
         out.write("extern const int32_t* with_regex_match_spans_alloc_at(const int8_t*, const with_str*, int32_t, int32_t*);\n")
         out.write("extern int32_t with_regex_capture_name_count(const int8_t*);\n")
         out.write("extern with_str with_regex_capture_name_at(const int8_t*, int32_t);\n")

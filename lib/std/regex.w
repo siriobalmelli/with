@@ -13,7 +13,6 @@ extern fn with_regex_compile(pattern: &str, options: i32, err_code: *mut i32, er
 extern fn with_regex_code_copy(code: *const i8) -> *const i8
 extern fn with_regex_code_free(code: *const i8) -> Unit
 extern fn with_regex_capture_count(code: *const i8) -> i32
-extern fn with_regex_match_spans_alloc(code: *const i8, text: str, out_count: *mut i32) -> *const i32
 extern fn with_regex_match_spans_alloc_at(code: *const i8, text: &str, start_offset: i32, out_count: *mut i32) -> *const i32
 extern fn with_regex_capture_name_count(code: *const i8) -> i32
 extern fn with_regex_capture_name_at(code: *const i8, index: i32) -> str

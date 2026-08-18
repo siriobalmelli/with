@@ -135,9 +135,6 @@ pub fn with_regex_capture_count(code: *const i8) -> i32:
         return 0
     capture_count as i32
 
-pub unsafe fn with_regex_match_spans_alloc(code: *const i8, text: str, out_count: *mut i32) -> *const i32:
-    with_regex_match_spans_alloc_at(code, text, 0, out_count)
-
 pub unsafe fn with_regex_match_spans_alloc_at(code: *const i8, text: &str, start_offset: i32, out_count: *mut i32) -> *const i32:
     if out_count as i64 != 0:
         *out_count = 0
