@@ -160,12 +160,28 @@ the runtime has **no user-spellable module name** (resolver-internal
 prefix only); giving it one is language surface and needs Eric (open
 question 3).
 
-R2b. **Parse the runtime module into the unit** for ordinary (non-`no_std`)
-compiles, as a deterministic prefix like the prelude closure
-(`src/compiler/Frontend.w:1476-1487`). The runtime compiles as ordinary
-With code under normal module/visibility rules; the
-`symbol_visible_from_current` `with_`-prefix bypass (`src/Sema.w:2632`)
-dies with the seam.
+R2b. **Parse the runtime module into the unit** — **LANDED DARK
+(e186a816 + edb85f73 + 6b0ad8b4, 2026-08-18)**: `WITH_RT_IN_UNIT=1`
+parses the runtime set into the prelude prefix; every rt/std decl/def
+seam it exposed is fixed (libc `write` → `@[link_name]` rename; unsafe
+honesty on fiber-take calls; six signature divergences including the
+`with_panic -> Never` and bool fossils; `str_from_byte` visibility; the
+vacuous `spawn_os` effect pin deleted — no single pin text can span
+conservative-extern vs precise-body inference). #839 (bare-symbol
+collision between a link_name extern and a same-named With fn) fixed
+with the c_import multi-prototype carve-out. **Current lane state:
+user-program `check` is green under the env; `run` stops at link** —
+lazy fn emission defines nothing in-unit while eager module-global
+emission already duplicates, so a half-in-unit binary cannot link from
+either direction. Link-side object suppression therefore lands WITH R2c
+rooting, keyed on the object actually defining the runtime (the first
+env-keyed gate orphaned the fiber trio and was reverted). Remaining
+transition-tail: compiling the compiler itself under the lane trips
+`extern fn shadows prelude function` for the compiler's own `with_*`
+decls — exactly the decls R2c deletes family-by-family. R2c also owes
+the harness an env-directive test cell so the lane's green surface is
+pinned. The `symbol_visible_from_current` `with_`-prefix bypass
+(`src/Sema.w:2632`) still dies with the seam at the end of R2c.
 
 R2c. **Codegen lowers to ordinary module functions.** Family by family
 (str, vec, hashmap/slotmap, fmt, panic, fiber/async, regex, misc), each
