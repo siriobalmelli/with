@@ -92,7 +92,14 @@ independently passes `with build :fixpoint`), and the drop-class isolation
 rule (any stage that touches ownership/callee-drop behavior is alone in
 its battery batch with `:move-audit`/`:drop-audit`).
 
-### Stage R1 — make the runtime sources honest (enabler)
+### Stage R1 — make the runtime sources honest (enabler) — **COMPLETE (9f531dc3, 2026-08-18)**
+
+Landed: R1a deletions (13 dead exports + dead codegen type table), R1b
+flips (native + emit-c + stdlib + tools + all three platform files; 23
+plain-str observers deleted; remaining plain-str exports are the honest
+set — with_vec_push_str disarms, with_panic never returns, weak stubs
+unreachable), R1c seed-pin retirement with byte-identity proof
+(stage2-built rt_core.o == seed-built bootstrap object).
 
 R1a. **Delete the 34 orphan plain-`str` fns** in `rt/rt_core.w` and the
 dead codegen references (the 11-name if-chain in `get_runtime_fn_type`,
