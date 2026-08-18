@@ -1378,9 +1378,6 @@ fn str_to_cstr(s: &str) -> *const u8:
     unsafe *((buf as i64 + slen) as *mut u8) = 0
     buf as *const u8
 
-pub fn with_str_to_cstr(s: str) -> *mut u8:
-    str_to_cstr(&s) as *mut u8
-
 pub fn with_str_to_cstr_ref(s: &str) -> *mut u8:
     str_to_cstr(s) as *mut u8
 
@@ -1507,13 +1504,6 @@ pub fn with_ewrite(s: &str) -> Unit:
     if p as i64 != 0 and n > 0:
         write_all(2, p, n)
 
-pub fn with_eprintln(s: str) -> Unit:
-    let p = str_data(s)
-    let n = str_length(s)
-    if p as i64 != 0 and n > 0:
-        write_all(2, p, n)
-    let _ = rt_write(2, "\n" as *const u8, 1)
-
 pub fn with_eprint(s: &str) -> Unit:
     let p = str_data(s)
     let n = s.len()
@@ -1541,11 +1531,6 @@ pub fn with_panic_core(msg: str, file: str, line: i32) -> Unit:
             write_all(2, &buf as *const u8, len)
     let _ = rt_write(2, "\n" as *const u8, 1)
     rt_exit(1)
-
-pub fn with_assert(cond: i32, msg: str) -> Unit:
-    if cond == 0:
-        let empty = make_str("" as *const u8, 0)
-        with_panic_core(msg, empty, 0)
 
 // ── Integer formatting ─────────────────────────────────────────────
 
@@ -1774,10 +1759,6 @@ pub fn with_fmt_buf_write_f64_spec(b: *mut u8, val: f64, flags: i64, width: i32,
 
 pub fn with_fmt_buf_write_str_spec(b: *mut u8, val: str, flags: i64, width: i32, precision: i32) -> Unit:
     let s = with_fmt_str_spec(val, flags, width, precision)
-    with_fmt_buf_write_str(b, s)
-
-pub fn with_fmt_buf_write_debug(b: *mut u8, val: str) -> Unit:
-    let s = with_fmt_str_debug(val)
     with_fmt_buf_write_str(b, s)
 
 pub fn with_fmt_buf_finish(b: *mut u8) -> str:
@@ -2226,17 +2207,6 @@ pub fn with_str_slice_ref(s: &str, start_arg: i64, end_arg: i64) -> str:
     let data = unsafe *(s as *const str as *const *const u8)
     alloc_str((data as i64 + start) as *const u8, end - start)
 
-pub fn with_str_substr(s: str, start_arg: i64, length_arg: i64) -> str:
-    let slen = str_length(s)
-    var start = start_arg
-    var length = length_arg
-    if start < 0: start = 0
-    if start >= slen:
-        return make_str("" as *const u8, 0)
-    if start + length > slen:
-        length = slen - start
-    alloc_str((str_data(s) as i64 + start) as *const u8, length)
-
 fn str_starts_with_ref(s: &str, prefix: &str) -> i32:
     let pl = str_length(prefix)
     let sl = str_length(s)
@@ -2494,27 +2464,6 @@ pub fn str_from_byte(b: i32) -> str:
     unsafe *((buf as i64 + 1) as *mut u8) = 0
     make_str(buf as *const u8, 1)
 
-pub fn with_parse_i64(s: str) -> i64:
-    let slen = str_length(s)
-    if slen == 0: return 0
-    let sp = str_data(s)
-    var result: i64 = 0
-    var neg: i32 = 0
-    var i: i64 = 0
-    let first = unsafe *(sp as *const u8)
-    if first == 45:  // '-'
-        neg = 1
-        i = 1
-    else if first == 43:  // '+'
-        i = 1
-    while i < slen:
-        let c = unsafe sp[i]
-        if c < 48 or c > 57:
-            break
-        result = result * 10 + (c - 48) as i64
-        i = i + 1
-    if neg != 0: 0 - result else: result
-
 pub fn with_parse_i64_ref(s: &str) -> i64:
     let slen = s.len()
     if slen == 0: return 0
@@ -2615,9 +2564,6 @@ pub fn with_getenv_str(name: &str) -> str:
     if val as i64 == 0:
         return make_str("" as *const u8, 0)
     make_str(val, cstr_len(val))
-
-pub fn with_getenv(name: str) -> str:
-    with_getenv_str(name)
 
 // with_setenv_str: provided by compat_runtime.w (needs libc)
 
@@ -3406,30 +3352,6 @@ pub fn with_sb_new() -> (*mut u8, i64, i64):
     let buf = rt_alloc(64)
     (buf, 0 as i64, 64 as i64)
 
-pub fn with_sb_append(sb: *mut u8, s: str) -> Unit:
-    let slen = str_length(s)
-    if slen == 0: return
-    let sp = str_data(s)
-    // sb_grow is declared before sb_buf so assigning it into sb_buf is a
-    // view of an earlier (longer-lived) binding under §21.1.
-    var sb_grow: *mut u8 = 0 as *mut u8
-    var sb_buf = unsafe *(sb as *const *mut u8)
-    var sb_len = unsafe *((sb as i64 + SB_OFF_LEN) as *const i64)
-    var sb_cap = unsafe *((sb as i64 + SB_OFF_CAP) as *const i64)
-    while sb_len + slen > sb_cap:
-        let old_cap = sb_cap
-        let new_cap = old_cap * 2
-        sb_grow = rt_alloc(new_cap)
-        rt_memcpy(sb_grow, sb_buf as *const u8, sb_len)
-        rt_free_sized(sb_buf, old_cap)
-        sb_buf = sb_grow
-        sb_cap = new_cap
-    rt_memcpy((sb_buf as i64 + sb_len) as *mut u8, sp, slen)
-    sb_len = sb_len + slen
-    unsafe *(sb as *mut *mut u8) = sb_buf
-    unsafe *((sb as i64 + SB_OFF_LEN) as *mut i64) = sb_len
-    unsafe *((sb as i64 + SB_OFF_CAP) as *mut i64) = sb_cap
-
 pub fn with_sb_build(sb: *mut u8) -> str:
     let sb_buf = unsafe *(sb as *const *mut u8)
     let sb_len = unsafe *((sb as i64 + SB_OFF_LEN) as *const i64)
@@ -3628,39 +3550,6 @@ pub fn with_flush_stdout() -> Unit:
 
 // #747: parts are independent OWNED strs — each copies (see
 // with_str_split_vec's note).
-pub fn with_str_split(s: str, delim: str, out: *mut u8, count: *mut i64) -> Unit:
-    let sl = str_length(s)
-    let dl = str_length(delim)
-    if sl == 0 or dl == 0:
-        if sl > 0:
-            if out as i64 != 0:
-                // Store a copy of s at out[0] (str is 16 bytes)
-                unsafe *(out as *mut str) = alloc_str(str_data(s), sl)
-            unsafe *count = 1
-        else:
-            unsafe *count = 0
-        return
-    let sp = str_data(s)
-    let dp = str_data(delim)
-    var n: i64 = 0
-    var start: i64 = 0
-    var i: i64 = 0
-    while i <= sl - dl:
-        if rt_memcmp((sp as i64 + i) as *const u8, dp, dl) == 0:
-            if out as i64 != 0:
-                let part = alloc_str((sp as i64 + start) as *const u8, i - start)
-                unsafe *((out as i64 + n * 16) as *mut str) = part
-            n = n + 1
-            start = i + dl
-            i = start
-        else:
-            i = i + 1
-    if out as i64 != 0:
-        let last = alloc_str((sp as i64 + start) as *const u8, sl - start)
-        unsafe *((out as i64 + n * 16) as *mut str) = last
-    n = n + 1
-    unsafe *count = n
-
 fn with_lines_data_out(out: *mut u8, sp: *const u8, sl: i64) -> Unit:
     with_vec_new_out(out, 16)  // sizeof(str) = 16
     var start: i64 = 0
@@ -3675,21 +3564,8 @@ fn with_lines_data_out(out: *mut u8, sp: *const u8, sl: i64) -> Unit:
         let line = alloc_str((sp as i64 + start) as *const u8, sl - start)
         with_vec_push_str(out, move line)
 
-pub fn with_lines_out(out: *mut u8, s: str) -> Unit:
-    with_lines_data_out(out, str_data(s), str_length(s))
-
 pub fn with_lines_out_ref(out: *mut u8, s: &str) -> Unit:
     with_lines_data_out(out, unsafe **(&s as *const *const *const u8), s.len())
-
-pub fn with_lines(s: str) -> (*mut u8, i64, i64, i64):
-    // Allocate a Vec on the stack-return area
-    var v: (i64, i64, i64, i64) = (0, 0, 0, 0)
-    with_lines_out(&v as *mut u8, s)
-    let vp = &v as *const *mut u8
-    let vl = unsafe *((&v as i64 + 8) as *const i64)
-    let vc = unsafe *((&v as i64 + 16) as *const i64)
-    let ve = unsafe *((&v as i64 + 24) as *const i64)
-    (unsafe *vp, vl, vc, ve)
 
 pub fn with_str_join(parts: *mut u8, sep: str) -> str:
     let plen = vec_get_len(parts)
@@ -3977,13 +3853,6 @@ pub fn with_codegen_loop_get_result(idx: i32) -> i64:
 // ── cimport stubs ──────────────────────────────────────────────────
 
 // with_cimport_available: provided by helpers.o (weak) / clang_bridge.o (strong)
-
-pub fn with_extract_runtime_obj(name: str, path: str) -> i32:
-    let _ = name
-    let _ = path
-    // The real extractor is compiler-owned and linked into the self-contained
-    // compiler binary. User programs keep a stub here.
-    1
 
 // ── Sysinfo ────────────────────────────────────────────────────────
 

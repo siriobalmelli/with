@@ -28,7 +28,6 @@ int32_t with_str_cmp(with_str a, with_str b);
 with_str with_str_from_cstr(const char *s);
 with_str with_str_from_bytes(const uint8_t *s, int64_t len);
 with_str with_str_from_vec_u8(const void *bytes);
-with_str with_str_substr(with_str s, int64_t start, int64_t len);
 with_str with_str_slice(with_str s, int64_t start, int64_t end);
 int64_t with_str_len(const with_str* s);
 // #747 flip: reference-ABI runtime entry points (param = pointer to header).
@@ -49,7 +48,6 @@ with_str with_str_replace(with_str s, with_str old, with_str new_s);
 with_str with_i32_to_str(int32_t n);
 with_str with_i64_to_str(int64_t n);
 with_str with_bool_to_str(bool b);
-int64_t with_parse_i64(with_str s);
 with_str i64_to_string(int64_t n);
 with_str with_str_from_byte(int32_t b);
 with_str str_from_byte(int32_t b);
@@ -163,7 +161,6 @@ void with_println_str(const with_str* s);
 void with_println_i32(int32_t n);
 void with_println_i64(int64_t n);
 void with_println_bool(bool b);
-void with_eprintln(with_str s);
 void with_eprint(const with_str* s);
 void with_write(const with_str* s);
 void with_ewrite(const with_str* s);
@@ -201,7 +198,6 @@ int32_t with_fs_copy_tree(with_str src, with_str dst);
 int32_t with_fs_symlink(with_str target, with_str link_path);
 with_str with_fs_list_files(with_str path);
 int64_t with_str_hash(with_str s);
-void with_lines_out(with_vec *out, with_str s);
 with_str with_getenv_str(with_str name);
 int32_t with_setenv_str(with_str name, with_str value);
 int32_t with_getpid(void);
@@ -221,12 +217,10 @@ int32_t with_net_udp_bind(int32_t port);
 
 // String builder helpers (used by compiler debug dumps).
 int64_t with_sb_new(void);
-void with_sb_append(int64_t handle, with_str s);
 with_str with_sb_build(int64_t handle);
 
 // ── Assert ─────────────────────────────────────────────────────────
 
-void with_assert(bool cond, const char *msg, const char *file, int line);
 void with_panic(with_str msg, with_str file, int32_t line);
 
 // ── Runtime lifecycle ──────────────────────────────────────────────
