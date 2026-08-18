@@ -183,6 +183,28 @@ the harness an env-directive test cell so the lane's green surface is
 pinned. The `symbol_visible_from_current` `with_`-prefix bypass
 (`src/Sema.w:2632`) still dies with the seam at the end of R2c.
 
+**R2c substrate facts (probed 2026-08-19 on the lane):** MIR bodies exist
+for the ENTIRE in-unit runtime (analyze shows `with_runtime_init/run/
+shutdown` lowered); whole-program emission then prunes to a demand
+closure rooted at main + module globals + panic/exit glue — the lane's
+42 duplicate symbols are exactly that closure (allocator family, panic
+chain, `rt_argc`), and crucially they prove **in-unit bodied defs win
+resolution over the extern decls** (`with_ewrite` reached the closure
+through `with_panic_ref`'s real body). The runtime entry points stay
+out because only the post-hoc LLVM-level wrapper references them. So
+R2c likely collapses from per-family retargeting to: (a) find the
+exact whole-program emission gate (one lldb breakpoint on the Pass-2
+skip path — note `with build -o` is module-object mode, a DIFFERENT
+pipeline; probe with `run`), (b) sema-root the entry-point set
+(`with_runtime_set_argv/init/run/shutdown/configure_fibers` + the #777
+exit-drop callees) under the lane, (c) suppress the .w-derived rt
+objects wholesale via a link-plan flag (the compiler knows what it
+emitted — never an env probe; fiber_asm.o and the regex/cimport
+archives stay), (d) grow behav_rt_in_unit_check_lane into a run-lane
+cell. String-emitted codegen calls (`with_print_str` & co.) resolve at
+LLVM-name level against the in-unit defs whose names are preserved —
+verify with the str probe before trusting.
+
 R2c. **Codegen lowers to ordinary module functions.** Family by family
 (str, vec, hashmap/slotmap, fmt, panic, fiber/async, regex, misc), each
 family alone in a drop-audit batch: replace the name-string synthesis with
