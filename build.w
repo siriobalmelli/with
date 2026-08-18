@@ -325,6 +325,15 @@ fn target_with_embedded_stdlib_inputs(target: Target, ctx: &BuildCtx) -> Target:
             out = out.input(build_owned_text(path))
     out
 
+fn target_with_embedded_runtime_inputs(target: Target, ctx: &BuildCtx) -> Target:
+    var out = target
+    let files = ctx.fs().list_files("rt")
+    for i in 0..files.len() as i32:
+        let path = files.get(i as i64)
+        if path.ends_with(".w"):
+            out = out.input(build_owned_text(path))
+    out
+
 fn target_with_compiler_c_export_audit_inputs(target: Target, ctx: &BuildCtx) -> Target:
     var out = target
     let roots: Vec[str] = Vec.new()
@@ -840,6 +849,8 @@ fn issue61_regression_action(ctx: ActionCtx) -> i32:
         return issue61_fail(ctx, "could not create embedded stdlib data directory")
     if fs.write_text(embedded_dst, fs.read_text(embedded_src)) != 0:
         return issue61_fail(ctx, "could not copy embedded stdlib data module")
+    if fs.write_text(build_project_join(repo_copy, "out/gen/compiler/EmbeddedRuntimeData.w"), fs.read_text("out/gen/compiler/EmbeddedRuntimeData.w")) != 0:
+        return issue61_fail(ctx, "could not copy embedded runtime data module")
 
     let clang_res_src = "out/gen/compiler/EmbeddedClangResourceData.w"
     let clang_res_dst = build_project_join(repo_copy, "out/gen/compiler/EmbeddedClangResourceData.w")
@@ -977,6 +988,8 @@ fn invariance_variant_action(ctx: ActionCtx) -> i32:
         return invariance_fail(ctx, "could not create embedded gen directory")
     if fs.write_text(build_project_join(repo_copy, "out/gen/compiler/EmbeddedStdlibData.w"), fs.read_text("out/gen/compiler/EmbeddedStdlibData.w")) != 0:
         return invariance_fail(ctx, "could not copy embedded stdlib data module")
+    if fs.write_text(build_project_join(repo_copy, "out/gen/compiler/EmbeddedRuntimeData.w"), fs.read_text("out/gen/compiler/EmbeddedRuntimeData.w")) != 0:
+        return invariance_fail(ctx, "could not copy embedded runtime data module")
     if fs.write_text(build_project_join(repo_copy, "out/gen/compiler/EmbeddedClangResourceData.w"), fs.read_text("out/gen/compiler/EmbeddedClangResourceData.w")) != 0:
         return invariance_fail(ctx, "could not copy embedded clang resource data module")
 
@@ -1412,8 +1425,10 @@ pub fn build(ctx: BuildCtx) -> Build:
 
     var compat_runtime = target_new(.Action, "compat-runtime-source", "").output("out/gen/compat_runtime.w")
     compat_runtime = compat_runtime.extra_output("out/gen/compiler/EmbeddedStdlibData.w")
+    compat_runtime = compat_runtime.extra_output("out/gen/compiler/EmbeddedRuntimeData.w")
     compat_runtime = compat_runtime.input(build_owned_text(host_runtime.compat_source))
     compat_runtime = target_with_embedded_stdlib_inputs(move compat_runtime, ctx)
+    compat_runtime = target_with_embedded_runtime_inputs(move compat_runtime, ctx)
     compat_runtime.action = generate_compat_runtime_action
     out = out.add_target(compat_runtime)
 

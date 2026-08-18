@@ -13,6 +13,7 @@ use Diagnostic
 use CImport
 use render
 use compiler.EmbeddedStdlib
+use compiler.EmbeddedRuntime
 use compiler.EmbeddedClangResource
 
 extern fn with_str_clone_ref(s: &str) -> str
@@ -1720,7 +1721,10 @@ impl Zcu:
             if already:
                 continue
             let embedded_rel = embedded_std_rel_path(mod.path)
-            let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: runtime_read_file(mod.path)
+            let embedded_rt_rel = embedded_rt_rel_path(mod.path)
+            let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel)
+                else if embedded_rt_rel.len() > 0: embedded_rt_source(embedded_rt_rel)
+                else: runtime_read_file(mod.path)
             let text = frontend_normalize_source_text(raw_text)
             if text.len() > 0:
                 self.add_source_text_mapping(mod.file_id, mod.path, text)
@@ -2373,7 +2377,10 @@ impl Zcu:
 
     mut fn parse_imported_file_frontend(path: &str, target_pool: AstPool) -> AstPool:
         let embedded_rel = embedded_std_rel_path(path)
-        let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: runtime_read_file(path)
+        let embedded_rt_rel = embedded_rt_rel_path(path)
+        let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel)
+            else if embedded_rt_rel.len() > 0: embedded_rt_source(embedded_rt_rel)
+            else: runtime_read_file(path)
         let text = frontend_normalize_source_text(raw_text)
         if text.len() == 0:
             return target_pool

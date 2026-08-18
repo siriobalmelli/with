@@ -10,6 +10,7 @@ use compiler.Compilation.Config
 use compiler.ProjectConfig
 use compiler.Runtime
 use compiler.TrackedInputs
+use compiler.EmbeddedRuntime
 use std.collections.HashMap
 extern fn with_str_clone_ref(s: &str) -> str
 
@@ -305,7 +306,10 @@ impl Zcu:
                 continue
             let path = self.decl_source_path_frontend(i)
             let embedded_rel = embedded_std_rel_path(path)
-            let text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: runtime_read_file(path)
+            let embedded_rt_rel = embedded_rt_rel_path(path)
+            let text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel)
+                else if embedded_rt_rel.len() > 0: embedded_rt_source(embedded_rt_rel)
+                else: runtime_read_file(path)
             return Source.from_string(path, text, file_id)
         Source.from_string(self.current_source_path, self.current_source_text, 0)
 

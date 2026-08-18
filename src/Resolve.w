@@ -10,6 +10,7 @@ use InternPool
 use Diagnostic
 use Span
 use compiler.EmbeddedStdlib
+use compiler.EmbeddedRuntime
 use compiler.Runtime
 use std.collections.HashMap
 use std.string.StringBuilder
@@ -205,7 +206,10 @@ fn resolve_from_root_pool_with_prefix(root_path: &str, root_text: &str, root_fil
         else:
             let path = state.module_paths.get(work as i64)
             let embedded_rel = embedded_std_rel_path(path)
-            let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel) else: with_fs_read_file(path)
+            let embedded_rt_rel = embedded_rt_rel_path(path)
+            let raw_text = if embedded_rel.len() > 0: embedded_std_source(embedded_rel)
+                else if embedded_rt_rel.len() > 0: embedded_rt_source(embedded_rt_rel)
+                else: with_fs_read_file(path)
             let text = resolve_normalize_source_text(raw_text)
             if text.len() == 0:
                 state.emit_import_error(work, "failed to read imported module")
