@@ -1441,6 +1441,17 @@ impl Codegen:
             return self.declare_module_binding_global(name_sym, global_ty, is_mut)
         self.define_module_binding_global(name_sym, global_ty, init, is_mut)
 
+    mut fn register_module_global_drop(name_sym: i32, tid: i32):
+        // #777: the exit wrapper drops droppable module globals. Only
+        // writable storage registers — a storage-const global can never own
+        // heap data, and its read-only page would fault on the drop's
+        // zeroing write. Callers enforce the writability condition.
+        if tid == 0 or self.sema.type_needs_drop_frozen(tid) == 0: return
+        for i in 0..self.module_drop_global_syms.len() as i32:
+            if self.module_drop_global_syms.get(i as i64) == name_sym: return
+        self.module_drop_global_syms.push(name_sym)
+        self.module_drop_global_tids.push(tid)
+
     fn record_runtime_init_storage_global(name_sym: i32, global_ty: i64) -> i64:
         // Runtime-initialized module constants are still language-level `const`
         // bindings, but their backing storage must remain writable until the
@@ -1453,6 +1464,9 @@ impl Codegen:
         if global_ty == 0:
             return false
         let _ = self.record_runtime_init_storage_global(name_sym, global_ty)
+        // Runtime-init storage is writable even for `let` bindings, so its
+        // heap-owning value registers for the exit drop regardless of mut.
+        self.register_module_global_drop(name_sym, result_tid)
         if self.current_decl_is_imported_module_symbol():
             return true
         self.module_runtime_init_syms.push(name_sym)
@@ -2241,6 +2255,8 @@ impl Codegen:
             let global_ty = self.sema_type_to_llvm(resolved_binding_ty)
             if global_ty == 0:
                 return
+            if is_mut != 0:
+                self.register_module_global_drop(name_sym, resolved_binding_ty)
             let _ = self.record_module_binding_global(name_sym, global_ty, self.build_default_value(global_ty), is_mut)
             return
 
@@ -2257,6 +2273,8 @@ impl Codegen:
             else:
                 0
         var const_binding_ty = if resolved_binding_ty != 0: resolved_binding_ty else: inferred_value_ty
+        if is_mut != 0:
+            self.register_module_global_drop(name_sym, const_binding_ty)
         if const_binding_ty == 0 and self.pool.kind(value_node) == NodeKind.NK_STRUCT_LIT:
             let lit_sym = self.pool.get_data0(value_node)
             let lit_name = if lit_sym != 0: with_str_clone_ref(self.intern.resolve(lit_sym)) else: ""

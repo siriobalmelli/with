@@ -286,6 +286,10 @@ type Codegen {
     module_runtime_init_globals: Vec[i64],
     module_runtime_init_fns: Vec[i64],
     module_runtime_init_types: Vec[i64],
+    // #777: writable module globals with droppable types; the exit wrapper
+    // drops them (reverse order) after with_runtime_run, before shutdown.
+    module_drop_global_syms: Vec[i32],
+    module_drop_global_tids: Vec[i32],
     // Constant integer values: parallel arrays for sym → i64 value lookup
     const_int_syms: Vec[i32],
     const_int_vals: Vec[i64],
@@ -921,6 +925,8 @@ fn Codegen.init_with_opt(module_name: &str, opt_level: i32) -> Codegen:
         module_runtime_init_globals: Vec.new(),
         module_runtime_init_fns: Vec.new(),
         module_runtime_init_types: Vec.new(),
+        module_drop_global_syms: Vec.new(),
+        module_drop_global_tids: Vec.new(),
         const_int_syms: Vec.new(),
         const_int_vals: Vec.new(),
         decl_source_paths: Vec.new(),
@@ -6281,6 +6287,22 @@ impl Codegen:
             runtime_run_fn = wl_add_function(self.llmod, "with_runtime_run", runtime_run_ft_new)
         let runtime_run_ft = wl_global_get_value_type(runtime_run_fn)
         wl_build_call(self.builder, runtime_run_ft, runtime_run_fn, 0, 0)
+
+        // #777: drop droppable module globals after the fibers drain, before
+        // shutdown. A leaked global is a defect, not process-exit noise.
+        // Reverse definition order matches local scope-exit order; the
+        // rt_value_is_zero guard skips never-assigned zeroed storage.
+        self.current_function = wrapper
+        self.current_drop_needs_guard = true
+        self.mir_set_current_drop_origin(0)
+        var gd = self.module_drop_global_syms.len() as i32
+        while gd > 0:
+            gd = gd - 1
+            let gd_sym = self.module_drop_global_syms.get(gd as i64)
+            let gd_opt = self.module_constants.get(gd_sym)
+            if gd_opt.is_some():
+                let gd_global = gd_opt.unwrap() as i64
+                self.mir_emit_drop_ptr_for_sema_type(gd_global, wl_global_get_value_type(gd_global), self.module_drop_global_tids.get(gd as i64))
 
         var runtime_shutdown_fn = wl_get_named_function(self.llmod, "with_runtime_shutdown")
         if runtime_shutdown_fn == 0:
