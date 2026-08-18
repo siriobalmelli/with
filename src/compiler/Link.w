@@ -842,6 +842,12 @@ fn link_stage_undefined_symbols_need_helpers_runtime(undef: &str) -> i32:
         return 1
     0
 
+// D30 R2b (dark): the runtime compiled into the unit. The other rt-object
+// decisions self-suppress through the nm probe (in-unit definitions erase
+// the with_*/rt_compat_* undefs); only the fiber block needs this gate.
+fn link_stage_rt_in_unit() -> i32:
+    if runtime_getenv("WITH_RT_IN_UNIT").len() > 0: 1 else: 0
+
 fn link_stage_undefined_symbols_need_fiber_runtime(undef: &str) -> i32:
     if undef == "<probe-failed>":
         return 0
@@ -1146,21 +1152,26 @@ fn link_stage_link_object_to_binary_plan_with_units(obj_path: &str, extra_object
     let needs_regex_runtime = link_stage_undefined_symbols_need_regex_runtime(undef)
     let needs_compat_runtime = link_stage_undefined_symbols_need_compat_runtime(undef)
     if needs_fiber_runtime != 0:
-        let channel_runtime_path = link_stage_find_runtime_object_path("channel_runtime.o")
-        if channel_runtime_path.len() == 0:
-            with_eprint("error: missing runtime/channel_runtime.o")
-            return link_stage_plan_fail()
-        extras.push(channel_runtime_path)
-        let fiber_runtime_path = link_stage_find_runtime_object_path("fiber_runtime.o")
-        if fiber_runtime_path.len() == 0:
-            with_eprint("error: missing runtime/fiber_runtime.o")
-            return link_stage_plan_fail()
-        extras.push(fiber_runtime_path)
-        let fiber_path = link_stage_find_runtime_object_path("fiber.o")
-        if fiber_path.len() == 0:
-            with_eprint("error: missing runtime/fiber.o")
-            return link_stage_plan_fail()
-        extras.push(fiber_path)
+        // D30 R2b (dark): with the runtime in-unit, channel/fiber .w bodies
+        // are defined in the program object — the asm-defined with_fiber_*
+        // symbols still trip the predicate, and only fiber_asm.o may link
+        // (the .w-derived trio would duplicate the in-unit definitions).
+        if link_stage_rt_in_unit() == 0:
+            let channel_runtime_path = link_stage_find_runtime_object_path("channel_runtime.o")
+            if channel_runtime_path.len() == 0:
+                with_eprint("error: missing runtime/channel_runtime.o")
+                return link_stage_plan_fail()
+            extras.push(channel_runtime_path)
+            let fiber_runtime_path = link_stage_find_runtime_object_path("fiber_runtime.o")
+            if fiber_runtime_path.len() == 0:
+                with_eprint("error: missing runtime/fiber_runtime.o")
+                return link_stage_plan_fail()
+            extras.push(fiber_runtime_path)
+            let fiber_path = link_stage_find_runtime_object_path("fiber.o")
+            if fiber_path.len() == 0:
+                with_eprint("error: missing runtime/fiber.o")
+                return link_stage_plan_fail()
+            extras.push(fiber_path)
         let fiber_asm_path = link_stage_find_runtime_object_path("fiber_asm.o")
         if fiber_asm_path.len() == 0:
             with_eprint("error: missing runtime/fiber_asm.o")

@@ -15,6 +15,7 @@ use render
 use compiler.EmbeddedStdlib
 use compiler.EmbeddedRuntime
 use compiler.EmbeddedClangResource
+use TargetSpec
 
 extern fn with_str_clone_ref(s: &str) -> str
 use compiler.ProjectConfig
@@ -148,6 +149,19 @@ impl Zcu:
             end: pool.get_end(decl),
         }
         self.diagnostics.emit(Diagnostic.err("import module not found", span))
+
+fn frontend_rt_in_unit_enabled() -> i32:
+    if runtime_getenv("WITH_RT_IN_UNIT").len() > 0: 1 else: 0
+
+fn frontend_rt_in_unit_platform_file() -> str:
+    var kind = target_spec_active_kind()
+    if kind == 0:
+        kind = target_spec_host_kind()
+    if kind == 1: return "rt/linux_x86_64.w"
+    if kind == 2: return "rt/linux_aarch64.w"
+    if kind == 4: return "rt/darwin_aarch64.w"
+    if kind == 5: return "rt/windows_x86_64.w"
+    ""
 
 fn c_import_str_contains(text: &str, needle: &str) -> bool:
     if needle.len() == 0:
@@ -1384,6 +1398,38 @@ impl Zcu:
             pi = pi + 1
         merged_pool
 
+    // D30 R2b (dark): with WITH_RT_IN_UNIT set, the runtime module set
+    // parses into the unit right after the prelude closure, from the
+    // embedded sources. The nm-driven link then self-suppresses the
+    // .w-derived rt objects (their symbols are defined in-unit); only
+    // fiber_asm.o still comes from the object world (platform assembly).
+    // Off by default until R2c retargets codegen and the flip is ruled.
+    mut fn parse_runtime_modules_frontend(pool: AstPool) -> AstPool:
+        var merged_pool = pool
+        let platform = frontend_rt_in_unit_platform_file()
+        if platform.len() == 0:
+            self.diagnostics.emit(Diagnostic.err("rt-in-unit: no runtime platform source for target '" ++ target_spec_name() ++ "'", Span { file: 0, start: 0, end: 0 }))
+            return merged_pool
+        let fiber_core = if platform == "rt/windows_x86_64.w": "rt/fiber_core_windows.w" else: "rt/fiber_core_darwin.w"
+        let files: Vec[str] = Vec.new()
+        files.push("rt/rt_core.w")
+        files.push(with_str_clone_ref(platform))
+        files.push("rt/panic_runtime.w")
+        files.push("rt/channel_runtime.w")
+        files.push("rt/fiber_runtime.w")
+        files.push(with_str_clone_ref(fiber_core))
+        files.push("rt/compat_runtime.w")
+        for i in 0..files.len() as i32:
+            let rel = files.get(i as i64)
+            let path = embedded_rt_resolve_path(rel)
+            if path.len() == 0:
+                self.diagnostics.emit(Diagnostic.err("rt-in-unit: runtime source not embedded: " ++ rel, Span { file: 0, start: 0, end: 0 }))
+                return merged_pool
+            if self.has_imported_path(path) == 0:
+                self.add_imported_path(path)
+                merged_pool = self.parse_imported_file_frontend(path, merged_pool)
+        merged_pool
+
     mut fn compile_file_frontend(path: &str) -> AstPool:
         self.compile_file_frontend_with_config(path, project_config_load_for_source(path))
 
@@ -1485,6 +1531,8 @@ impl Zcu:
             self.diagnostics = pparser.diags
             self.seed_decl_source_paths(pool, name, file_id)
             pool = self.expand_prelude_closure_frontend(pool)
+            if frontend_rt_in_unit_enabled() != 0:
+                pool = self.parse_runtime_modules_frontend(pool)
             self.prelude_prefix_decls = pool.decl_count()
             self.prelude_prefix_non_use = count_non_use_decls_frontend(pool)
             let before_user = pool.decl_count()
