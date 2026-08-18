@@ -12,8 +12,9 @@ extern fn mmap(addr: *mut u8, len: u64, prot: i32, flags: i32, fd: i32, offset: 
 extern fn mprotect(addr: *mut u8, len: u64, prot: i32) -> i32
 extern fn munmap(addr: *mut u8, len: u64) -> i32
 extern fn raise(sig: i32) -> i32
-extern fn write(fd: i32, buf: *const u8, len: u64) -> i64
-extern fn _exit(code: i32) -> Unit
+@[link_name("write")]
+extern fn rt_libc_write(fd: i32, buf: *const u8, len: u64) -> i64
+extern fn _exit(code: i32) -> Never
 extern fn abort() -> Unit
 extern fn rt_fiber_page_size() -> i64
 extern fn rt_fiber_mmap_flags() -> i32
@@ -565,10 +566,10 @@ fn fiber_write_i32(fd: i32, n: i32):
     var buf: [16]u8 = [0 as u8; 16]
     var i = 0
     if value < 0:
-        let _ = write(fd, "-" as *const u8, 1)
+        let _ = rt_libc_write(fd, "-" as *const u8, 1)
         value = 0 - value
     if value == 0:
-        let _ = write(fd, "0" as *const u8, 1)
+        let _ = rt_libc_write(fd, "0" as *const u8, 1)
         return
     while value > 0 and i < 15:
         buf[i] = (48 + (value % 10)) as u8
@@ -576,7 +577,7 @@ fn fiber_write_i32(fd: i32, n: i32):
         i = i + 1
     var j = i - 1
     while j >= 0:
-        let _ = write(fd, (&buf as i64 + j as i64) as *const u8, 1)
+        let _ = rt_libc_write(fd, (&buf as i64 + j as i64) as *const u8, 1)
         j = j - 1
 
 pub fn with_fiber_stack_overflow_handler(sig: i32, info: *const u8, ucontext: *mut u8) -> Unit:
@@ -590,9 +591,9 @@ pub fn with_fiber_stack_overflow_handler(sig: i32, info: *const u8, ucontext: *m
             let guard_start = stack as i64 - page_sz
             let guard_end = stack as i64
             if fault_addr >= guard_start and fault_addr < guard_end:
-                let _ = write(2, "fatal: fiber stack overflow (fiber #" as *const u8, 36)
+                let _ = rt_libc_write(2, "fatal: fiber stack overflow (fiber #" as *const u8, 36)
                 fiber_write_i32(2, fiber_id(current))
-                let _ = write(2, ")\n" as *const u8, 2)
+                let _ = rt_libc_write(2, ")\n" as *const u8, 2)
                 _exit(134)
 
     rt_fiber_reset_signal_handler(sig)
@@ -688,7 +689,7 @@ fn scheduler_start_workers():
     while i < active_worker_count:
         let handle = rt_thread_spawn(scheduler_worker_entry as *mut u8, (i as i64) as *mut u8)
         if handle < 0:
-            let _ = write(2, "fatal: could not start fiber scheduler worker\n" as *const u8, 46)
+            let _ = rt_libc_write(2, "fatal: could not start fiber scheduler worker\n" as *const u8, 46)
             abort()
         worker_handles[i as i64] = handle
         i = i + 1

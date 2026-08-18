@@ -239,7 +239,8 @@ unsafe fn win_filetime_to_ns(low: u32, high: u32) -> i64:
     let unix_100ns = ticks - 116444736000000000 as u64
     (unix_100ns * 100) as i64
 
-pub unsafe fn rt_stat(path: *const u8, out: *mut RtStatBuf) -> i32:
+pub unsafe fn rt_stat(path: *const u8, out_raw: *mut u8) -> i32:
+    let out = out_raw as *mut RtStatBuf
     var wpath: [4096]u16 = [0 as u16; 4096]
     if win_utf8_to_utf16_buf(path, &raw mut wpath as *mut [4096]u16 as *mut u16, 4096) != 0:
         return -1
@@ -628,7 +629,8 @@ pub unsafe fn rt_access(path: *const u8, mode: i32) -> i32:
         return win_neg_error()
     0
 
-pub unsafe fn rt_sysinfo(out: *mut RtSysInfo) -> i32:
+pub unsafe fn rt_sysinfo(out_raw: *mut u8) -> i32:
+    let out = out_raw as *mut RtSysInfo
     var info: [64]u8 = [0 as u8; 64]
     GetSystemInfo(&raw mut info as *mut [64]u8 as *mut u8)
     // SYSTEM_INFO (x64): dwPageSize @4, dwNumberOfProcessors @32.

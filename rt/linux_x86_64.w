@@ -3,7 +3,8 @@
 // Implements the rt_* platform boundary through stable libc/POSIX ABI symbols.
 // Error convention: negative return = negated errno.
 
-extern fn write(fd: i32, buf: *const u8, len: u64) -> i64
+@[link_name("write")]
+extern fn rt_libc_write(fd: i32, buf: *const u8, len: u64) -> i64
 extern fn read(fd: i32, buf: *mut u8, len: u64) -> i64
 extern fn open(path: *const u8, flags: i32, mode: i32) -> i32
 extern fn close(fd: i32) -> i32
@@ -14,7 +15,7 @@ extern fn munmap(addr: *mut u8, len: u64) -> i32
 extern fn getenv(name: *const u8) -> *const u8
 extern fn stat(path: *const u8, buf: *mut u8) -> i32
 extern fn chmod(path: *const u8, mode: i32) -> i32
-extern fn _exit(code: i32) -> Unit
+extern fn _exit(code: i32) -> Never
 extern fn __errno_location() -> *mut i32
 extern fn getrandom(buf: *mut u8, len: u64, flags: u32) -> i64
 extern fn sysconf(name: i32) -> i64
@@ -46,7 +47,7 @@ pub fn rt_store_args(argc_val: i32, argv_val: *const *const u8) -> Unit:
 
 fn rt_random_fail():
     let msg = "fatal: could not read OS randomness\n" as *const u8
-    let _ = write(2, msg, 36)
+    let _ = rt_libc_write(2, msg, 36)
     _exit(1)
 
 pub fn rt_fill_random(buf: *mut u8, len: u64) -> Unit:
@@ -145,7 +146,7 @@ pub fn __open(path: *const u8, flags: i32, mode: i32) -> i32:
 pub fn rt_write(fd: i32, buf: *const u8, len: i64) -> i64:
     var r: i64 = 0
     loop:
-        r = write(fd, buf, len as u64)
+        r = rt_libc_write(fd, buf, len as u64)
         if r >= 0 or get_errno() != 4:
             break
     if r < 0:
@@ -204,7 +205,8 @@ let LINUX_STAT_SIZE_OFFSET: i64 = 48
 let LINUX_STAT_MTIME_SEC_OFFSET: i64 = 88
 let LINUX_STAT_MTIME_NSEC_OFFSET: i64 = 96
 
-pub fn rt_stat(path: *const u8, out: *mut RtStatBuf) -> i32:
+pub fn rt_stat(path: *const u8, out_raw: *mut u8) -> i32:
+    let out = out_raw as *mut RtStatBuf
     var native_buf: [144]u8 = [0 as u8; 144]
     let r = stat(path, &native_buf as *mut [144]u8 as *mut u8)
     if r < 0:
@@ -801,7 +803,8 @@ type RtSysInfo:
     memory_total: i64
     page_size: i64
 
-pub fn rt_sysinfo(out: *mut RtSysInfo) -> i32:
+pub fn rt_sysinfo(out_raw: *mut u8) -> i32:
+    let out = out_raw as *mut RtSysInfo
     let page_size = sysconf(30)
     let pages = sysconf(85)
     let cores = sysconf(84)

@@ -20,8 +20,17 @@ extern fn with_runtime_completed_cancelled_return(fiber_id: i32) -> i32
 extern fn with_free(ptr: *mut u8) -> Unit
 extern fn with_ewrite(s: &str) -> Unit
 extern fn with_i64_to_str(n: i64) -> str
-extern fn _exit(code: i32) -> Unit
+extern fn _exit(code: i32) -> Never
 extern fn abort() -> Unit
+
+// The real definitions (fiber core) are unsafe fns: they write through the raw
+// out-pointers. These local unsafe wrappers spell that contract in both worlds
+// (standalone extern decls and D30 in-unit resolution to the real definitions).
+unsafe fn fiber_take_completed(fiber_id: i32, panic_msg_out: *mut *const u8, panic_msg_len_out: *mut i32, cancelled_return_out: *mut i32) -> i32:
+    with_runtime_take_completed_fiber(fiber_id, panic_msg_out, panic_msg_len_out, cancelled_return_out)
+
+unsafe fn fiber_take_panicked(fiber_id_out: *mut i32, panic_msg_out: *mut *const u8, panic_msg_len_out: *mut i32) -> i32:
+    with_runtime_take_panicked_fiber(fiber_id_out, panic_msg_out, panic_msg_len_out)
 
 type RawStr:
     ptr: *const u8
@@ -50,11 +59,12 @@ fn fiber_report_unhandled_panics() -> i32:
         var fiber_id: i32 = 0
         var panic_msg: *const u8 = 0 as *const u8
         var panic_msg_len: i32 = 0
-        if with_runtime_take_panicked_fiber(
+        let took = unsafe { fiber_take_panicked(
             &raw mut fiber_id as *mut i32,
             &raw mut panic_msg as *mut *const u8,
             &raw mut panic_msg_len as *mut i32
-        ) == 0:
+        ) }
+        if took == 0:
             return had_unhandled
 
         had_unhandled = 1
@@ -101,7 +111,8 @@ fn fiber_take_detached_completed(fiber_id: i32, result_buf: *mut u8) -> i32:
     var panic_msg: *const u8 = 0 as *const u8
     var panic_msg_len: i32 = 0
     var cancelled_return: i32 = 0
-    if with_runtime_take_completed_fiber(fiber_id, &raw mut panic_msg as *mut *const u8, &raw mut panic_msg_len as *mut i32, &raw mut cancelled_return as *mut i32) == 0:
+    let took = unsafe { fiber_take_completed(fiber_id, &raw mut panic_msg as *mut *const u8, &raw mut panic_msg_len as *mut i32, &raw mut cancelled_return as *mut i32) }
+    if took == 0:
         return 0
     let _ = cancelled_return
     if result_buf as i64 != 0:
@@ -185,7 +196,8 @@ pub fn with_fiber_await(fiber_id: i32) -> Unit:
         var panic_msg: *const u8 = 0 as *const u8
         var panic_msg_len: i32 = 0
         var cancelled_return: i32 = 0
-        if with_runtime_take_completed_fiber(fiber_id, &raw mut panic_msg as *mut *const u8, &raw mut panic_msg_len as *mut i32, &raw mut cancelled_return as *mut i32) != 0:
+        let took = unsafe { fiber_take_completed(fiber_id, &raw mut panic_msg as *mut *const u8, &raw mut panic_msg_len as *mut i32, &raw mut cancelled_return as *mut i32) }
+        if took != 0:
             last_await_fiber_id = fiber_id
             last_await_cancelled_return = cancelled_return
             if panic_msg as i64 != 0 and panic_msg_len > 0:
@@ -218,7 +230,8 @@ pub fn with_fiber_cleanup_await(fiber_id: i32) -> Unit:
         var panic_msg: *const u8 = 0 as *const u8
         var panic_msg_len: i32 = 0
         var cancelled_return: i32 = 0
-        if with_runtime_take_completed_fiber(fiber_id, &raw mut panic_msg as *mut *const u8, &raw mut panic_msg_len as *mut i32, &raw mut cancelled_return as *mut i32) != 0:
+        let took = unsafe { fiber_take_completed(fiber_id, &raw mut panic_msg as *mut *const u8, &raw mut panic_msg_len as *mut i32, &raw mut cancelled_return as *mut i32) }
+        if took != 0:
             last_await_fiber_id = fiber_id
             last_await_cancelled_return = cancelled_return
             if panic_msg as i64 != 0 and panic_msg_len > 0:

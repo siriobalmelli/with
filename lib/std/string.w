@@ -19,11 +19,11 @@
 // No c_import — uses with_* runtime functions.
 
 use std.collections
-extern fn with_lines_out_ref(out: *mut c_void, s: &str) -> Unit
+extern fn with_lines_out_ref(out: *mut u8, s: &str) -> Unit
 extern fn with_parse_i64_ref(s: &str) -> i64
 extern fn with_str_len(s: &str) -> i64
 extern fn with_str_eq_ref(a: &str, b: &str) -> i32
-extern fn with_str_from_vec_u8(bytes: *const Vec[u8]) -> str
+extern fn with_str_from_vec_u8(bytes: *const u8) -> str
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 
@@ -73,7 +73,7 @@ impl StringBuilder:
 
     /// Materialize the accumulated bytes as an owned str.
     pub fn to_str() -> str:
-        with_str_from_vec_u8(&self.bytes)
+        with_str_from_vec_u8((&raw const self.bytes) as *const u8)
 
 /// String length (same as `s.len()`).
 pub fn string_len(s: &str) -> i64:
@@ -225,7 +225,7 @@ pub fn string_to_int(s: &str) -> i64:
 /// Split text into lines. Returns a Vec of strings, one per line.
 pub fn lines(s: &str) -> Vec[str]:
     var out: Vec[str] = Vec{ ptr: 0, len: 0, cap: 0, elem_size: 0 }
-    with_lines_out_ref((&raw mut out) as *mut c_void, s)
+    with_lines_out_ref((&raw mut out) as *mut u8, s)
     out
 
 /// Parse a string as an i32 integer.

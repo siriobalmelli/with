@@ -12,7 +12,8 @@
 // __open is the non-variadic internal symbol (open is variadic in C,
 // which has a different calling convention on aarch64).
 
-extern fn write(fd: i32, buf: *const u8, len: u64) -> i64
+@[link_name("write")]
+extern fn rt_libc_write(fd: i32, buf: *const u8, len: u64) -> i64
 extern fn read(fd: i32, buf: *mut u8, len: u64) -> i64
 extern fn __open(path: *const u8, flags: i32, mode: i32) -> i32
 extern fn close(fd: i32) -> i32
@@ -24,7 +25,7 @@ extern fn getenv(name: *const u8) -> *const u8
 extern fn sysconf(name: i32) -> i64
 extern fn stat(path: *const u8, buf: *mut u8) -> i32
 extern fn chmod(path: *const u8, mode: i32) -> i32
-extern fn _exit(code: i32) -> Unit
+extern fn _exit(code: i32) -> Never
 extern fn mach_absolute_time() -> u64
 extern fn time(t: *mut i64) -> i64
 extern fn __error() -> *mut i32
@@ -128,7 +129,7 @@ pub fn rt_fiber_install_signal_handlers(alt_stack: *mut u8, alt_stack_size: i64,
 pub fn rt_write(fd: i32, buf: *const u8, len: i64) -> i64:
     var r: i64 = 0
     loop:
-        r = write(fd, buf, len as u64)
+        r = rt_libc_write(fd, buf, len as u64)
         if r >= 0 or get_errno() != 4:
             break
     if r < 0:
@@ -178,7 +179,8 @@ pub fn rt_seek(fd: i32, offset: i64, whence: i32) -> i64:
         return -(get_errno() as i64)
     r
 
-pub fn rt_stat(path: *const u8, out: *mut RtStatBuf) -> i32:
+pub fn rt_stat(path: *const u8, out_raw: *mut u8) -> i32:
+    let out = out_raw as *mut RtStatBuf
     var native_buf: [144]u8 = [0 as u8; 144]
     let r = stat(path, &native_buf as *mut u8)
     if r < 0:
@@ -821,7 +823,8 @@ type RtSysInfo:
 
 extern fn sysctlbyname(name: *const u8, oldp: *mut u8, oldlenp: *mut i64, newp: *const u8, newlen: i64) -> i32
 
-pub fn rt_sysinfo(out: *mut RtSysInfo) -> i32:
+pub fn rt_sysinfo(out_raw: *mut u8) -> i32:
+    let out = out_raw as *mut RtSysInfo
     // CPU cores: sysctl hw.logicalcpu
     var cores: i32 = 0
     var cores_len: i64 = 4

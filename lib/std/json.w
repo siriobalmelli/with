@@ -4,7 +4,7 @@
 // Single-pass tokenizer. Tokens store byte offsets into the source string.
 // Always includes parent links. Non-strict mode.
 
-extern fn str_from_byte(b: i32) -> str
+extern fn with_str_from_byte(b: i32) -> str
 extern fn with_alloc_zeroed(count: i64, size: i64) -> *i8
 
 pub type JsonWriter {
@@ -498,9 +498,9 @@ fn json_unescape_string(value: str) -> str:
             else if esc == 47:
                 out = out ++ "/"
             else if esc == 98:
-                out = out ++ str_from_byte(8)
+                out = out ++ with_str_from_byte(8)
             else if esc == 102:
-                out = out ++ str_from_byte(12)
+                out = out ++ with_str_from_byte(12)
             else if esc == 110:
                 out = out ++ "\n"
             else if esc == 114:
@@ -518,7 +518,7 @@ fn json_unescape_string(value: str) -> str:
                     json_panic("invalid JSON unicode escape")
                 let code = ((h0 * 4096) + (h1 * 256) + (h2 * 16) + h3)
                 if code < 128:
-                    out = out ++ str_from_byte(code)
+                    out = out ++ with_str_from_byte(code)
                 else:
                     json_panic("JSON unicode escapes above ASCII are not supported yet")
                 i = i + 4

@@ -1489,8 +1489,8 @@ pub fn with_println_i64(n: i64) -> Unit:
     write_all(1, &buf as *const u8, len)
     let _ = rt_write(1, "\n" as *const u8, 1)
 
-pub fn with_println_bool(b: i32) -> Unit:
-    if b != 0:
+pub fn with_println_bool(b: bool) -> Unit:
+    if b:
         write_all(1, "true\n" as *const u8, 5)
     else:
         write_all(1, "false\n" as *const u8, 6)
@@ -2331,8 +2331,8 @@ pub fn with_i64_to_str(n: i64) -> str:
 pub fn i64_to_string(n: i64) -> str:
     with_fmt_i64(n)
 
-pub fn with_bool_to_str(b: i32) -> str:
-    with_fmt_bool(b)
+pub fn with_bool_to_str(b: bool) -> str:
+    with_fmt_bool(if b: 1 else: 0)
 
 pub fn str_from_byte(b: i32) -> str:
     let buf = rt_alloc(2)
@@ -3763,6 +3763,12 @@ extern fn with_runtime_run_one_step() -> Unit
 extern fn with_runtime_fiber_is_live(fiber_id: i32) -> i32
 extern fn with_runtime_take_completed_fiber(fiber_id: i32, panic_msg_out: *mut *const u8, panic_msg_len_out: *mut i32, cancelled_return_out: *mut i32) -> i32
 
+// The real definition (fiber core) is an unsafe fn: it writes through the raw
+// out-pointers. This local unsafe wrapper spells that contract in both worlds
+// (standalone extern decl and D30 in-unit resolution to the real definition).
+unsafe fn scope_take_completed_fiber(fiber_id: i32, panic_msg_out: *mut *const u8, panic_msg_len_out: *mut i32, cancelled_return_out: *mut i32) -> i32:
+    with_runtime_take_completed_fiber(fiber_id, panic_msg_out, panic_msg_len_out, cancelled_return_out)
+
 fn scope_count_ptr(handle: i64) -> *mut i32:
     handle as *mut i32
 
@@ -3835,12 +3841,13 @@ fn scope_cleanup_await_capture_panic(fiber_id: i32, first_panic_msg: *mut *const
         var panic_msg: *const u8 = 0 as *const u8
         var panic_msg_len: i32 = 0
         var cancelled_return: i32 = 0
-        if with_runtime_take_completed_fiber(
+        let took = unsafe { scope_take_completed_fiber(
             fiber_id,
             &raw mut panic_msg as *mut *const u8,
             &raw mut panic_msg_len as *mut i32,
             &raw mut cancelled_return as *mut i32
-        ) != 0:
+        ) }
+        if took != 0:
             let _ = cancelled_return
             let existing_panic_msg = unsafe *first_panic_msg
             if panic_msg as i64 != 0 and panic_msg_len > 0 and existing_panic_msg as i64 == 0:

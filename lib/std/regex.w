@@ -7,7 +7,7 @@ use std.result
 
 extern fn with_str_slice_ref(s: &str, start: i64, end: i64) -> str
 extern fn with_str_clone_ref(s: &str) -> str
-extern fn str_from_byte(b: i32) -> str
+extern fn with_str_from_byte(b: i32) -> str
 extern fn with_regex_error_message(code: i32) -> str
 extern fn with_regex_compile(pattern: &str, options: i32, err_code: *mut i32, err_offset: *mut i32) -> *const i8
 extern fn with_regex_code_copy(code: *const i8) -> *const i8
@@ -316,7 +316,7 @@ fn regex_expand_replacement(captures: &Captures, repl: &str) -> str:
     while i < repl.len():
         let ch = repl.byte_at(i)
         if ch != 36:
-            out = out ++ str_from_byte(ch)
+            out = out ++ with_str_from_byte(ch)
             i = i + 1
             continue
         if i + 1 >= repl.len():
