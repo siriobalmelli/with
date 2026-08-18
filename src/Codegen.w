@@ -24,11 +24,9 @@ extern fn exit(code: i32) -> Unit
 extern fn with_fs_read_file(path: &str) -> str
 extern fn with_vec_free(v: *mut u8) -> Unit
 extern fn with_hashmap_free(map: *mut u8) -> Unit
-extern fn with_parse_float(s: str) -> f64
 extern fn with_eprint(s: &str) -> Unit
 extern fn with_getenv_str(name: &str) -> str
 extern fn with_str_hash(s: &str) -> i64
-extern fn with_str_clone(s: str) -> str
 extern fn with_str_clone_ref(s: &str) -> str
 extern fn str_from_byte(b: i32) -> str
 extern fn with_codegen_loop_set_break(idx: i32, bb: i64) -> Unit
@@ -74,8 +72,6 @@ enum AtomicOrdering: i32:
 // Debug info (DWARF)
 
 // Runtime helpers
-extern fn with_str_concat(a: str, b: str) -> str
-extern fn with_str_eq(a: str, b: str) -> i32
 extern fn with_write(s: &str) -> Unit
 extern fn with_sysinfo_os() -> str
 extern fn with_sysinfo_arch() -> str
@@ -533,7 +529,7 @@ fn Codegen.init_with_opt_and_intern(module_name: &str, opt_level: i32, intern: I
     cg.intern = intern
     cg.sema = sema
     cg.overflow_mode = overflow_mode
-    cg.tracked_input_root = with_str_clone(cg.sema.tracked_input_root)
+    cg.tracked_input_root = with_str_clone_ref(cg.sema.tracked_input_root)
     let tracked_paths: Vec[str] = Vec.new()
     for tpi in 0..cg.sema.tracked_input_paths.len() as i32:
         tracked_paths.push(with_str_clone_ref(cg.sema.tracked_input_paths.get(tpi as i64)))

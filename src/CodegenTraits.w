@@ -2207,7 +2207,7 @@ impl Codegen:
             let str_idx = self.pool.get_data0(float_node)
             if str_idx < 0 or str_idx >= self.pool.state.strings.len() as i32:
                 return 0
-            var fval = with_parse_float(with_str_clone_ref(self.pool.get_string(str_idx)))
+            var fval = with_parse_float_ref(with_str_clone_ref(self.pool.get_string(str_idx)))
             if float_negate:
                 fval = -fval
             let llvm_ty = self.sema_type_to_llvm(resolved)
@@ -2383,7 +2383,7 @@ impl Codegen:
             if str_idx >= 0 and str_idx < self.pool.state.strings.len() as i32:
                 let float_text = self.pool.get_string(str_idx)
                 if float_text.len() > 0:
-                    fval = with_parse_float(with_str_clone_ref(float_text))
+                    fval = with_parse_float_ref(with_str_clone_ref(float_text))
             if float_negate:
                 fval = -fval
             var global_ty = wl_f64_type(self.context)

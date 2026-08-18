@@ -5,7 +5,6 @@ use Source
 use DiagnosticRender
 
 extern fn with_eprint(s: &str) -> Unit
-extern fn with_str_clone(s: str) -> str
 extern fn with_str_clone_ref(s: &str) -> str
 
 enum DiagSeverity: i32:

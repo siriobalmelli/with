@@ -73,4 +73,3 @@ pub fn compilation_config_clone(c: &CompilationConfig) -> CompilationConfig:
     CompilationConfig { opt_level: c.opt_level, no_std: c.no_std, alloc_mode: c.alloc_mode, runtime_available: c.runtime_available, overflow_mode: c.overflow_mode, emit_ir: c.emit_ir, emit_bin: c.emit_bin, is_test: c.is_test, prelude_mode: c.prelude_mode, debug_info: c.debug_info, compiler_hooks_enabled: c.compiler_hooks_enabled, tool_mode_entry_path: with_str_clone_ref(c.tool_mode_entry_path) }
 
 extern fn with_str_clone_ref(s: &str) -> str
-extern fn with_str_clone(s: str) -> str

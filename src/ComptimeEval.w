@@ -18,7 +18,6 @@ use std.string.StringBuilder
 use TargetSpec
 
 extern fn with_eprint(s: &str) -> Unit
-extern fn with_str_clone(s: str) -> str
 extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_fs_read_file(path: &str) -> str
 extern fn with_fs_file_exists(path: &str) -> i32
@@ -59,17 +58,16 @@ extern fn with_write(s: &str) -> Unit
 extern fn with_ewrite(s: &str) -> Unit
 extern fn with_getenv_str(name: &str) -> str
 extern fn with_setenv_str(name: &str, value: &str) -> i32
-extern fn with_parse_i64(s: str) -> i64
+extern fn with_parse_i64_ref(s: &str) -> i64
 extern fn with_str_len(s: &str) -> i64
-extern fn with_str_byte_at(s: str, index: i64) -> i32
-extern fn with_str_slice(s: str, start: i64, end: i64) -> str
+extern fn with_str_byte_at_ref(s: &str, index: i64) -> i32
 extern fn with_str_slice_ref(s: &str, start: i64, end: i64) -> str
-extern fn with_str_contains(haystack: str, needle: str) -> i32
-extern fn with_str_concat(a: str, b: str) -> str
+extern fn with_str_contains_ref(haystack: &str, needle: &str) -> i32
+extern fn with_str_concat_ref(a: &str, b: &str) -> str
 extern fn with_str_concat_n(parts: *const str, count: i64) -> str
 extern fn with_str_from_byte(byte: i32) -> str
-extern fn with_str_starts_with(s: str, prefix: str) -> i32
-extern fn with_str_ends_with(s: str, suffix: str) -> i32
+extern fn with_str_starts_with_ref(s: &str, prefix: &str) -> i32
+extern fn with_str_ends_with_ref(s: &str, suffix: &str) -> i32
 extern fn with_str_replace_ref(s: &str, old: &str, new_s: &str) -> str
 extern fn with_sysinfo_hostname() -> str
 
@@ -352,7 +350,7 @@ fn comptime_configured_string_budget(default_budget: i64) -> i64:
     let raw = with_getenv_str("WITH_COMPTIME_STRING_BUDGET_BYTES")
     if raw.len() == 0:
         return default_budget
-    let parsed = with_parse_i64(raw)
+    let parsed = with_parse_i64_ref(raw)
     if parsed > 0:
         return parsed
     default_budget
@@ -2929,7 +2927,7 @@ impl ComptimeEvaluator:
             let byte_val = comptime_value_intlike(arg_signal.value) as i32
             if self.reserve_string_bytes(node, recv_value.text.len() + 1) == 0:
                 return comptime_control_error()
-            let new_text = with_str_concat(with_str_clone_ref(recv_value.text), with_str_from_byte(byte_val))
+            let new_text = with_str_concat_ref(with_str_clone_ref(recv_value.text), with_str_from_byte(byte_val))
             let updated = comptime_value_bytes(recv_value.type_id, new_text)
             return self.rebind_collection_receiver(recv_node, updated, node)
         if method == "contains":
@@ -2985,7 +2983,7 @@ impl ComptimeEvaluator:
             let suffix = with_str_slice_ref(recv_value.text, index + 1, recv_value.text.len())
             if self.reserve_string_bytes(node, prefix.len() + suffix.len()) == 0:
                 return comptime_control_error()
-            let new_text = with_str_concat(prefix, suffix)
+            let new_text = with_str_concat_ref(prefix, suffix)
             let updated = comptime_value_bytes(recv_value.type_id, new_text)
             let rebind = self.rebind_collection_receiver(recv_node, updated, node)
             if rebind.kind != ComptimeControlKind.CTL_VALUE:
@@ -7418,7 +7416,7 @@ impl ComptimeEvaluator:
             let index = arg_values.get(1)
             if text.kind != ComptimeValueKind.CV_STR or comptime_value_is_intlike(index) == 0:
                 return self.fail(node, "with_str_byte_at expects string and integer arguments")
-            return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i32 as i32), with_str_byte_at(with_str_clone_ref(text.text), comptime_value_intlike(index))))
+            return comptime_control_value(comptime_value_int(self.node_type_or(node, self.sema.ty_i32 as i32), with_str_byte_at_ref(with_str_clone_ref(text.text), comptime_value_intlike(index))))
         if fn_name == "with_str_slice":
             if arg_values.len() as i32 != 3:
                 return self.fail(node, "with_str_slice takes three arguments")
@@ -7427,7 +7425,7 @@ impl ComptimeEvaluator:
             let end = arg_values.get(2)
             if text.kind != ComptimeValueKind.CV_STR or comptime_value_is_intlike(start) == 0 or comptime_value_is_intlike(end) == 0:
                 return self.fail(node, "with_str_slice expects string and integer arguments")
-            return comptime_control_value(comptime_value_str(with_str_slice(with_str_clone_ref(text.text), comptime_value_intlike(start), comptime_value_intlike(end))))
+            return comptime_control_value(comptime_value_str(with_str_slice_ref(with_str_clone_ref(text.text), comptime_value_intlike(start), comptime_value_intlike(end))))
         if fn_name == "with_str_contains" or fn_name == "with_str_starts_with" or fn_name == "with_str_ends_with":
             if arg_values.len() as i32 != 2:
                 return self.fail(node, fn_name ++ " takes two arguments")
@@ -7437,11 +7435,11 @@ impl ComptimeEvaluator:
                 return self.fail(node, fn_name ++ " expects string arguments")
             let result =
                 if fn_name == "with_str_contains":
-                    with_str_contains(with_str_clone_ref(text.text), with_str_clone_ref(needle.text))
+                    with_str_contains_ref(with_str_clone_ref(text.text), with_str_clone_ref(needle.text))
                 else if fn_name == "with_str_starts_with":
-                    with_str_starts_with(with_str_clone_ref(text.text), with_str_clone_ref(needle.text))
+                    with_str_starts_with_ref(with_str_clone_ref(text.text), with_str_clone_ref(needle.text))
                 else:
-                    with_str_ends_with(with_str_clone_ref(text.text), with_str_clone_ref(needle.text))
+                    with_str_ends_with_ref(with_str_clone_ref(text.text), with_str_clone_ref(needle.text))
             return comptime_control_value(comptime_value_bool(result))
         if fn_name == "with_sysinfo_os" or fn_name == "with_sysinfo_arch" or fn_name == "with_sysinfo_hostname":
             if arg_values.len() as i32 != 0:

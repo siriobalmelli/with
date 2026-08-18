@@ -12,7 +12,7 @@ use Diagnostic
 use TargetSpec
 
 extern fn with_str_clone_ref(s: &str) -> str
-extern fn with_parse_i64(s: str) -> i64
+extern fn with_parse_i64_ref(s: &str) -> i64
 extern fn str_from_byte(b: i32) -> str
 
 // Canonical active target architecture for @[target("arch")] guards.
@@ -8121,4 +8121,4 @@ fn parse_i64(text: &str) -> i64:
         if ch != 95:
             clean = clean ++ str_from_byte(ch)
         i = i + 1
-    with_parse_i64(clean)
+    with_parse_i64_ref(clean)

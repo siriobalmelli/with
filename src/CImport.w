@@ -13,7 +13,7 @@ use compiler.EmbeddedClangResource
 use std.string.StringBuilder
 use TargetSpec
 
-extern fn with_parse_float(s: str) -> f64
+extern fn with_parse_float_ref(s: &str) -> f64
 extern fn with_str_clone_ref(s: &str) -> str
 
 var g_ci_realpath_cache_paths: Vec[str] = Vec.new()
@@ -4508,8 +4508,8 @@ fn ci_eval_float_const_expr_ctx(s: &str, known: &str) -> str:
             let lhs_str = ci_eval_float_const_expr_ctx(trimmed.slice(0, op_pos as i64), known)
             let rhs_str = ci_eval_float_const_expr_ctx(trimmed.slice((op_pos + op_len) as i64, trimmed.len()), known)
             if lhs_str.len() > 0 and rhs_str.len() > 0:
-                let lhs = with_parse_float(lhs_str)
-                let rhs = with_parse_float(rhs_str)
+                let lhs = with_parse_float_ref(lhs_str)
+                let rhs = with_parse_float_ref(rhs_str)
                 if op == "+": return ci_f64_decimal_literal(lhs + rhs)
                 if op == "-": return ci_f64_decimal_literal(lhs - rhs)
                 if op == "*": return ci_f64_decimal_literal(lhs * rhs)

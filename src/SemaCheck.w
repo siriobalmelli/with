@@ -17,7 +17,6 @@ extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_write(s: &str) -> Unit
 extern fn with_eprint(s: &str) -> Unit
 extern fn with_getenv_str(name: &str) -> str
-extern fn with_str_eq(a: str, b: str) -> i32
 extern fn str_from_byte(b: i32) -> str
 extern fn with_regex_compile(pattern: &str, options: i32, err_code: *mut i32, err_offset: *mut i32) -> *const i8
 extern fn with_regex_error_message(code: i32) -> str

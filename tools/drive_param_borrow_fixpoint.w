@@ -11,7 +11,7 @@ use std.process
 
 extern fn with_fs_read_file(path: &str) -> str
 extern fn with_fs_write_file(path: &str, data: &str) -> i32
-extern fn with_str_clone(s: str) -> str
+extern fn with_str_clone_ref(s: &str) -> str
 
 fn sh(cmd: str) -> i32:
     let argv: Vec[str] = Vec.new()
@@ -46,7 +46,7 @@ fn enclosing_fn(path: str, line_no: i32) -> str:
                 let ident = (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 or c == 46
                 if not ident: break
                 e = e + 1
-            if e > 0: current = with_str_clone(name_part.slice(0, e))
+            if e > 0: current = with_str_clone_ref(name_part.slice(0, e))
     current
 
 fn main -> i32:

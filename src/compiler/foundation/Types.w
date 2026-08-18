@@ -4,7 +4,6 @@
 
 use compiler.foundation.Ids
 extern fn with_str_clone_ref(s: &str) -> str
-extern fn with_str_clone(s: str) -> str
 
 // (int_to_string removed — using f-strings)
 

@@ -21,7 +21,6 @@ extern fn with_getenv_str(name: &str) -> str
 extern fn with_setenv_str(name: &str, value: &str) -> i32
 extern fn with_clock_nanos() -> i64
 extern fn with_getpid() -> i32
-extern fn with_str_clone(s: str) -> str
 extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_str_hash(s: &str) -> i64
 extern fn with_nanosleep(ns: i64) -> i32

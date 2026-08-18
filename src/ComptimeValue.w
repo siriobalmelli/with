@@ -2,8 +2,7 @@ use Sema
 use CapabilityRegistry
 
 extern fn with_str_clone_ref(s: &str) -> str
-extern fn with_str_eq(a: str, b: str) -> i32
-extern fn with_str_clone(s: str) -> str
+extern fn with_str_eq_ref(a: &str, b: &str) -> i32
 extern fn with_alloc(size: i64) -> *mut u8
 extern fn with_free(ptr: *mut u8) -> Unit
 
@@ -392,7 +391,7 @@ fn comptime_values_equal(lhs: &ComptimeValue, rhs: &ComptimeValue, extras: &Vec[
             return 1
         return 0
     if lhs.kind == ComptimeValueKind.CV_STR:
-        return with_str_eq(with_str_clone_ref(lhs.text), with_str_clone_ref(rhs.text))
+        return with_str_eq_ref(with_str_clone_ref(lhs.text), with_str_clone_ref(rhs.text))
     if lhs.kind == ComptimeValueKind.CV_RANGE:
         if lhs.data0 == rhs.data0 and lhs.data1 == rhs.data1 and lhs.extra_start == rhs.extra_start:
             return 1
@@ -456,14 +455,14 @@ fn comptime_values_equal(lhs: &ComptimeValue, rhs: &ComptimeValue, extras: &Vec[
                 return 0
         return 1
     if lhs.kind == ComptimeValueKind.CV_BYTES:
-        return with_str_eq(with_str_clone_ref(lhs.text), with_str_clone_ref(rhs.text))
+        return with_str_eq_ref(with_str_clone_ref(lhs.text), with_str_clone_ref(rhs.text))
     if lhs.kind == ComptimeValueKind.CV_STRING_BUILDER:
         if lhs.type_id == rhs.type_id and lhs.extra_start == rhs.extra_start and lhs.extra_count == rhs.extra_count and lhs.data0 == rhs.data0:
             return 1
         return 0
     if lhs.kind == ComptimeValueKind.CV_STRING_CHUNK:
         if lhs.data0 == rhs.data0:
-            return with_str_eq(with_str_clone_ref(lhs.text), with_str_clone_ref(rhs.text))
+            return with_str_eq_ref(with_str_clone_ref(lhs.text), with_str_clone_ref(rhs.text))
         return 0
     0
 

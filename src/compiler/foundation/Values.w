@@ -2,7 +2,6 @@
 
 use compiler.foundation.Ids
 extern fn with_str_clone_ref(s: &str) -> str
-extern fn with_str_clone(s: str) -> str
 
 pub fn VALUE_KEY_INVALID -> i32: 0
 pub fn VALUE_KEY_INT -> i32: 1

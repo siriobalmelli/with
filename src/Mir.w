@@ -19,7 +19,6 @@ extern fn with_eprint(s: &str) -> Unit
 extern fn str_from_byte(b: i32) -> str
 extern fn with_write(s: &str) -> Unit
 extern fn with_alloc(size: i64) -> *mut u8
-extern fn with_str_contains(s: str, needle: str) -> i32
 
 fn lbrace -> str:
     str_from_byte(123)

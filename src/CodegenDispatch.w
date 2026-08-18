@@ -549,7 +549,6 @@ fn mir_scan_vec_fill(count: i32, value: i32) -> Vec[i32]:
         out.push(value)
     out
 
-extern fn with_str_clone(s: str) -> str
 extern fn with_alloc(size: i64) -> *mut u8
 
 // Worklist handle for the block-reachability walk: copies share state by
@@ -1663,7 +1662,7 @@ impl Codegen:
             if cd >= 0 and cd < self.pool.state.strings.len() as i32:
                 let float_text = self.pool.get_string(cd)
                 if float_text.len() > 0:
-                    fval = with_parse_float(with_str_clone_ref(float_text))
+                    fval = with_parse_float_ref(with_str_clone_ref(float_text))
             return wl_const_real(float_ty, fval)
 
         if ck == ConstKind.CK_ZERO_SIZED:

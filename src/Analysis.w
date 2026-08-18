@@ -515,7 +515,7 @@ fn analysis_collect_signatures(report: &AnalysisReport, sema: &Sema, source_path
             param.type_id = sema.sig_param_type(si, pi)
             param.effects = sema.sig_param_effect(si, pi)
             param.flags = if sema.sig_param_uses_value_ref_abi(si, pi) != 0: 1 else: 0
-            param.path = with_str_clone(sig.path)
+            param.path = with_str_clone_ref(sig.path)
             param.name = with_str_clone_ref(name)
             param.detail = analysis_param_class(sema, si, pi) ++ f" direct={sema.sig_param_direct_effect(si, pi)} final={param.effects} value-ref={param.flags}"
             report.add(param.owned_copy())
@@ -533,7 +533,7 @@ fn analysis_collect_signatures(report: &AnalysisReport, sema: &Sema, source_path
             fact.type_id = if sema.sig_get_param_count(si) > 0: sema.sig_param_type(si, 0) else: 0
             fact.effects = if si < sema.sig_receiver_required_effects.len() as i32: sema.sig_receiver_required_effects.get(si as i64) else: 0
             fact.flags = receiver as i32
-            fact.path = with_str_clone(sig.path)
+            fact.path = with_str_clone_ref(sig.path)
             fact.name = with_str_clone_ref(name)
             fact.detail = "declared=" ++ analysis_receiver_mode_name(receiver) ++ " required=" ++ receiver_required_mode_text(fact.effects)
             report.add(move fact)
@@ -807,7 +807,7 @@ fn analysis_collect_mir(report: &AnalysisReport, mir_mod: &MirModule, sema: &Sem
             local.index = li
             local.type_id = body.local_type_ids.get(li as i64)
             local.flags = body.local_mutables.get(li as i64) | (body.local_is_user_var.get(li as i64) << 1)
-            local.name = with_str_clone(body_fact.name)
+            local.name = with_str_clone_ref(body_fact.name)
             local.detail = f"_{li} ty={local.type_id} mut={body.local_mutables.get(li as i64)}"
             report.add(move local)
         for pi in 0..body.place_locals.len() as i32:
@@ -817,7 +817,7 @@ fn analysis_collect_mir(report: &AnalysisReport, mir_mod: &MirModule, sema: &Sem
             place.body_sym = body.fn_sym
             place.index = body.place_proj_counts.get(pi as i64)
             place.type_id = body.place_sema_types.get(pi as i64)
-            place.name = with_str_clone(body_fact.name)
+            place.name = with_str_clone_ref(body_fact.name)
             place.detail = mir_place_text(body, pi)
             report.add(move place)
         for ci in 0..body.call_arg_starts.len() as i32:

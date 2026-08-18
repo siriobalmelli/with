@@ -36,7 +36,6 @@ use ReceiverMigration
 use TargetSpec
 
 extern fn with_arg_count() -> i32
-extern fn with_str_clone(s: str) -> str
 extern fn with_str_clone_ref(s: &str) -> str
 extern fn with_arg_at(idx: i32) -> str
 extern fn with_fs_write_file(path: &str, data: &str) -> i32
@@ -46,12 +45,11 @@ extern fn with_fs_file_exists(path: &str) -> i32
 extern fn with_fs_is_dir(path: &str) -> i32
 extern fn with_fs_chmod(path: &str, mode: i32) -> i32
 extern fn with_read_bytes_stdin(count: i32) -> str
-extern fn with_str_eq(a: str, b: str) -> i32
 extern fn with_str_from_cstr(s: *const u8) -> str
 extern fn with_str_len(s: &str) -> i64
-extern fn with_str_byte_at(s: str, index: i64) -> i32
-extern fn with_str_contains(s: str, needle: str) -> i32
-extern fn with_str_slice(s: str, start: i64, end: i64) -> str
+extern fn with_str_byte_at_ref(s: &str, index: i64) -> i32
+extern fn with_str_contains_ref(s: &str, needle: &str) -> i32
+extern fn with_str_slice_ref(s: &str, start: i64, end: i64) -> str
 extern fn with_eprint(s: &str) -> Unit
 extern fn with_ewrite(s: &str) -> Unit
 extern fn with_exec_argv(args: &str) -> i32
@@ -315,7 +313,7 @@ fn cli_test_filter(argc: i32) -> str:
     while i < argc:
         let arg = with_arg_at(i)
         if arg.starts_with("--filter="):
-            return with_str_slice(arg, 9, with_str_len(arg))
+            return with_str_slice_ref(arg, 9, with_str_len(arg))
         if (arg == "--filter" or arg == "-f") and i + 1 < argc:
             return with_arg_at(i + 1)
         i = i + 1
@@ -331,7 +329,7 @@ fn cli_prelude_mode(argc: i32) -> i32:
         else if arg == "--freestanding":
             mode = PreludeMode.CoreMode
         else if arg.starts_with("--prelude="):
-            let value = with_str_slice(arg, 10, with_str_len(arg))
+            let value = with_str_slice_ref(arg, 10, with_str_len(arg))
             if value == "core":
                 mode = PreludeMode.CoreMode
             else if value == "alloc":
@@ -484,7 +482,7 @@ fn cli_one_liner_scan(argc: i32) -> CliOneLiner:
         if has_output_prefix(arg) or cli_one_liner_known_flag(arg) or arg.starts_with("--prelude="):
             i = i + 1
             continue
-        if with_str_len(arg) > 0 and with_str_byte_at(arg, 0) != 45:
+        if with_str_len(arg) > 0 and with_str_byte_at_ref(arg, 0) != 45:
             if result.seen:
                 result.ok = false
                 result.error_msg = "error: cannot combine one-liner code with a source file"
@@ -1026,7 +1024,7 @@ fn find_source_arg(argc: i32) -> str:
             skip = true
         if not skip:
             if with_str_len(arg) > 0:
-                if with_str_byte_at(arg, 0) != 45 and not cli_is_build_target_selector(arg): // not '-' or ':target'
+                if with_str_byte_at_ref(arg, 0) != 45 and not cli_is_build_target_selector(arg): // not '-' or ':target'
                     return arg
         i = i + step
     ""
@@ -1040,7 +1038,7 @@ fn find_output_arg(argc: i32) -> str:
                 return with_arg_at(i + 1)
             return ""
         if has_output_prefix(arg):
-            return with_str_slice(arg, 9, with_str_len(arg))
+            return with_str_slice_ref(arg, 9, with_str_len(arg))
         i = i + 1
     ""
 
@@ -1048,8 +1046,8 @@ fn find_target_selector_arg(argc: i32) -> str:
     var i = 2
     while i < argc:
         let arg = with_arg_at(i)
-        if with_str_len(arg) > 1 and with_str_byte_at(arg, 0) == 58:
-            return with_str_slice(arg, 1, with_str_len(arg))
+        if with_str_len(arg) > 1 and with_str_byte_at_ref(arg, 0) == 58:
+            return with_str_slice_ref(arg, 1, with_str_len(arg))
         i = i + 1
     ""
 
@@ -1279,7 +1277,7 @@ fn run_fixpoint_diff_command(argc: i32) -> i32:
     let right = fixpoint_arg(argc, 3, fixpoint_default_right())
     let report = fixpoint_diff_report(left, right)
     with_write(report)
-    if with_str_contains(report, "could not read") != 0:
+    if with_str_contains_ref(report, "could not read") != 0:
         return 1
     0
 
