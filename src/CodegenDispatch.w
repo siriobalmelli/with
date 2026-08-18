@@ -11465,7 +11465,7 @@ impl Codegen:
         if is_fat != 0:
             let fp: Vec[i64] = Vec.new()
             fp.push(ptr_ty)
-            fp.push(elem_ty)
+            fp.push(self.closure_abi_param_ty(elem_ty))
             fn_ty = wl_function_type(i1_ty, vec_data_i64(&fp), 2, 0)
         else:
             fn_ty = wl_global_get_value_type(fn_ptr)
@@ -11479,7 +11479,7 @@ impl Codegen:
         let filt_args: Vec[i64] = Vec.new()
         if is_fat != 0:
             filt_args.push(ctx_ptr)
-        filt_args.push(payload)
+        filt_args.push(self.closure_abi_arg(elem_ty, payload))
         let filt_arg_count = if is_fat != 0: 2 else: 1
         let pred_result = wl_build_call(self.builder, fn_ty, fn_ptr, vec_data_i64(&filt_args), filt_arg_count)
         var filt_bool = pred_result
@@ -11636,7 +11636,7 @@ impl Codegen:
             return self.coerce_value_to_type(payload, payload_ty)
         self.build_default_value(payload_ty)
 
-    fn mir_call_fn_value(fn_val: i64, ret_ty: i64, args: &Vec[i64], arg_count: i32) -> i64:
+    mut fn mir_call_fn_value(fn_val: i64, ret_ty: i64, args: &Vec[i64], arg_count: i32) -> i64:
         let ptr_ty = wl_ptr_type(self.context)
         let cty = wl_type_of(fn_val)
         var fn_ptr = fn_val
@@ -11654,8 +11654,9 @@ impl Codegen:
             param_tys.push(ptr_ty)
         for ai in 0..arg_count:
             let av = args.get(ai as i64)
-            call_args.push(av)
-            param_tys.push(wl_type_of(av))
+            let avt = wl_type_of(av)
+            call_args.push(self.closure_abi_arg(avt, av))
+            param_tys.push(self.closure_abi_param_ty(avt))
         if is_fat != 0:
             fn_ty = wl_function_type(ret_ty, vec_data_i64(&param_tys), arg_count + 1, 0)
         else:
@@ -13362,7 +13363,7 @@ impl Codegen:
             // Build fn_ty from closure calling convention: fn(ptr, elem) -> ret
             let fp: Vec[i64] = Vec.new()
             fp.push(ptr_ty)
-            fp.push(elem_ty)
+            fp.push(self.closure_abi_param_ty(elem_ty))
             fn_ty = wl_function_type(out_elem_ty, vec_data_i64(&fp), 2, 0)
             ret_ty = out_elem_ty
         else:
@@ -13401,7 +13402,7 @@ impl Codegen:
         let el = wl_build_load(self.builder, elem_ty, ep)
         let ca: Vec[i64] = Vec.new()
         if is_fat != 0: ca.push(ctx_ptr)
-        ca.push(el)
+        ca.push(self.closure_abi_arg(elem_ty, el))
         let cc = if is_fat != 0: 2 else: 1
         let rv = wl_build_call(self.builder, fn_ty, fn_ptr, vec_data_i64(&ca), cc)
         wl_build_store(self.builder, rv, tmp)
@@ -13453,7 +13454,7 @@ impl Codegen:
         if is_fat != 0:
             let fp: Vec[i64] = Vec.new()
             fp.push(ptr_ty)
-            fp.push(elem_ty)
+            fp.push(self.closure_abi_param_ty(elem_ty))
             fn_ty = wl_function_type(pred_ret_ty, vec_data_i64(&fp), 2, 0)
         else:
             fn_ty = wl_global_get_value_type(fn_ptr)
@@ -13491,7 +13492,7 @@ impl Codegen:
         let el = wl_build_load(self.builder, elem_ty, ep)
         let ca: Vec[i64] = Vec.new()
         if is_fat != 0: ca.push(ctx_ptr)
-        ca.push(el)
+        ca.push(self.closure_abi_arg(elem_ty, el))
         let cc = if is_fat != 0: 2 else: 1
         let pred = wl_build_call(self.builder, fn_ty, fn_ptr, vec_data_i64(&ca), cc)
         wl_build_cond_br(self.builder, wl_build_icmp(self.builder, wl_int_ne(), pred, wl_const_int(wl_type_of(pred), 0, 0)), pb, ib)
@@ -13585,8 +13586,8 @@ impl Codegen:
         if is_fat != 0:
             let fp: Vec[i64] = Vec.new()
             fp.push(ptr_ty)
-            fp.push(at)
-            fp.push(elem_ty)
+            fp.push(self.closure_abi_param_ty(at))
+            fp.push(self.closure_abi_param_ty(elem_ty))
             fn_ty = wl_function_type(at, vec_data_i64(&fp), 3, 0)
         else:
             fn_ty = wl_global_get_value_type(fn_ptr)
@@ -13616,8 +13617,8 @@ impl Codegen:
         let ca_val = wl_build_load(self.builder, at, aa)
         let ca: Vec[i64] = Vec.new()
         if is_fat != 0: ca.push(ctx_ptr)
-        ca.push(ca_val)
-        ca.push(el)
+        ca.push(self.closure_abi_arg(at, ca_val))
+        ca.push(self.closure_abi_arg(elem_ty, el))
         let cc = if is_fat != 0: 3 else: 2
         let nv = wl_build_call(self.builder, fn_ty, fn_ptr, vec_data_i64(&ca), cc)
         wl_build_store(self.builder, nv, aa)
@@ -17136,6 +17137,10 @@ impl Codegen:
         // semantic types in lockstep with the LLVM signature so closure-local MIR
         // can recover pointee types for reference parameters.
         let closure_param_sema_types: Vec[i32] = Vec.new()
+        // #D6: for a param passed indirectly on win64 (aggregate >8B), the entry
+        // holds the real by-value LLVM type so the body prologue can load a
+        // callee-owned copy from the incoming pointer; 0 for direct params.
+        let closure_param_real_llvm: Vec[i64] = Vec.new()
         let param_types: Vec[i64] = Vec.new()
         let closure_param_offset = if is_extern_closure: 0 else: 1
         if not is_extern_closure:
@@ -17153,12 +17158,21 @@ impl Codegen:
                     p_sema_ty = expected_p_sema_ty
             closure_param_sema_types.push(p_sema_ty)
             let p_llvm_ty = self.sema_type_to_llvm(p_sema_ty)
+            var chosen_ty = i32_ty
             if p_llvm_ty != 0:
-                param_types.push(p_llvm_ty)
+                chosen_ty = p_llvm_ty
             else if p_type != 0:
-                param_types.push(self.resolve_type(p_type))
+                chosen_ty = self.resolve_type(p_type)
+            // #D6: match mir_build_closure_fn_type — a win64 aggregate >8B param
+            // is passed indirectly (pointer), so the callee signature must
+            // declare `ptr` too, or caller and callee disagree on the argument
+            // shape and the aggregate arrives corrupted (#806).
+            if self.internal_abi_needs_indirect_param(chosen_ty):
+                closure_param_real_llvm.push(chosen_ty)
+                param_types.push(ptr_ty)
             else:
-                param_types.push(i32_ty)
+                closure_param_real_llvm.push(0)
+                param_types.push(chosen_ty)
         // Determine return type (infer from context or use i32)
         var ret_ty = i32_ty
         if closure_fn_ret_tid != 0:
@@ -17231,10 +17245,20 @@ impl Codegen:
         for i in 0..param_count:
             let p_name = self.pool.get_extra(extra_start + i * 2)
             let param_val = wl_get_param(closure_fn, i + closure_param_offset)
-            let param_ty = wl_type_of(param_val)
-            let alloca = self.create_entry_alloca(param_ty)
-            wl_build_store(self.builder, param_val, alloca)
-            self.record_local(p_name, alloca, param_ty, 1)
+            let real_ty = if i < closure_param_real_llvm.len() as i32: closure_param_real_llvm.get(i as i64) else: 0
+            if real_ty != 0:
+                // #D6 indirect param (win64 aggregate >8B): param_val is a pointer
+                // to the caller-materialized value. Load a callee-owned copy so the
+                // body reads its own storage, matching the indirect call ABI.
+                let loaded = wl_build_load(self.builder, real_ty, param_val)
+                let alloca = self.create_entry_alloca(real_ty)
+                wl_build_store(self.builder, loaded, alloca)
+                self.record_local(p_name, alloca, real_ty, 1)
+            else:
+                let param_ty = wl_type_of(param_val)
+                let alloca = self.create_entry_alloca(param_ty)
+                wl_build_store(self.builder, param_val, alloca)
+                self.record_local(p_name, alloca, param_ty, 1)
             if i < closure_param_sema_types.len() as i32:
                 self.record_local_sema_type(p_name, closure_param_sema_types.get(i as i64))
         // ── MIR-based closure body compilation ──────────────────────
