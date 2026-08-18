@@ -2486,6 +2486,9 @@ pub fn with_parse_i64_ref(s: &str) -> i64:
     if neg != 0: 0 - result else: result
 
 pub fn with_parse_float(s: str) -> f64:
+    with_parse_float_ref(s)
+
+pub fn with_parse_float_ref(s: &str) -> f64:
     let slen = str_length(s)
     if slen == 0: return 0.0
     let sp = str_data(s)
