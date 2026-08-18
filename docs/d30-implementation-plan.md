@@ -1,0 +1,215 @@
+# D30 Runtime Retirement Implementation Plan (#761)
+
+## Authority and scope
+
+This is a derivative execution plan for the D30 ruling recorded in
+`docs/decisions.md` and the normative §16.3e spec text. It cannot amend
+either. Where this plan and the ruling disagree, the ruling wins and this
+plan is wrong.
+
+Target, restated from D30:
+
+- The runtime compiles **in-unit** like the embedded stdlib; codegen lowers
+  runtime operations to **ordinary module functions** resolved through Sema
+  and marshalled through `FnAbi` — never through name-string synthesis.
+- Pre-compiled runtime objects survive **only as a cache** keyed by
+  (compiler version, target), where a hit is **byte-identical** to the
+  in-unit result. Objects as boundary: retired.
+- Remaining ABI surfaces (`extern fn`, `@[c_export]`, `c_import`) face
+  genuinely foreign code and **speak C** (§16.3e): With-managed types in
+  such signatures are hard errors; §16.3c call-site coercion carries the
+  ergonomics.
+
+## Fact base (verified 2026-08-17, commit 830018de)
+
+The seam being deleted is **three independent hand-maintained derivations
+of the same ~134 symbols**:
+
+1. **Codegen's synthesized LLVM decls** — ~125 live `with_*` symbols built
+   from literal name strings across five mechanisms: the generic
+   `ensure_internal_runtime_fn`/`call_internal_runtime_fn` path
+   (`src/CodegenDispatch.w:2780,2820`, with its own Windows-only aggregate
+   ABI re-derivation at `src/Codegen.w:4878`); per-family helpers with
+   hardcoded name→type if-chains (`get_runtime_fn_type` at
+   `src/CodegenDispatch.w:17997` defaults unmatched params to `i64`);
+   single-symbol `ensure_*` helpers; **56 raw inline
+   `wl_add_function(self.llmod, "with_…")` sites**; and a
+   reuse-if-source-declared fallback (`call_runtime_str_fn`,
+   `src/CodegenDispatch.w:2764`) under which one call site's ABI depends on
+   whether a `lib/std` extern decl happened to be seen first.
+2. **`lib/std` extern decls** — 222 `extern fn with_*` decls / 134 distinct
+   symbols across 33 files, with heavy redeclaration (`with_free` ×11).
+   15 are ambient in every unit via `std.builtins` in the prelude.
+3. **`runtime/with_runtime.h`** — hand-written C prototypes for `--emit-c`,
+   only partially synced to the `&str` flip (#785).
+
+Nothing ties any of these to `rt/rt_core.w`'s definitions. The caller-side
+doctrine `extern_param_is_bit_copy` (`src/SemaCheck.w:22868`) never
+consults the parameter type — every extern `str` param is ruled
+non-transferring regardless of what the callee body does. That is the
+double-derived contract #761 proved corrupts silently.
+
+Runtime source honesty: `rt/rt_core.w` has 247 pub fns — 51 `&str`-honest,
+**39 plain-consuming-`str` holdouts, of which only 5 are reachable**
+(`with_vec_str_join`, `with_str_concat`-family `*const str` callers,
+`with_vec_push_str`, plus `with_panic` in `rt/panic_runtime.w`); the other
+34 are orphans with no codegen emitter and no `lib/std` decl.
+`rt/linux_aarch64.w:1029–1147` missed the compat `&str` flip; the net
+family (`with_net_tcp_connect`/`udp_connect`/`send`) takes plain `str` on
+all three platforms.
+
+Build/link facts:
+
+- All `out/lib` rt objects are **seed-built** under the loud `#747 INTERIM`
+  block at `build.w:1725-1731` — the flip-built runtime frees every str
+  operand it is shown; the seed pin is the bridge this plan retires.
+- `rt/rt_core.w` compiles `--emit-obj --no-prelude` (no main); pub fns keep
+  raw C names only via the hardcoded carve-out
+  `codegen_preserve_runtime_link_name` (`src/Codegen.w:4107-4125`: path
+  contains `rt/` AND name starts `with_`/`rt_`/`wl_`); everything else in
+  the object is path-hash-mangled.
+- `Link.w` decides which runtime to link by shelling `nm -u` and
+  substring-matching undefined symbols (`src/compiler/Link.w:816-869`,
+  `1021-1046`), then pushes `rt_core.o` first in all three link branches.
+- The embedded-stdlib model to mirror: sources embedded as string data
+  (`build/runtime.w:195-236` → `out/gen/compiler/EmbeddedStdlibData.w`),
+  resolved under a synthetic path prefix (`<embedded-std>/`,
+  `src/compiler/EmbeddedStdlib.w`), parsed into the **same AST pool** as
+  user code (`src/compiler/Frontend.w:1476-1487`), one Sema, MIR-cost-based
+  unit splitting. No per-module objects.
+- Cache precedents: `build_cache_graph_key` (`src/BuildGraphCache.w:774`)
+  is already keyed by compiler-binary sha256 + target kind;
+  `EmbeddedClangResource.w` has the stamp-last + per-file identity-manifest
+  discipline ("hit is byte-identical" verification, #312); the c_import fs
+  cache (`src/compiler/Frontend.w:455-498`) has the torn-write-is-a-miss
+  two-file entry.
+
+## Staged execution plan
+
+Ordering rules that govern every stage: the bootstrap protocol (runtime
+files and `Link.w` never change in the same commit; every commit
+independently passes `with build :fixpoint`), and the drop-class isolation
+rule (any stage that touches ownership/callee-drop behavior is alone in
+its battery batch with `:move-audit`/`:drop-audit`).
+
+### Stage R1 — make the runtime sources honest (enabler)
+
+R1a. **Delete the 34 orphan plain-`str` fns** in `rt/rt_core.w` and the
+dead codegen references (the 11-name if-chain in `get_runtime_fn_type`,
+the uncalled `gen_fmt_buf_write_str`). Where a `_ref` twin exists, the
+orphan dies and the twin stays. No behavior change; shrinks the honesty
+problem to the reachable surface.
+
+R1b. **Flip the reachable holdouts to honest signatures**: the 5 live
+plain-`str` rt fns, the 7 plain-`str` extern decls in `lib/std`
+(`builtins.w:19` `with_panic`, `testing.w:3`, `process.w:21`, `net.w:7,8,12`,
+`regex.w:16`), the `rt/linux_aarch64.w` compat stragglers, and the
+`with_net_*` family on all platforms. Caller sides (codegen emitters,
+`MirLower.w:13873`'s `with_panic` lowering) update in the same commit as
+their decl — the decl and its emitter are one contract, not a
+Link.w/runtime split.
+
+R1c. **Retire the `#747 INTERIM` seed pin**: with rt sources honest,
+`out/lib` rt objects build with the current stage compiler again
+(`build.w:1732-1750`). Gate: disassembly spot-check of the former #761
+poison set (`with_str_eq` & co. — no callee-side frees), full battery,
+`:drop-audit`. This closes #761's interim and is the proof the sources are
+both-worlds honest.
+
+### Stage R2 — runtime joins the unit (the dissolving move)
+
+R2a. **Embed rt sources** in the compiler binary exactly like the stdlib:
+a `br_generate_embedded_runtime` sibling of `br_generate_embedded_stdlib`
+(`build/runtime.w:195`), an `EmbeddedRuntime.w` accessor with an
+`<embedded-rt>/` prefix, resolver wiring beside the two existing
+embedded-std resolve sites (`src/Resolve.w:1044`,
+`src/compiler/Frontend.w:2346`).
+
+R2b. **Parse the runtime module into the unit** for ordinary (non-`no_std`)
+compiles, as a deterministic prefix like the prelude closure
+(`src/compiler/Frontend.w:1476-1487`). The runtime compiles as ordinary
+With code under normal module/visibility rules; the
+`symbol_visible_from_current` `with_`-prefix bypass (`src/Sema.w:2632`)
+dies with the seam.
+
+R2c. **Codegen lowers to ordinary module functions.** Family by family
+(str, vec, hashmap/slotmap, fmt, panic, fiber/async, regex, misc), each
+family alone in a drop-audit batch: replace the name-string synthesis with
+a Sema-resolved callee (the runtime module's function symbol) marshalled
+through `compute_fn_abi` — one ABI descriptor read by both sides, per D6.
+The `ensure_*` helpers and the 56 raw sites shrink to a single
+"resolve runtime fn by name through Sema" utility during the transition
+and disappear when the last family flips. Delete each family's
+`with_runtime.h` prototypes as it flips (the emit-c backend reads the same
+in-unit decls; #785's partial sync becomes moot).
+
+R2d. **Retire the object boundary**: once no user-program symbol resolves
+to `rt_core.o`, drop the rt-object pushes from the pure-With and cc link
+branches (`src/compiler/Link.w:1174-1216`, `1263-1311`) and the `nm -u`
+runtime gating; delete the mangling carve-out
+(`codegen_preserve_runtime_link_name`) so runtime internals mangle like
+any module. `Link.w`-only commit, after the R2c commits, per the bootstrap
+protocol. The compiler-build (lld) branch keeps its bridge objects — they
+are genuinely foreign (LLVM/clang), not runtime.
+
+### Stage R3 — the cache
+
+Pre-compiled runtime objects return **only** as a cache: key =
+compiler-binary sha256 (the `build_cache_current_compiler_fingerprint`
+component) + target spec; entry discipline = stamp-last with a per-file
+identity manifest (the `EmbeddedClangResource` pattern); torn write = miss
+(the c_import-cache pattern). The hit condition is byte-identity with the
+in-unit result — verified in CI by compiling one unit both ways and
+comparing hashes (the `fixpoint-compare` machinery at `build.w:1691-1710`
+already does exactly this shape of check). A runtime object built by a
+different compiler fingerprint can never be linked, by construction of the
+key. R3 is pure build-performance work; R2 must not wait for it.
+
+### Stage R4 — §16.3e enforcement
+
+Extend the C-representability gate from `validate_c_export_signature`
+(`src/SemaCheck.w:2962`, today `@[c_export]`-only) to **all three**
+surfaces: `extern fn` decls and `c_import` bindings included. Hard error
+per the spec sentence; diagnostic names the §16.3c modeled coercion for
+the call-site direction and the pointer-and-length spelling for the raw
+direction. Sequencing within R4:
+
+- R4a. Migrate the survivors: after R2, the remaining `extern fn` decls
+  with With-managed types are tool-facing fossils
+  (`with_fs_read_file(path: str)` in tools; tools move to `std.fs`) and
+  any stdlib decl that outlived its family's R2c flip.
+- R4b. Land the gate. `extern_param_is_bit_copy` stops being a str
+  doctrine — with §16.3e in force there are no With-managed extern params
+  left to rule on, and the predicate reduces to genuine C-type semantics.
+- R4c. Retire the `sema_name_is_compiler_abi_extern` exemptions
+  (`src/SemaCheck.w:160,185`) — nothing needs them once the seam is gone.
+
+### Stage R5 — docs and doctrine
+
+Retire the transitional `with_*` guidance in CLAUDE.md/AGENTS.md (marked
+"operative until the retirement lands"), update the Runtime Architecture
+section, close #761, and record the completion in `docs/decisions.md` D30's
+status line.
+
+## Open questions that need Eric (none block R1)
+
+1. **Cold-compile cost tolerance between R2 and R3.** In-unit runtime adds
+   rt compilation to every cold user compile until the cache lands.
+   Options: land R3 before flipping the default, or accept the interim
+   cost. (Predicted ruling: correctness first, performance chased — the
+   #691/build-perf record says he will want R3 fast-followed, not
+   sequenced ahead.)
+2. **`--no-prelude`/`no_std` story.** Today `--no-prelude` programs can
+   still link rt_core via the `nm` probe. Post-R2d, what do they get —
+   nothing (fully freestanding) or an opt-in runtime module import?
+3. **Runtime module namespace.** Is the in-unit runtime a named module
+   users could theoretically spell (`std.rt`?) or resolver-internal with
+   no user-spellable name? (Predicted: internal — `with_*` was never
+   user-facing, D30 says boundaries that remain face foreign code.)
+
+## Issue cross-links
+
+#761 (the campaign issue), #785 (emit-c decl sync — subsumed by R2c),
+#742 (self-audit violations — unrelated gate, tracks separately), #729
+(release-only invalid free — retest after R1c since it implicates
+generation divergence across the object boundary).
