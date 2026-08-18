@@ -154,6 +154,10 @@ type TestDirectives {
     skip_reason: str,
     extra_args: str,
     known_issue: str,
+    // `//! env: NAME=VALUE` pairs, set for the test's compile+run and
+    // restored after (the harness compiles in-process, so env-gated
+    // compiler modes like WITH_RT_IN_UNIT are testable per file).
+    env_pairs: Vec[str],
 }
 
 type TestRunResult {
@@ -186,6 +190,7 @@ fn empty_test_directives -> TestDirectives:
         skip_reason: "",
         extra_args: "",
         known_issue: "",
+        env_pairs: Vec.new(),
     }
 
 fn cli_options_default -> CliOptions:
@@ -2895,6 +2900,7 @@ fn parse_test_directives_for_target(target: &str) -> TestDirectives:
     let expect_error_prefix = "//! expect-error: "
     let expect_build_fail_prefix = "//! expect-build-fail: "
     let args_prefix = "//! args: "
+    let env_prefix = "//! env: "
     let skip_prefix = "//! skip: "
     let skip_windows_prefix = "//! skip-windows: "
     let requires_arch_prefix = "//! requires-arch: "
@@ -2928,6 +2934,8 @@ fn parse_test_directives_for_target(target: &str) -> TestDirectives:
                 result.expect_build_fail = line.slice(expect_build_fail_prefix.len(), line.len())
             else if line.starts_with(args_prefix):
                 result.extra_args = line.slice(args_prefix.len(), line.len())
+            else if line.starts_with(env_prefix):
+                result.env_pairs.push(line.slice(env_prefix.len(), line.len()))
             else if line.starts_with(skip_prefix):
                 result.skip = true
                 result.skip_reason = line.slice(skip_prefix.len(), line.len())
@@ -3210,6 +3218,30 @@ fn run_test_file_with_build_settings(target: &str, opt_level: i32, no_std: bool,
     0
 
 fn run_test_file_with_build_settings_inner(target: &str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> i32:
+    // `//! env:` pairs apply to the compile (in-process) and the run
+    // (inherited), and restore after so one test cannot poison the next.
+    let env_directives = parse_test_directives_for_target(target)
+    if env_directives.env_pairs.len() == 0:
+        return run_test_file_env_applied(target, opt_level, no_std, alloc_mode, runtime_available, prelude_mode, debug_info, verbose, quiet, filter, include_paths, defines, link_libs)
+    let saved: Vec[str] = Vec.new()
+    for ei in 0..env_directives.env_pairs.len() as i32:
+        let pair = env_directives.env_pairs.get(ei as i64)
+        let eq = pair.find("=")
+        if eq >= 0:
+            let name = pair.slice(0, eq)
+            saved.push(with_getenv_str(name) ++ "")
+            let _ = with_setenv_str(name, pair.slice(eq + 1, pair.len()))
+        else:
+            saved.push("")
+    let env_rc = run_test_file_env_applied(target, opt_level, no_std, alloc_mode, runtime_available, prelude_mode, debug_info, verbose, quiet, filter, include_paths, defines, link_libs)
+    for ei in 0..env_directives.env_pairs.len() as i32:
+        let pair = env_directives.env_pairs.get(ei as i64)
+        let eq = pair.find("=")
+        if eq >= 0:
+            let _ = with_setenv_str(pair.slice(0, eq), saved.get(ei as i64))
+    env_rc
+
+fn run_test_file_env_applied(target: &str, opt_level: i32, no_std: bool, alloc_mode: bool, runtime_available: bool, prelude_mode: i32, debug_info: bool, verbose: bool, quiet: bool, filter: &str, include_paths: &Vec[str], defines: &Vec[str], link_libs: &Vec[str]) -> i32:
     let directives = parse_test_directives_for_target(target)
     let directive_rc = run_test_directive_command(target, directives, quiet)
     if directive_rc >= 0:
